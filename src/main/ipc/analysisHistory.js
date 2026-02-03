@@ -156,6 +156,45 @@ function registerAnalysisHistoryIpc(servicesOrParams) {
     })
   );
 
+  // Set per-file embedding policy (embed / skip / web_only)
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.ANALYSIS_HISTORY.SET_EMBEDDING_POLICY,
+    createHandler({
+      logger,
+      context,
+      serviceName: 'analysisHistory',
+      getService: getHistoryService,
+      fallbackResponse: { success: false, error: 'Service unavailable' },
+      normalize: (payload) => {
+        if (!payload || typeof payload !== 'object') return payload;
+        return {
+          filePath: normalizeText(payload.filePath || '', { maxLength: 2000 }),
+          policy: normalizeText(payload.policy || '', { maxLength: 20 })
+        };
+      },
+      handler: async (event, payload, service) => {
+        try {
+          const filePath = payload?.filePath;
+          const policy = payload?.policy;
+          if (!filePath) {
+            return { success: false, error: 'filePath is required' };
+          }
+          const allowed = new Set(['embed', 'skip', 'web_only']);
+          if (!allowed.has(policy)) {
+            return { success: false, error: 'policy must be one of embed|skip|web_only' };
+          }
+
+          const result = await service.setEmbeddingPolicyByPath(filePath, policy);
+          return { success: true, ...result };
+        } catch (error) {
+          logger.error('Failed to set embedding policy:', error);
+          return createErrorResponse(error);
+        }
+      }
+    })
+  );
+
   // Clear analysis history
   safeHandle(
     ipcMain,

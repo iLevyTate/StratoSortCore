@@ -1,7 +1,4 @@
 const path = require('path');
-const { DownloadWatcher } = require('../src/main/services/DownloadWatcher'); // Class is default export in source but imported as named in some places? No, source has module.exports = DownloadWatcher
-// The source file has `module.exports = DownloadWatcher;`
-// So I should require it as `const DownloadWatcher = require('...');`
 
 const { ErrorCategory } = require('../src/shared/errorClassifier');
 
@@ -125,6 +122,11 @@ describe('DownloadWatcher Extended Coverage', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+
+    mockFs.stat.mockReset();
+    mockFs.access.mockReset();
+    mockFs.rename.mockReset();
+    mockFs.mkdir.mockReset();
 
     // Setup setTimeout mock for retry logic
     originalSetTimeout = global.setTimeout;
@@ -260,7 +262,12 @@ describe('DownloadWatcher Extended Coverage', () => {
       errorClassifier.getErrorCategory.mockReturnValueOnce(ErrorCategory.FILE_IN_USE);
 
       // FIX: stat check fails with NOT_FOUND (now using fs.stat instead of fs.access)
-      mockFs.stat.mockRejectedValueOnce(new Error('ENOENT'));
+      // _handleDuplicateMove also performs a stat on destination; reject enough times to
+      // ensure the retry check sees the NOT_FOUND error.
+      mockFs.stat
+        .mockRejectedValueOnce(new Error('ENOENT'))
+        .mockRejectedValueOnce(new Error('ENOENT'))
+        .mockRejectedValueOnce(new Error('ENOENT'));
       errorClassifier.isNotFoundError.mockReturnValueOnce(true);
 
       await watcher._moveFile('/src', '/dest');

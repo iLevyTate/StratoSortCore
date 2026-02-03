@@ -46,6 +46,9 @@ function removeRecentSearch(searchToRemove) {
 const EmptySearchState = memo(function EmptySearchState({
   query,
   hasIndexedFiles = true,
+  indexingHint = null,
+  onOpenSettings,
+  onRebuildFiles,
   onSearchClick,
   className = '',
   corrections = []
@@ -76,13 +79,51 @@ const EmptySearchState = memo(function EmptySearchState({
 
   // No files indexed - show warning
   if (!hasIndexedFiles) {
+    const timing = indexingHint?.timing || null;
+    const policy = indexingHint?.policy || null;
+    const isManual = timing === 'manual';
+    const isPolicyDisabled = policy === 'skip' || policy === 'web_only';
+    const isDeferred = timing === 'after_organize';
+
+    const title = isManual
+      ? 'Embeddings are set to manual'
+      : isPolicyDisabled
+        ? 'Embeddings are disabled'
+        : isDeferred
+          ? 'Embeddings are deferred until after organize'
+          : 'No files indexed yet';
+
+    const description = isManual
+      ? 'Knowledge OS search needs local embeddings, but your settings are set to Manual only. Enable automatic embedding, or run a rebuild after you switch it back on.'
+      : isPolicyDisabled
+        ? `Your default embedding policy is set to "${policy}". Knowledge OS won’t create local embeddings, so semantic search will return no results.`
+        : isDeferred
+          ? 'Your embedding timing is set to After organize/move. Files will be indexed once they are moved into Smart Folders, or you can rebuild embeddings now.'
+          : 'Add Smart Folders (so files become eligible for indexing) or rebuild embeddings to start searching.';
+
     return (
       <StateMessage
         icon={FolderPlus}
         tone="warning"
         size="lg"
-        title="No files indexed yet"
-        description="Add folders to your library to start searching. Files will be automatically indexed for Knowledge OS."
+        title={title}
+        description={description}
+        action={
+          (onOpenSettings || onRebuildFiles) && (
+            <div className="flex flex-wrap gap-2 justify-center">
+              {onOpenSettings && (
+                <Button type="button" variant="secondary" size="sm" onClick={onOpenSettings}>
+                  Open Settings
+                </Button>
+              )}
+              {onRebuildFiles && (
+                <Button type="button" variant="primary" size="sm" onClick={onRebuildFiles}>
+                  Build File Embeddings
+                </Button>
+              )}
+            </div>
+          )
+        }
         className={`py-spacious px-relaxed ${className}`.trim()}
         contentClassName="max-w-sm"
       />
@@ -248,6 +289,15 @@ EmptySearchState.propTypes = {
   query: PropTypes.string,
   /** Whether there are any files in the index */
   hasIndexedFiles: PropTypes.bool,
+  /** Optional hint for why the index is empty */
+  indexingHint: PropTypes.shape({
+    timing: PropTypes.oneOf(['during_analysis', 'after_organize', 'manual']),
+    policy: PropTypes.oneOf(['embed', 'skip', 'web_only'])
+  }),
+  /** Open settings (for fixing embedding config) */
+  onOpenSettings: PropTypes.func,
+  /** Trigger a file-embedding rebuild */
+  onRebuildFiles: PropTypes.func,
   /** Callback when user clicks a search suggestion or recent search */
   onSearchClick: PropTypes.func,
   /** Additional CSS classes */

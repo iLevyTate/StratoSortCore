@@ -101,6 +101,7 @@ const IPC_CHANNELS = {
     SEARCH: 'analysis-history:search',
     GET_STATISTICS: 'analysis-history:get-statistics',
     GET_FILE_HISTORY: 'analysis-history:get-file-history',
+    SET_EMBEDDING_POLICY: 'analysis-history:set-embedding-policy',
     CLEAR: 'analysis-history:clear',
     EXPORT: 'analysis-history:export'
   },
@@ -111,6 +112,7 @@ const IPC_CHANNELS = {
     REBUILD_FILES: 'embeddings:rebuild-files',
     FULL_REBUILD: 'embeddings:full-rebuild',
     REANALYZE_ALL: 'embeddings:reanalyze-all',
+    REANALYZE_FILE: 'embeddings:reanalyze-file',
     CLEAR_STORE: 'embeddings:clear-store',
     GET_STATS: 'embeddings:get-stats',
     SEARCH: 'embeddings:search',
@@ -316,6 +318,9 @@ class SecureIPCManager {
   constructor() {
     this.activeListeners = new Map();
     this._listenerCounter = 0;
+    // Listener audit bookkeeping (used to detect growth/leaks without breaking long-lived subs)
+    this._lastListenerAuditAt = Date.now();
+    this._lastListenerAuditCount = 0;
     this.rateLimiter = new IpcRateLimiter({
       maxRequestsPerSecond: PERF_LIMITS.MAX_IPC_REQUESTS_PER_SECOND,
       perfLimits: PERF_LIMITS
@@ -425,46 +430,86 @@ class SecureIPCManager {
   }
 
   /**
-   * FIX: Periodic audit of stale listeners to prevent memory leaks
-   * Listeners that haven't been cleaned up in over 30 minutes are considered stale
+   * Periodic listener audit to detect potential leaks.
+   *
+   * IMPORTANT: Do NOT auto-remove listeners purely based on age.
+   * Some listeners are intentionally long-lived for the lifetime of a renderer window
+   * (settings changes, system metrics, app updates, etc.). Auto-removal breaks functionality.
    */
   auditStaleListeners() {
     const now = Date.now();
-    const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
-    let staleCount = 0;
 
-    for (const [key] of this.activeListeners.entries()) {
-      // Extract timestamp from key (format: channel_timestamp)
-      const parts = key.split('_');
-      const timestamp = parseInt(parts[parts.length - 1], 10);
+    const totalListeners = this.activeListeners.size;
+    const channelCounts = new Map();
+    let oldestAgeMs = 0;
 
-      if (!isNaN(timestamp) && now - timestamp > STALE_THRESHOLD_MS) {
-        staleCount++;
+    for (const listener of this.activeListeners.values()) {
+      const channel = listener?.channel;
+      if (typeof channel === 'string' && channel) {
+        channelCounts.set(channel, (channelCounts.get(channel) || 0) + 1);
+      }
+      const createdAt =
+        typeof listener?.createdAt === 'number' && Number.isFinite(listener.createdAt)
+          ? listener.createdAt
+          : null;
+      if (createdAt) {
+        oldestAgeMs = Math.max(oldestAgeMs, now - createdAt);
       }
     }
 
-    // Audit listeners periodically
-    if (staleCount > 0) {
-      log.warn(`[SecureIPC] Found ${staleCount} potentially stale listeners`, {
-        totalListeners: this.activeListeners.size,
-        staleCount
+    let maxPerChannel = 0;
+    for (const count of channelCounts.values()) {
+      maxPerChannel = Math.max(maxPerChannel, count);
+    }
+
+    const growthSinceLastAudit =
+      typeof this._lastListenerAuditCount === 'number'
+        ? totalListeners - this._lastListenerAuditCount
+        : 0;
+
+    // Heuristics: warn only when counts/growth look suspicious.
+    // These values are intentionally conservative to avoid noisy warnings in normal operation.
+    const MAX_TOTAL_LISTENERS_WARN = 50;
+    const MAX_PER_CHANNEL_WARN = 10;
+    const MAX_GROWTH_PER_AUDIT_WARN = 20;
+
+    const topChannels = Array.from(channelCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([channel, count]) => ({ channel, count }));
+
+    if (
+      totalListeners >= MAX_TOTAL_LISTENERS_WARN ||
+      maxPerChannel >= MAX_PER_CHANNEL_WARN ||
+      growthSinceLastAudit >= MAX_GROWTH_PER_AUDIT_WARN
+    ) {
+      log.warn('[SecureIPC] Listener audit indicates potential leak', {
+        totalListeners,
+        maxPerChannel,
+        growthSinceLastAudit,
+        oldestAgeMinutes: Math.round(oldestAgeMs / 60000),
+        topChannels
       });
-      // FIX HIGH-37: Force cleanup of stale listeners to prevent memory leak
-      // We assume listeners older than 30m are leaks in a single-page app context
-      for (const [key] of this.activeListeners.entries()) {
-        const parts = key.split('_');
-        const timestamp = parseInt(parts[parts.length - 1], 10);
-        if (!isNaN(timestamp) && now - timestamp > STALE_THRESHOLD_MS) {
-          const listener = this.activeListeners.get(key);
-          if (listener) {
-            ipcRenderer.removeListener(listener.channel, listener.callback);
-            this.activeListeners.delete(key);
-          }
-        }
-      }
+    } else if (process.env.NODE_ENV === 'development') {
+      // Keep debug-level visibility in dev without scaring users or breaking behavior.
+      log.debug('[SecureIPC] Listener audit', {
+        totalListeners,
+        maxPerChannel,
+        growthSinceLastAudit,
+        oldestAgeMinutes: Math.round(oldestAgeMs / 60000),
+        topChannels
+      });
     }
 
-    return staleCount;
+    this._lastListenerAuditAt = now;
+    this._lastListenerAuditCount = totalListeners;
+
+    return {
+      totalListeners,
+      maxPerChannel,
+      growthSinceLastAudit,
+      oldestAgeMs
+    };
   }
 
   // FIX CRIT-35: Remove async to ensure synchronous execution up to return
@@ -539,7 +584,22 @@ class SecureIPCManager {
       return () => {};
     }
 
+    const createdAt = Date.now();
+    // FIX: Use timestamp (not counter) in key so audit can determine listener age.
+    const listenerKey = `${channel}_${++this._listenerCounter}_${createdAt}`;
+
     const wrappedCallback = (event, ...args) => {
+      // Track listener activity for audit/diagnostics (best-effort)
+      try {
+        const meta = this.activeListeners.get(listenerKey);
+        if (meta) {
+          meta.lastCalledAt = Date.now();
+          meta.callCount = (meta.callCount || 0) + 1;
+        }
+      } catch {
+        // Non-fatal
+      }
+
       try {
         // Validate event source
         if (!this.validator.validateEventSource(event)) {
@@ -566,17 +626,15 @@ class SecureIPCManager {
       }
     };
 
-    ipcRenderer.on(channel, wrappedCallback);
-
-    // Track listener for cleanup
-    // FIX: Use timestamp (not counter) in key so auditStaleListeners() can
-    // correctly determine listener age. Counter-based keys were always parsed
-    // as epoch-ms ~0, causing ALL listeners to be removed after 10 minutes.
-    const listenerKey = `${channel}_${++this._listenerCounter}_${Date.now()}`;
     this.activeListeners.set(listenerKey, {
       channel,
-      callback: wrappedCallback
+      callback: wrappedCallback,
+      createdAt,
+      lastCalledAt: null,
+      callCount: 0
     });
+
+    ipcRenderer.on(channel, wrappedCallback);
 
     // Return cleanup function
     return () => {
@@ -862,6 +920,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getStatistics: () => secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS_HISTORY.GET_STATISTICS),
     getFileHistory: (filePath) =>
       secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS_HISTORY.GET_FILE_HISTORY, filePath),
+    setEmbeddingPolicy: (filePath, policy) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS_HISTORY.SET_EMBEDDING_POLICY, {
+        filePath,
+        policy
+      }),
     clear: () => secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS_HISTORY.CLEAR),
     export: (format) => secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS_HISTORY.EXPORT, format)
   },
@@ -872,6 +935,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     rebuildFiles: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES),
     fullRebuild: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FULL_REBUILD),
     reanalyzeAll: (options) => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REANALYZE_ALL, options),
+    reanalyzeFile: (filePath, options = {}) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REANALYZE_FILE, {
+        filePath,
+        ...options
+      }),
     clearStore: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.CLEAR_STORE),
     getStats: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_STATS),
     // Enhanced search with hybrid BM25 + vector fusion

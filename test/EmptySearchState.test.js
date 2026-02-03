@@ -41,7 +41,7 @@ describe('EmptySearchState', () => {
 
       expect(screen.getByText('No files indexed yet')).toBeInTheDocument();
       expect(
-        screen.getByText(/Add folders to your library to start searching/i)
+        screen.getByText(/Add Smart Folders.*eligible for indexing.*rebuild embeddings/i)
       ).toBeInTheDocument();
     });
 

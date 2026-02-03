@@ -37,6 +37,7 @@ import ModelSelectionSection from './settings/ModelSelectionSection';
 import ChatPersonaSection from './settings/ChatPersonaSection';
 import ModelManagementSection from './settings/ModelManagementSection';
 import EmbeddingRebuildSection from './settings/EmbeddingRebuildSection';
+import EmbeddingBehaviorSection from './settings/EmbeddingBehaviorSection';
 import LearningSyncSection from './settings/LearningSyncSection';
 import DefaultLocationsSection from './settings/DefaultLocationsSection';
 import NamingSettingsSection from './settings/NamingSettingsSection';
@@ -722,6 +723,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                     isAddingModel={isAddingModel}
                     onAddModel={addOllamaModel}
                   />
+                  <EmbeddingBehaviorSection settings={settings} setSettings={applySettingsUpdate} />
                   <EmbeddingRebuildSection addNotification={addNotification} />
                   <LearningSyncSection settings={settings} setSettings={applySettingsUpdate} />
                 </Stack>

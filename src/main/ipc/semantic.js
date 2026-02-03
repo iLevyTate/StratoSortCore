@@ -21,6 +21,7 @@ const {
 } = require('../../shared/performanceConstants');
 const { withErrorLogging, withChromaInit, safeHandle } = require('./ipcWrappers');
 const { cosineSimilarity, padOrTruncateVector } = require('../../shared/vectorMath');
+const { validateFileOperationPath } = require('../../shared/pathSanitization');
 const {
   getOllamaEmbeddingModel,
   getOllamaModel,
@@ -1562,18 +1563,30 @@ function registerEmbeddingsIpc(servicesOrParams) {
           }
         }
 
-        // Step 4: Clear existing analysis history (optional - files will be re-analyzed anyway)
+        // Step 4: Optional dry run (no clears/queues)
+        if (options.dryRun === true) {
+          const preview = await smartFolderWatcher.previewReanalyzeAll();
+          return {
+            success: true,
+            dryRun: true,
+            scanned: preview.scanned,
+            watchedFolders: preview.watchedFolders,
+            message: `Dry run complete: ${preview.scanned} files would be queued for reanalysis.`
+          };
+        }
+
+        // Step 5: Clear existing analysis history (optional - files will be re-analyzed anyway)
         const historyService = serviceIntegration?.analysisHistory;
         if (historyService?.clear) {
           logger.info('[EMBEDDINGS] Clearing analysis history...');
           await historyService.clear();
         }
 
-        // Step 5: Clear all embeddings
+        // Step 6: Clear all embeddings
         logger.info('[EMBEDDINGS] Clearing all embeddings...');
         await chromaDbService.resetAll();
 
-        // Step 6: Queue all files for reanalysis with naming option
+        // Step 7: Queue all files for reanalysis with naming option
         logger.info('[EMBEDDINGS] Queueing all files for reanalysis...');
         const result = await smartFolderWatcher.forceReanalyzeAll({
           applyNaming: options.applyNaming === true // Default to false if not specified
@@ -1599,6 +1612,75 @@ function registerEmbeddingsIpc(servicesOrParams) {
         // FIX P0-2: Always release lock when done
         releaseRebuildLock();
       }
+    })
+  );
+
+  /**
+   * Reanalyze File: Forces re-analysis of a single file in a smart folder.
+   */
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.EMBEDDINGS.REANALYZE_FILE,
+    withErrorLogging(logger, async (_event, payload = {}) => {
+      const filePath = typeof payload === 'string' ? payload : payload?.filePath;
+      const applyNaming = payload?.applyNaming;
+
+      if (!filePath) {
+        return {
+          success: false,
+          error: 'filePath is required',
+          errorCode: 'MISSING_FILE_PATH'
+        };
+      }
+
+      const validation = await validateFileOperationPath(filePath, { checkSymlinks: true });
+      if (!validation.valid) {
+        return {
+          success: false,
+          error: validation.error,
+          errorCode: 'INVALID_PATH'
+        };
+      }
+
+      const serviceIntegration =
+        typeof getServiceIntegration === 'function' ? getServiceIntegration() : null;
+      const smartFolderWatcher = serviceIntegration?.smartFolderWatcher;
+      if (!smartFolderWatcher) {
+        return {
+          success: false,
+          error: 'Smart folder watcher not available. Configure smart folders first.',
+          errorCode: 'WATCHER_NOT_AVAILABLE'
+        };
+      }
+
+      if (!smartFolderWatcher.isRunning) {
+        const started = await smartFolderWatcher.start();
+        if (!started) {
+          return {
+            success: false,
+            error: 'Failed to start smart folder watcher. Check smart folder configuration.',
+            errorCode: 'WATCHER_START_FAILED'
+          };
+        }
+      }
+
+      const result = await smartFolderWatcher.reanalyzeFile(validation.normalizedPath, {
+        applyNaming
+      });
+      if (!result?.queued) {
+        return {
+          success: false,
+          error: result?.error || 'File not eligible for reanalysis',
+          errorCode: result?.errorCode || 'REANALYZE_FILE_SKIPPED'
+        };
+      }
+
+      return {
+        success: true,
+        queued: true,
+        filePath: validation.normalizedPath,
+        message: `Queued ${path.basename(validation.normalizedPath)} for reanalysis.`
+      };
     })
   );
 

@@ -84,6 +84,8 @@ const analysisSlice = createSlice({
       const result = {
         ...file,
         analysis,
+        embeddingPolicy: analysis?.embeddingPolicy ?? null,
+        embeddingStatus: analysis?.embeddingStatus ?? null,
         status: FILE_STATES.CATEGORIZED,
         analyzedAt: new Date().toISOString()
       };
@@ -132,6 +134,24 @@ const analysisSlice = createSlice({
           ...state.results[index].analysis,
           ...changes
         };
+      }
+    },
+    updateEmbeddingState: (state, action) => {
+      const { path, embeddingPolicy, embeddingStatus } = action.payload || {};
+      if (!path) return;
+      const index = state.results.findIndex((r) => r.path === path);
+      if (index < 0) return;
+      if (embeddingPolicy !== undefined) {
+        state.results[index].embeddingPolicy = embeddingPolicy;
+        if (state.results[index].analysis) {
+          state.results[index].analysis.embeddingPolicy = embeddingPolicy;
+        }
+      }
+      if (embeddingStatus !== undefined) {
+        state.results[index].embeddingStatus = embeddingStatus;
+        if (state.results[index].analysis) {
+          state.results[index].analysis.embeddingStatus = embeddingStatus;
+        }
       }
     },
     resetAnalysisState: () => {
@@ -207,6 +227,7 @@ export const {
   setAnalysisResults,
   setAnalysisStats,
   updateAnalysisResult,
+  updateEmbeddingState,
   resetAnalysisState,
   resetToSafeState,
   removeAnalysisResultsByPaths,

@@ -546,10 +546,11 @@ class ServiceIntegration {
         const processingState = c.tryResolve(ServiceIds.PROCESSING_STATE);
         const cacheInvalidationBus = c.tryResolve(ServiceIds.CACHE_INVALIDATION_BUS);
 
-        // EmbeddingQueue is not in the container, use direct require
+        // EmbeddingQueue is not in the container, use direct require.
+        // Use the queue manager so path updates apply to all staged queues.
         let embeddingQueue = null;
         try {
-          embeddingQueue = require('../analysis/embeddingQueue');
+          embeddingQueue = require('../analysis/embeddingQueue/queueManager');
         } catch {
           logger.debug('[ServiceIntegration] EmbeddingQueue not available for FilePathCoordinator');
         }

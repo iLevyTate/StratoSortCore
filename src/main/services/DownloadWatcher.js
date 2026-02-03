@@ -21,6 +21,9 @@ const { findContainingSmartFolder } = require('../../shared/folderUtils');
 const { normalizePathForIndex } = require('../../shared/pathSanitization');
 const { getInstance: getFileOperationTracker } = require('../../shared/fileOperationTracker');
 const { isUNCPath } = require('../../shared/crossPlatformUtils');
+const { shouldEmbed } = require('./embedding/embeddingGate');
+const { computeFileChecksum, handleDuplicateMove } = require('../utils/fileDedup');
+const { removeEmbeddingsForPathBestEffort } = require('../ipc/files/embeddingSync');
 
 const logger = typeof createLogger === 'function' ? createLogger('DownloadWatcher') : baseLogger;
 if (typeof createLogger !== 'function' && logger?.setContext) {
@@ -99,6 +102,33 @@ class DownloadWatcher {
     this.restartTimer = null; // Track restart timer for cleanup
     // FIX H-3: Track stopped state to prevent timer callbacks after stop()
     this._stopped = false;
+  }
+
+  async _handleDuplicateMove(source, destination) {
+    if (typeof fs.readdir !== 'function') {
+      return null;
+    }
+    const duplicateResult = await handleDuplicateMove({
+      sourcePath: source,
+      destinationPath: destination,
+      checksumFn: computeFileChecksum,
+      logger,
+      logPrefix: '[DOWNLOAD-WATCHER]',
+      dedupContext: 'downloadWatcher',
+      removeEmbeddings: removeEmbeddingsForPathBestEffort,
+      unlinkFn: fs.unlink
+    });
+    if (!duplicateResult) return null;
+
+    // Record operations to avoid reprocessing
+    getFileOperationTracker().recordOperation(
+      duplicateResult.destination,
+      'move',
+      'downloadWatcher'
+    );
+    getFileOperationTracker().recordOperation(source, 'delete', 'downloadWatcher');
+
+    return { skipped: true, destination: duplicateResult.destination };
   }
 
   async start() {
@@ -568,10 +598,7 @@ class DownloadWatcher {
       }
 
       if (analysisResult) {
-        // 1. Embed for search
-        await this._embedAnalyzedFile(filePath, analysisResult);
-
-        // 2. Record to analysis history for conversations and queries
+        // 1. Record to analysis history for conversations and queries
         if (this.analysisHistoryService) {
           try {
             await recordAnalysisResult({
@@ -589,6 +616,9 @@ class DownloadWatcher {
             });
           }
         }
+
+        // 2. Embed for search (after history is recorded for per-file policy overrides)
+        await this._embedAnalyzedFile(filePath, analysisResult);
 
         // 3. Apply naming convention if enabled (rename in place)
         const settings = await this.settingsService.load();
@@ -896,6 +926,11 @@ class DownloadWatcher {
     const RETRY_DELAY_MS = 2000; // 2 seconds between retries
 
     try {
+      const duplicateResult = await this._handleDuplicateMove(source, destination);
+      if (duplicateResult?.skipped) {
+        return;
+      }
+
       await fs.rename(source, destination);
       // FIX: Record operation to prevent other watchers from re-processing this file
       getFileOperationTracker().recordOperation(destination, 'move', 'downloadWatcher');
@@ -986,6 +1021,11 @@ class DownloadWatcher {
    */
   async _moveFileWithConflictHandling(source, destPath, extname) {
     try {
+      const duplicateResult = await this._handleDuplicateMove(source, destPath);
+      if (duplicateResult?.skipped) {
+        return;
+      }
+
       await fs.rename(source, destPath);
       // Record operation to prevent other watchers from re-processing this file
       getFileOperationTracker().recordOperation(destPath, 'move', 'downloadWatcher');
@@ -1068,6 +1108,32 @@ class DownloadWatcher {
     // Skip if dependencies not available
     if (!this.folderMatcher || !this.chromaDbService) {
       logger.debug('[DOWNLOAD-WATCHER] Skipping embedding - services not available');
+      return;
+    }
+
+    // Respect global embedding timing/policy. DownloadWatcher embeds after final placement.
+    // If we have a persisted per-file override, apply it here.
+    let policyOverride = null;
+    try {
+      const entry = await this.analysisHistoryService?.getAnalysisByPath?.(filePath);
+      policyOverride = entry?.embedding?.policy || null;
+    } catch {
+      // Non-fatal
+    }
+    const gate = await shouldEmbed({ stage: 'final', policyOverride });
+    if (!gate.shouldEmbed) {
+      logger.debug('[DOWNLOAD-WATCHER] Skipping embedding by policy/timing gate', {
+        timing: gate.timing,
+        policy: gate.policy,
+        filePath
+      });
+      try {
+        await this.analysisHistoryService?.updateEmbeddingStateByPath?.(filePath, {
+          status: 'skipped'
+        });
+      } catch {
+        // Non-fatal
+      }
       return;
     }
 
@@ -1181,6 +1247,16 @@ class DownloadWatcher {
       });
 
       logger.debug('[DOWNLOAD-WATCHER] Embedded file:', filePath);
+
+      // Persist done state (direct upsert).
+      try {
+        await this.analysisHistoryService?.updateEmbeddingStateByPath?.(filePath, {
+          status: 'done',
+          model: embedding.model || null
+        });
+      } catch {
+        // Non-fatal
+      }
     } catch (embedError) {
       // Non-critical - log but don't fail the operation
       logger.warn('[DOWNLOAD-WATCHER] Failed to embed file:', {

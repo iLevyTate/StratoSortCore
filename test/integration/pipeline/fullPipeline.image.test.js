@@ -58,6 +58,30 @@ jest.mock('sharp', () => jest.fn(() => mockSharpInstance));
 // Mock exif-reader
 jest.mock('exif-reader', () => jest.fn(() => null));
 
+// Mock folderUtils to force a smart folder match for fixture paths
+jest.mock('../../../src/shared/folderUtils', () => {
+  const actual = jest.requireActual('../../../src/shared/folderUtils');
+  return {
+    ...actual,
+    findContainingSmartFolder: jest.fn((filePath, smartFolders) => {
+      const forced = Array.isArray(smartFolders)
+        ? smartFolders.find((folder) => folder?.name === 'Fixtures')
+        : null;
+      if (forced) return forced;
+      return actual.findContainingSmartFolder(filePath, smartFolders);
+    })
+  };
+});
+
+// Mock embedding gate to keep analysis-stage embedding enabled
+jest.mock('../../../src/main/services/embedding/embeddingGate', () => ({
+  shouldEmbed: jest.fn().mockResolvedValue({
+    shouldEmbed: true,
+    timing: 'during_analysis',
+    policy: 'embed'
+  })
+}));
+
 // Mock ollamaDetection
 jest.mock('../../../src/main/utils/ollamaDetection', () => ({
   isOllamaRunning: jest.fn().mockResolvedValue(true),
@@ -138,19 +162,6 @@ jest.mock('../../../src/main/utils/jsonRepair', () => ({
   })
 }));
 
-// Mock ServiceContainer
-jest.mock('../../../src/main/services/ServiceContainer', () => ({
-  container: {
-    tryResolve: jest.fn(() => ({
-      initialize: jest.fn().mockResolvedValue(undefined),
-      isOnline: true
-    }))
-  },
-  ServiceIds: {
-    CHROMA_DB: 'chromadb'
-  }
-}));
-
 // Mock FolderMatchingService
 jest.mock('../../../src/main/services/FolderMatchingService', () => {
   const mockInstance = {
@@ -171,12 +182,6 @@ jest.mock('../../../src/main/services/FolderMatchingService', () => {
   MockFolderMatchingService._mockInstance = mockInstance;
   return MockFolderMatchingService;
 });
-
-// Mock embeddingQueue
-jest.mock('../../../src/main/analysis/embeddingQueue', () => ({
-  enqueue: jest.fn().mockReturnValue(undefined),
-  flush: jest.fn().mockResolvedValue(undefined)
-}));
 
 // Mock ServiceContainer for semanticFolderMatcher resolution
 jest.mock('../../../src/main/services/ServiceContainer', () => {
@@ -214,7 +219,7 @@ const sharp = require('sharp');
 
 // Import mocked modules for assertions
 const FolderMatchingService = require('../../../src/main/services/FolderMatchingService');
-const embeddingQueue = require('../../../src/main/analysis/embeddingQueue');
+const { analysisQueue } = require('../../../src/main/analysis/embeddingQueue/stageQueues');
 const { isOllamaRunningWithRetry } = require('../../../src/main/utils/ollamaDetection');
 
 // Get mock instances
@@ -258,6 +263,16 @@ describe('Image Files Full Pipeline - REAL FILE Integration Tests', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    if (!analysisQueue.enqueue?._isMockFunction) {
+      jest.spyOn(analysisQueue, 'enqueue').mockResolvedValue(undefined);
+    } else {
+      analysisQueue.enqueue.mockResolvedValue(undefined);
+    }
+    if (!analysisQueue.flush?._isMockFunction) {
+      jest.spyOn(analysisQueue, 'flush').mockResolvedValue(undefined);
+    } else {
+      analysisQueue.flush.mockResolvedValue(undefined);
+    }
 
     // Reset singletons if available
     if (typeof resetSingletons === 'function') {
@@ -412,7 +427,7 @@ describe('Image Files Full Pipeline - REAL FILE Integration Tests', () => {
       const pngFixture = TEST_FIXTURE_FILES.simplePng;
       await analyzeImageFile(pngFixture.path, smartFolders);
 
-      expect(embeddingQueue.enqueue).toHaveBeenCalledWith(
+      expect(analysisQueue.enqueue).toHaveBeenCalledWith(
         expect.objectContaining({
           id: expect.stringContaining('image:'),
           vector: expect.any(Array)
@@ -463,7 +478,7 @@ describe('Image Files Full Pipeline - REAL FILE Integration Tests', () => {
     test('calls embeddingQueue.flush()', async () => {
       await flushAllEmbeddings();
 
-      expect(embeddingQueue.flush).toHaveBeenCalled();
+      expect(analysisQueue.flush).toHaveBeenCalled();
     });
   });
 });

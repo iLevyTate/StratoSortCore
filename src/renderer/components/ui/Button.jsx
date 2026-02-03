@@ -15,6 +15,7 @@ const VARIANT_TO_CLASS = {
 
 // Size variants - sm size uses px-3 py-1.5 for compact buttons in file action rows
 const SIZE_TO_CLASS = {
+  xs: 'text-xs px-2 py-1',
   sm: 'text-sm px-3 py-1.5',
   md: 'text-base px-6 py-2.5',
   lg: 'text-lg px-8 py-3'
@@ -110,7 +111,7 @@ Button.propTypes = {
     'outline',
     'subtle'
   ]),
-  size: PropTypes.oneOf(['sm', 'md', 'lg']),
+  size: PropTypes.oneOf(['xs', 'sm', 'md', 'lg']),
   className: PropTypes.string,
   children: PropTypes.node,
   type: PropTypes.string,

@@ -8,6 +8,7 @@
  */
 
 const { createLogger } = require('../../shared/logger');
+const path = require('path');
 const {
   cosineSimilarity,
   squaredEuclideanDistance,
@@ -15,8 +16,124 @@ const {
 } = require('../../shared/vectorMath');
 const { getOllamaModel } = require('../ollamaUtils');
 const { AI_DEFAULTS } = require('../../shared/constants');
+const { FILE_TYPE_CATEGORIES } = require('./autoOrganize/fileTypeUtils');
 
 const logger = createLogger('ClusteringService');
+// -----------------------------------------------------------------------------
+// Distinctive term extraction (for "topic" insights)
+// -----------------------------------------------------------------------------
+const STOPWORDS = new Set(
+  [
+    // Common English stopwords
+    'a',
+    'an',
+    'and',
+    'are',
+    'as',
+    'at',
+    'be',
+    'but',
+    'by',
+    'for',
+    'from',
+    'has',
+    'have',
+    'he',
+    'her',
+    'hers',
+    'him',
+    'his',
+    'i',
+    'if',
+    'in',
+    'into',
+    'is',
+    'it',
+    'its',
+    'me',
+    'my',
+    'no',
+    'not',
+    'of',
+    'on',
+    'or',
+    'our',
+    'ours',
+    'she',
+    'so',
+    'that',
+    'the',
+    'their',
+    'theirs',
+    'them',
+    'then',
+    'there',
+    'these',
+    'they',
+    'this',
+    'those',
+    'to',
+    'too',
+    'up',
+    'us',
+    'was',
+    'we',
+    'were',
+    'what',
+    'when',
+    'where',
+    'which',
+    'who',
+    'why',
+    'with',
+    'you',
+    'your',
+    'yours',
+    // Generic file/document words (cluster labels often regress to these)
+    'file',
+    'files',
+    'document',
+    'documents',
+    'image',
+    'images',
+    'photo',
+    'photos',
+    'scan',
+    'scans',
+    'note',
+    'notes',
+    'report',
+    'reports',
+    'draft',
+    'final',
+    'copy',
+    'version',
+    'v',
+    'tmp',
+    'temp',
+    'misc',
+    'miscellaneous',
+    'untitled',
+    'unknown',
+    // Time filler
+    'today',
+    'yesterday',
+    'tomorrow'
+  ].map((w) => String(w).toLowerCase())
+);
+
+const FILE_TYPE_STOPWORDS = (() => {
+  try {
+    const categories = Object.keys(FILE_TYPE_CATEGORIES || {}).map((k) => String(k).toLowerCase());
+    const extensions = Object.values(FILE_TYPE_CATEGORIES || {})
+      .flatMap((list) => (Array.isArray(list) ? list : []))
+      .map((ext) => String(ext).toLowerCase());
+    return new Set([...categories, ...extensions]);
+  } catch {
+    return new Set();
+  }
+})();
+
 /**
  * Default clustering options
  */
@@ -561,6 +678,113 @@ class ClusteringService {
   }
 
   /**
+   * Tokenize and score distinctive "topic" terms for a member.
+   *
+   * This is intentionally deterministic and bounded. It does not rely on LLM output.
+   *
+   * @private
+   * @param {Object} member
+   * @returns {{ tokenSet: Set<string>, tokenCounts: Map<string, number> }}
+   */
+  _extractMemberTermSignals(member) {
+    const tokenCounts = new Map();
+    const tokenSet = new Set();
+
+    const addTokens = (text, weight = 1) => {
+      if (!text) return;
+      const s = String(text);
+      // Keep extraction bounded to avoid accidental O(N^2) behavior on huge strings.
+      const limited = s.length > 5000 ? s.slice(0, 5000) : s;
+      const matches = limited.toLowerCase().match(/[a-z0-9]+/g) || [];
+
+      // Cap tokens per field to avoid pathological filenames/tags.
+      const MAX_FIELD_TOKENS = 80;
+      for (let i = 0; i < matches.length && i < MAX_FIELD_TOKENS; i++) {
+        const raw = matches[i];
+        if (!raw || raw.length < 3) continue;
+        if (/^\d+$/.test(raw)) continue; // digits-only tokens are rarely helpful as topics
+        if (STOPWORDS.has(raw)) continue;
+        if (FILE_TYPE_STOPWORDS.has(raw)) continue;
+
+        // Normalize common underscore/camel artifacts already handled by regex; just keep.
+        tokenSet.add(raw);
+        tokenCounts.set(raw, (tokenCounts.get(raw) || 0) + weight);
+      }
+    };
+
+    const meta = member?.metadata || {};
+    const name = meta.name || '';
+    const subject = meta.subject || '';
+    const summary = meta.summary || meta.description || '';
+    const category = meta.category || '';
+
+    // Tags are stored as JSON string in Chroma; normalize to array of strings.
+    let tags = meta.tags || [];
+    if (typeof tags === 'string' && tags.trim()) {
+      try {
+        tags = JSON.parse(tags);
+      } catch {
+        tags = tags.split(',').map((t) => t.trim());
+      }
+    }
+    if (!Array.isArray(tags)) tags = [];
+
+    // Weights (simple, deterministic): tags > subject > summary > name/category.
+    addTokens(tags.join(' '), 3);
+    addTokens(subject, 2);
+    addTokens(summary, 1);
+    addTokens(name, 1);
+    addTokens(category, 1);
+
+    return { tokenSet, tokenCounts };
+  }
+
+  /**
+   * Compute TF-IDF-like distinctive terms for a cluster.
+   *
+   * score(term) = tf(term) * log((N+1)/(df(term)+1))
+   *
+   * @private
+   * @param {Array} members
+   * @param {Map<string, { tokenSet:Set<string>, tokenCounts:Map<string,number> }>} memberSignals
+   * @param {Map<string, number>} globalDf
+   * @param {number} totalDocs
+   * @param {number} maxTerms
+   * @returns {string[]}
+   */
+  _computeDistinctiveTermsForCluster(members, memberSignals, globalDf, totalDocs, maxTerms = 10) {
+    if (!Array.isArray(members) || members.length === 0) return [];
+    if (!(globalDf instanceof Map) || !Number.isFinite(totalDocs) || totalDocs <= 0) return [];
+
+    const tf = new Map();
+    for (const m of members) {
+      const key = m?.id;
+      const signals = key ? memberSignals.get(key) : null;
+      const counts = signals?.tokenCounts;
+      if (!(counts instanceof Map)) continue;
+      for (const [term, count] of counts.entries()) {
+        tf.set(term, (tf.get(term) || 0) + count);
+      }
+    }
+
+    const scored = [];
+    for (const [term, count] of tf.entries()) {
+      const df = globalDf.get(term) || 0;
+      const idf = Math.log((totalDocs + 1) / (df + 1));
+      const score = count * idf;
+      if (!Number.isFinite(score) || score <= 0) continue;
+      scored.push({ term, score });
+    }
+
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.term.localeCompare(b.term);
+    });
+
+    return scored.slice(0, Math.max(0, Math.min(50, maxTerms))).map((s) => s.term);
+  }
+
+  /**
    * Generate a label for a single cluster using LLM
    * Uses metadata as context to help LLM generate better names
    * @private
@@ -771,10 +995,102 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
    * @returns {Array} Clusters with labels, metadata, and member info
    */
   getClustersForGraph() {
+    // Precompute global document-frequency across all cluster members so we can
+    // compute *distinctive* (not just frequent) terms per cluster.
+    const memberSignals = new Map();
+    const globalDf = new Map();
+
+    for (const cluster of this.clusters) {
+      const members = Array.isArray(cluster?.members) ? cluster.members : [];
+      for (const m of members) {
+        const id = m?.id;
+        if (!id || typeof id !== 'string') continue;
+        if (memberSignals.has(id)) continue;
+        const signals = this._extractMemberTermSignals(m);
+        memberSignals.set(id, signals);
+        // Update global DF once per member.
+        for (const term of signals.tokenSet) {
+          globalDf.set(term, (globalDf.get(term) || 0) + 1);
+        }
+      }
+    }
+    const totalDocs = memberSignals.size;
+
     const parseDateCandidateMs = (value) => {
       if (!value) return null;
       const ms = Date.parse(String(value));
       return Number.isFinite(ms) ? ms : null;
+    };
+
+    const getMemberPath = (member) => {
+      const metaPath = member?.metadata?.path;
+      if (typeof metaPath === 'string' && metaPath.trim()) return metaPath;
+      const id = member?.id;
+      if (typeof id !== 'string') return '';
+      return id.replace(/^(file|image):/, '');
+    };
+
+    const getExtensionKey = (filePath) => {
+      const ext = (path.extname(String(filePath || '')) || '').toLowerCase();
+      return ext.replace(/^\./, '');
+    };
+
+    const getFileCategoryKey = (extKey) => {
+      const ext = String(extKey || '').toLowerCase();
+      if (!ext) return 'other';
+
+      // Match using the same canonical extension lists as auto-organize.
+      if (FILE_TYPE_CATEGORIES.documents.includes(ext)) return 'document';
+      if (FILE_TYPE_CATEGORIES.spreadsheets.includes(ext)) return 'spreadsheet';
+      if (FILE_TYPE_CATEGORIES.presentations.includes(ext)) return 'presentation';
+      if (FILE_TYPE_CATEGORIES.images.includes(ext)) return 'image';
+      if (FILE_TYPE_CATEGORIES.videos.includes(ext)) return 'video';
+      if (FILE_TYPE_CATEGORIES.audio.includes(ext)) return 'audio';
+      if (FILE_TYPE_CATEGORIES.code.includes(ext)) return 'code';
+      if (FILE_TYPE_CATEGORIES.archives.includes(ext)) return 'archive';
+
+      return 'other';
+    };
+
+    const getFileCategoryLabel = (categoryKey) => {
+      switch (categoryKey) {
+        case 'document':
+          return 'Document';
+        case 'spreadsheet':
+          return 'Spreadsheet';
+        case 'presentation':
+          return 'Presentation';
+        case 'image':
+          return 'Image';
+        case 'video':
+          return 'Video';
+        case 'audio':
+          return 'Audio';
+        case 'code':
+          return 'Code';
+        case 'archive':
+          return 'Archive';
+        default:
+          return 'Other';
+      }
+    };
+
+    const getMostFrequentKey = (items) => {
+      const counts = new Map();
+      for (const item of items) {
+        const key = String(item || '').trim();
+        if (!key) continue;
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+      let bestKey = null;
+      let bestCount = 0;
+      for (const [key, count] of counts.entries()) {
+        if (count > bestCount) {
+          bestKey = key;
+          bestCount = count;
+        }
+      }
+      return bestKey;
     };
 
     const getMemberTimestampMs = (member) => {
@@ -790,6 +1106,25 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
 
     return this.clusters.map((c) => {
       const memberIds = c.members.map((m) => m.id);
+
+      // Derive a dominant file-category bucket for "Type (file category)" clustering in UI.
+      const fileCategoryKeys = c.members.map((m) =>
+        getFileCategoryKey(getExtensionKey(getMemberPath(m)))
+      );
+      const dominantFileCategoryKey = getMostFrequentKey(fileCategoryKeys) || 'other';
+
+      // Derive a dominant folder label for "Tag/Folder" clustering in UI.
+      // Use parent directory base name to avoid leaking full paths into cluster labels.
+      const parentFolderNames = c.members
+        .map((m) => {
+          const p = getMemberPath(m);
+          if (!p) return '';
+          const dir = path.dirname(p);
+          const base = path.basename(dir);
+          return base || '';
+        })
+        .filter(Boolean);
+      const dominantFolderName = getMostFrequentKey(parentFolderNames) || null;
 
       // Derive a time range from member metadata when available.
       const memberTimestamps = c.members
@@ -814,6 +1149,18 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
             })()
           : null;
 
+      // Distinctive terms used for cluster explanation and bridge “why”.
+      const topTerms = this._computeDistinctiveTermsForCluster(
+        c.members,
+        memberSignals,
+        globalDf,
+        totalDocs,
+        10
+      );
+      // Cache on the cluster object so other methods (e.g., cross-cluster edges) can reuse it
+      // without recomputing.
+      c.topTerms = topTerms;
+
       return {
         id: `cluster:${c.id}`,
         clusterId: c.id,
@@ -825,6 +1172,11 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
         reason: c.labelReason || '',
         dominantCategory: c.dominantCategory || null,
         commonTags: c.commonTags || [],
+        topTerms,
+        // Additional metadata for renderer-side cluster modes
+        dominantFileCategory: dominantFileCategoryKey,
+        dominantFileCategoryLabel: getFileCategoryLabel(dominantFileCategoryKey),
+        dominantFolderName,
         timeRange
       };
     });
@@ -996,16 +1348,39 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
         const similarity = cosineSimilarity(this.centroids[i], this.centroids[j]);
 
         if (similarity >= threshold) {
+          const clusterA = this.clusters.find((c) => c.id === i);
+          const clusterB = this.clusters.find((c) => c.id === j);
+
+          const pickTerms = (cluster) => {
+            const t =
+              Array.isArray(cluster?.topTerms) && cluster.topTerms.length > 0
+                ? cluster.topTerms
+                : Array.isArray(cluster?.commonTags) && cluster.commonTags.length > 0
+                  ? cluster.commonTags
+                  : [];
+            return t.filter((x) => typeof x === 'string' && x.trim().length > 0);
+          };
+
+          const termsA = pickTerms(clusterA);
+          const termsB = pickTerms(clusterB);
+          const termsBSet = new Set(termsB.map((t) => t.toLowerCase()));
+          const sharedTerms = [];
+          for (const t of termsA) {
+            if (termsBSet.has(t.toLowerCase())) {
+              sharedTerms.push(t);
+              if (sharedTerms.length >= 3) break;
+            }
+          }
+
           const edge = {
             source: `cluster:${i}`,
             target: `cluster:${j}`,
             similarity,
-            type: 'cross_cluster'
+            type: 'cross_cluster',
+            sharedTerms
           };
 
           if (includeBridgeFiles) {
-            const clusterA = this.clusters.find((c) => c.id === i);
-            const clusterB = this.clusters.find((c) => c.id === j);
             const bridgeFiles = this._buildBridgeFilesForEdge(
               clusterA,
               clusterB,

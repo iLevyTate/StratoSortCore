@@ -41,6 +41,16 @@ const DEFAULT_SETTINGS = {
   textModel: DEFAULT_AI_MODELS.TEXT_ANALYSIS,
   visionModel: DEFAULT_AI_MODELS.IMAGE_ANALYSIS,
   embeddingModel: DEFAULT_AI_MODELS.EMBEDDING,
+  // Embedding workflow controls
+  // - during_analysis: embed while analyzing (current/default)
+  // - after_organize: defer file embeddings until after moves/renames
+  // - manual: never auto-embed; user can rebuild manually
+  embeddingTiming: 'during_analysis',
+  // Default policy for newly analyzed files (per-file overrides can be set later)
+  // - embed: normal local embeddings
+  // - web_only: do not embed locally (intended for web-search-only workflows)
+  // - skip: do not embed
+  defaultEmbeddingPolicy: 'embed',
   chatPersona: DEFAULT_CHAT_PERSONA_ID,
   chatResponseMode: 'fast',
   // Dependency lifecycle management (user consent required)

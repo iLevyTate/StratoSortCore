@@ -28,7 +28,7 @@ export function useFileActions({
   phaseData
 }) {
   /**
-   * Handle file action (open, reveal, delete)
+   * Handle file action (open, reveal, delete, reanalyze)
    */
   const handleFileAction = useCallback(
     async (action, filePath) => {
@@ -115,6 +115,30 @@ export function useFileActions({
               ? `Removed from queue: ${fileName} (cleanup incomplete)`
               : `Removed from queue: ${fileName}`;
             addNotification(message, cleanupWarning ? 'warning' : 'info', 2000, 'file-actions');
+            break;
+          }
+
+          case 'reanalyze': {
+            if (!window.electronAPI?.embeddings?.reanalyzeFile) {
+              addNotification('Reanalysis unavailable', 'error', 3000, 'file-actions');
+              return;
+            }
+            const result = await window.electronAPI.embeddings.reanalyzeFile(filePath);
+            if (result?.success) {
+              addNotification(
+                `Reanalysis queued: ${filePath.split(/[\\/]/).pop()}`,
+                'success',
+                2500,
+                'file-actions'
+              );
+            } else {
+              addNotification(
+                result?.error || 'Reanalysis not eligible for this file',
+                'warning',
+                4000,
+                'file-actions'
+              );
+            }
             break;
           }
 

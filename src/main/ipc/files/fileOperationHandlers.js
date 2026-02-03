@@ -138,7 +138,16 @@ async function syncEmbeddingsBestEffort({ sourcePath, destPath, log, context }) 
   const timeoutMs = 5000;
   const label = context ? `Embedding sync (${context})` : 'Embedding sync';
   try {
-    await withTimeout(syncEmbeddingForMove({ sourcePath, destPath, log }), timeoutMs, label);
+    await withTimeout(
+      syncEmbeddingForMove({
+        sourcePath,
+        destPath,
+        operation: context === 'copy' ? 'copy' : 'move',
+        log
+      }),
+      timeoutMs,
+      label
+    );
   } catch (syncErr) {
     log.debug(`[FILE-OPS] ${label} failed (non-fatal):`, {
       error: syncErr.message

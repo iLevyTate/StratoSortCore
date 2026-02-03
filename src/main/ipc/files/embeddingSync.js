@@ -4,7 +4,9 @@ const { getSemanticFileId, isImagePath } = require('../../../shared/fileIdUtils'
 const { buildEmbeddingSummary } = require('../../analysis/embeddingSummary');
 const { findContainingSmartFolder } = require('../../../shared/folderUtils');
 const { getPathVariants } = require('../../utils/fileIdUtils');
-const embeddingQueue = require('../../analysis/embeddingQueue');
+const { organizeQueue } = require('../../analysis/embeddingQueue/stageQueues');
+const embeddingQueueManager = require('../../analysis/embeddingQueue/queueManager');
+const { shouldEmbed } = require('../../services/embedding/embeddingGate');
 
 const logger =
   typeof createLogger === 'function' ? createLogger('IPC:Files:EmbeddingSync') : baseLogger;
@@ -112,8 +114,8 @@ function buildEmbeddingMeta({
 async function removeEmbeddingsForPath(filePath, services, log = logger) {
   if (!filePath) return { removed: 0 };
 
-  const embeddingQueueRemoved = embeddingQueue?.removeByFilePath
-    ? embeddingQueue.removeByFilePath(filePath)
+  const embeddingQueueRemoved = embeddingQueueManager?.removeByFilePath
+    ? embeddingQueueManager.removeByFilePath(filePath)
     : 0;
 
   const chromaDbService = services.chromaDbService;
@@ -183,7 +185,19 @@ async function removeEmbeddingsForPath(filePath, services, log = logger) {
   }
 }
 
-async function syncEmbeddingForMove({ sourcePath, destPath, smartFolders, log = logger }) {
+async function removeEmbeddingsForPathBestEffort(filePath, log = logger) {
+  if (!filePath) return { removed: 0 };
+  const services = resolveServices();
+  return removeEmbeddingsForPath(filePath, services, log);
+}
+
+async function syncEmbeddingForMove({
+  sourcePath,
+  destPath,
+  smartFolders,
+  operation = 'move',
+  log = logger
+}) {
   if (!destPath) return { action: 'skipped', reason: 'missing-dest' };
 
   const services = resolveServices();
@@ -191,8 +205,18 @@ async function syncEmbeddingForMove({ sourcePath, destPath, smartFolders, log = 
 
   if (!smartFolder) {
     await removeEmbeddingsForPath(destPath, services, log);
-    if (sourcePath && sourcePath !== destPath) {
+    // IMPORTANT: For copies, never remove the source file's embeddings.
+    if (operation !== 'copy' && sourcePath && sourcePath !== destPath) {
       await removeEmbeddingsForPath(sourcePath, services, log);
+    }
+    // Persist embedding state: file is not eligible for local embeddings outside smart folders.
+    try {
+      const hs = services.analysisHistoryService;
+      if (hs?.updateEmbeddingStateByPath) {
+        await hs.updateEmbeddingStateByPath(destPath, { status: 'skipped' });
+      }
+    } catch {
+      // Non-fatal
     }
     return { action: 'removed', reason: 'not-smart-folder' };
   }
@@ -211,6 +235,23 @@ async function syncEmbeddingForMove({ sourcePath, destPath, smartFolders, log = 
     return { action: 'skipped', reason: 'no-analysis' };
   }
 
+  // Respect global embedding timing/policy. This is the "final" stage (post-move).
+  // We intentionally keep this enabled for both 'during_analysis' and 'after_organize'
+  // to ensure files that only become eligible after the move still get embedded.
+  const policyOverride = entry?.embedding?.policy || null;
+  const gate = await shouldEmbed({ stage: 'final', policyOverride });
+  if (!gate.shouldEmbed) {
+    // Persist skipped state for observability.
+    try {
+      if (analysisHistoryService?.updateEmbeddingStateByPath) {
+        await analysisHistoryService.updateEmbeddingStateByPath(destPath, { status: 'skipped' });
+      }
+    } catch {
+      // Non-fatal
+    }
+    return { action: 'skipped', reason: `disabled:${gate.timing}:${gate.policy}` };
+  }
+
   const analysis = entry.analysis || {};
   const fileExtension = path.extname(destPath).toLowerCase();
   const type = isImagePath(destPath) || analysis.type === 'image' ? 'image' : 'document';
@@ -225,16 +266,6 @@ async function syncEmbeddingForMove({ sourcePath, destPath, smartFolders, log = 
     return { action: 'skipped', reason: 'empty-summary' };
   }
 
-  const folderMatchingService = services.folderMatchingService;
-  if (!folderMatchingService?.embedText) {
-    return { action: 'skipped', reason: 'matcher-unavailable' };
-  }
-
-  const embedding = await folderMatchingService.embedText(embeddingSummary.text);
-  if (!embedding?.vector || !Array.isArray(embedding.vector) || embedding.vector.length === 0) {
-    return { action: 'skipped', reason: 'no-vector' };
-  }
-
   const meta = buildEmbeddingMeta({
     analysis,
     entry,
@@ -245,18 +276,92 @@ async function syncEmbeddingForMove({ sourcePath, destPath, smartFolders, log = 
     smartFolder
   });
 
-  await embeddingQueue.enqueue({
-    id: getSemanticFileId(destPath),
+  const destId = getSemanticFileId(destPath);
+  const sourceId = sourcePath ? getSemanticFileId(sourcePath) : null;
+
+  // Optimization: if an embedding already exists for this destination ID, update metadata
+  // in-place via ChromaDB (avoids recomputing vectors during moves).
+  const chromaDbService = services.chromaDbService;
+  if (chromaDbService?.updateFilePaths) {
+    try {
+      await chromaDbService.initialize?.();
+      if (chromaDbService.isOnline) {
+        const oldId = operation === 'copy' || !sourceId ? destId : sourceId;
+        const updated = await chromaDbService.updateFilePaths([
+          { oldId, newId: destId, newMeta: meta }
+        ]);
+        if (updated > 0) {
+          try {
+            await analysisHistoryService?.updateEmbeddingStateByPath?.(destPath, {
+              status: 'done'
+            });
+          } catch {
+            // Non-fatal
+          }
+          // For moves/renames, ensure we don't leave behind stale embeddings for the old path.
+          // For copies, the source should remain indexed.
+          if (operation !== 'copy' && sourcePath && sourcePath !== destPath) {
+            try {
+              await removeEmbeddingsForPath(sourcePath, services, log);
+            } catch {
+              // Non-fatal
+            }
+          }
+          return { action: 'updated_meta', smartFolder: smartFolder.name };
+        }
+      }
+    } catch (metaUpdateErr) {
+      log.debug('[EmbeddingSync] Metadata-only update failed (will re-embed)', {
+        error: metaUpdateErr?.message
+      });
+    }
+  }
+
+  const folderMatchingService = services.folderMatchingService;
+  if (!folderMatchingService?.embedText) {
+    return { action: 'skipped', reason: 'matcher-unavailable' };
+  }
+
+  const embedding = await folderMatchingService.embedText(embeddingSummary.text);
+  if (!embedding?.vector || !Array.isArray(embedding.vector) || embedding.vector.length === 0) {
+    return { action: 'skipped', reason: 'no-vector' };
+  }
+
+  await organizeQueue.enqueue({
+    id: destId,
     vector: embedding.vector,
     model: embedding.model,
     meta,
     updatedAt: new Date().toISOString()
   });
 
+  // Persist pending state (queue-backed embedding).
+  try {
+    if (analysisHistoryService?.updateEmbeddingStateByPath) {
+      await analysisHistoryService.updateEmbeddingStateByPath(destPath, {
+        status: 'pending',
+        model: embedding.model || null
+      });
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  // For moves/renames, ensure we don't leave behind stale embeddings for the old path.
+  // For copies, the source should remain indexed.
+  if (operation !== 'copy' && sourcePath && sourcePath !== destPath) {
+    try {
+      await removeEmbeddingsForPath(sourcePath, services, log);
+    } catch {
+      // Non-fatal
+    }
+  }
+
   return { action: 'enqueued', smartFolder: smartFolder.name };
 }
 
 module.exports = {
   syncEmbeddingForMove,
-  removeEmbeddingsForPath
+  removeEmbeddingsForPath,
+  removeEmbeddingsForPathBestEffort
 };

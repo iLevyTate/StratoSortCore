@@ -487,18 +487,47 @@ function EmptyEmbeddingsBanner({
   onRebuildFolders,
   onRebuildFiles,
   isRebuildingFolders,
-  isRebuildingFiles
+  isRebuildingFiles,
+  embeddingConfig,
+  onOpenSettings
 }) {
+  const timing = embeddingConfig?.timing || null;
+  const policy = embeddingConfig?.policy || null;
+  const isManual = timing === 'manual';
+  const isPolicyDisabled = policy === 'skip' || policy === 'web_only';
+  const isDeferred = timing === 'after_organize';
+
+  const title = isManual
+    ? 'Embeddings are set to manual'
+    : isPolicyDisabled
+      ? 'Embeddings are disabled'
+      : isDeferred
+        ? 'Embeddings are deferred until after organize'
+        : 'No embeddings yet';
+
+  const description = isManual
+    ? 'Knowledge OS search needs local embeddings, but your settings are set to Manual only. Turn automatic embedding back on (Settings → Embedding behavior), then rebuild to populate the index.'
+    : isPolicyDisabled
+      ? `Your default embedding policy is set to "${policy}". Knowledge OS won’t create local embeddings, so semantic search will return no results.`
+      : isDeferred
+        ? 'Your embedding timing is set to After organize/move. Files will be indexed once they are moved into Smart Folders. You can also run a rebuild now.'
+        : 'Knowledge OS requires file embeddings. If you already analyzed files in the past but this number is still zero, your search index was likely reset and needs a one-time rebuild from analysis history.';
+
   return (
     <StateMessage
       icon={Sparkles}
       tone="warning"
       size="md"
       align="left"
-      title="No embeddings yet"
-      description="Knowledge OS requires file embeddings. If you already analyzed files in the past but this number is still zero, your search index was likely reset and needs a one-time rebuild from analysis history."
+      title={title}
+      description={description}
       action={
         <div className="flex flex-wrap gap-2">
+          {onOpenSettings && (isManual || isPolicyDisabled || isDeferred) && (
+            <Button variant="secondary" size="sm" onClick={onOpenSettings}>
+              Open Settings
+            </Button>
+          )}
           <Button
             variant="secondary"
             size="sm"
@@ -522,7 +551,12 @@ EmptyEmbeddingsBanner.propTypes = {
   onRebuildFolders: PropTypes.func.isRequired,
   onRebuildFiles: PropTypes.func.isRequired,
   isRebuildingFolders: PropTypes.bool.isRequired,
-  isRebuildingFiles: PropTypes.bool.isRequired
+  isRebuildingFiles: PropTypes.bool.isRequired,
+  embeddingConfig: PropTypes.shape({
+    timing: PropTypes.oneOf(['during_analysis', 'after_organize', 'manual']),
+    policy: PropTypes.oneOf(['embed', 'skip', 'web_only'])
+  }),
+  onOpenSettings: PropTypes.func
 };
 EmptyEmbeddingsBanner.displayName = 'EmptyEmbeddingsBanner';
 
@@ -636,6 +670,7 @@ export default function UnifiedSearchModal({
   const [stats, setStats] = useState(null);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [hasLoadedStats, setHasLoadedStats] = useState(false);
+  const [embeddingConfig, setEmbeddingConfig] = useState(null);
   const [isRebuildingFolders, setIsRebuildingFolders] = useState(false);
   const [isRebuildingFiles, setIsRebuildingFiles] = useState(false);
   const [error, setError] = useState('');
@@ -879,6 +914,11 @@ export default function UnifiedSearchModal({
   // Focus mode state - for local graph view
   const [focusNodeId, setFocusNodeId] = useState(null);
   const [focusDepth, setFocusDepth] = useState(2);
+
+  // Related clusters UI state (accordion + file list expansion)
+  const [expandedRelatedClusters, setExpandedRelatedClusters] = useState(() => ({}));
+  const [showAllBridgeFilesByBridge, setShowAllBridgeFilesByBridge] = useState(() => ({}));
+  const [isRelatedClustersOpen, setIsRelatedClustersOpen] = useState(true);
 
   // Highlight sync state - for syncing highlights between search list and graph
   const [_highlightedNodeId, _setHighlightedNodeId] = useState(null);
@@ -1301,6 +1341,7 @@ export default function UnifiedSearchModal({
       setStats(null);
       setHasLoadedStats(false);
       setIsLoadingStats(false);
+      setEmbeddingConfig(null);
       // Search state
       setSearchResults([]);
       setSelectedSearchId(null);
@@ -1848,7 +1889,32 @@ export default function UnifiedSearchModal({
     if (!window?.electronAPI?.embeddings?.getStats) return;
     setIsLoadingStats(true);
     try {
-      const res = await window.electronAPI.embeddings.getStats();
+      const [statsResult, settingsResult] = await Promise.allSettled([
+        window.electronAPI.embeddings.getStats(),
+        window.electronAPI?.settings?.get?.()
+      ]);
+      const res = statsResult.status === 'fulfilled' ? statsResult.value : null;
+      const settings = settingsResult.status === 'fulfilled' ? settingsResult.value : null;
+
+      if (settings && typeof settings === 'object') {
+        setEmbeddingConfig({
+          timing:
+            settings.embeddingTiming === 'during_analysis' ||
+            settings.embeddingTiming === 'after_organize' ||
+            settings.embeddingTiming === 'manual'
+              ? settings.embeddingTiming
+              : null,
+          policy:
+            settings.defaultEmbeddingPolicy === 'embed' ||
+            settings.defaultEmbeddingPolicy === 'skip' ||
+            settings.defaultEmbeddingPolicy === 'web_only'
+              ? settings.defaultEmbeddingPolicy
+              : null
+        });
+      } else {
+        setEmbeddingConfig(null);
+      }
+
       if (res?.success) {
         setStats({
           files: typeof res.files === 'number' ? res.files : 0,
@@ -1861,6 +1927,7 @@ export default function UnifiedSearchModal({
     } catch (e) {
       logger.warn('Failed to load embedding stats', { error: e?.message });
       setStats(null);
+      setEmbeddingConfig(null);
     } finally {
       setIsLoadingStats(false);
       setHasLoadedStats(true);
@@ -2540,6 +2607,85 @@ export default function UnifiedSearchModal({
     [nodes, selectedNodeId]
   );
 
+  const focusNode = useCallback(
+    (nodeId, { zoom = 1.15 } = {}) => {
+      if (!nodeId) return;
+      graphActions.selectNode(nodeId);
+      const currentNodes = nodesRef.current || [];
+      const node = currentNodes.find((n) => n.id === nodeId);
+      if (node && reactFlowInstance.current) {
+        reactFlowInstance.current.setCenter(node.position.x + 100, node.position.y + 50, {
+          duration: 350,
+          zoom
+        });
+      }
+    },
+    [graphActions]
+  );
+
+  const clusterInsights = useMemo(() => {
+    if (!showClusters) {
+      return {
+        clustersById: new Map(),
+        clusterNodes: [],
+        topConnections: [],
+        emergingClusters: [],
+        connectedEdgeCounts: new Map()
+      };
+    }
+
+    const clusterNodes = nodes.filter((n) => n?.data?.kind === 'cluster');
+    const clustersById = new Map(clusterNodes.map((n) => [n.id, n]));
+
+    const crossEdges = edges.filter((e) => e?.data?.kind === 'cross_cluster');
+    const connectedEdgeCounts = new Map();
+    for (const e of crossEdges) {
+      connectedEdgeCounts.set(e.source, (connectedEdgeCounts.get(e.source) || 0) + 1);
+      connectedEdgeCounts.set(e.target, (connectedEdgeCounts.get(e.target) || 0) + 1);
+    }
+
+    const topConnections = crossEdges
+      .map((e) => {
+        const src = clustersById.get(e.source);
+        const tgt = clustersById.get(e.target);
+        const sim = Number.isFinite(e?.data?.similarity) ? e.data.similarity : 0;
+        const sharedTerms = Array.isArray(e?.data?.sharedTerms) ? e.data.sharedTerms : [];
+        const bridgeFiles = Array.isArray(e?.data?.bridgeFiles) ? e.data.bridgeFiles : [];
+        return {
+          id: e.id,
+          sourceId: e.source,
+          targetId: e.target,
+          similarity: sim,
+          sharedTerms: sharedTerms.filter(Boolean).slice(0, 3),
+          bridgeFiles,
+          sourceLabel: src?.data?.label || e.source,
+          targetLabel: tgt?.data?.label || e.target
+        };
+      })
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, 5);
+
+    const emergingClusters = clusterNodes
+      .filter((n) => Number.isFinite(n?.data?.timeRange?.endMs))
+      .map((n) => ({
+        id: n.id,
+        label: n?.data?.label || n.id,
+        endMs: n.data.timeRange.endMs,
+        startMs: Number.isFinite(n?.data?.timeRange?.startMs) ? n.data.timeRange.startMs : null,
+        memberCount: n?.data?.memberCount || 0
+      }))
+      .sort((a, b) => (b.endMs || 0) - (a.endMs || 0))
+      .slice(0, 5);
+
+    return {
+      clustersById,
+      clusterNodes,
+      topConnections,
+      emergingClusters,
+      connectedEdgeCounts
+    };
+  }, [showClusters, nodes, edges]);
+
   /**
    * Guide assistant intent handler
    */
@@ -3140,9 +3286,15 @@ export default function UnifiedSearchModal({
       const fallback = cluster?.label || 'Cluster';
 
       if (mode === 'type') {
-        return cluster?.dominantCategory ? String(cluster.dominantCategory) : fallback;
+        // Prefer file-category buckets ("document", "image", etc) over semantic categories ("Finance", etc).
+        if (cluster?.dominantFileCategoryLabel) return String(cluster.dominantFileCategoryLabel);
+        if (cluster?.dominantFileCategory) return String(cluster.dominantFileCategory);
+        return fallback;
       }
       if (mode === 'tag') {
+        // "Tag/Folder": prefer dominant folder name (more consistently available than tags),
+        // then fall back to first common tag if present.
+        if (cluster?.dominantFolderName) return String(cluster.dominantFolderName);
         const tag = Array.isArray(cluster?.commonTags) ? cluster.commonTags[0] : null;
         return tag ? String(tag) : fallback;
       }
@@ -3182,15 +3334,20 @@ export default function UnifiedSearchModal({
     }
 
     if (mode === 'type') {
-      list.sort((a, b) =>
-        String(a?.dominantCategory || '').localeCompare(String(b?.dominantCategory || ''))
-      );
+      const typeLabel = (c) =>
+        String(
+          c?.dominantFileCategoryLabel || c?.dominantFileCategory || c?.dominantCategory || ''
+        );
+      list.sort((a, b) => typeLabel(a).localeCompare(typeLabel(b)));
       return list;
     }
 
     if (mode === 'tag') {
-      const firstTag = (c) => (Array.isArray(c?.commonTags) ? String(c.commonTags[0] || '') : '');
-      list.sort((a, b) => firstTag(a).localeCompare(firstTag(b)));
+      const tagOrFolder = (c) =>
+        String(
+          c?.dominantFolderName || (Array.isArray(c?.commonTags) ? c.commonTags[0] || '' : '') || ''
+        );
+      list.sort((a, b) => tagOrFolder(a).localeCompare(tagOrFolder(b)));
       return list;
     }
 
@@ -3207,8 +3364,8 @@ export default function UnifiedSearchModal({
         const sizeOk = (cluster.memberCount || 0) >= (currentFilters.minSize || 1);
         const typeOk =
           currentFilters.fileType === 'all' ||
-          (cluster.dominantCategory || '').toLowerCase() ===
-            (currentFilters.fileType || '').toLowerCase();
+          String(cluster.dominantFileCategory || cluster.dominantCategory || '').toLowerCase() ===
+            String(currentFilters.fileType || '').toLowerCase();
         const searchOk =
           !normalizedSearch ||
           (cluster.label || '').toLowerCase().includes(normalizedSearch) ||
@@ -4697,6 +4854,17 @@ export default function UnifiedSearchModal({
     };
   }, [edges, rfNodes, selectedKind, selectedNode]);
 
+  // Reset related-cluster UI when selection changes to avoid "sticky" expansion noise
+  useEffect(() => {
+    // Clear per-bridge expansion state whenever the selected node changes
+    setExpandedRelatedClusters({});
+    setShowAllBridgeFilesByBridge({});
+
+    const count = selectedClusterInfo?.bridges?.length || 0;
+    // Progressive disclosure: auto-collapse when there are many related clusters
+    setIsRelatedClustersOpen(count > 0 && count <= 2);
+  }, [selectedNodeId, selectedClusterInfo?.bridges?.length]);
+
   // ============================================================================
   // Render
   // ============================================================================
@@ -4769,6 +4937,8 @@ export default function UnifiedSearchModal({
             onRebuildFiles={rebuildFiles}
             isRebuildingFolders={isRebuildingFolders}
             isRebuildingFiles={isRebuildingFiles}
+            embeddingConfig={embeddingConfig}
+            onOpenSettings={handleOpenSettings}
           />
         )}
 
@@ -4926,6 +5096,9 @@ export default function UnifiedSearchModal({
                   <EmptySearchState
                     query={debouncedQuery}
                     hasIndexedFiles={stats?.files > 0}
+                    indexingHint={embeddingConfig}
+                    onOpenSettings={handleOpenSettings}
+                    onRebuildFiles={rebuildFiles}
                     onSearchClick={setQuery}
                     corrections={queryMeta?.corrections}
                   />
@@ -5190,588 +5363,863 @@ export default function UnifiedSearchModal({
             {/* Left: Controls */}
             {!isGraphMaximized && (
               <div
-                className="surface-panel w-80 p-4 flex flex-col gap-5 overflow-y-auto border-r border-system-gray-200 bg-system-gray-50/50"
+                className="surface-panel p-0 flex flex-col h-full overflow-hidden"
                 role="complementary"
                 aria-label="Graph Controls"
               >
-                {/* Add to Graph */}
-                <section className="space-y-2">
+                <div className="p-4 border-b border-system-gray-100 bg-system-gray-50/50">
                   <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
-                    <SearchIcon className="w-3.5 h-3.5" />
-                    Add to Graph
+                    <Network className="w-3.5 h-3.5 text-stratosort-blue" aria-hidden="true" />
+                    <span>Graph Controls</span>
                   </Text>
-                  <div className={`${GRAPH_SIDEBAR_CARD} space-y-3`}>
-                    <SearchAutocomplete
-                      value={query}
-                      onChange={setQuery}
-                      onSearch={runGraphSearch}
-                      placeholder="Search files..."
-                      ariaLabel="Search to add nodes"
-                      className="bg-white shadow-sm"
-                    />
-                    <div className="flex items-center justify-between gap-3">
-                      <Text
-                        as="label"
-                        variant="tiny"
-                        className="text-system-gray-600 flex items-center gap-2 select-none cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={addMode}
-                          onChange={(e) => setAddMode(e.target.checked)}
-                          className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
-                        />
-                        Add to existing
-                      </Text>
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={runGraphSearch}
-                        className="px-4 py-1.5 h-auto text-xs font-semibold shadow-sm"
-                      >
-                        Add
-                      </Button>
-                    </div>
-                  </div>
-                </section>
+                </div>
 
-                {/* Explore */}
-                <section className="space-y-3">
-                  <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
-                    <Network className="w-3.5 h-3.5" />
-                    <span>Explore</span>
-                  </Text>
-
-                  <div className={`${GRAPH_SIDEBAR_CARD} space-y-3`}>
-                    <div>
-                      <Text
-                        as="label"
-                        variant="tiny"
-                        className="font-medium text-system-gray-700 mb-1.5 block"
-                      >
-                        Cluster by
-                      </Text>
-                      <Select
-                        value={clusterMode}
-                        onChange={(e) => setClusterMode(e.target.value)}
-                        className="text-sm shadow-sm bg-white"
-                      >
-                        <option value="topic">Topic (semantic)</option>
-                        <option value="time">Time (recency)</option>
-                        <option value="type">Type (file category)</option>
-                        <option value="tag">Tag/Folder</option>
-                      </Select>
-                    </div>
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full justify-between text-xs font-medium text-system-gray-700 bg-white border border-system-gray-200 rounded-lg px-3 py-2 hover:bg-system-gray-50"
-                      onClick={() => setShowAdvancedFilters((prev) => !prev)}
-                      aria-expanded={showAdvancedFilters}
-                      aria-controls="advanced-cluster-filters"
-                    >
-                      <span>
-                        {showAdvancedFilters ? 'Hide advanced filters' : 'Show advanced filters'}
-                      </span>
-                      <ChevronDown
-                        className={`h-3.5 w-3.5 text-system-gray-400 transition-transform ${showAdvancedFilters ? 'rotate-180' : ''}`}
+                <div className="p-4 flex-1 min-h-0 overflow-y-auto panel-scroll flex flex-col gap-5">
+                  {/* Add to Graph */}
+                  <section className="space-y-2">
+                    <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
+                      <SearchIcon className="w-3.5 h-3.5" />
+                      Add to Graph
+                    </Text>
+                    <div className={`${GRAPH_SIDEBAR_CARD} space-y-3`}>
+                      <SearchAutocomplete
+                        value={query}
+                        onChange={setQuery}
+                        onSearch={runGraphSearch}
+                        placeholder="Search files..."
+                        ariaLabel="Search to add nodes"
+                        className="bg-white shadow-sm"
                       />
-                    </Button>
-
-                    {showAdvancedFilters && (
-                      <div
-                        id="advanced-cluster-filters"
-                        className="mt-2 space-y-3 border border-system-gray-200 rounded-lg p-3 bg-system-gray-50/80"
-                      >
+                      <div className="flex items-center justify-between gap-3">
                         <Text
-                          as="div"
+                          as="label"
                           variant="tiny"
-                          className="font-medium text-system-gray-600 mb-1.5"
+                          className="text-system-gray-600 flex items-center gap-2 select-none cursor-pointer"
                         >
-                          Confidence Level
+                          <input
+                            type="checkbox"
+                            checked={addMode}
+                            onChange={(e) => setAddMode(e.target.checked)}
+                            className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
+                          />
+                          Add to existing
                         </Text>
-                        <div className="flex flex-wrap gap-x-3 gap-y-1">
-                          {['high', 'medium', 'low'].map((conf) => (
-                            <Text
-                              key={conf}
-                              as="label"
-                              variant="tiny"
-                              className="flex items-center gap-1.5 text-system-gray-600 cursor-pointer"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={clusterFilters.confidence.includes(conf)}
-                                onChange={(e) =>
-                                  setClusterFilters((prev) => {
-                                    const current = prev.confidence;
-                                    const next = e.target.checked
-                                      ? Array.from(new Set([...current, conf]))
-                                      : current.filter((c) => c !== conf);
-                                    return { ...prev, confidence: next };
-                                  })
-                                }
-                                className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
-                              />
-                              <span className="capitalize">{conf}</span>
-                            </Text>
-                          ))}
-                        </div>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={runGraphSearch}
+                          className="px-4 py-1.5 h-auto text-xs font-semibold shadow-sm"
+                        >
+                          Add
+                        </Button>
+                      </div>
+                    </div>
+                  </section>
 
-                        <div className="grid grid-cols-2 gap-3">
+                  {/* Explore */}
+                  <section className="space-y-3">
+                    <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
+                      <Network className="w-3.5 h-3.5" />
+                      <span>Explore</span>
+                    </Text>
+
+                    <div className={`${GRAPH_SIDEBAR_CARD} space-y-3`}>
+                      <div>
+                        <Text
+                          as="label"
+                          variant="tiny"
+                          className="font-medium text-system-gray-700 mb-1.5 block"
+                        >
+                          Cluster by
+                        </Text>
+                        <Select
+                          value={clusterMode}
+                          onChange={(e) => setClusterMode(e.target.value)}
+                          className="text-sm shadow-sm bg-white"
+                        >
+                          <option value="topic">Topic (semantic)</option>
+                          <option value="time">Time (recency)</option>
+                          <option value="type">Type (file category)</option>
+                          <option value="tag">Tag/Folder</option>
+                        </Select>
+                      </div>
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full justify-between text-xs font-medium text-system-gray-700 bg-white border border-system-gray-200 rounded-lg px-3 py-2 hover:bg-system-gray-50"
+                        onClick={() => setShowAdvancedFilters((prev) => !prev)}
+                        aria-expanded={showAdvancedFilters}
+                        aria-controls="advanced-cluster-filters"
+                      >
+                        <span>
+                          {showAdvancedFilters ? 'Hide advanced filters' : 'Show advanced filters'}
+                        </span>
+                        <ChevronDown
+                          className={`h-3.5 w-3.5 text-system-gray-400 transition-transform ${showAdvancedFilters ? 'rotate-180' : ''}`}
+                        />
+                      </Button>
+
+                      {showAdvancedFilters && (
+                        <div
+                          id="advanced-cluster-filters"
+                          className="mt-2 space-y-3 border border-system-gray-200 rounded-lg p-3 bg-system-gray-50/80"
+                        >
+                          <Text
+                            as="div"
+                            variant="tiny"
+                            className="font-medium text-system-gray-600 mb-1.5"
+                          >
+                            Confidence Level
+                          </Text>
+                          <div className="flex flex-wrap gap-x-3 gap-y-1">
+                            {['high', 'medium', 'low'].map((conf) => (
+                              <Text
+                                key={conf}
+                                as="label"
+                                variant="tiny"
+                                className="flex items-center gap-1.5 text-system-gray-600 cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={clusterFilters.confidence.includes(conf)}
+                                  onChange={(e) =>
+                                    setClusterFilters((prev) => {
+                                      const current = prev.confidence;
+                                      const next = e.target.checked
+                                        ? Array.from(new Set([...current, conf]))
+                                        : current.filter((c) => c !== conf);
+                                      return { ...prev, confidence: next };
+                                    })
+                                  }
+                                  className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
+                                />
+                                <span className="capitalize">{conf}</span>
+                              </Text>
+                            ))}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <Text
+                                as="label"
+                                variant="tiny"
+                                className="font-medium text-system-gray-600 mb-1.5 block"
+                              >
+                                Min size
+                              </Text>
+                              <Input
+                                type="number"
+                                min={1}
+                                value={clusterFilters.minSize}
+                                onChange={(e) =>
+                                  setClusterFilters((prev) => ({
+                                    ...prev,
+                                    minSize: Math.max(1, Number(e.target.value) || 1)
+                                  }))
+                                }
+                                className="h-8 text-sm bg-white"
+                              />
+                            </div>
+
+                            <div>
+                              <Text
+                                as="label"
+                                variant="tiny"
+                                className="font-medium text-system-gray-600 mb-1.5 block"
+                              >
+                                File type
+                              </Text>
+                              <Select
+                                value={clusterFilters.fileType}
+                                onChange={(e) =>
+                                  setClusterFilters((prev) => ({
+                                    ...prev,
+                                    fileType: e.target.value
+                                  }))
+                                }
+                                className="h-8 text-sm bg-white"
+                              >
+                                <option value="all">All</option>
+                                <option value="document">Document</option>
+                                <option value="spreadsheet">Spreadsheet</option>
+                                <option value="code">Code</option>
+                                <option value="image">Image</option>
+                                <option value="audio">Audio</option>
+                                <option value="video">Video</option>
+                              </Select>
+                            </div>
+                          </div>
+
+                          <Input
+                            value={clusterFilters.search}
+                            onChange={(e) =>
+                              setClusterFilters((prev) => ({ ...prev, search: e.target.value }))
+                            }
+                            placeholder="Search clusters..."
+                            className="h-8 text-sm bg-white"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Insights (actionable + discovery) */}
+                    {showClusters &&
+                      (clusterInsights.topConnections.length > 0 ||
+                        clusterInsights.emergingClusters.length > 0) && (
+                        <div className="pt-3 border-t border-system-gray-100 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <Text
+                              as="div"
+                              variant="tiny"
+                              className="font-semibold text-system-gray-500 uppercase tracking-wider flex items-center gap-2"
+                            >
+                              <Sparkles className="h-3.5 w-3.5 text-stratosort-blue" />
+                              Insights
+                            </Text>
+                            <Button
+                              variant={bridgeOverlayEnabled ? 'secondary' : 'ghost'}
+                              size="sm"
+                              onClick={() => setBridgeOverlayEnabled((v) => !v)}
+                              className="h-7 px-2 py-0 text-xs"
+                              title="Dim everything except cross-cluster bridges"
+                            >
+                              {bridgeOverlayEnabled ? 'Bridges: On' : 'Bridges only'}
+                            </Button>
+                          </div>
+
+                          {clusterInsights.topConnections.length > 0 && (
+                            <div className="space-y-2">
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="font-semibold text-system-gray-500 uppercase tracking-wider"
+                              >
+                                Top connections
+                              </Text>
+                              <div className="space-y-1.5">
+                                {clusterInsights.topConnections.map((c) => (
+                                  <div
+                                    key={c.id}
+                                    onClick={() => focusNode(c.targetId)}
+                                    role="button"
+                                    tabIndex={0}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        focusNode(c.targetId);
+                                      }
+                                    }}
+                                    className="w-full text-left border border-system-gray-200 rounded-lg bg-white hover:bg-system-gray-50 px-2 py-2 cursor-pointer"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <Text
+                                        as="span"
+                                        variant="tiny"
+                                        className="text-system-gray-800"
+                                      >
+                                        <span className="font-medium">{c.sourceLabel}</span>
+                                        <span className="text-system-gray-400 mx-1">↔</span>
+                                        <span className="font-medium">{c.targetLabel}</span>
+                                      </Text>
+                                      <Text
+                                        as="span"
+                                        variant="tiny"
+                                        className="text-system-gray-500"
+                                      >
+                                        {Math.round((c.similarity || 0) * 100)}%
+                                      </Text>
+                                    </div>
+                                    {c.sharedTerms.length > 0 && (
+                                      <div className="mt-1 flex flex-wrap gap-1">
+                                        {c.sharedTerms.slice(0, 3).map((t) => (
+                                          <span
+                                            key={`${c.id}-${t}`}
+                                            className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded text-[10px]"
+                                          >
+                                            {t}
+                                          </span>
+                                        ))}
+                                        {Array.isArray(c.bridgeFiles) &&
+                                          c.bridgeFiles.length > 0 && (
+                                            <span className="px-1.5 py-0.5 bg-white border border-system-gray-200 rounded text-[10px] text-system-gray-600">
+                                              {c.bridgeFiles.length} bridge file
+                                              {c.bridgeFiles.length === 1 ? '' : 's'}
+                                            </span>
+                                          )}
+                                      </div>
+                                    )}
+                                    {Array.isArray(c.bridgeFiles) && c.bridgeFiles.length > 0 && (
+                                      <div className="mt-2 space-y-1">
+                                        {c.bridgeFiles.slice(0, 3).map((file) => {
+                                          const filePath = file?.path || null;
+                                          const label =
+                                            file?.name ||
+                                            (filePath ? safeBasename(filePath) : null) ||
+                                            file?.id ||
+                                            String(file);
+                                          return (
+                                            <div
+                                              key={filePath || file?.id || label}
+                                              className="flex items-center justify-between gap-2 text-[11px] text-system-gray-700 bg-white border border-system-gray-100 rounded px-2 py-1"
+                                              onClick={(e) => e.stopPropagation()}
+                                              role="presentation"
+                                            >
+                                              <span className="truncate flex-1">{label}</span>
+                                              {filePath && (
+                                                <div className="flex gap-1">
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="xs"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      openFile(filePath);
+                                                    }}
+                                                    title="Open file"
+                                                  >
+                                                    <ExternalLink className="h-3 w-3" />
+                                                  </Button>
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="xs"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      revealFile(filePath);
+                                                    }}
+                                                    title="Show in folder"
+                                                  >
+                                                    <FolderOpen className="h-3 w-3" />
+                                                  </Button>
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                        {c.bridgeFiles.length > 3 && (
+                                          <Text
+                                            as="div"
+                                            variant="tiny"
+                                            className="text-system-gray-500"
+                                          >
+                                            +{c.bridgeFiles.length - 3} more
+                                          </Text>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {clusterInsights.emergingClusters.length > 0 && (
+                            <div className="space-y-2">
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="font-semibold text-system-gray-500 uppercase tracking-wider"
+                              >
+                                Emerging topics
+                              </Text>
+                              <div className="space-y-1.5">
+                                {clusterInsights.emergingClusters.map((c) => (
+                                  <button
+                                    key={c.id}
+                                    type="button"
+                                    onClick={() => focusNode(c.id)}
+                                    className="w-full text-left border border-system-gray-200 rounded-lg bg-white hover:bg-system-gray-50 px-2 py-2"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <Text
+                                        as="span"
+                                        variant="tiny"
+                                        className="text-system-gray-800"
+                                      >
+                                        <span className="font-medium">{c.label}</span>
+                                      </Text>
+                                      <Text
+                                        as="span"
+                                        variant="tiny"
+                                        className="text-system-gray-500"
+                                      >
+                                        {new Date(c.endMs).toLocaleDateString()}
+                                      </Text>
+                                    </div>
+                                    <Text
+                                      as="div"
+                                      variant="tiny"
+                                      className="text-system-gray-500 mt-0.5"
+                                    >
+                                      {c.memberCount} file{c.memberCount === 1 ? '' : 's'}
+                                    </Text>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {selectedNode?.data?.kind === 'cluster' && (
+                            <div className="space-y-2">
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="font-semibold text-system-gray-500 uppercase tracking-wider"
+                              >
+                                Suggested next actions
+                              </Text>
+                              <div className="flex flex-wrap gap-2">
+                                {typeof selectedNode?.data?.onCreateSmartFolder === 'function' &&
+                                  ['high', 'medium'].includes(
+                                    String(selectedNode?.data?.confidence)
+                                  ) &&
+                                  (selectedNode?.data?.memberCount || 0) >= 6 && (
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
+                                      className="h-8 text-xs"
+                                      onClick={() =>
+                                        selectedNode?.data?.onCreateSmartFolder?.(selectedNode.data)
+                                      }
+                                    >
+                                      Create Smart Folder
+                                    </Button>
+                                  )}
+
+                                {(clusterInsights.connectedEdgeCounts.get(selectedNode.id) || 0) >
+                                  0 && (
+                                  <Button
+                                    variant={bridgeOverlayEnabled ? 'secondary' : 'ghost'}
+                                    size="sm"
+                                    className="h-8 text-xs"
+                                    onClick={() => setBridgeOverlayEnabled(true)}
+                                  >
+                                    Explore Bridges
+                                  </Button>
+                                )}
+
+                                {typeof selectedNode?.data?.onSearchWithinCluster ===
+                                  'function' && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 text-xs"
+                                    onClick={() =>
+                                      selectedNode?.data?.onSearchWithinCluster?.(selectedNode.data)
+                                    }
+                                  >
+                                    Search Within
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                    {/* Guide assistant */}
+                    <div className={GRAPH_SIDEBAR_CARD}>
+                      <div className="flex items-center justify-between mb-2">
+                        <Text
+                          as="span"
+                          variant="tiny"
+                          className="font-semibold text-system-gray-700"
+                        >
+                          Guide me
+                        </Text>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowGuidePanel((v) => !v)}
+                          className="h-7 px-2 py-0 text-xs text-system-gray-500 hover:text-stratosort-blue"
+                        >
+                          {showGuidePanel ? 'Hide' : 'Show'}
+                        </Button>
+                      </div>
+                      {showGuidePanel && (
+                        <div className="space-y-2 pt-2 border-t border-system-gray-100">
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs justify-start h-8"
+                              onClick={() => handleGuideIntent('related')}
+                            >
+                              Related topics
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs justify-start h-8"
+                              onClick={() => handleGuideIntent('recent')}
+                            >
+                              Recent changes
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs justify-start h-8"
+                              onClick={() => handleGuideIntent('type')}
+                            >
+                              By type
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs justify-start h-8"
+                              onClick={() => handleGuideIntent('bridges')}
+                            >
+                              Bridges/gaps
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs justify-start h-8"
+                              onClick={() => handleGuideIntent('expand')}
+                            >
+                              Expand selection
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs justify-start h-8"
+                              onClick={() => handleGuideIntent('bridgesOnly')}
+                            >
+                              Bridges only
+                            </Button>
+                          </div>
+                          <div className="flex gap-1.5 pt-1">
+                            <Input
+                              value={guideInput}
+                              onChange={(e) => setGuideInput(e.target.value)}
+                              placeholder="Describe what you need..."
+                              className="h-8 text-sm bg-white"
+                            />
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() =>
+                                guideInput.trim() &&
+                                handleGuideIntent('custom', { text: guideInput })
+                              }
+                              className="h-8 px-3 text-xs font-semibold"
+                            >
+                              Go
+                            </Button>
+                          </div>
+                          <div className="flex justify-end">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs text-system-gray-500 hover:text-system-gray-700"
+                              onClick={resetGraphFilters}
+                            >
+                              Reset filters
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+
+                  {/* Actions */}
+                  <section className="space-y-3">
+                    <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
+                      <List className="w-3.5 h-3.5" />
+                      <span>Actions</span>
+                    </Text>
+                    <div className={`${GRAPH_SIDEBAR_CARD} space-y-3`}>
+                      <div className="space-y-2.5">
+                        <Button
+                          variant={showClusters ? 'primary' : 'secondary'}
+                          size="sm"
+                          onClick={loadClusters}
+                          disabled={isComputingClusters}
+                          className="w-full justify-center h-9 text-xs font-semibold shadow-sm"
+                          title="Group similar files into clusters"
+                        >
+                          <Layers className="h-4 w-4" />
+                          <span>
+                            {isComputingClusters
+                              ? 'Computing...'
+                              : showClusters
+                                ? 'Refresh Clusters'
+                                : 'Auto-discover Clusters'}
+                          </span>
+                        </Button>
+
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={applyLayout}
+                          disabled={nodes.length === 0 || isLayouting}
+                          className="w-full justify-center h-9 text-xs font-semibold shadow-sm"
+                          title="Organize nodes automatically"
+                        >
+                          <LayoutGrid className="h-4 w-4" />
+                          <span>{isLayouting ? 'Organizing...' : 'Re-organize Layout'}</span>
+                        </Button>
+                      </div>
+
+                      {showClusters && (
+                        <div className="pt-3 border-t border-system-gray-100 flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleExpandAllClusters}
+                            disabled={
+                              nodes.filter(
+                                (n) =>
+                                  n.type === 'clusterNode' &&
+                                  n.data?.kind === 'cluster' &&
+                                  !n.data?.expanded
+                              ).length === 0
+                            }
+                            className="flex-1 justify-center text-xs h-8"
+                            title="Expand all clusters"
+                          >
+                            <Maximize2 className="h-3.5 w-3.5" />
+                            <span>Expand All</span>
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleCollapseAllClusters}
+                            disabled={
+                              nodes.filter(
+                                (n) =>
+                                  n.type === 'clusterNode' &&
+                                  n.data?.kind === 'cluster' &&
+                                  n.data?.expanded
+                              ).length === 0
+                            }
+                            className="flex-1 justify-center text-xs h-8"
+                            title="Collapse all clusters"
+                          >
+                            <Minimize2 className="h-3.5 w-3.5" />
+                            <span>Collapse All</span>
+                          </Button>
+                        </div>
+                      )}
+
+                      {focusNodeId && (
+                        <div className="pt-3 border-t border-system-gray-100">
+                          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <Text
+                                as="span"
+                                variant="tiny"
+                                className="font-medium text-indigo-700"
+                              >
+                                Focus Mode Active
+                              </Text>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleClearFocus}
+                                className="text-xs text-indigo-600 hover:bg-indigo-100 px-2 py-0.5 h-auto"
+                              >
+                                Clear Focus
+                              </Button>
+                            </div>
+                            <div>
+                              <Text
+                                as="label"
+                                variant="tiny"
+                                className="font-medium text-indigo-600 mb-1.5 block"
+                              >
+                                Focus Depth
+                              </Text>
+                              <Select
+                                value={focusDepth}
+                                onChange={(e) => setFocusDepth(Number(e.target.value))}
+                                className="text-sm text-indigo-700"
+                              >
+                                <option value={0}>Only selected</option>
+                                <option value={1}>1 level (Direct)</option>
+                                <option value={2}>2 levels</option>
+                                <option value={3}>3 levels (Deep)</option>
+                              </Select>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="pt-3 border-t border-system-gray-100">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            if (nodes.length > 0) {
+                              setShowClearConfirm(true);
+                            }
+                          }}
+                          disabled={nodes.length === 0}
+                          className="w-full justify-center text-red-600 border border-red-100 bg-red-50/40 hover:bg-red-50 hover:text-red-700"
+                        >
+                          Clear Graph
+                        </Button>
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* Advanced Options */}
+                  <section className="space-y-2">
+                    <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
+                      <CheckSquare className="w-3.5 h-3.5" />
+                      <span>Advanced</span>
+                    </Text>
+                    <div className={`${GRAPH_SIDEBAR_CARD} !p-2`}>
+                      <Button
+                        onClick={() => setShowAdvancedControls(!showAdvancedControls)}
+                        variant="ghost"
+                        size="sm"
+                        rightIcon={
+                          showAdvancedControls ? (
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          ) : (
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          )
+                        }
+                        className="w-full justify-between text-xs font-semibold text-system-gray-600 hover:text-system-gray-800 px-2 py-2"
+                      >
+                        Advanced Options
+                      </Button>
+
+                      {showAdvancedControls && (
+                        <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200 pt-3 border-t border-system-gray-100">
+                          {/* Filter */}
                           <div>
                             <Text
                               as="label"
                               variant="tiny"
                               className="font-medium text-system-gray-600 mb-1.5 block"
                             >
-                              Min size
+                              Filter Visibility
                             </Text>
                             <Input
-                              type="number"
-                              min={1}
-                              value={clusterFilters.minSize}
-                              onChange={(e) =>
-                                setClusterFilters((prev) => ({
-                                  ...prev,
-                                  minSize: Math.max(1, Number(e.target.value) || 1)
-                                }))
-                              }
+                              value={withinQuery}
+                              onChange={(e) => setWithinQuery(e.target.value)}
+                              placeholder="Filter nodes..."
                               className="h-8 text-sm bg-white"
                             />
                           </div>
 
+                          {/* Expansion Settings */}
                           <div>
                             <Text
                               as="label"
                               variant="tiny"
                               className="font-medium text-system-gray-600 mb-1.5 block"
                             >
-                              File type
+                              Connection Depth
                             </Text>
                             <Select
-                              value={clusterFilters.fileType}
-                              onChange={(e) =>
-                                setClusterFilters((prev) => ({ ...prev, fileType: e.target.value }))
-                              }
+                              value={hopCount}
+                              onChange={(e) => setHopCount(Number(e.target.value))}
                               className="text-sm bg-white"
-                            >
-                              <option value="all">All</option>
-                              <option value="document">Document</option>
-                              <option value="spreadsheet">Spreadsheet</option>
-                              <option value="code">Code</option>
-                              <option value="image">Image</option>
-                              <option value="audio">Audio</option>
-                              <option value="video">Video</option>
-                            </Select>
-                          </div>
-                        </div>
-
-                        <Input
-                          value={clusterFilters.search}
-                          onChange={(e) =>
-                            setClusterFilters((prev) => ({ ...prev, search: e.target.value }))
-                          }
-                          placeholder="Search clusters..."
-                          className="h-8 text-sm bg-white"
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Guide assistant */}
-                  <div className={GRAPH_SIDEBAR_CARD}>
-                    <div className="flex items-center justify-between mb-2">
-                      <Text as="span" variant="tiny" className="font-semibold text-system-gray-700">
-                        Guide me
-                      </Text>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowGuidePanel((v) => !v)}
-                        className="h-7 px-2 py-0 text-xs text-system-gray-500 hover:text-stratosort-blue"
-                      >
-                        {showGuidePanel ? 'Hide' : 'Show'}
-                      </Button>
-                    </div>
-                    {showGuidePanel && (
-                      <div className="space-y-2 pt-2 border-t border-system-gray-100">
-                        <div className="grid grid-cols-2 gap-1.5">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs justify-start h-8"
-                            onClick={() => handleGuideIntent('related')}
-                          >
-                            Related topics
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs justify-start h-8"
-                            onClick={() => handleGuideIntent('recent')}
-                          >
-                            Recent changes
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs justify-start h-8"
-                            onClick={() => handleGuideIntent('type')}
-                          >
-                            By type
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs justify-start h-8"
-                            onClick={() => handleGuideIntent('bridges')}
-                          >
-                            Bridges/gaps
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs justify-start h-8"
-                            onClick={() => handleGuideIntent('expand')}
-                          >
-                            Expand selection
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs justify-start h-8"
-                            onClick={() => handleGuideIntent('bridgesOnly')}
-                          >
-                            Bridges only
-                          </Button>
-                        </div>
-                        <div className="flex gap-1.5 pt-1">
-                          <Input
-                            value={guideInput}
-                            onChange={(e) => setGuideInput(e.target.value)}
-                            placeholder="Describe what you need..."
-                            className="h-8 text-sm bg-white"
-                          />
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() =>
-                              guideInput.trim() && handleGuideIntent('custom', { text: guideInput })
-                            }
-                            className="h-8 px-3 text-xs font-semibold"
-                          >
-                            Go
-                          </Button>
-                        </div>
-                        <div className="flex justify-end">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs text-system-gray-500 hover:text-system-gray-700"
-                            onClick={resetGraphFilters}
-                          >
-                            Reset filters
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </section>
-
-                {/* Actions */}
-                <section className="space-y-3">
-                  <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
-                    <List className="w-3.5 h-3.5" />
-                    <span>Actions</span>
-                  </Text>
-                  <div className={`${GRAPH_SIDEBAR_CARD} space-y-3`}>
-                    <div className="space-y-2.5">
-                      <Button
-                        variant={showClusters ? 'primary' : 'secondary'}
-                        size="sm"
-                        onClick={loadClusters}
-                        disabled={isComputingClusters}
-                        className="w-full justify-center h-9 text-xs font-semibold shadow-sm"
-                        title="Group similar files into clusters"
-                      >
-                        <Layers className="h-4 w-4" />
-                        <span>
-                          {isComputingClusters
-                            ? 'Computing...'
-                            : showClusters
-                              ? 'Refresh Clusters'
-                              : 'Auto-discover Clusters'}
-                        </span>
-                      </Button>
-
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={applyLayout}
-                        disabled={nodes.length === 0 || isLayouting}
-                        className="w-full justify-center h-9 text-xs font-semibold shadow-sm"
-                        title="Organize nodes automatically"
-                      >
-                        <LayoutGrid className="h-4 w-4" />
-                        <span>{isLayouting ? 'Organizing...' : 'Re-organize Layout'}</span>
-                      </Button>
-                    </div>
-
-                    {showClusters && (
-                      <div className="pt-3 border-t border-system-gray-100 flex gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={handleExpandAllClusters}
-                          disabled={
-                            nodes.filter(
-                              (n) =>
-                                n.type === 'clusterNode' &&
-                                n.data?.kind === 'cluster' &&
-                                !n.data?.expanded
-                            ).length === 0
-                          }
-                          className="flex-1 justify-center text-xs h-8"
-                          title="Expand all clusters"
-                        >
-                          <Maximize2 className="h-3.5 w-3.5" />
-                          <span>Expand All</span>
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={handleCollapseAllClusters}
-                          disabled={
-                            nodes.filter(
-                              (n) =>
-                                n.type === 'clusterNode' &&
-                                n.data?.kind === 'cluster' &&
-                                n.data?.expanded
-                            ).length === 0
-                          }
-                          className="flex-1 justify-center text-xs h-8"
-                          title="Collapse all clusters"
-                        >
-                          <Minimize2 className="h-3.5 w-3.5" />
-                          <span>Collapse All</span>
-                        </Button>
-                      </div>
-                    )}
-
-                    {focusNodeId && (
-                      <div className="pt-3 border-t border-system-gray-100">
-                        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <Text as="span" variant="tiny" className="font-medium text-indigo-700">
-                              Focus Mode Active
-                            </Text>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={handleClearFocus}
-                              className="text-xs text-indigo-600 hover:bg-indigo-100 px-2 py-0.5 h-auto"
-                            >
-                              Clear Focus
-                            </Button>
-                          </div>
-                          <div>
-                            <Text
-                              as="label"
-                              variant="tiny"
-                              className="font-medium text-indigo-600 mb-1.5 block"
-                            >
-                              Focus Depth
-                            </Text>
-                            <Select
-                              value={focusDepth}
-                              onChange={(e) => setFocusDepth(Number(e.target.value))}
-                              className="text-sm text-indigo-700"
                             >
                               <option value={1}>1 level (Direct)</option>
                               <option value={2}>2 levels</option>
                               <option value={3}>3 levels (Deep)</option>
                             </Select>
                           </div>
+
+                          {/* Behavior Options */}
+                          <div className="space-y-2 pt-1">
+                            <Text
+                              as="label"
+                              variant="tiny"
+                              className="text-system-gray-600 flex items-center gap-2 select-none cursor-pointer"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={autoLayout}
+                                onChange={(e) => setAutoLayout(e.target.checked)}
+                                className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
+                              />
+                              Auto-layout on changes
+                            </Text>
+
+                            <Text
+                              as="label"
+                              variant="tiny"
+                              className="text-system-gray-600 flex items-center gap-2 select-none cursor-pointer"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={enableAutoClustering}
+                                onChange={(e) => setEnableAutoClustering(e.target.checked)}
+                                className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
+                              />
+                              Auto-load clusters
+                            </Text>
+
+                            <Text
+                              as="label"
+                              variant="tiny"
+                              className="text-system-gray-600 flex items-center gap-2 select-none cursor-pointer"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={showEdgeLabels}
+                                onChange={(e) => setShowEdgeLabels(e.target.checked)}
+                                className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
+                              />
+                              Show connection labels
+                            </Text>
+                          </div>
+
+                          {/* Save/Load Controls */}
+                          <div className="pt-2 mt-2 border-t border-system-gray-100 flex gap-2">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={handleSaveGraph}
+                              className="flex-1 justify-center h-8 text-xs"
+                            >
+                              Save State
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={handleLoadGraph}
+                              className="flex-1 justify-center h-8 text-xs"
+                            >
+                              Load State
+                            </Button>
+                          </div>
+
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={handleFindDuplicates}
+                            disabled={isFindingDuplicates}
+                            className="w-full justify-center h-8 text-xs"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                            <span>Find Duplicates</span>
+                          </Button>
                         </div>
-                      </div>
-                    )}
-
-                    <div className="pt-3 border-t border-system-gray-100">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          if (nodes.length > 0) {
-                            setShowClearConfirm(true);
-                          }
-                        }}
-                        disabled={nodes.length === 0}
-                        className="w-full justify-center text-red-600 border border-red-100 bg-red-50/40 hover:bg-red-50 hover:text-red-700"
-                      >
-                        Clear Graph
-                      </Button>
+                      )}
                     </div>
-                  </div>
-                </section>
+                  </section>
 
-                {/* Advanced Options */}
-                <section className="space-y-2">
-                  <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
-                    <CheckSquare className="w-3.5 h-3.5" />
-                    <span>Advanced</span>
+                  {/* Status Footer */}
+                  <Text
+                    as="div"
+                    variant="tiny"
+                    className="mt-auto pt-4 text-system-gray-400 border-t border-system-gray-100"
+                  >
+                    {nodes.length > 0 ? (
+                      <div className="flex justify-between items-center">
+                        <span>{nodes.length} nodes</span>
+                        <span>{edges.length} links</span>
+                      </div>
+                    ) : (
+                      <div className="italic text-center">Empty graph</div>
+                    )}
                   </Text>
-                  <div className={`${GRAPH_SIDEBAR_CARD} !p-2`}>
-                    <Button
-                      onClick={() => setShowAdvancedControls(!showAdvancedControls)}
-                      variant="ghost"
-                      size="sm"
-                      rightIcon={
-                        showAdvancedControls ? (
-                          <ChevronDown className="w-3.5 h-3.5" />
-                        ) : (
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        )
-                      }
-                      className="w-full justify-between text-xs font-semibold text-system-gray-600 hover:text-system-gray-800 px-2 py-2"
-                    >
-                      Advanced Options
-                    </Button>
-
-                    {showAdvancedControls && (
-                      <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200 pt-3 border-t border-system-gray-100">
-                        {/* Filter */}
-                        <div>
-                          <Text
-                            as="label"
-                            variant="tiny"
-                            className="font-medium text-system-gray-600 mb-1.5 block"
-                          >
-                            Filter Visibility
-                          </Text>
-                          <Input
-                            value={withinQuery}
-                            onChange={(e) => setWithinQuery(e.target.value)}
-                            placeholder="Filter nodes..."
-                            className="h-8 text-sm bg-white"
-                          />
-                        </div>
-
-                        {/* Expansion Settings */}
-                        <div>
-                          <Text
-                            as="label"
-                            variant="tiny"
-                            className="font-medium text-system-gray-600 mb-1.5 block"
-                          >
-                            Connection Depth
-                          </Text>
-                          <Select
-                            value={hopCount}
-                            onChange={(e) => setHopCount(Number(e.target.value))}
-                            className="text-sm bg-white"
-                          >
-                            <option value={1}>1 level (Direct)</option>
-                            <option value={2}>2 levels</option>
-                            <option value={3}>3 levels (Deep)</option>
-                          </Select>
-                        </div>
-
-                        {/* Behavior Options */}
-                        <div className="space-y-2 pt-1">
-                          <Text
-                            as="label"
-                            variant="tiny"
-                            className="text-system-gray-600 flex items-center gap-2 select-none cursor-pointer"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={autoLayout}
-                              onChange={(e) => setAutoLayout(e.target.checked)}
-                              className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
-                            />
-                            Auto-layout on changes
-                          </Text>
-
-                          <Text
-                            as="label"
-                            variant="tiny"
-                            className="text-system-gray-600 flex items-center gap-2 select-none cursor-pointer"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={enableAutoClustering}
-                              onChange={(e) => setEnableAutoClustering(e.target.checked)}
-                              className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
-                            />
-                            Auto-load clusters
-                          </Text>
-
-                          <Text
-                            as="label"
-                            variant="tiny"
-                            className="text-system-gray-600 flex items-center gap-2 select-none cursor-pointer"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={showEdgeLabels}
-                              onChange={(e) => setShowEdgeLabels(e.target.checked)}
-                              className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
-                            />
-                            Show connection labels
-                          </Text>
-                        </div>
-
-                        {/* Save/Load Controls */}
-                        <div className="pt-2 mt-2 border-t border-system-gray-100 flex gap-2">
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={handleSaveGraph}
-                            className="flex-1 justify-center h-8 text-xs"
-                          >
-                            Save State
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={handleLoadGraph}
-                            className="flex-1 justify-center h-8 text-xs"
-                          >
-                            Load State
-                          </Button>
-                        </div>
-
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={handleFindDuplicates}
-                          disabled={isFindingDuplicates}
-                          className="w-full justify-center h-8 text-xs"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                          <span>Find Duplicates</span>
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </section>
-
-                {/* Status Footer */}
-                <Text
-                  as="div"
-                  variant="tiny"
-                  className="mt-auto pt-4 text-system-gray-400 border-t border-system-gray-100"
-                >
-                  {nodes.length > 0 ? (
-                    <div className="flex justify-between items-center">
-                      <span>{nodes.length} nodes</span>
-                      <span>{edges.length} links</span>
-                    </div>
-                  ) : (
-                    <div className="italic text-center">Empty graph</div>
-                  )}
-                </Text>
+                </div>
               </div>
             )}
 
@@ -6137,7 +6585,7 @@ export default function UnifiedSearchModal({
             {/* Right: Details & Legend */}
             {!isGraphMaximized && (
               <div
-                className="surface-panel flex flex-col h-full overflow-hidden"
+                className="surface-panel p-0 flex flex-col h-full overflow-hidden"
                 role="complementary"
                 aria-label="Node Details"
               >
@@ -6148,7 +6596,7 @@ export default function UnifiedSearchModal({
                   </Text>
                 </div>
 
-                <div className="p-4 overflow-y-auto flex-1">
+                <div className="p-4 flex-1 min-h-0 overflow-y-auto panel-scroll">
                   {selectedNode ? (
                     <>
                       {isLoadingMetadata ? (
@@ -6226,94 +6674,212 @@ export default function UnifiedSearchModal({
 
                           {selectedClusterInfo?.bridges?.length > 0 && (
                             <div className="space-y-2">
-                              <Text
-                                as="div"
-                                variant="tiny"
-                                className="font-semibold text-system-gray-500 uppercase tracking-wider"
-                              >
-                                Related clusters
-                              </Text>
-                              <div className="space-y-2">
-                                {selectedClusterInfo.bridges.map((bridge) => (
-                                  <div
-                                    key={bridge.id}
-                                    className="border border-system-gray-200 rounded-lg p-2 bg-system-gray-50"
-                                  >
-                                    <Text
-                                      as="div"
-                                      variant="small"
-                                      className="flex items-center justify-between text-system-gray-800"
-                                    >
-                                      <span>{bridge.targetLabel || bridge.targetId}</span>
-                                      <Text
-                                        as="span"
-                                        variant="tiny"
-                                        className="text-system-gray-500"
-                                      >
-                                        {Math.round((bridge.similarity || 0) * 100)}% match
-                                      </Text>
-                                    </Text>
-                                    <Text
-                                      as="div"
-                                      variant="tiny"
-                                      className="text-system-gray-600 mt-1 flex flex-wrap gap-1"
-                                    >
-                                      {bridge.sharedTerms?.slice(0, 3)?.map((t) => (
-                                        <span
-                                          key={t}
-                                          className="px-1.5 py-0.5 bg-white border border-system-gray-200 rounded"
-                                        >
-                                          {t}
-                                        </span>
-                                      ))}
-                                      {bridge.bridgeCount > 0 && (
-                                        <span className="px-1.5 py-0.5 bg-white border border-system-gray-200 rounded">
-                                          {bridge.bridgeCount} bridge file
-                                          {bridge.bridgeCount === 1 ? '' : 's'}
-                                        </span>
-                                      )}
-                                    </Text>
-                                    {Array.isArray(bridge.bridgeFiles) &&
-                                      bridge.bridgeFiles.length > 0 && (
-                                        <div className="mt-2 space-y-1">
-                                          {bridge.bridgeFiles.slice(0, 3).map((file) => (
-                                            <div
-                                              key={file?.path || file?.id || file}
-                                              className="flex items-center justify-between text-[11px] text-system-gray-700 bg-white border border-system-gray-100 rounded px-2 py-1"
-                                            >
-                                              <span className="truncate flex-1 mr-2">
-                                                {file?.name || file?.path || file}
-                                              </span>
-                                              {file?.path && (
-                                                <div className="flex gap-1">
-                                                  <Button
-                                                    variant="ghost"
-                                                    size="xs"
-                                                    onClick={() => openFile(file.path)}
-                                                  >
-                                                    <ExternalLink className="h-3 w-3" />
-                                                  </Button>
-                                                  <Button
-                                                    variant="ghost"
-                                                    size="xs"
-                                                    onClick={() => revealFile(file.path)}
-                                                  >
-                                                    <FolderOpen className="h-3 w-3" />
-                                                  </Button>
-                                                </div>
-                                              )}
-                                            </div>
-                                          ))}
-                                          {bridge.bridgeFiles.length > 3 && (
-                                            <div className="text-[11px] text-system-gray-500">
-                                              +{bridge.bridgeFiles.length - 3} more
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-                                  </div>
-                                ))}
+                              <div className="flex items-center justify-between gap-2">
+                                <Text
+                                  as="div"
+                                  variant="tiny"
+                                  className="font-semibold text-system-gray-500 uppercase tracking-wider"
+                                >
+                                  Related clusters
+                                </Text>
+                                <Button
+                                  variant="ghost"
+                                  size="xs"
+                                  className="text-system-gray-600 hover:text-system-gray-800"
+                                  rightIcon={
+                                    <ChevronRight
+                                      className={`h-3.5 w-3.5 transition-transform ${
+                                        isRelatedClustersOpen ? 'rotate-90' : 'rotate-0'
+                                      }`}
+                                    />
+                                  }
+                                  onClick={() => setIsRelatedClustersOpen((prev) => !prev)}
+                                  aria-label={
+                                    isRelatedClustersOpen
+                                      ? 'Collapse related clusters'
+                                      : 'Expand related clusters'
+                                  }
+                                >
+                                  <span>
+                                    {isRelatedClustersOpen
+                                      ? 'Hide'
+                                      : `Show (${selectedClusterInfo.bridges.length})`}
+                                  </span>
+                                </Button>
                               </div>
+
+                              {isRelatedClustersOpen ? (
+                                <div className="space-y-2">
+                                  {selectedClusterInfo.bridges.map((bridge) => {
+                                    const bridgeKey =
+                                      bridge?.id || bridge?.targetId || bridge?.targetLabel || '';
+                                    const isExpanded = Boolean(
+                                      expandedRelatedClusters?.[bridgeKey]
+                                    );
+                                    const bridgeFiles = Array.isArray(bridge?.bridgeFiles)
+                                      ? bridge.bridgeFiles
+                                      : [];
+                                    const showAllFiles = Boolean(
+                                      showAllBridgeFilesByBridge?.[bridgeKey]
+                                    );
+                                    const visibleFiles = showAllFiles
+                                      ? bridgeFiles
+                                      : bridgeFiles.slice(0, 3);
+
+                                    return (
+                                      <div
+                                        key={bridge.id}
+                                        className="border border-system-gray-200 rounded-lg p-2 bg-system-gray-50"
+                                      >
+                                        <div className="flex items-start justify-between gap-2">
+                                          <button
+                                            type="button"
+                                            className="min-w-0 flex-1 text-left"
+                                            title="Select related cluster"
+                                            onClick={() => {
+                                              if (bridge?.targetId)
+                                                graphActions.selectNode?.(bridge.targetId);
+                                            }}
+                                          >
+                                            <Text
+                                              as="div"
+                                              variant="small"
+                                              className="truncate text-system-gray-800 hover:text-stratosort-blue"
+                                            >
+                                              {bridge.targetLabel || bridge.targetId}
+                                            </Text>
+                                            <Text
+                                              as="div"
+                                              variant="tiny"
+                                              className="text-system-gray-500 mt-0.5"
+                                            >
+                                              {Math.round((bridge.similarity || 0) * 100)}% match
+                                            </Text>
+                                          </button>
+
+                                          <Button
+                                            variant="ghost"
+                                            size="xs"
+                                            className="text-system-gray-600 hover:text-system-gray-800 shrink-0"
+                                            rightIcon={
+                                              <ChevronRight
+                                                className={`h-3.5 w-3.5 transition-transform ${
+                                                  isExpanded ? 'rotate-90' : 'rotate-0'
+                                                }`}
+                                              />
+                                            }
+                                            onClick={() =>
+                                              setExpandedRelatedClusters((prev) => ({
+                                                ...(prev || {}),
+                                                [bridgeKey]: !prev?.[bridgeKey]
+                                              }))
+                                            }
+                                            aria-label={
+                                              isExpanded
+                                                ? 'Hide related cluster details'
+                                                : 'Show related cluster details'
+                                            }
+                                          >
+                                            <span>
+                                              {isExpanded ? 'Hide details' : 'Show details'}
+                                            </span>
+                                          </Button>
+                                        </div>
+
+                                        <Text
+                                          as="div"
+                                          variant="tiny"
+                                          className="text-system-gray-600 mt-2 flex flex-wrap gap-1"
+                                        >
+                                          {(bridge.sharedTerms || [])
+                                            .slice(0, isExpanded ? 8 : 3)
+                                            .map((t) => (
+                                              <span
+                                                key={t}
+                                                className="px-1.5 py-0.5 bg-white border border-system-gray-200 rounded text-[10px]"
+                                              >
+                                                {t}
+                                              </span>
+                                            ))}
+                                          {bridge.bridgeCount > 0 && (
+                                            <span className="px-1.5 py-0.5 bg-white border border-system-gray-200 rounded text-[10px]">
+                                              {bridge.bridgeCount} bridge file
+                                              {bridge.bridgeCount === 1 ? '' : 's'}
+                                            </span>
+                                          )}
+                                        </Text>
+
+                                        {isExpanded && bridgeFiles.length > 0 && (
+                                          <div className="mt-2 space-y-1 max-h-40 overflow-y-auto pr-1">
+                                            {visibleFiles.map((file) => (
+                                              <div
+                                                key={file?.path || file?.id || file}
+                                                className="flex items-center justify-between text-xs text-system-gray-700 bg-white border border-system-gray-100 rounded px-2 py-1"
+                                              >
+                                                <span className="truncate flex-1 mr-2">
+                                                  {file?.name || file?.path || file}
+                                                </span>
+                                                {file?.path && (
+                                                  <div className="flex gap-1">
+                                                    <Button
+                                                      variant="ghost"
+                                                      size="xs"
+                                                      onClick={() => openFile(file.path)}
+                                                      aria-label="Open bridge file"
+                                                      title="Open"
+                                                    >
+                                                      <ExternalLink className="h-3.5 w-3.5" />
+                                                    </Button>
+                                                    <Button
+                                                      variant="ghost"
+                                                      size="xs"
+                                                      onClick={() => revealFile(file.path)}
+                                                      aria-label="Reveal bridge file"
+                                                      title="Reveal"
+                                                    >
+                                                      <FolderOpen className="h-3.5 w-3.5" />
+                                                    </Button>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            ))}
+
+                                            {bridgeFiles.length > 3 && (
+                                              <div className="flex items-center justify-between pt-1">
+                                                <div className="text-[11px] text-system-gray-500">
+                                                  {showAllFiles
+                                                    ? `Showing ${bridgeFiles.length} files`
+                                                    : `+${bridgeFiles.length - 3} more`}
+                                                </div>
+                                                <Button
+                                                  variant="ghost"
+                                                  size="xs"
+                                                  className="text-system-gray-600 hover:text-system-gray-800"
+                                                  onClick={() =>
+                                                    setShowAllBridgeFilesByBridge((prev) => ({
+                                                      ...(prev || {}),
+                                                      [bridgeKey]: !prev?.[bridgeKey]
+                                                    }))
+                                                  }
+                                                >
+                                                  <span>
+                                                    {showAllFiles ? 'Show less' : 'Show all'}
+                                                  </span>
+                                                </Button>
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <Text as="div" variant="tiny" className="text-system-gray-500">
+                                  Hidden to reduce clutter. Expand to explore bridges to other
+                                  clusters.
+                                </Text>
+                              )}
                             </div>
                           )}
 
@@ -6321,12 +6887,24 @@ export default function UnifiedSearchModal({
                             <Button
                               variant="secondary"
                               size="sm"
-                              onClick={() => setFocusNodeId(selectedNode.id)}
+                              onClick={() => {
+                                setFocusNodeId(selectedNode.id);
+                                setFocusDepth(0);
+                                setGraphStatus('Focus: selected cluster only');
+                              }}
                             >
                               <Maximize2 className="h-4 w-4" />
                               <span>Show only cluster</span>
                             </Button>
-                            <Button variant="ghost" size="sm" onClick={() => setFocusNodeId(null)}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setFocusNodeId(selectedNode.id);
+                                setFocusDepth(1);
+                                setGraphStatus('Focus: selected cluster + neighbors');
+                              }}
+                            >
                               <Layers className="h-4 w-4" />
                               <span>Show neighbors</span>
                             </Button>

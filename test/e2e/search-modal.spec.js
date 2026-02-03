@@ -1108,27 +1108,30 @@ test.describe('Search Modal - Find Duplicates', () => {
     await window.keyboard.press('Control+k');
     await window.waitForTimeout(500);
 
-    // Switch to Graph tab
-    const graphTab = window.locator('button:has-text("Explore Graph")');
-    await graphTab.click();
-    await window.waitForTimeout(1000);
-
-    // Look for Find Duplicates button
-    const duplicatesState = await window.evaluate(() => {
-      const duplicatesBtn = document.evaluate(
-        "//*[contains(text(), 'Duplicates') or contains(text(), 'duplicates')]",
-        document,
-        null,
-        XPathResult.FIRST_ORDERED_NODE_TYPE,
-        null
-      ).singleNodeValue;
-
-      return {
-        hasDuplicatesButton: !!duplicatesBtn
-      };
+    // Prevent the first-time GraphTour overlay from intercepting clicks.
+    await window.evaluate(() => {
+      try {
+        localStorage.setItem('graphTourDismissed', 'true');
+      } catch {
+        // ignore
+      }
     });
 
-    console.log('[Test] Find Duplicates button state:', duplicatesState);
+    // Switch to Graph tab
+    // UI label is "Relate" (graph view); keep a fallback for older labels.
+    const relateTab = window.locator('button:has-text("Relate")');
+    const exploreGraphTab = window.locator('button:has-text("Explore Graph")');
+    const graphTab = (await relateTab.count()) > 0 ? relateTab : exploreGraphTab;
+    await graphTab.first().click();
+    await window.waitForTimeout(1000);
+
+    // Expand Advanced Options (Find Duplicates lives under this collapsible section)
+    const advancedToggle = window.locator('button:has-text("Advanced Options")');
+    await expect(advancedToggle.first()).toBeVisible();
+    await advancedToggle.first().click();
+
+    const duplicatesBtn = window.locator('button:has-text("Find Duplicates")');
+    await expect(duplicatesBtn.first()).toBeVisible();
   });
 });
 

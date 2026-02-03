@@ -41,6 +41,7 @@ const {
   FEEDBACK_SOURCES
 } = require('./organization/learningFeedback');
 const { withTimeout } = require('../../shared/promiseUtils');
+const { shouldEmbed } = require('./embedding/embeddingGate');
 
 const logger = typeof createLogger === 'function' ? createLogger('SmartFolderWatcher') : baseLogger;
 if (typeof createLogger !== 'function' && logger?.setContext) {
@@ -555,7 +556,7 @@ class SmartFolderWatcher {
       }
 
       // Check if analysis is needed
-      const needsAnalysis = await this._needsAnalysis(filePath, mtime);
+      const needsAnalysis = await this._needsAnalysis(filePath, mtime, stats);
 
       if (!needsAnalysis) {
         logger.debug('[SMART-FOLDER-WATCHER] File already up-to-date:', filePath);
@@ -780,22 +781,31 @@ class SmartFolderWatcher {
    * Check if a file needs analysis
    * @private
    */
-  async _needsAnalysis(filePath, mtime) {
+  async _needsAnalysis(filePath, mtime, stats = null) {
     try {
+      let fileStats = stats;
+      if (!fileStats) {
+        fileStats = await fs.stat(filePath);
+      }
+
+      const currentMtimeMs = Number.isFinite(fileStats.mtimeMs)
+        ? fileStats.mtimeMs
+        : fileStats.mtime
+          ? new Date(fileStats.mtime).getTime()
+          : null;
+      const currentLastModified =
+        fileStats.mtime && typeof fileStats.mtime.toISOString === 'function'
+          ? fileStats.mtime.toISOString()
+          : new Date(mtime).toISOString();
+      const currentHash = generateFileHash(filePath, fileStats.size, currentLastModified);
+
       // Get existing analysis for this file
       const existingAnalysis = await this.analysisHistoryService.getAnalysisByPath(filePath);
 
       // If not found by path, try by file hash (helps when paths change case or file moved)
       let matchedAnalysis = existingAnalysis;
       if (!matchedAnalysis) {
-        // We need file size/mtime to compute the hash
-        const stats = await fs.stat(filePath);
-        const hash = generateFileHash(
-          filePath,
-          stats.size,
-          stats.mtime ? stats.mtime.toISOString() : new Date(mtime).toISOString()
-        );
-        matchedAnalysis = await this.analysisHistoryService.getAnalysisByHash(hash);
+        matchedAnalysis = await this.analysisHistoryService.getAnalysisByHash(currentHash);
       }
 
       if (!matchedAnalysis) {
@@ -803,11 +813,26 @@ class SmartFolderWatcher {
         return true;
       }
 
+      if (
+        Number.isFinite(matchedAnalysis.fileSize) &&
+        matchedAnalysis.fileSize !== fileStats.size
+      ) {
+        return true;
+      }
+
+      if (matchedAnalysis.fileHash && matchedAnalysis.fileHash !== currentHash) {
+        return true;
+      }
+
       // Check if file was modified after last analysis
       const analysisTime = new Date(
         matchedAnalysis.lastModified || matchedAnalysis.timestamp
       ).getTime();
-      return mtime > analysisTime;
+      if (!Number.isFinite(currentMtimeMs) || !Number.isFinite(analysisTime)) {
+        return true;
+      }
+
+      return currentMtimeMs > analysisTime;
     } catch (error) {
       logger.warn('[SMART-FOLDER-WATCHER] Error checking analysis history:', error.message);
       // If we can't check, assume it needs analysis
@@ -1172,6 +1197,32 @@ class SmartFolderWatcher {
       return;
     }
 
+    // Respect global embedding timing/policy. For watcher placement, this is a final-path stage.
+    // If we have a persisted per-file override, apply it here.
+    let policyOverride = null;
+    try {
+      const entry = await this.analysisHistoryService?.getAnalysisByPath?.(filePath);
+      policyOverride = entry?.embedding?.policy || null;
+    } catch {
+      // Non-fatal
+    }
+    const gate = await shouldEmbed({ stage: 'final', policyOverride });
+    if (!gate.shouldEmbed) {
+      logger.debug('[SMART-FOLDER-WATCHER] Skipping embedding by policy/timing gate', {
+        timing: gate.timing,
+        policy: gate.policy,
+        filePath
+      });
+      try {
+        await this.analysisHistoryService?.updateEmbeddingStateByPath?.(filePath, {
+          status: 'skipped'
+        });
+      } catch {
+        // Non-fatal
+      }
+      return;
+    }
+
     // FIX: Verify file still exists before embedding (prevents ghost embeddings)
     try {
       await fs.stat(filePath);
@@ -1312,6 +1363,16 @@ class SmartFolderWatcher {
       });
 
       logger.debug('[SMART-FOLDER-WATCHER] Embedded file:', filePath);
+
+      // Persist done state (direct upsert).
+      try {
+        await this.analysisHistoryService?.updateEmbeddingStateByPath?.(filePath, {
+          status: 'done',
+          model: embedding.model || null
+        });
+      } catch {
+        // Non-fatal
+      }
 
       // Conditionally generate chunk embeddings for deep semantic search (opt-in setting)
       // Check settings for user preference, fallback to constant default
@@ -1681,7 +1742,7 @@ class SmartFolderWatcher {
         for (const file of files) {
           const stats = await fs.stat(file);
           const mtime = new Date(stats.mtime).getTime();
-          const needsAnalysis = await this._needsAnalysis(file, mtime);
+          const needsAnalysis = await this._needsAnalysis(file, mtime, stats);
 
           if (needsAnalysis) {
             this._enqueueAnalysisItem({
@@ -1703,6 +1764,80 @@ class SmartFolderWatcher {
 
     logger.info('[SMART-FOLDER-WATCHER] Scan complete:', { scanned, queued });
     return { scanned, queued };
+  }
+
+  /**
+   * Preview reanalysis scope without enqueueing work.
+   * @returns {Promise<{scanned: number, watchedFolders: number}>}
+   */
+  async previewReanalyzeAll() {
+    let scanned = 0;
+    for (const folderPath of this.watchedPaths) {
+      try {
+        const files = await this._scanDirectory(folderPath);
+        scanned += files.length;
+      } catch (error) {
+        logger.warn('[SMART-FOLDER-WATCHER] Preview scan failed:', {
+          folderPath,
+          error: error.message
+        });
+      }
+    }
+
+    return { scanned, watchedFolders: this.watchedPaths.size };
+  }
+
+  _isInWatchedPath(filePath) {
+    if (!filePath || this.watchedPaths.size === 0) return false;
+    const normalizedPath = normalizePathForIndex(filePath);
+    if (!normalizedPath) return false;
+
+    for (const folderPath of this.watchedPaths) {
+      const normalizedFolder = normalizePathForIndex(folderPath);
+      if (!normalizedFolder) continue;
+      const prefix = normalizedFolder.endsWith('/') ? normalizedFolder : `${normalizedFolder}/`;
+      if (normalizedPath.startsWith(prefix)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Queue a single file for reanalysis.
+   * @param {string} filePath
+   * @param {Object} [options]
+   * @returns {Promise<{queued: boolean, error?: string, errorCode?: string}>}
+   */
+  async reanalyzeFile(filePath, options = {}) {
+    if (!filePath) {
+      return { queued: false, error: 'filePath is required', errorCode: 'MISSING_FILE_PATH' };
+    }
+
+    if (!this._isInWatchedPath(filePath)) {
+      return {
+        queued: false,
+        error: 'File is not inside a watched smart folder',
+        errorCode: 'NOT_IN_SMART_FOLDER'
+      };
+    }
+
+    const stats = await fs.stat(filePath);
+    const mtime = stats?.mtime ? new Date(stats.mtime).getTime() : Date.now();
+
+    this._enqueueAnalysisItem({
+      filePath,
+      mtime,
+      eventType: 'reanalyze',
+      applyNaming: options.applyNaming,
+      queuedAt: Date.now()
+    });
+
+    logger.info('[SMART-FOLDER-WATCHER] Queued single file for reanalysis', {
+      filePath
+    });
+
+    return { queued: true };
   }
 
   /**

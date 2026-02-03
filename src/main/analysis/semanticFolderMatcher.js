@@ -25,8 +25,9 @@ const { normalizePathForIndex, getCanonicalFileId } = require('../../shared/path
 const { findContainingSmartFolder } = require('../../shared/folderUtils');
 const { buildEmbeddingSummary } = require('./embeddingSummary');
 const { container, ServiceIds } = require('../services/ServiceContainer');
-const embeddingQueue = require('./embeddingQueue');
+const { analysisQueue } = require('./embeddingQueue/stageQueues');
 const { withTimeout } = require('../../shared/promiseUtils');
+const { shouldEmbed } = require('../services/embedding/embeddingGate');
 
 const logger = createLogger('SemanticFolderMatcher');
 /**
@@ -267,14 +268,29 @@ async function applySemanticFolderMatching(params) {
       baseMeta.has_text = analysis.has_text === true;
     }
 
-    if (resolvedSmartFolder) {
-      // Queue embedding for batch persistence only once file is in a smart folder
-      await embeddingQueue.enqueue({
-        id: fileId,
-        vector,
-        model,
-        meta: baseMeta,
-        updatedAt: new Date().toISOString()
+    if (resolvedSmartFolder && type !== 'image') {
+      // Queue embedding for batch persistence only once file is in a smart folder,
+      // and only when embedding is enabled for this stage.
+      // Per-file overrides may be set after analysis; during analysis we only apply global settings.
+      const gate = await shouldEmbed({ stage: 'analysis' });
+      if (gate.shouldEmbed) {
+        await analysisQueue.enqueue({
+          id: fileId,
+          vector,
+          model,
+          meta: baseMeta,
+          updatedAt: new Date().toISOString()
+        });
+      } else {
+        logger.debug('[FolderMatcher] Embedding skipped by policy/timing gate', {
+          timing: gate.timing,
+          policy: gate.policy,
+          filePath
+        });
+      }
+    } else if (resolvedSmartFolder && type === 'image') {
+      logger.debug('[FolderMatcher] Skipping image enqueue (handled by image pipeline)', {
+        filePath
       });
     } else {
       logger.debug('[FolderMatcher] Skipping embedding persistence (not in smart folder)', {

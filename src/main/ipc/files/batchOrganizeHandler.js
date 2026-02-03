@@ -8,8 +8,8 @@
  */
 
 const path = require('path');
-const fs = require('fs').promises;
 const crypto = require('crypto');
+const fs = require('fs').promises;
 const { ACTION_TYPES, PROCESSING_LIMITS } = require('../../../shared/constants');
 const { LIMITS, TIMEOUTS, BATCH, RETRY } = require('../../../shared/performanceConstants');
 const { logger: baseLogger, createLogger } = require('../../../shared/logger');
@@ -23,7 +23,8 @@ const { validateBatchOperation, MAX_BATCH_SIZE } = require('./batchValidator');
 const { executeRollback } = require('./batchRollback');
 const { sendOperationProgress, sendChunkedResults } = require('./batchProgressReporter');
 const { getInstance: getFileOperationTracker } = require('../../../shared/fileOperationTracker');
-const { syncEmbeddingForMove } = require('./embeddingSync');
+const { syncEmbeddingForMove, removeEmbeddingsForPathBestEffort } = require('./embeddingSync');
+const { computeFileChecksum, handleDuplicateMove } = require('../../utils/fileDedup');
 
 const logger =
   typeof createLogger === 'function' ? createLogger('IPC:Files:BatchOrganize') : baseLogger;
@@ -85,39 +86,6 @@ const pLimit = (concurrency) => {
     });
   };
 };
-
-/**
- * Compute SHA-256 checksum of a file using streaming
- * @param {string} filePath - Path to the file
- * @returns {Promise<string>} Hex-encoded checksum
- */
-async function computeFileChecksum(filePath) {
-  return new Promise((resolve, reject) => {
-    const hash = crypto.createHash('sha256');
-    const stream = require('fs').createReadStream(filePath);
-
-    // FIX: Cleanup function to remove listeners and destroy stream
-    const cleanup = () => {
-      // Defensive: handle mocks that might not have these methods
-      if (typeof stream.removeAllListeners === 'function') {
-        stream.removeAllListeners();
-      }
-      if (typeof stream.destroy === 'function') {
-        stream.destroy();
-      }
-    };
-
-    stream.on('data', (chunk) => hash.update(chunk));
-    stream.on('end', () => {
-      cleanup(); // FIX: Clean up on success path too
-      resolve(hash.digest('hex'));
-    });
-    stream.on('error', (err) => {
-      cleanup();
-      reject(err);
-    });
-  });
-}
 
 const delayMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -425,10 +393,11 @@ async function handleBatchOrganize(params) {
 
             if (moveResult && moveResult.skipped) {
               skippedCount++;
+              const resolvedDestination = moveResult.destination || op.destination;
               results.push({
                 success: true,
                 source: op.source,
-                destination: op.destination,
+                destination: resolvedDestination,
                 operation: op.type || 'move',
                 skipped: true,
                 reason: moveResult.reason
@@ -437,14 +406,14 @@ async function handleBatchOrganize(params) {
               log.info('[FILE-OPS] Move skipped (duplicate)', {
                 batchId,
                 source: op.source,
-                destination: op.destination
+                destination: resolvedDestination
               });
 
               // Verify state is consistent (dest exists, source gone)
-              await verifyMoveCompletion(op.source, op.destination, log);
+              await verifyMoveCompletion(op.source, resolvedDestination, log);
 
               await getServiceIntegration()?.processingState?.markOrganizeOpDone(batchId, i, {
-                destination: op.destination,
+                destination: resolvedDestination,
                 skipped: true
               });
 
@@ -694,32 +663,19 @@ function isCriticalFileError(error) {
  * Perform a single file move with collision handling
  */
 async function performFileMove(op, log, checksumFn) {
-  // FIX P2-1: Check if destination exists with identical content (deduplication)
-  // This prevents creating numbered copies of files that already exist at destination
-  try {
-    await fs.access(op.destination);
-    // Destination exists - check if content is identical
-    const [sourceHash, destHash] = await Promise.all([
-      checksumFn(op.source),
-      checksumFn(op.destination)
-    ]);
-    if (sourceHash === destHash) {
-      log.info('[FILE-OPS] Skipping move - identical file already exists at destination', {
-        source: op.source,
-        destination: op.destination,
-        checksum: sourceHash.substring(0, 16) + '...'
-      });
-      // Remove source since identical content already exists at destination
-      await fs.unlink(op.source);
-      return { destination: op.destination, skipped: true, reason: 'duplicate' };
-    }
-    // Files differ - proceed with collision handling below
-  } catch (accessError) {
-    if (accessError.code !== 'ENOENT') {
-      throw accessError; // Unexpected error
-    }
-    // Destination doesn't exist - proceed with normal move
-  }
+  // FIX P2-1: Check for identical content at destination or within destination dir.
+  // This prevents creating numbered copies of files that already exist.
+  const duplicateResult = await handleDuplicateMove({
+    sourcePath: op.source,
+    destinationPath: op.destination,
+    checksumFn,
+    logger: log,
+    logPrefix: '[FILE-OPS]',
+    dedupContext: 'batchOrganize',
+    removeEmbeddings: removeEmbeddingsForPathBestEffort,
+    unlinkFn: fs.unlink
+  });
+  if (duplicateResult) return duplicateResult;
 
   let counter = 0;
   let uniqueDestination = op.destination;
@@ -928,6 +884,7 @@ async function recordUndoAndUpdateDatabase(
             syncEmbeddingForMove({
               sourcePath: change.oldPath,
               destPath: change.newPath,
+              operation: 'move',
               log
             }),
           syncBatchSize

@@ -8,6 +8,7 @@
 import { removeSelectedFile } from '../slices/filesSlice';
 import { removeAnalysisResult } from '../slices/analysisSlice';
 import { atomicRemoveFilesWithCleanup } from '../slices/atomicActions';
+import { updateEmbeddingState } from '../slices/analysisSlice';
 
 /**
  * Atomically remove a single file from both filesSlice and analysisSlice.
@@ -45,5 +46,34 @@ export const clearAllFilesWithCleanup = () => (dispatch, getState) => {
   if (selectedFiles.length > 0) {
     const filePaths = selectedFiles.map((f) => f.path);
     dispatch(removeFilesWithCleanup(filePaths));
+  }
+};
+
+/**
+ * Persist per-file embedding policy and update local Redux state.
+ *
+ * @param {string} filePath
+ * @param {'embed'|'skip'|'web_only'} policy
+ */
+export const setEmbeddingPolicyForFile = (filePath, policy) => async (dispatch, getState) => {
+  if (!filePath || !policy) return;
+  const api = window.electronAPI?.analysisHistory;
+  if (!api?.setEmbeddingPolicy) return;
+
+  const result = await api.setEmbeddingPolicy(filePath, policy);
+  if (result?.success) {
+    const state = typeof getState === 'function' ? getState() : null;
+    const existing = state?.analysis?.results?.find?.((r) => r?.path === filePath) || null;
+    const prevStatus = existing?.embeddingStatus || existing?.analysis?.embeddingStatus || null;
+    const nextStatus =
+      policy === 'embed' ? (prevStatus === 'done' ? 'done' : 'pending') : 'skipped';
+    dispatch(
+      updateEmbeddingState({
+        path: filePath,
+        embeddingPolicy: policy,
+        // Treat policy changes as immediate state changes for UI clarity
+        embeddingStatus: nextStatus
+      })
+    );
   }
 };

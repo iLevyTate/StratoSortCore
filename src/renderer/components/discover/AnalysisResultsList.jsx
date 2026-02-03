@@ -1,14 +1,26 @@
 import React, { memo, useMemo, useCallback, useState, useEffect, Component } from 'react';
 import PropTypes from 'prop-types';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { List } from 'react-window';
-import { FileText, Compass, AlertTriangle, Eye, FolderOpen, Trash2 } from 'lucide-react';
+import {
+  FileText,
+  Compass,
+  AlertTriangle,
+  Eye,
+  FolderOpen,
+  Trash2,
+  Database,
+  Globe,
+  Ban,
+  RefreshCw
+} from 'lucide-react';
 import { Button, StatusBadge, Card, IconButton, StateMessage } from '../ui';
 import { logger } from '../../../shared/logger';
 import { UI_VIRTUALIZATION } from '../../../shared/constants';
 import { formatDisplayPath } from '../../utils/pathDisplay';
 import { Text } from '../ui/Typography';
 import { selectRedactPaths } from '../../store/selectors';
+import { setEmbeddingPolicyForFile } from '../../store/thunks/fileThunks';
 
 class AnalysisResultsErrorBoundary extends Component {
   constructor(props) {
@@ -72,8 +84,16 @@ const formatConfidence = (value) => {
 };
 
 const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }) {
+  const dispatch = useDispatch();
   if (!data || !data.items) return null;
-  const { items, handleAction, getFileStateDisplay, redactPaths, isVirtualized } = data;
+  const {
+    items,
+    handleAction,
+    getFileStateDisplay,
+    redactPaths,
+    isVirtualized,
+    defaultEmbeddingPolicy
+  } = data;
 
   if (!Array.isArray(items) || index < 0 || index >= items.length) return null;
 
@@ -96,6 +116,18 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
   const displayColor = stateDisplay?.color || '';
 
   const confidence = formatConfidence(file.analysis?.confidence);
+  const embeddingPolicy =
+    file.embeddingPolicy || file.analysis?.embeddingPolicy || defaultEmbeddingPolicy || 'embed';
+  const nextEmbeddingPolicy =
+    embeddingPolicy === 'embed' ? 'web_only' : embeddingPolicy === 'web_only' ? 'skip' : 'embed';
+  const policyLabel =
+    embeddingPolicy === 'embed'
+      ? 'Embed locally'
+      : embeddingPolicy === 'web_only'
+        ? 'Web-only'
+        : 'Skip embedding';
+  const PolicyIcon =
+    embeddingPolicy === 'embed' ? Database : embeddingPolicy === 'web_only' ? Globe : Ban;
   const tone = displayColor.includes('green')
     ? 'success'
     : displayColor.includes('amber') || displayColor.includes('warning')
@@ -161,6 +193,17 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
                   Conf. {confidence}%
                 </Text>
               )}
+              <Text
+                variant="tiny"
+                className="text-system-gray-400 font-medium whitespace-nowrap"
+                title={`Embedding policy: ${policyLabel}`}
+              >
+                {embeddingPolicy === 'embed'
+                  ? 'Embed: Local'
+                  : embeddingPolicy === 'web_only'
+                    ? 'Embed: Web-only'
+                    : 'Embed: Off'}
+              </Text>
             </div>
           </div>
 
@@ -193,6 +236,35 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
         {/* Actions */}
         <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
           <IconButton
+            icon={<RefreshCw className="w-4 h-4" />}
+            size="sm"
+            variant="ghost"
+            disabled={!file.path}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleAction && handleAction('reanalyze', file.path);
+            }}
+            title={file.path ? 'Reanalyze File' : 'Reanalyze unavailable'}
+            aria-label="Reanalyze file"
+          />
+          <IconButton
+            icon={<PolicyIcon className="w-4 h-4" />}
+            size="sm"
+            variant="ghost"
+            onClick={(e) => {
+              e.stopPropagation();
+              dispatch(setEmbeddingPolicyForFile(file.path, nextEmbeddingPolicy));
+            }}
+            title={`Embedding policy: ${policyLabel}. Click to set: ${
+              nextEmbeddingPolicy === 'embed'
+                ? 'Embed locally'
+                : nextEmbeddingPolicy === 'web_only'
+                  ? 'Web-only'
+                  : 'Skip'
+            }`}
+            aria-label="Change embedding policy"
+          />
+          <IconButton
             icon={<Eye className="w-4 h-4" />}
             size="sm"
             variant="ghost"
@@ -201,6 +273,7 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
               handleAction && handleAction('open', file.path);
             }}
             title="Open File"
+            aria-label="Open file"
           />
           <IconButton
             icon={<FolderOpen className="w-4 h-4" />}
@@ -211,6 +284,7 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
               handleAction && handleAction('reveal', file.path);
             }}
             title="Reveal in Folder"
+            aria-label="Reveal in folder"
           />
           <IconButton
             icon={<Trash2 className="w-4 h-4" />}
@@ -222,6 +296,7 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
               handleAction && handleAction('remove', file.path);
             }}
             title="Remove from List"
+            aria-label="Remove from list"
           />
         </div>
       </Card>
@@ -237,13 +312,21 @@ AnalysisResultRow.propTypes = {
     handleAction: PropTypes.func.isRequired,
     getFileStateDisplay: PropTypes.func.isRequired,
     redactPaths: PropTypes.bool,
-    isVirtualized: PropTypes.bool
+    isVirtualized: PropTypes.bool,
+    defaultEmbeddingPolicy: PropTypes.string
   }).isRequired
 };
 
 function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }) {
   // PERF: Use memoized selector instead of inline Boolean coercion
   const redactPaths = useSelector(selectRedactPaths);
+  const settings = useSelector((state) => state.ui?.settings);
+  const defaultEmbeddingPolicy = useMemo(() => {
+    const candidate = settings?.defaultEmbeddingPolicy;
+    return candidate === 'embed' || candidate === 'skip' || candidate === 'web_only'
+      ? candidate
+      : 'embed';
+  }, [settings]);
   const safeResults = useMemo(() => {
     if (!Array.isArray(results)) return [];
     return results.filter((r) => r && typeof r === 'object' && (r.path || r.name));
@@ -320,17 +403,26 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
         handleAction,
         getFileStateDisplay,
         redactPaths,
-        isVirtualized: shouldVirtualize
+        isVirtualized: shouldVirtualize,
+        defaultEmbeddingPolicy
       }
     }),
-    [items, handleAction, getFileStateDisplay, redactPaths, shouldVirtualize]
+    [
+      items,
+      handleAction,
+      getFileStateDisplay,
+      redactPaths,
+      shouldVirtualize,
+      defaultEmbeddingPolicy
+    ]
   );
   const safeRowProps = rowProps ?? {};
   const listItemData = safeRowProps.data || {
     items: [],
     handleAction,
     getFileStateDisplay,
-    redactPaths
+    redactPaths,
+    defaultEmbeddingPolicy
   };
 
   const listContainerClass = `w-full h-full modern-scrollbar overflow-y-auto overflow-x-hidden flex flex-col gap-default`;

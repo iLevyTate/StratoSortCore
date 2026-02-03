@@ -21,10 +21,12 @@ const {
   createFallbackAnalysis
 } = require('./fallbackUtils');
 const FolderMatchingService = require('../services/FolderMatchingService');
-const embeddingQueue = require('./embeddingQueue');
+const { analysisQueue } = require('./embeddingQueue/stageQueues');
+const embeddingQueueManager = require('./embeddingQueue/queueManager');
 const { createLogger } = require('../../shared/logger');
 const { findContainingSmartFolder } = require('../../shared/folderUtils');
 const { getSemanticFileId } = require('../../shared/fileIdUtils');
+const { shouldEmbed } = require('../services/embedding/embeddingGate');
 const {
   applySemanticFolderMatching: applyUnifiedFolderMatching,
   getServices,
@@ -1078,10 +1080,11 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
         type: 'image'
       });
 
-      // FIX: Explicitly queue embedding for images to ensure they are searchable
+      // Explicitly queue embedding for images to ensure they are searchable
       // even if they don't have OCR text (using keywords/description instead)
       const { matcher } = getServices();
-      if (matcher && analysis && isInSmartFolder) {
+      const gate = await shouldEmbed({ stage: 'analysis' });
+      if (matcher && analysis && isInSmartFolder && gate.shouldEmbed) {
         const textParts = [
           analysis.suggestedName,
           analysis.summary,
@@ -1103,8 +1106,8 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
 
           const { vector } = await matcher.embedText(textToEmbed);
           if (vector) {
-            await embeddingQueue.removeByFilePath?.(filePath);
-            await embeddingQueue.enqueue({
+            await embeddingQueueManager.removeByFilePath?.(filePath);
+            await analysisQueue.enqueue({
               id: getSemanticFileId(filePath),
               path: filePath,
               text: textToEmbed,
@@ -1125,6 +1128,12 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
       } else if (matcher && analysis && !isInSmartFolder) {
         logger.debug('[IMAGE] Skipping embedding persistence (not in smart folder)', {
           path: filePath
+        });
+      } else if (matcher && analysis && isInSmartFolder && !gate.shouldEmbed) {
+        logger.debug('[IMAGE] Skipping embedding persistence by policy/timing gate', {
+          path: filePath,
+          timing: gate.timing,
+          policy: gate.policy
         });
       }
     } catch (error) {
@@ -1346,7 +1355,7 @@ async function extractTextFromImage(filePath, options = {}) {
  * Force flush the embedding queue (useful for cleanup or end of batch)
  */
 async function flushAllEmbeddings() {
-  await embeddingQueue.flush();
+  await analysisQueue.flush();
 }
 
 /**
