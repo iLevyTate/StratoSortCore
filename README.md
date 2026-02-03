@@ -15,7 +15,7 @@
 > 🖥️ **Desktop/Laptop:** The video will play directly below. 📱 **Mobile:** Click the filename below
 > the player to watch.
 
-https://github.com/user-attachments/assets/43fcf6bc-3568-4b8e-874b-77043bcd4a63
+https://github.com/user-attachments/assets/7cd1f974-33cb-4d2d-ac8d-ea30c015389b
 
 <p align="center">
   <a href="https://github.com/iLevyTate/elstratosort/releases"><img src="https://img.shields.io/badge/version-1.2.2-blue?style=flat-square" alt="Version" /></a>
