@@ -928,6 +928,7 @@ async function recordUndoAndUpdateDatabase(
             syncEmbeddingForMove({
               sourcePath: change.oldPath,
               destPath: change.newPath,
+              operation: 'move',
               log
             }),
           syncBatchSize

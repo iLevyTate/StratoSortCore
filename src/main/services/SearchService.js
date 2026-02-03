@@ -2386,58 +2386,63 @@ class SearchService {
 
       // 10. Check embedding queue status
       try {
-        const embeddingQueue = require('../analysis/embeddingQueue');
-        const queueStats = embeddingQueue.getStats?.();
-        if (queueStats) {
-          diagnostics.details.embeddingQueue = {
-            queueLength: queueStats.queueLength,
-            capacityPercent: queueStats.capacityPercent,
-            isFlushing: queueStats.isFlushing,
-            failedItemCount: queueStats.failedItemCount,
-            deadLetterCount: queueStats.deadLetterCount,
-            healthStatus: queueStats.healthStatus
+        const embeddingQueues = require('../analysis/embeddingQueue/queueManager');
+        const stats = embeddingQueues.getStats?.();
+        if (stats) {
+          diagnostics.details.embeddingQueues = stats;
+
+          const summarize = (label, queueStats) => {
+            if (!queueStats) return;
+            const queueLength = queueStats.queueLength || 0;
+            const failedItemCount = queueStats.failedItemCount || 0;
+            const deadLetterCount = queueStats.deadLetterCount || 0;
+            const capacityPercent = queueStats.capacityPercent || 0;
+            const healthStatus = queueStats.healthStatus || 'unknown';
+
+            if (queueLength > 0) {
+              diagnostics.warnings.push({
+                type: 'PENDING_EMBEDDINGS',
+                severity: 'low',
+                message: `${label}: ${queueLength} embeddings pending (${Number.isFinite(capacityPercent) ? capacityPercent.toFixed(1) : 0}% capacity).`
+              });
+            }
+
+            if (failedItemCount > 0) {
+              diagnostics.warnings.push({
+                type: 'FAILED_EMBEDDINGS',
+                severity: 'medium',
+                message: `${label}: ${failedItemCount} embeddings failed and awaiting retry.`
+              });
+            }
+
+            if (deadLetterCount > 0) {
+              diagnostics.issues.push({
+                type: 'DEAD_LETTER_ITEMS',
+                severity: 'high',
+                message: `${label}: ${deadLetterCount} embeddings permanently failed (dead letter).`
+              });
+              diagnostics.recommendations.push(
+                'Review dead letter items in Settings > Advanced to identify recurring failures.'
+              );
+            }
+
+            if (healthStatus === 'critical') {
+              diagnostics.issues.push({
+                type: 'EMBEDDING_QUEUE_CRITICAL',
+                severity: 'high',
+                message: `${label}: embedding queue is at critical capacity. New embeddings may be dropped.`
+              });
+            } else if (healthStatus === 'warning') {
+              diagnostics.warnings.push({
+                type: 'EMBEDDING_QUEUE_HIGH',
+                severity: 'medium',
+                message: `${label}: embedding queue is at high capacity. Processing may be slow.`
+              });
+            }
           };
 
-          if (queueStats.queueLength > 0) {
-            diagnostics.warnings.push({
-              type: 'PENDING_EMBEDDINGS',
-              severity: 'low',
-              message: `${queueStats.queueLength} embeddings pending in queue (${queueStats.capacityPercent?.toFixed(1) || 0}% capacity).`
-            });
-          }
-
-          if (queueStats.failedItemCount > 0) {
-            diagnostics.warnings.push({
-              type: 'FAILED_EMBEDDINGS',
-              severity: 'medium',
-              message: `${queueStats.failedItemCount} embeddings failed and awaiting retry.`
-            });
-          }
-
-          if (queueStats.deadLetterCount > 0) {
-            diagnostics.issues.push({
-              type: 'DEAD_LETTER_ITEMS',
-              severity: 'high',
-              message: `${queueStats.deadLetterCount} embeddings permanently failed (in dead letter queue).`
-            });
-            diagnostics.recommendations.push(
-              'Review dead letter items in Settings > Advanced to identify recurring failures.'
-            );
-          }
-
-          if (queueStats.healthStatus === 'critical') {
-            diagnostics.issues.push({
-              type: 'EMBEDDING_QUEUE_CRITICAL',
-              severity: 'high',
-              message: 'Embedding queue is at critical capacity. New embeddings may be dropped.'
-            });
-          } else if (queueStats.healthStatus === 'warning') {
-            diagnostics.warnings.push({
-              type: 'EMBEDDING_QUEUE_HIGH',
-              severity: 'medium',
-              message: 'Embedding queue is at high capacity. Processing may be slow.'
-            });
-          }
+          summarize('analysisQueue', stats.analysis);
+          summarize('organizeQueue', stats.organize);
         }
       } catch {
         // Non-critical - queue module may not be available

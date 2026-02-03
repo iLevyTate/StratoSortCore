@@ -5,7 +5,7 @@ const logger = createLogger('BatchAnalysisService');
 const { analyzeDocumentFile } = require('../analysis/ollamaDocumentAnalysis');
 const { analyzeImageFile } = require('../analysis/ollamaImageAnalysis');
 const { getInstance: getParallelEmbeddingService } = require('./ParallelEmbeddingService');
-const embeddingQueue = require('../analysis/embeddingQueue');
+const { analysisQueue } = require('../analysis/embeddingQueue/stageQueues');
 const path = require('path');
 const os = require('os');
 const { get: getConfig } = require('../../shared/config/index');
@@ -128,7 +128,7 @@ class BatchAnalysisService {
     // Use local variable to avoid race condition with concurrent analyzeFiles calls
     let embeddingProgressUnsubscribe = null;
     if (onEmbeddingProgress) {
-      embeddingProgressUnsubscribe = embeddingQueue.onProgress(onEmbeddingProgress);
+      embeddingProgressUnsubscribe = analysisQueue.onProgress(onEmbeddingProgress);
     }
 
     try {
@@ -156,7 +156,7 @@ class BatchAnalysisService {
 
     // FIX: Track embedding statistics for this batch
     const embeddingStats = {
-      startQueueSize: embeddingQueue.getStats().queueLength,
+      startQueueSize: analysisQueue.getStats().queueLength,
       embeddings: 0
     };
 
@@ -168,7 +168,7 @@ class BatchAnalysisService {
     const BACKPRESSURE_MAX_DELAY_MS = 5000;
 
     const checkBackpressure = async () => {
-      const stats = embeddingQueue.getStats();
+      const stats = analysisQueue.getStats();
       if (stats.capacityPercent >= 75) {
         logger.warn('[BATCH-ANALYSIS] Backpressure: embedding queue at capacity', {
           capacityPercent: stats.capacityPercent,
@@ -180,12 +180,12 @@ class BatchAnalysisService {
         let iterations = 0;
 
         // Wait for queue to drain below 50% before resuming, with timeout
-        while (embeddingQueue.getStats().capacityPercent > 50) {
+        while (analysisQueue.getStats().capacityPercent > 50) {
           const elapsed = Date.now() - backpressureStart;
           if (elapsed >= BACKPRESSURE_TIMEOUT_MS) {
             logger.warn('[BATCH-ANALYSIS] Backpressure timeout reached, continuing anyway', {
               elapsed,
-              capacityPercent: embeddingQueue.getStats().capacityPercent
+              capacityPercent: analysisQueue.getStats().capacityPercent
             });
             break;
           }
@@ -198,7 +198,7 @@ class BatchAnalysisService {
           if (iterations % 10 === 0) {
             logger.debug('[BATCH-ANALYSIS] Waiting for embedding queue to drain', {
               elapsed,
-              capacityPercent: embeddingQueue.getStats().capacityPercent,
+              capacityPercent: analysisQueue.getStats().capacityPercent,
               iterations
             });
           }
@@ -265,7 +265,7 @@ class BatchAnalysisService {
       onProgress: onProgress
         ? (progress) => {
             // FIX: Enhanced progress with embedding info
-            const queueStats = embeddingQueue.getStats();
+            const queueStats = analysisQueue.getStats();
             onProgress({
               ...progress,
               phase: 'analysis',
@@ -328,7 +328,7 @@ class BatchAnalysisService {
     const avgTime = totalDuration / filePaths.length;
 
     // FIX: Get final embedding stats
-    const finalQueueStats = embeddingQueue.getStats();
+    const finalQueueStats = analysisQueue.getStats();
     const embeddingServiceStats = this.parallelEmbeddingService.getStats();
 
     // Aggregate error details for better debugging
@@ -495,7 +495,7 @@ class BatchAnalysisService {
    * FIX: Enhanced with embedding service and queue statistics
    */
   getStats() {
-    const queueStats = embeddingQueue.getStats();
+    const queueStats = analysisQueue.getStats();
     const embeddingServiceStats = this.parallelEmbeddingService.getStats();
 
     return {
@@ -513,7 +513,7 @@ class BatchAnalysisService {
    * @returns {Object} Queue statistics
    */
   getEmbeddingQueueStats() {
-    return embeddingQueue.getStats();
+    return analysisQueue.getStats();
   }
 
   /**
@@ -542,7 +542,7 @@ class BatchAnalysisService {
    */
   async flushEmbeddings() {
     logger.info('[BATCH-ANALYSIS] Force flushing embedding queue');
-    await embeddingQueue.forceFlush();
+    await analysisQueue.forceFlush();
   }
 
   /**
@@ -559,7 +559,7 @@ class BatchAnalysisService {
     }
 
     // Flush embeddings
-    await embeddingQueue.shutdown();
+    await analysisQueue.shutdown();
 
     logger.info('[BATCH-ANALYSIS] Shutdown complete');
   }

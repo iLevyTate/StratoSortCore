@@ -41,6 +41,7 @@ const {
   FEEDBACK_SOURCES
 } = require('./organization/learningFeedback');
 const { withTimeout } = require('../../shared/promiseUtils');
+const { shouldEmbed } = require('./embedding/embeddingGate');
 
 const logger = typeof createLogger === 'function' ? createLogger('SmartFolderWatcher') : baseLogger;
 if (typeof createLogger !== 'function' && logger?.setContext) {
@@ -1172,6 +1173,32 @@ class SmartFolderWatcher {
       return;
     }
 
+    // Respect global embedding timing/policy. For watcher placement, this is a final-path stage.
+    // If we have a persisted per-file override, apply it here.
+    let policyOverride = null;
+    try {
+      const entry = await this.analysisHistoryService?.getAnalysisByPath?.(filePath);
+      policyOverride = entry?.embedding?.policy || null;
+    } catch {
+      // Non-fatal
+    }
+    const gate = await shouldEmbed({ stage: 'final', policyOverride });
+    if (!gate.shouldEmbed) {
+      logger.debug('[SMART-FOLDER-WATCHER] Skipping embedding by policy/timing gate', {
+        timing: gate.timing,
+        policy: gate.policy,
+        filePath
+      });
+      try {
+        await this.analysisHistoryService?.updateEmbeddingStateByPath?.(filePath, {
+          status: 'skipped'
+        });
+      } catch {
+        // Non-fatal
+      }
+      return;
+    }
+
     // FIX: Verify file still exists before embedding (prevents ghost embeddings)
     try {
       await fs.stat(filePath);
@@ -1312,6 +1339,16 @@ class SmartFolderWatcher {
       });
 
       logger.debug('[SMART-FOLDER-WATCHER] Embedded file:', filePath);
+
+      // Persist done state (direct upsert).
+      try {
+        await this.analysisHistoryService?.updateEmbeddingStateByPath?.(filePath, {
+          status: 'done',
+          model: embedding.model || null
+        });
+      } catch {
+        // Non-fatal
+      }
 
       // Conditionally generate chunk embeddings for deep semantic search (opt-in setting)
       // Check settings for user preference, fallback to constant default

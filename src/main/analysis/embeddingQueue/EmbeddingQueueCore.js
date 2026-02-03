@@ -29,13 +29,27 @@ const { createProgressTracker } = require('./progress');
 
 const logger = createLogger('EmbeddingQueue');
 class EmbeddingQueue {
-  constructor() {
+  constructor(options = {}) {
     this.queue = [];
-    this.persistencePath = path.join(app.getPath('userData'), 'pending_embeddings.json');
+    const persistenceFileName =
+      typeof options.persistenceFileName === 'string' && options.persistenceFileName.trim()
+        ? options.persistenceFileName.trim()
+        : 'pending_embeddings.json';
+    this.persistencePath = path.join(app.getPath('userData'), persistenceFileName);
 
     // Configuration from unified config
-    this.BATCH_SIZE = getConfig('ANALYSIS.batchSize', 50);
-    this.FLUSH_DELAY_MS = BATCH.EMBEDDING_FLUSH_DELAY_MS;
+    this.BATCH_SIZE =
+      typeof options.batchSize === 'number' &&
+      Number.isFinite(options.batchSize) &&
+      options.batchSize > 0
+        ? Math.floor(options.batchSize)
+        : getConfig('ANALYSIS.batchSize', 50);
+    this.FLUSH_DELAY_MS =
+      typeof options.flushDelayMs === 'number' &&
+      Number.isFinite(options.flushDelayMs) &&
+      options.flushDelayMs >= 0
+        ? options.flushDelayMs
+        : BATCH.EMBEDDING_FLUSH_DELAY_MS;
     this.flushTimer = null;
     this.isFlushing = false;
     this.initialized = false;
@@ -54,17 +68,30 @@ class EmbeddingQueue {
     this.criticalWarningLogged = false;
 
     // Parallel processing config
-    this.PARALLEL_FLUSH_CONCURRENCY = CONCURRENCY.EMBEDDING_FLUSH;
+    this.PARALLEL_FLUSH_CONCURRENCY =
+      typeof options.parallelFlushConcurrency === 'number' &&
+      Number.isFinite(options.parallelFlushConcurrency) &&
+      options.parallelFlushConcurrency > 0
+        ? Math.floor(options.parallelFlushConcurrency)
+        : CONCURRENCY.EMBEDDING_FLUSH;
 
     // Progress tracking
     this._progressTracker = createProgressTracker();
 
     // Failed item handler
+    const failedItemsPath =
+      typeof options.failedItemsPath === 'string' && options.failedItemsPath.trim()
+        ? options.failedItemsPath.trim()
+        : path.join(app.getPath('userData'), 'failed_embeddings.json');
+    const deadLetterPath =
+      typeof options.deadLetterPath === 'string' && options.deadLetterPath.trim()
+        ? options.deadLetterPath.trim()
+        : path.join(app.getPath('userData'), 'dead_letter_embeddings.json');
     this._failedItemHandler = createFailedItemHandler({
       itemMaxRetries: getConfig('ANALYSIS.retryAttempts', 3),
       maxDeadLetterSize: LIMITS.MAX_DEAD_LETTER_SIZE,
-      failedItemsPath: path.join(app.getPath('userData'), 'failed_embeddings.json'),
-      deadLetterPath: path.join(app.getPath('userData'), 'dead_letter_embeddings.json')
+      failedItemsPath,
+      deadLetterPath
     });
 
     // Track pending operations for graceful shutdown

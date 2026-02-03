@@ -21,6 +21,7 @@ const { findContainingSmartFolder } = require('../../shared/folderUtils');
 const { normalizePathForIndex } = require('../../shared/pathSanitization');
 const { getInstance: getFileOperationTracker } = require('../../shared/fileOperationTracker');
 const { isUNCPath } = require('../../shared/crossPlatformUtils');
+const { shouldEmbed } = require('./embedding/embeddingGate');
 
 const logger = typeof createLogger === 'function' ? createLogger('DownloadWatcher') : baseLogger;
 if (typeof createLogger !== 'function' && logger?.setContext) {
@@ -1071,6 +1072,32 @@ class DownloadWatcher {
       return;
     }
 
+    // Respect global embedding timing/policy. DownloadWatcher embeds after final placement.
+    // If we have a persisted per-file override, apply it here.
+    let policyOverride = null;
+    try {
+      const entry = await this.analysisHistoryService?.getAnalysisByPath?.(filePath);
+      policyOverride = entry?.embedding?.policy || null;
+    } catch {
+      // Non-fatal
+    }
+    const gate = await shouldEmbed({ stage: 'final', policyOverride });
+    if (!gate.shouldEmbed) {
+      logger.debug('[DOWNLOAD-WATCHER] Skipping embedding by policy/timing gate', {
+        timing: gate.timing,
+        policy: gate.policy,
+        filePath
+      });
+      try {
+        await this.analysisHistoryService?.updateEmbeddingStateByPath?.(filePath, {
+          status: 'skipped'
+        });
+      } catch {
+        // Non-fatal
+      }
+      return;
+    }
+
     // FIX: Verify file still exists before embedding (prevents ghost embeddings)
     try {
       await fs.stat(filePath);
@@ -1181,6 +1208,16 @@ class DownloadWatcher {
       });
 
       logger.debug('[DOWNLOAD-WATCHER] Embedded file:', filePath);
+
+      // Persist done state (direct upsert).
+      try {
+        await this.analysisHistoryService?.updateEmbeddingStateByPath?.(filePath, {
+          status: 'done',
+          model: embedding.model || null
+        });
+      } catch {
+        // Non-fatal
+      }
     } catch (embedError) {
       // Non-critical - log but don't fail the operation
       logger.warn('[DOWNLOAD-WATCHER] Failed to embed file:', {

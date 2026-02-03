@@ -44,7 +44,7 @@ const {
   safeSuggestedName,
   createFallbackAnalysis
 } = require('./fallbackUtils');
-const embeddingQueue = require('./embeddingQueue');
+const { analysisQueue } = require('./embeddingQueue/stageQueues');
 const { globalDeduplicator } = require('../utils/llmOptimization');
 const {
   applySemanticFolderMatching: applyUnifiedFolderMatching,
@@ -760,7 +760,7 @@ function deriveKeywordsFromFilenames(names) {
  * Force flush the embedding queue (useful for cleanup or end of batch)
  */
 async function flushAllEmbeddings() {
-  await embeddingQueue.flush();
+  await analysisQueue.flush();
 }
 
 module.exports = {
