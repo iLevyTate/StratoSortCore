@@ -11,15 +11,15 @@
  *
  * @example
  * // Register a singleton service
- * container.registerSingleton('chromaDb', () => new ChromaDBService());
+ * container.registerSingleton('vectorDb', () => new OramaVectorService());
  *
  * // Register with dependencies
  * container.registerSingleton('folderMatcher', (c) => {
- *   return new FolderMatchingService(c.resolve('chromaDb'));
+ *   return new FolderMatchingService(c.resolve('vectorDb'));
  * });
  *
  * // Resolve a service
- * const chromaDb = container.resolve('chromaDb');
+ * const vectorDb = container.resolve('vectorDb');
  *
  * @module ServiceContainer
  */
@@ -570,24 +570,23 @@ const container = new ServiceContainer();
 /**
  * Service identifiers for type-safe resolution
  * Only includes services that are registered with the container via ServiceIntegration.
- * Other services (OllamaService, ParallelEmbeddingService, etc.) use their own
+ * Other services (LlamaService, ParallelEmbeddingService, etc.) use their own
  * singleton patterns and should be accessed via their respective getInstance() methods.
  * @readonly
  * @enum {string}
  */
 const ServiceIds = {
   // Core services
-  CHROMA_DB: 'chromaDb',
+  ORAMA_VECTOR: 'oramaVector', // New in-process vector database
   SETTINGS: 'settings',
-  DEPENDENCY_MANAGER: 'dependencyManager',
   SEARCH_SERVICE: 'searchService',
   DOWNLOAD_WATCHER: 'downloadWatcher',
   FILE_PATH_COORDINATOR: 'filePathCoordinator',
   CACHE_INVALIDATION_BUS: 'cacheInvalidationBus',
 
   // AI/Embedding services
-  OLLAMA_SERVICE: 'ollamaService',
-  OLLAMA_CLIENT: 'ollamaClient',
+  LLAMA_SERVICE: 'llamaService', // New in-process LLM service
+  VISION_SERVICE: 'visionService', // Local multimodal runtime wrapper
   PARALLEL_EMBEDDING: 'parallelEmbedding',
   EMBEDDING_CACHE: 'embeddingCache',
   MODEL_MANAGER: 'modelManager',
@@ -642,17 +641,16 @@ const SHUTDOWN_ORDER = [
   // Second: Core infrastructure services
   ServiceIds.EMBEDDING_CACHE,
   ServiceIds.MODEL_MANAGER,
-  ServiceIds.OLLAMA_SERVICE,
-  ServiceIds.OLLAMA_CLIENT,
-  ServiceIds.CHROMA_DB,
+  // New services (node-llama-cpp + Orama)
+  ServiceIds.VISION_SERVICE,
+  ServiceIds.LLAMA_SERVICE,
+  ServiceIds.ORAMA_VECTOR,
   // FIX L4: Add analysis cache (caching layer, before state services)
   ServiceIds.ANALYSIS_CACHE,
   // Third: State management services
   ServiceIds.PROCESSING_STATE,
   ServiceIds.UNDO_REDO,
   ServiceIds.ANALYSIS_HISTORY,
-  // FIX L4: Add dependency manager and file access policy (infrastructure services)
-  ServiceIds.DEPENDENCY_MANAGER,
   ServiceIds.FILE_ACCESS_POLICY,
   // Cache invalidation bus (needed by all caches)
   ServiceIds.CACHE_INVALIDATION_BUS,

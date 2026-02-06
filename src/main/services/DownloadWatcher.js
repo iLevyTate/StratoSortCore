@@ -76,7 +76,7 @@ class DownloadWatcher {
     settingsService,
     notificationService,
     analysisHistoryService,
-    chromaDbService,
+    vectorDbService,
     folderMatcher
   }) {
     this.analyzeDocumentFile = analyzeDocumentFile;
@@ -86,8 +86,8 @@ class DownloadWatcher {
     this.settingsService = settingsService;
     this.notificationService = notificationService;
     this.analysisHistoryService = analysisHistoryService;
-    // FIX: Add chromaDbService and folderMatcher for embedding support
-    this.chromaDbService = chromaDbService;
+    // FIX: Add vectorDbService and folderMatcher for embedding support
+    this.vectorDbService = vectorDbService;
     this.folderMatcher = folderMatcher;
     this.watcher = null;
     this.isStarting = false;
@@ -876,7 +876,7 @@ class DownloadWatcher {
               logger
             });
 
-            // FIX: Embed the file into ChromaDB for semantic search
+            // FIX: Embed the file into the vector DB for semantic search
             // This ensures DownloadWatcher-organized files are searchable
             await this._embedAnalyzedFile(result.destination, result);
           } catch (historyErr) {
@@ -1097,7 +1097,7 @@ class DownloadWatcher {
   }
 
   /**
-   * Embed an analyzed file into ChromaDB for semantic search
+   * Embed an analyzed file into the vector DB for semantic search
    * This is called after successful auto-organization to keep embeddings in sync
    * FIX: Ensures DownloadWatcher-organized files are searchable via semantic search
    * @private
@@ -1106,7 +1106,7 @@ class DownloadWatcher {
    */
   async _embedAnalyzedFile(filePath, analysisResult) {
     // Skip if dependencies not available
-    if (!this.folderMatcher || !this.chromaDbService) {
+    if (!this.folderMatcher || !this.vectorDbService) {
       logger.debug('[DOWNLOAD-WATCHER] Skipping embedding - services not available');
       return;
     }
@@ -1196,7 +1196,7 @@ class DownloadWatcher {
         throw new Error('Failed to generate embedding vector');
       }
 
-      // Prepare metadata for ChromaDB
+      // Prepare metadata for vector DB
       // IMPORTANT: IDs must match the rest of the semantic pipeline
       const fileId = getSemanticFileId(filePath);
       const isImage = isImagePath(filePath);
@@ -1237,8 +1237,8 @@ class DownloadWatcher {
         }
       }
 
-      // Upsert to ChromaDB with comprehensive metadata for conversations
-      await this.chromaDbService.upsertFile({
+      // Upsert to vector DB with comprehensive metadata for conversations
+      await this.vectorDbService.upsertFile({
         id: fileId,
         vector: embedding.vector,
         model: embedding.model || 'unknown',
@@ -1284,8 +1284,8 @@ class DownloadWatcher {
     logger.info('[DOWNLOAD-WATCHER] Detected external file deletion:', filePath);
 
     try {
-      // Remove from ChromaDB (both file: and image: prefixes)
-      if (this.chromaDbService) {
+      // Remove from vector DB (both file: and image: prefixes)
+      if (this.vectorDbService) {
         // Use batch delete for atomicity when available
         const normalizedPath = normalizePathForIndex(filePath);
         const idsToDelete =
@@ -1298,19 +1298,19 @@ class DownloadWatcher {
                 `image:${filePath}`
               ];
 
-        if (typeof this.chromaDbService.batchDeleteFileEmbeddings === 'function') {
-          await this.chromaDbService.batchDeleteFileEmbeddings(idsToDelete);
+        if (typeof this.vectorDbService.batchDeleteFileEmbeddings === 'function') {
+          await this.vectorDbService.batchDeleteFileEmbeddings(idsToDelete);
         } else {
           // Fallback to individual deletes
           for (const id of idsToDelete) {
-            await this.chromaDbService.deleteFileEmbedding(id);
+            await this.vectorDbService.deleteFileEmbedding(id);
           }
         }
 
         // Delete associated chunks
-        if (typeof this.chromaDbService.deleteFileChunks === 'function') {
+        if (typeof this.vectorDbService.deleteFileChunks === 'function') {
           for (const id of idsToDelete) {
-            await this.chromaDbService.deleteFileChunks(id);
+            await this.vectorDbService.deleteFileChunks(id);
           }
         }
 

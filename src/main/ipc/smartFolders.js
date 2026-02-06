@@ -2,7 +2,8 @@ const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs').promises;
 const { app } = require('electron');
-const { getOllama } = require('../ollamaUtils');
+const { getInstance: getLlamaService } = require('../services/LlamaService');
+const { getTextModel } = require('../llamaUtils');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
 const { withAbortableTimeout } = require('../../shared/promiseUtils');
 const { AI_DEFAULTS } = require('../../shared/constants');
@@ -111,7 +112,6 @@ function registerSmartFoldersIpc(servicesOrParams) {
   const { ipcMain, IPC_CHANNELS, logger } = container.core;
   const { getCustomFolders, setCustomFolders, saveCustomFolders, scanDirectory } =
     container.folders;
-  const { getOllamaModel, buildOllamaOptions } = container.ollama;
   const { getServiceIntegration } = container;
 
   // Derive getSmartFolderWatcher from serviceIntegration if not provided
@@ -281,21 +281,21 @@ function registerSmartFoldersIpc(servicesOrParams) {
           };
         } catch {
           try {
-            const ollama = await getOllama();
-            const genPerf = await buildOllamaOptions('text');
+            const llamaService = getLlamaService();
+            await llamaService.initialize();
             const prompt = `You are ranking folders for organizing a file. Given this description:\n"""${text}"""\nFolders:\n${smartFolders.map((f, i) => `${i + 1}. ${f.name} - ${f.description || ''}`).join('\n')}\nReturn JSON: { "index": <1-based best folder index>, "reason": "..." }`;
             const timeoutMs = TIMEOUTS.AI_ANALYSIS_LONG;
             logger.debug('[SMART_FOLDERS.MATCH] Using text model', {
-              model: getOllamaModel() || AI_DEFAULTS.TEXT.MODEL,
+              model: getTextModel() || AI_DEFAULTS.TEXT.MODEL,
               timeoutMs
             });
             const resp = await withAbortableTimeout(
               (abortController) =>
-                ollama.generate({
-                  model: getOllamaModel() || AI_DEFAULTS.TEXT.MODEL,
+                llamaService.generateText({
+                  model: getTextModel() || AI_DEFAULTS.TEXT.MODEL,
                   prompt,
-                  format: 'json',
-                  options: { ...genPerf, temperature: 0.1, num_predict: 200 },
+                  temperature: 0.1,
+                  maxTokens: 200,
                   signal: abortController.signal
                 }),
               timeoutMs,
@@ -763,18 +763,17 @@ Example for "Work Documents": "Contains professional documents, reports, and wor
 Now generate a description for "${folderName}":`;
 
         try {
-          const model = getOllamaModel();
-          if (!model) {
-            return {
-              success: false,
-              error: 'Ollama model not configured'
-            };
-          }
+          const model = getTextModel() || AI_DEFAULTS.TEXT.MODEL;
+          const llamaService = getLlamaService();
+          await llamaService.initialize();
+          const result = await llamaService.generateText({
+            model,
+            prompt,
+            maxTokens: 200,
+            temperature: 0.3
+          });
 
-          const OllamaService = require('../services/OllamaService');
-          const result = await OllamaService.analyzeText(prompt, { model });
-
-          if (result.success && result.response && result.response.trim()) {
+          if (result?.response && result.response.trim()) {
             return {
               success: true,
               description: result.response.trim()
@@ -782,7 +781,7 @@ Now generate a description for "${folderName}":`;
           }
           return {
             success: false,
-            error: result.error || 'No response from AI'
+            error: 'No response from AI'
           };
         } catch (llmError) {
           logger.error('[SMART-FOLDERS] LLM description generation failed:', llmError.message);
@@ -915,11 +914,7 @@ Now generate a description for "${folderName}":`;
 
         let llmEnhancedData = {};
         try {
-          const llmAnalysis = await enhanceSmartFolderWithLLM(
-            folder,
-            customFolders,
-            getOllamaModel
-          );
+          const llmAnalysis = await enhanceSmartFolderWithLLM(folder, customFolders, getTextModel);
           if (llmAnalysis && !llmAnalysis.error) llmEnhancedData = llmAnalysis;
         } catch (e) {
           logger.warn(

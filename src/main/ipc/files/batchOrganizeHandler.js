@@ -334,7 +334,7 @@ async function handleBatchOrganize(params) {
               resumed: op.status === 'done'
             });
 
-            await getServiceIntegration()?.processingState?.markOrganizeOpStarted(batchId, i);
+            await getServiceIntegration()?.processingState?.markOrganizeOpStarted?.(batchId, i);
 
             if (!op.source || !op.destination) {
               throw new Error(
@@ -412,7 +412,7 @@ async function handleBatchOrganize(params) {
               // Verify state is consistent (dest exists, source gone)
               await verifyMoveCompletion(op.source, resolvedDestination, log);
 
-              await getServiceIntegration()?.processingState?.markOrganizeOpDone(batchId, i, {
+              await getServiceIntegration()?.processingState?.markOrganizeOpDone?.(batchId, i, {
                 destination: resolvedDestination,
                 skipped: true
               });
@@ -452,7 +452,7 @@ async function handleBatchOrganize(params) {
             // Post-move verification: ensure destination exists and source is gone
             await verifyMoveCompletion(op.source, op.destination, log);
 
-            await getServiceIntegration()?.processingState?.markOrganizeOpDone(batchId, i, {
+            await getServiceIntegration()?.processingState?.markOrganizeOpDone?.(batchId, i, {
               destination: op.destination
             });
 
@@ -487,7 +487,7 @@ async function handleBatchOrganize(params) {
               currentFile: path.basename(op.source)
             });
           } catch (error) {
-            await getServiceIntegration()?.processingState?.markOrganizeOpError(
+            await getServiceIntegration()?.processingState?.markOrganizeOpError?.(
               batchId,
               i,
               error.message
@@ -543,7 +543,7 @@ async function handleBatchOrganize(params) {
           );
         }
 
-        await getServiceIntegration()?.processingState?.completeOrganizeBatch(batchId);
+        await getServiceIntegration()?.processingState?.completeOrganizeBatch?.(batchId);
 
         // Record undo and update database
         if (!shouldRollback) {
@@ -809,22 +809,30 @@ async function recordUndoAndUpdateDatabase(
 ) {
   // FIX: Only record successful operations for undo - failed operations have
   // files still at their original location, not at the destination
-  try {
-    const undoOps = results
-      .filter((r) => r.success && r.source && r.destination && !r.skipped)
-      .map((r) => ({
-        type: 'move',
-        originalPath: r.source,
-        newPath: r.destination
-      }));
+  const undoOps = Array.isArray(results)
+    ? results
+        .filter((r) => r && r.success && r.source && r.destination && !r.skipped)
+        .map((r) => ({
+          type: 'move',
+          originalPath: r.source,
+          newPath: r.destination
+        }))
+    : [];
 
-    if (undoOps.length > 0) {
-      await getServiceIntegration()?.undoRedo?.recordAction?.(ACTION_TYPES.BATCH_OPERATION, {
+  if (undoOps.length > 0) {
+    try {
+      const svc = typeof getServiceIntegration === 'function' ? getServiceIntegration() : null;
+      await svc?.undoRedo?.recordAction?.(ACTION_TYPES.BATCH_OPERATION, {
         operations: undoOps
       });
+    } catch (error) {
+      // Non-fatal: file moves already completed; undo recording is best-effort.
+      log.warn('[FILE-OPS] Failed to record batch undo action (non-fatal)', {
+        batchId,
+        error: error?.message || String(error),
+        operationCount: undoOps.length
+      });
     }
-  } catch {
-    // Non-fatal
   }
 
   // Update path-dependent systems for batch moves

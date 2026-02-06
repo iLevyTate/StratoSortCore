@@ -36,7 +36,8 @@ const {
   saveHistory: saveHistoryFile,
   loadIndex: loadIndexFile,
   saveIndex: saveIndexFile,
-  createDefaultStructures: createDefaultStructuresFiles
+  createDefaultStructures: createDefaultStructuresFiles,
+  closeSqliteStore: closeHistorySqliteStore
 } = require('./persistence');
 
 const {
@@ -125,7 +126,7 @@ class AnalysisHistoryServiceCore {
 
   /**
    * Set callback for cascade orphan marking when entries are removed during maintenance
-   * Called from ServiceIntegration after ChromaDB service is initialized
+   * Called from ServiceIntegration after vector DB service is initialized
    * @param {Function} callback - Async function receiving array of {id, fileHash, originalPath, actualPath?}
    */
   setOnEntriesRemovedCallback(callback) {
@@ -796,6 +797,7 @@ class AnalysisHistoryServiceCore {
       }
     }
     this.clearCaches();
+    closeHistorySqliteStore();
   }
 
   /**
@@ -1091,7 +1093,7 @@ class AnalysisHistoryServiceCore {
         }
       }
 
-      // Notify about removals so Chroma can mark any remaining embeddings/chunks orphaned.
+      // Notify about removals so vector DB can mark any remaining embeddings/chunks orphaned.
       // (For app-driven deletes we also delete embeddings directly, but this keeps behavior consistent.)
       if (this._onEntriesRemovedCallback && removedEntries.length > 0) {
         try {

@@ -136,8 +136,8 @@ function canceledResponse() {
 }
 
 /**
- * Create middleware that ensures ChromaDB is initialized before handler executes.
- * Use this to wrap handlers that require ChromaDB to be ready.
+ * Create middleware that ensures the vector DB is initialized before handler executes.
+ * Use this to wrap handlers that require the vector DB to be ready.
  *
  * @param {Object} options - Configuration options
  * @param {Function} options.ensureInit - Async function to trigger initialization
@@ -147,22 +147,23 @@ function canceledResponse() {
  * @returns {Function} Wrapped handler that checks init state first
  *
  * @example
- * const handler = withChromaInit({
+ * const handler = withVectorDbInit({
  *   ensureInit: ensureInitialized,
  *   isInitRef: () => isInitialized,
  *   handler: async (event, params) => {
- *     // Handler logic here - ChromaDB is guaranteed ready
+ *     // Handler logic here - vector DB is guaranteed ready
  *   }
  * });
  */
-function withChromaInit({ ensureInit, isInitRef, handler }) {
+function withVectorDbInit({ ensureInit, isInitRef, handler }) {
   return async (...args) => {
     try {
       await ensureInit();
-    } catch {
+    } catch (e) {
       return {
         success: false,
-        error: 'ChromaDB is not available. Please ensure the ChromaDB server is running.',
+        error: 'Vector DB is not available yet. Please try again in a moment.',
+        code: e?.code || 'VECTOR_DB_UNAVAILABLE',
         unavailable: true
       };
     }
@@ -170,7 +171,8 @@ function withChromaInit({ ensureInit, isInitRef, handler }) {
     if (!isInitRef()) {
       return {
         success: false,
-        error: 'ChromaDB initialization pending. Please try again in a few seconds.',
+        error: 'Vector DB initialization pending. Please try again in a few seconds.',
+        code: 'VECTOR_DB_PENDING',
         pending: true
       };
     }
@@ -690,7 +692,7 @@ module.exports = {
   withErrorLogging,
   withValidation,
   withServiceCheck,
-  withChromaInit,
+  withVectorDbInit,
 
   // Response helpers (structured format)
   createErrorResponse,

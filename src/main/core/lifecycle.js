@@ -9,7 +9,6 @@
 
 const { app, BrowserWindow, ipcMain } = require('electron');
 const { createLogger } = require('../../shared/logger');
-const { TIMEOUTS } = require('../../shared/performanceConstants');
 const { destroyTray, getTray, unregisterGlobalShortcuts } = require('./systemTray');
 const { getStartupManager } = require('../services/startup');
 const systemAnalytics = require('./systemAnalytics');
@@ -24,8 +23,6 @@ let lifecycleConfig = {
   setDownloadWatcher: null,
   getServiceIntegration: null,
   getSettingsService: null,
-  getChromaDbProcess: null,
-  setChromaDbProcess: null,
   getEventListeners: null,
   setEventListeners: null,
   getChildProcessListeners: null,
@@ -54,7 +51,6 @@ async function verifyShutdownCleanup() {
   const childProcessListeners = lifecycleConfig.getChildProcessListeners?.() || [];
   const globalProcessListeners = lifecycleConfig.getGlobalProcessListeners?.() || [];
   const eventListeners = lifecycleConfig.getEventListeners?.() || [];
-  const chromaDbProcess = lifecycleConfig.getChromaDbProcess?.();
   const serviceIntegration = lifecycleConfig.getServiceIntegration?.();
   const downloadWatcher = lifecycleConfig.getDownloadWatcher?.();
 
@@ -78,34 +74,17 @@ async function verifyShutdownCleanup() {
     issues.push(`eventListeners still has ${eventListeners.length} entries`);
   }
 
-  // 5. Verify ChromaDB process is terminated
-  if (chromaDbProcess !== null) {
-    issues.push('chromaDbProcess is not null');
-    // Try to verify process is actually dead
-    try {
-      if (chromaDbProcess.pid) {
-        process.kill(chromaDbProcess.pid, 0);
-        issues.push(`ChromaDB process ${chromaDbProcess.pid} may still be running`);
-      }
-    } catch (e) {
-      if (e.code !== 'ESRCH') {
-        // ESRCH means process doesn't exist (good), other errors are issues
-        issues.push(`ChromaDB process check failed: ${e.message}`);
-      }
-    }
-  }
-
-  // 6. Verify service integration is nullified
+  // 5. Verify service integration is nullified
   if (serviceIntegration && serviceIntegration.initialized !== false) {
     issues.push('ServiceIntegration may not be fully shut down');
   }
 
-  // 7. Verify download watcher is cleared
+  // 6. Verify download watcher is cleared
   if (downloadWatcher !== null) {
     issues.push('downloadWatcher is not null');
   }
 
-  // 8. Verify tray is destroyed
+  // 7. Verify tray is destroyed
   if (getTray() !== null) {
     issues.push('tray is not null');
   }
@@ -142,7 +121,7 @@ async function handleBeforeQuit() {
 
   // HIGH PRIORITY FIX (HIGH-2): Add hard timeout for all cleanup operations
   // Prevents hanging on shutdown and ensures app quits even if cleanup fails
-  // FIX: Increased from 5s to 12s - ChromaDB graceful shutdown needs 5s, plus services need 5s, plus 2s buffer
+  // FIX: Increased from 5s to 12s - legacy external shutdown can be slow, plus services need time, plus buffer
   const CLEANUP_TIMEOUT = 12000; // 12 seconds max for all cleanup
   const cleanupStartTime = Date.now();
 
@@ -223,25 +202,19 @@ async function handleBeforeQuit() {
       logger.error('[CLEANUP] Failed to remove IPC listeners:', error);
     }
 
-    // Clean up ChromaDB event listeners
-    try {
-      const { cleanupEventListeners } = require('../ipc/chromadb');
-      cleanupEventListeners();
-      logger.info('[CLEANUP] ChromaDB event listeners cleaned up');
-    } catch (error) {
-      logger.error('[CLEANUP] Failed to clean up ChromaDB event listeners:', error);
-    }
+    // Vector DB (Orama) is in-process - cleanup happens via ServiceContainer shutdown
+    logger.debug('[CLEANUP] Vector DB cleanup handled by ServiceContainer');
 
     // Clean up tray
     destroyTray();
 
-    // FIX: Clean up Ollama HTTP agent to prevent socket leaks
+    // Clean up AI engine resources
     try {
-      const { cleanupOllamaAgent } = require('../ollamaUtils');
-      cleanupOllamaAgent();
-      logger.info('[CLEANUP] Ollama HTTP agent cleaned up');
+      const { cleanup } = require('../llamaUtils');
+      await cleanup();
+      logger.info('[CLEANUP] AI engine resources cleaned up');
     } catch (error) {
-      logger.error('[CLEANUP] Failed to clean up Ollama agent:', error);
+      logger.error('[CLEANUP] Failed to clean up AI engine resources:', error);
     }
 
     // Use StartupManager for graceful shutdown
@@ -251,42 +224,6 @@ async function handleBeforeQuit() {
       logger.info('[SHUTDOWN] StartupManager cleanup completed');
     } catch (error) {
       logger.error('[SHUTDOWN] StartupManager cleanup failed:', error);
-    }
-
-    // Legacy chromaDbProcess cleanup (fallback if StartupManager didn't handle it)
-    // Uses async killProcess from platformBehavior to avoid blocking main thread
-    const chromaDbProcess = lifecycleConfig.getChromaDbProcess?.();
-    if (chromaDbProcess) {
-      const { pid } = chromaDbProcess;
-      logger.info(`[ChromaDB] Stopping ChromaDB server process (PID: ${pid})`);
-
-      try {
-        // Remove listeners before killing to avoid spurious error events
-        chromaDbProcess.removeAllListeners();
-
-        // Use async platform-aware process killing (no blocking execSync)
-        const { killProcess, isProcessRunning } = require('./platformBehavior');
-        const result = await killProcess(pid);
-
-        if (result.success) {
-          logger.info('[ChromaDB] Process terminated successfully');
-        } else {
-          logger.warn('[ChromaDB] Process kill may have failed:', result.error?.message);
-        }
-
-        // Brief async wait then verify (replaces blocking sleep)
-        await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.PROCESS_KILL_VERIFY));
-
-        // Verify process is actually terminated
-        if (isProcessRunning(pid)) {
-          logger.warn('[ChromaDB] Process may still be running after kill attempt!');
-        } else {
-          logger.info('[ChromaDB] Process confirmed terminated');
-        }
-      } catch (e) {
-        logger.error('[ChromaDB] Error stopping ChromaDB process:', e);
-      }
-      lifecycleConfig.setChromaDbProcess?.(null);
     }
 
     // Clean up service integration
@@ -414,11 +351,11 @@ function _classifyError(error) {
   if (message.includes('timeout')) {
     return 'TIMEOUT';
   }
-  if (message.includes('chromadb') || message.includes('chroma')) {
-    return 'CHROMADB';
+  if (message.includes('vector db') || message.includes('orama')) {
+    return 'VECTOR_DB';
   }
-  if (message.includes('ollama')) {
-    return 'OLLAMA';
+  if (message.includes('llama')) {
+    return 'LLAMA';
   }
   return 'UNKNOWN';
 }
@@ -474,10 +411,10 @@ function handleUnhandledRejection(reason, promise) {
   // Log warning for common issues
   if (errorType === 'NETWORK') {
     logger.warn('[LIFECYCLE] Network-related unhandled rejection - check service connectivity');
-  } else if (errorType === 'CHROMADB') {
-    logger.warn('[LIFECYCLE] ChromaDB-related unhandled rejection - check ChromaDB service status');
-  } else if (errorType === 'OLLAMA') {
-    logger.warn('[LIFECYCLE] Ollama-related unhandled rejection - check Ollama service status');
+  } else if (errorType === 'VECTOR_DB') {
+    logger.warn('[LIFECYCLE] Vector DB-related unhandled rejection - check vector state');
+  } else if (errorType === 'LLAMA') {
+    logger.warn('[LIFECYCLE] AI engine-related unhandled rejection - check model state');
   }
 }
 

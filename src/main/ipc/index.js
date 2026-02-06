@@ -3,15 +3,14 @@ const registerSmartFoldersIpc = require('./smartFolders');
 const registerUndoRedoIpc = require('./undoRedo');
 const registerAnalysisHistoryIpc = require('./analysisHistory');
 const registerSystemIpc = require('./system');
-const registerOllamaIpc = require('./ollama');
+const { registerLlamaIpc } = require('./llama'); // New in-process LLM handler
 const registerAnalysisIpc = require('./analysis');
 const registerSettingsIpc = require('./settings');
 const registerEmbeddingsIpc = require('./semantic');
 const registerWindowIpc = require('./window');
 const { registerSuggestionsIpc } = require('./suggestions');
 const { registerOrganizeIpc } = require('./organize');
-const { registerChromaDBIpc } = require('./chromadb');
-const { registerDependenciesIpc } = require('./dependencies');
+const { registerVectorDbIpc } = require('./vectordb'); // New in-process vector DB handler
 const registerChatIpc = require('./chat');
 const registerKnowledgeIpc = require('./knowledge');
 const { IpcServiceContext, createFromLegacyParams } = require('./IpcServiceContext');
@@ -49,19 +48,8 @@ const { schemas, z } = require('./validationSchemas');
  * @param {Function} servicesOrParams.saveCustomFolders - Save custom folders
  * @param {Function} servicesOrParams.analyzeDocumentFile - Analyze document
  * @param {Function} servicesOrParams.analyzeImageFile - Analyze image
- * @param {Object} servicesOrParams.tesseract - Tesseract OCR
- * @param {Function} servicesOrParams.getOllama - Get Ollama client
- * @param {Function} servicesOrParams.getOllamaModel - Get text model
- * @param {Function} servicesOrParams.getOllamaVisionModel - Get vision model
- * @param {Function} servicesOrParams.getOllamaEmbeddingModel - Get embedding model
- * @param {Function} servicesOrParams.getOllamaHost - Get Ollama host
- * @param {Function} servicesOrParams.buildOllamaOptions - Build Ollama options
  * @param {Function} servicesOrParams.scanDirectory - Scan directory
  * @param {Object} servicesOrParams.settingsService - Settings service
- * @param {Function} servicesOrParams.setOllamaHost - Set Ollama host
- * @param {Function} servicesOrParams.setOllamaModel - Set text model
- * @param {Function} servicesOrParams.setOllamaVisionModel - Set vision model
- * @param {Function} servicesOrParams.setOllamaEmbeddingModel - Set embedding model
  * @param {Function} servicesOrParams.onSettingsChanged - Settings change callback
  */
 function registerAllIpc(servicesOrParams) {
@@ -89,13 +77,12 @@ function registerAllIpc(servicesOrParams) {
   registerUndoRedoIpc(container);
   registerAnalysisHistoryIpc(container);
   registerSystemIpc(container);
-  registerOllamaIpc(container);
+  registerLlamaIpc(container); // New in-process LLM handler
   registerAnalysisIpc(container);
   registerSettingsIpc(container);
   registerEmbeddingsIpc(container);
   registerWindowIpc(container);
-  registerChromaDBIpc(container);
-  registerDependenciesIpc(container);
+  registerVectorDbIpc(container); // New in-process vector DB handler
   registerChatIpc(container);
   registerKnowledgeIpc(container);
 

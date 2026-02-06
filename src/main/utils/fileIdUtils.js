@@ -1,13 +1,13 @@
 /**
  * File ID Utilities
  *
- * Single source of truth for generating file IDs used in ChromaDB,
+ * Single source of truth for generating file IDs used in OramaVectorService,
  * analysis history, and other path-dependent systems.
  *
  * This consolidates the various ID generation patterns that were
  * previously scattered across:
- * - ollamaDocumentAnalysis.js (file:{normalizedPath})
- * - ollamaImageAnalysis.js (image:{normalizedPath})
+ * - documentAnalysis.js (file:{normalizedPath})
+ * - imageAnalysis.js (image:{normalizedPath})
  * - fileOperationHandlers.js (buildIdVariants)
  * - FilePathCoordinator.js (buildIdVariants)
  *
@@ -34,7 +34,7 @@ const FileIdPrefix = {
 };
 
 /**
- * Generate a file embedding ID for ChromaDB
+ * Generate a file embedding ID for OramaVectorService
  *
  * @param {string} filePath - File path
  * @param {string} [type='file'] - Type prefix ('file', 'image', or 'chunk')
@@ -56,7 +56,7 @@ function getFileEmbeddingId(filePath, type = 'file') {
 }
 
 /**
- * Generate a chunk embedding ID for ChromaDB
+ * Generate a chunk embedding ID for OramaVectorService
  *
  * @param {string} filePath - File path
  * @param {number} chunkIndex - Chunk index (0-based)
@@ -69,7 +69,7 @@ function getChunkEmbeddingId(filePath, chunkIndex) {
 
 /**
  * Generate all possible path variants for Windows case-insensitivity
- * This ensures we can find ChromaDB entries regardless of how the path was stored
+ * This ensures we can find vector DB entries regardless of how the path was stored
  *
  * @param {string} filePath - File path
  * @returns {string[]} Array of unique path variants
@@ -132,7 +132,7 @@ function getAllIdVariants(filePath, options = {}) {
 }
 
 /**
- * Build path update pairs for ChromaDB migration
+ * Build path update pairs for Vector DB migration
  * Used when a file is moved or renamed
  *
  * @param {string} oldPath - Original file path

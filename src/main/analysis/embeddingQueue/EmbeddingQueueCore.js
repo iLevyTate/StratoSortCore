@@ -21,6 +21,7 @@ const {
   CONCURRENCY,
   TIMEOUTS
 } = require('../../../shared/performanceConstants');
+const { ERROR_CODES } = require('../../../shared/errorCodes');
 
 const { loadPersistedData, persistQueueData } = require('./persistence');
 const { createFailedItemHandler } = require('./failedItemHandler');
@@ -36,6 +37,12 @@ class EmbeddingQueue {
         ? options.persistenceFileName.trim()
         : 'pending_embeddings.json';
     this.persistencePath = path.join(app.getPath('userData'), persistenceFileName);
+    const baseName = path.basename(this.persistencePath, path.extname(this.persistencePath));
+    this._persistenceKeys = {
+      queue: `${baseName}:queue`,
+      failedItems: `${baseName}:failedItems`,
+      deadLetter: `${baseName}:deadLetter`
+    };
 
     // Configuration from unified config
     this.BATCH_SIZE =
@@ -93,7 +100,8 @@ class EmbeddingQueue {
       itemMaxRetries: getConfig('ANALYSIS.retryAttempts', 3),
       maxDeadLetterSize: LIMITS.MAX_DEAD_LETTER_SIZE,
       failedItemsPath,
-      deadLetterPath
+      deadLetterPath,
+      persistenceKeys: this._persistenceKeys
     });
 
     // Track pending operations for graceful shutdown
@@ -137,7 +145,7 @@ class EmbeddingQueue {
     const timeoutPromise = new Promise((_, reject) => {
       timeoutId = setTimeout(() => {
         const error = new Error(`Flush mutex acquisition timed out after ${timeout}ms`);
-        error.code = 'MUTEX_TIMEOUT';
+        error.code = ERROR_CODES.TIMEOUT;
         reject(error);
       }, timeout);
     });
@@ -148,7 +156,7 @@ class EmbeddingQueue {
     } catch (error) {
       // FIX MED #18: Force release on any error to prevent deadlock
       // The release() function has a guard flag so it's safe to call multiple times
-      if (error.code === 'MUTEX_TIMEOUT') {
+      if (error.code === ERROR_CODES.TIMEOUT) {
         logger.error('[EmbeddingQueue] Mutex timeout - forcing release to prevent deadlock');
       }
       release();
@@ -215,7 +223,8 @@ class EmbeddingQueue {
             );
           }
         },
-        'pending embeddings'
+        'pending embeddings',
+        { key: this._persistenceKeys.queue }
       );
 
       // Load failed items
@@ -239,7 +248,8 @@ class EmbeddingQueue {
             }
           }
         },
-        'failed items'
+        'failed items',
+        { key: this._persistenceKeys.failedItems }
       );
 
       // Load dead letter queue
@@ -251,7 +261,8 @@ class EmbeddingQueue {
             logger.info(`[EmbeddingQueue] Loaded ${data.length} items in dead letter queue`);
           }
         },
-        'dead letter queue'
+        'dead letter queue',
+        { key: this._persistenceKeys.deadLetter }
       );
 
       this.initialized = true;
@@ -403,11 +414,11 @@ class EmbeddingQueue {
    * Persist queue to disk
    */
   async persistQueue() {
-    await persistQueueData(this.persistencePath, this.queue);
+    await persistQueueData(this.persistencePath, this.queue, { key: this._persistenceKeys.queue });
   }
 
   /**
-   * Flush pending embeddings to ChromaDB
+   * Flush pending embeddings to vector DB
    * Uses mutex to prevent race conditions from concurrent flush calls
    */
   async flush() {
@@ -442,28 +453,28 @@ class EmbeddingQueue {
       try {
         logger.debug('[EmbeddingQueue] Flushing batch', { count: batch.length });
 
-        // HIGH FIX: Add error handling for container.resolve to prevent crash if ChromaDB is unavailable
-        let chromaDbService;
+        // HIGH FIX: Add error handling for container.resolve to prevent crash if vector DB is unavailable
+        let vectorDbService;
         try {
-          chromaDbService = container.resolve(ServiceIds.CHROMA_DB);
+          vectorDbService = container.resolve(ServiceIds.ORAMA_VECTOR);
         } catch (resolveError) {
           logger.error(
-            '[EmbeddingQueue] Failed to resolve ChromaDB service:',
+            '[EmbeddingQueue] Failed to resolve vector DB service:',
             resolveError.message
           );
           await this._handleOfflineDatabase(batch, batchSize);
           return;
         }
 
-        if (!chromaDbService) {
-          logger.error('[EmbeddingQueue] ChromaDB service is null');
+        if (!vectorDbService) {
+          logger.error('[EmbeddingQueue] Vector DB service is null');
           await this._handleOfflineDatabase(batch, batchSize);
           return;
         }
 
-        await chromaDbService.initialize();
+        await vectorDbService.initialize();
 
-        if (!chromaDbService.isOnline) {
+        if (!vectorDbService.isOnline) {
           await this._handleOfflineDatabase(batch, batchSize);
           return;
         }
@@ -489,7 +500,7 @@ class EmbeddingQueue {
           processedCount = await processItemsInParallel({
             items: fileItems,
             type: 'file',
-            chromaDbService,
+            vectorDbService,
             failedItemIds,
             startProcessedCount: processedCount,
             totalBatchSize: batch.length,
@@ -507,7 +518,7 @@ class EmbeddingQueue {
           processedCount = await processItemsInParallel({
             items: folderItems,
             type: 'folder',
-            chromaDbService,
+            vectorDbService,
             failedItemIds,
             startProcessedCount: processedCount,
             totalBatchSize: batch.length,
@@ -963,14 +974,14 @@ class EmbeddingQueue {
           new Promise((_, reject) => {
             const t = setTimeout(() => {
               const err = new Error('Force flush timeout waiting for current flush');
-              err.code = 'FORCE_FLUSH_TIMEOUT';
+              err.code = ERROR_CODES.TIMEOUT;
               reject(err);
             }, maxWait);
             if (t.unref) t.unref();
           })
         ]);
       } catch (err) {
-        if (err.code === 'FORCE_FLUSH_TIMEOUT') {
+        if (err.code === ERROR_CODES.TIMEOUT) {
           logger.warn(
             '[EmbeddingQueue] Force flush timeout - current flush still in progress after 30s. Proceeding with persistence only.',
             { queueLength: this.queue.length }
@@ -1061,7 +1072,6 @@ class EmbeddingQueue {
 
     await this.persistQueue();
     await this._failedItemHandler.persistAll();
-
     logger.info('[EmbeddingQueue] Shutdown complete', {
       pendingItems: this.queue.length,
       failedItems: this._failedItemHandler.failedItems.size,

@@ -1,12 +1,13 @@
 const { BrowserWindow, shell, app } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { createLogger } = require('../../shared/logger');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
 const { bringWindowToForeground } = require('./platformBehavior');
 
 const logger = createLogger('CreateWindow');
 const windowStateKeeper = require('electron-window-state');
-const { isDevelopment, getEnvBool, SERVICE_URLS } = require('../../shared/configDefaults');
+const { isDevelopment, getEnvBool } = require('../../shared/configDefaults');
 
 const isDev = isDevelopment();
 const isMac = process.platform === 'darwin';
@@ -19,6 +20,10 @@ function getAppRootPath() {
     // We need to go up to the repo root in that case
     if (appPath.endsWith('src/main') || appPath.endsWith('src\\main')) {
       return path.resolve(appPath, '../..');
+    }
+    // When running from dist/main.js, app.getAppPath() can return dist
+    if (appPath.endsWith('dist') || appPath.endsWith('dist\\')) {
+      return path.resolve(appPath, '..');
     }
     return appPath;
   } catch {
@@ -43,7 +48,15 @@ function getPreloadPath() {
 
 function getRendererIndexPath() {
   const root = getAppRootPath();
-  return path.join(root, 'dist', 'index.html');
+  const distCandidate = path.join(root, 'dist', 'index.html');
+  if (fs.existsSync(distCandidate)) {
+    return distCandidate;
+  }
+  const directCandidate = path.join(root, 'index.html');
+  if (fs.existsSync(directCandidate)) {
+    return directCandidate;
+  }
+  return distCandidate;
 }
 
 function createMainWindow() {
@@ -123,11 +136,9 @@ function createMainWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      // Sandbox disabled: preload script uses require() for shared modules
-      // (logger, pathSanitization, performanceConstants, securityConfig, etc.)
-      // which requires Node.js integration. To enable sandbox, the preload must
-      // be refactored to bundle all dependencies or use only contextBridge APIs.
-      sandbox: false,
+      // Sandbox enabled: preload script is bundled with webpack (target: 'web')
+      // and only uses contextBridge to expose safe APIs.
+      sandbox: true,
       enableRemoteModule: false,
       preload: getPreloadPath(),
       webSecurity: true,
@@ -196,23 +207,36 @@ function createMainWindow() {
   // CRITICAL FIX: Add longer delay and webContents readiness check to prevent Mojo errors
   // Wait for webContents to be fully ready before loading content
   const loadContent = () => {
+    const renderMissingBundle = (reason, attemptedPath) => {
+      logger.error('[WINDOW] Renderer bundle missing', { reason, attemptedPath });
+      const helpText = isDev
+        ? 'Run `npm run build:dev` or `npm run dev` to generate renderer assets.'
+        : 'Reinstall the app or rebuild the package.';
+      const html = `<!doctype html><html><head><meta charset="utf-8"/><title>StratoSort</title></head><body style="font-family:Segoe UI,Arial,sans-serif;padding:24px;color:#1f2937;background:#f8fafc;"><h1 style="margin:0 0 12px;">StratoSort failed to load</h1><p style="margin:0 0 12px;">${reason}</p><p style="margin:0 0 12px;">${helpText}</p><pre style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px;overflow:auto;">${attemptedPath}</pre></body></html>`;
+      win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => {});
+    };
+
+    const loadRendererFromFile = () => {
+      const distPath = getRendererIndexPath();
+      if (!fs.existsSync(distPath)) {
+        renderMissingBundle('Renderer bundle not found.', distPath);
+        return;
+      }
+      win.loadFile(distPath).catch((error) => {
+        renderMissingBundle('Failed to load renderer bundle.', distPath);
+        logger.error('Failed to load renderer bundle:', error);
+      });
+    };
+
     const useDevServer = isDev && getEnvBool('USE_DEV_SERVER');
     if (useDevServer) {
       win.loadURL('http://localhost:3000').catch((error) => {
         logger.info('Development server not available:', error.message);
         logger.info('Loading from built files instead...');
-        const distPath = getRendererIndexPath();
-        win.loadFile(distPath).catch((fileError) => {
-          logger.error('Failed to load from built files, trying original:', fileError);
-          win.loadFile(path.join(getAppRootPath(), 'src', 'renderer', 'index.html'));
-        });
+        loadRendererFromFile();
       });
     } else {
-      const distPath = getRendererIndexPath();
-      win.loadFile(distPath).catch((error) => {
-        logger.error('Failed to load from dist, falling back:', error);
-        win.loadFile(path.join(getAppRootPath(), 'src', 'renderer', 'index.html'));
-      });
+      loadRendererFromFile();
     }
   };
 
@@ -227,39 +251,13 @@ function createMainWindow() {
   }
 
   win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-    let ollamaHost = process.env.OLLAMA_HOST || SERVICE_URLS.OLLAMA_HOST;
-    try {
-      const { getOllamaHost } = require('../ollamaUtils');
-      const configured = typeof getOllamaHost === 'function' ? getOllamaHost() : null;
-      if (configured && typeof configured === 'string') {
-        ollamaHost = configured;
-      }
-    } catch (error) {
-      logger.debug('Failed to get Ollama host', { error: error.message });
-    }
-
-    // Sanitize hosts for CSP to prevent injection attacks
-    // Only extract valid URL origins to include in CSP
-    let sanitizedOllamaHost = '';
-    let wsHost = '';
-    try {
-      const url = new URL(ollamaHost);
-      // Only use the origin (protocol + host) - this prevents CSP injection
-      sanitizedOllamaHost = url.origin;
-      wsHost = url.protocol === 'https:' ? `wss://${url.host}` : `ws://${url.host}`;
-    } catch (error) {
-      logger.debug('Failed to parse Ollama host URL', { error: error.message });
-      sanitizedOllamaHost = '';
-      wsHost = '';
-    }
-
     // Material-UI requires 'unsafe-inline' for styles to work
     // In a more secure setup, we'd use nonces or hashes, but for now we need inline styles
     const styleSrc = "'self' 'unsafe-inline'";
     // Keep script-src strict — no unsafe-eval even in dev (webpack is configured for
     // source-map devtool which doesn't require eval)
     const scriptSrc = "'self'";
-    const csp = `default-src 'self'; script-src ${scriptSrc}; style-src ${styleSrc}; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ${sanitizedOllamaHost} ${wsHost}; object-src 'none'; base-uri 'self'; form-action 'self';`;
+    const csp = `default-src 'self'; script-src ${scriptSrc}; style-src ${styleSrc}; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self';`;
 
     callback({
       responseHeaders: {
@@ -330,6 +328,81 @@ function createMainWindow() {
     // noop; main process holds the reference
   });
 
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    logger.error('[WINDOW] did-fail-load', {
+      errorCode,
+      errorDescription,
+      validatedURL
+    });
+  });
+
+  win.webContents.on('render-process-gone', (_event, details) => {
+    logger.error('[WINDOW] Render process gone', details);
+  });
+
+  // Capture renderer console output for diagnosis (always enabled)
+  // Electron 40 still passes positional args (deprecated); fall back to event properties
+  win.webContents.on('console-message', (_event, levelArg, messageArg, lineArg, sourceIdArg) => {
+    const level = typeof levelArg === 'number' ? levelArg : (_event?.level ?? 0);
+    const message =
+      typeof messageArg === 'string' ? messageArg : (_event?.message ?? String(messageArg));
+    const line = typeof lineArg === 'number' ? lineArg : (_event?.line ?? 0);
+    const sourceId = typeof sourceIdArg === 'string' ? sourceIdArg : (_event?.sourceId ?? '');
+    const prefix = '[RENDERER]';
+    const meta = { line, sourceId: sourceId ? sourceId.split('/').pop() : '' };
+
+    // Pino's browser logger calls console.* with structured objects which serialise
+    // as "[object Object]" through Electron's console-message event. These are high
+    // volume and low value here — demote to debug so they don't clutter log files.
+    if (message === '[object Object]') {
+      logger.debug(`${prefix} (structured log)`, meta);
+      return;
+    }
+
+    if (level >= 3) {
+      logger.error(`${prefix} ${message}`, meta);
+    } else if (level >= 2) {
+      logger.warn(`${prefix} ${message}`, meta);
+    } else {
+      logger.info(`${prefix} ${message}`, meta);
+    }
+  });
+
+  // Log when the page finishes loading for startup diagnosis
+  win.webContents.on('did-finish-load', () => {
+    logger.info('[WINDOW] did-finish-load fired');
+    // Check splash status after page load to detect stuck splash
+    win.webContents
+      .executeJavaScript('document.getElementById("splash-status")?.textContent || "NO_SPLASH"')
+      .then((status) => {
+        logger.info('[WINDOW] Splash status after load: ' + status);
+      })
+      .catch(() => {});
+
+    // Delayed health check: verify the app fully rendered after 5s
+    setTimeout(() => {
+      if (win.isDestroyed()) return;
+      win.webContents
+        .executeJavaScript(
+          `JSON.stringify({
+        splashPresent: !!document.getElementById('initial-loading'),
+        rootChildren: document.getElementById('root')?.children?.length ?? 0,
+        hasElectronAPI: !!window.electronAPI,
+        bootErrors: (window.__STRATOSORT_BOOT_ERRORS || []).length
+      })`
+        )
+        .then((json) => {
+          const state = JSON.parse(json);
+          if (state.splashPresent || state.bootErrors > 0 || state.rootChildren === 0) {
+            logger.error('[WINDOW] Post-load check: app may not have rendered', state);
+          } else {
+            logger.info('[WINDOW] Post-load check: app rendered successfully');
+          }
+        })
+        .catch(() => {});
+    }, 5000);
+  });
+
   // Block navigation attempts within the app (e.g., dropped links or external redirects)
   win.webContents.on('will-navigate', (event, url) => {
     try {
@@ -370,8 +443,7 @@ function createMainWindow() {
       'docs.github.com',
       'microsoft.com',
       'docs.microsoft.com',
-      'ollama.ai',
-      'ollama.com'
+      'huggingface.co'
     ];
     try {
       const parsed = new URL(url);

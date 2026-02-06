@@ -17,7 +17,7 @@ const { cosineSimilarity } = require('../../../shared/vectorMath');
 const { getSemanticFileId, stripSemanticPrefix } = require('../../../shared/fileIdUtils');
 const { normalizePathForIndex } = require('../../../shared/pathSanitization');
 const { findDefaultFolder } = require('../autoOrganize/folderOperations');
-const { readEmbeddingIndexMetadata } = require('../chromadb/embeddingIndexMetadata');
+const { readEmbeddingIndexMetadata } = require('../vectorDb/embeddingIndexMetadata');
 const FolderMatchingService = require('../FolderMatchingService');
 
 // Extracted modules
@@ -136,7 +136,7 @@ function findSmartFolderMatch(suggestion, index) {
 class OrganizationSuggestionServiceCore {
   /**
    * @param {Object} dependencies - Service dependencies
-   * @param {Object} dependencies.chromaDbService - ChromaDB service
+   * @param {Object} dependencies.vectorDbService - Vector DB service
    * @param {Object} dependencies.folderMatchingService - Folder matching service
    * @param {Object} dependencies.settingsService - Settings service
    * @param {Object} [dependencies.clusteringService] - Clustering service (optional, for backward compat)
@@ -144,7 +144,7 @@ class OrganizationSuggestionServiceCore {
    * @param {Object} dependencies.config - Configuration options
    */
   constructor({
-    chromaDbService,
+    vectorDbService,
     folderMatchingService,
     settingsService,
     clusteringService,
@@ -152,8 +152,8 @@ class OrganizationSuggestionServiceCore {
     config = {}
   } = {}) {
     // Validate required dependencies
-    if (!chromaDbService) {
-      throw new Error('OrganizationSuggestionServiceCore requires chromaDbService dependency');
+    if (!vectorDbService) {
+      throw new Error('OrganizationSuggestionServiceCore requires vectorDbService dependency');
     }
     if (!folderMatchingService) {
       throw new Error(
@@ -164,7 +164,7 @@ class OrganizationSuggestionServiceCore {
       throw new Error('OrganizationSuggestionServiceCore requires settingsService dependency');
     }
 
-    this.chromaDb = chromaDbService;
+    this.vectorDb = vectorDbService;
     this.folderMatcher = folderMatchingService;
     this.settings = settingsService;
 
@@ -210,8 +210,7 @@ class OrganizationSuggestionServiceCore {
         : 0.5,
       outlierThreshold: Number.isFinite(safeConfig.outlierThreshold)
         ? safeConfig.outlierThreshold
-        : 0.3, // Below this = outlier
-      enableChromaLearningSync: safeConfig.enableChromaLearningSync === true
+        : 0.3 // Below this = outlier
     };
 
     // Strategy definitions (from extracted module)
@@ -225,23 +224,15 @@ class OrganizationSuggestionServiceCore {
       maxFeedbackHistory: this.config.maxFeedbackHistory
     });
 
-    // Initialize persistence with dual-write support
+    // Initialize persistence
     this.persistence = new PatternPersistence({
       filename: 'user-patterns.json',
-      saveThrottleMs: 5000,
-      chromaDbService: chromaDbService,
-      enableChromaSync: this.config.enableChromaLearningSync,
-      enableChromaDryRun: this.config.enableChromaLearningDryRun === true,
-      chromaPrimary: this.config.chromaLearningPrimary === true
+      saveThrottleMs: 5000
     });
 
     this.feedbackMemoryStore = new FeedbackMemoryStore({
       filename: 'feedback-memory.json',
-      saveThrottleMs: 5000,
-      chromaDbService: chromaDbService,
-      enableChromaSync: this.config.enableChromaLearningSync,
-      enableChromaDryRun: this.config.enableChromaLearningDryRun === true,
-      chromaPrimary: this.config.chromaLearningPrimary === true
+      saveThrottleMs: 5000
     });
 
     // FIX: CRITICAL - Track loading promise to prevent race condition
@@ -312,11 +303,11 @@ class OrganizationSuggestionServiceCore {
   async _getEmbeddingHealth() {
     let stats = null;
     try {
-      stats = await this.chromaDb.getStats();
+      stats = await this.vectorDb.getStats();
     } catch (error) {
       return {
         available: false,
-        reason: 'chroma_stats_failed',
+        reason: 'vector_stats_failed',
         error: error.message
       };
     }
@@ -363,8 +354,7 @@ class OrganizationSuggestionServiceCore {
 
     const lowCoverage = fileCount < this.config.embeddingFirstMinFileEmbeddings;
 
-    // FIX GAP-5: Include ChromaDB sync metrics for monitoring
-    const learningSyncMetrics = this._getChromaSyncMetrics();
+    const persistenceMetrics = this._getPersistenceMetrics();
 
     return {
       available: true,
@@ -372,27 +362,19 @@ class OrganizationSuggestionServiceCore {
       stats,
       embeddingIndex,
       lowCoverage,
-      enableChromaLearningSync: this.config.enableChromaLearningSync,
-      enableChromaLearningDryRun: this.config.enableChromaLearningDryRun === true,
-      learningSyncMetrics
+      persistenceMetrics
     };
   }
 
   /**
-   * Get ChromaDB learning sync metrics for monitoring and debugging
-   * FIX GAP-5: Expose sync success/failure counters for production monitoring
+   * Get persistence metrics for monitoring and debugging
    *
    * @returns {Object} Combined metrics from feedback and pattern persistence
    */
-  _getChromaSyncMetrics() {
+  _getPersistenceMetrics() {
     const emptyMetrics = {
       jsonWrites: 0,
       jsonReads: 0,
-      chromaWrites: 0,
-      chromaReads: 0,
-      chromaWriteFailures: 0,
-      chromaReadFailures: 0,
-      migrationRuns: 0,
       lastSyncAt: null,
       lastError: null
     };
@@ -422,29 +404,17 @@ class OrganizationSuggestionServiceCore {
 
     return {
       feedback: {
-        chromaWrites: feedbackMetrics.chromaWrites,
-        chromaWriteFailures: feedbackMetrics.chromaWriteFailures,
-        chromaReads: feedbackMetrics.chromaReads,
-        chromaReadFailures: feedbackMetrics.chromaReadFailures,
         jsonWrites: feedbackMetrics.jsonWrites,
         jsonReads: feedbackMetrics.jsonReads,
-        migrationRuns: feedbackMetrics.migrationRuns,
         lastSyncAt: feedbackMetrics.lastSyncAt,
         lastError: feedbackMetrics.lastError
       },
       patterns: {
-        chromaWrites: patternMetrics.chromaWrites,
-        chromaWriteFailures: patternMetrics.chromaWriteFailures,
-        chromaReads: patternMetrics.chromaReads,
-        chromaReadFailures: patternMetrics.chromaReadFailures,
         jsonWrites: patternMetrics.jsonWrites,
         jsonReads: patternMetrics.jsonReads,
-        migrationRuns: patternMetrics.migrationRuns,
         lastSyncAt: patternMetrics.lastSyncAt,
         lastError: patternMetrics.lastError
-      },
-      enabled: this.config.enableChromaLearningSync,
-      dryRun: this.config.enableChromaLearningDryRun === true
+      }
     };
   }
 
@@ -1009,7 +979,7 @@ class OrganizationSuggestionServiceCore {
         return 0;
       }
 
-      const successful = await this.chromaDb.batchUpsertFolders(folderPayloads);
+      const successful = await this.vectorDb.batchUpsertFolders(folderPayloads);
       logger.debug(`[OrganizationSuggestionService] Upserted ${successful} folder embeddings`);
       return successful;
     } catch (error) {
@@ -1201,7 +1171,7 @@ class OrganizationSuggestionServiceCore {
         rules,
         updatedAt: new Date().toISOString()
       },
-      { skipChromaSync: true }
+      {}
     );
   }
 
@@ -1226,7 +1196,7 @@ class OrganizationSuggestionServiceCore {
     // FIX H-2: Wrap feedbackMemoryStore.add in try-catch to handle storage failures
     let stored;
     try {
-      stored = await this.feedbackMemoryStore.add(entry, { skipChromaSync: true });
+      stored = await this.feedbackMemoryStore.add(entry);
     } catch (storeError) {
       logger.error('[OrganizationSuggestionService] Failed to add feedback memory to store:', {
         error: storeError.message
@@ -1234,7 +1204,7 @@ class OrganizationSuggestionServiceCore {
       return null;
     }
 
-    if (this.chromaDb && this.folderMatcher) {
+    if (this.vectorDb && this.folderMatcher) {
       try {
         const { vector, model } = await this.folderMatcher.embedText(stored.text);
         const payload = {
@@ -1247,19 +1217,15 @@ class OrganizationSuggestionServiceCore {
           },
           document: stored.text
         };
-        await this.chromaDb.upsertFeedbackMemory(payload);
-        await this.feedbackMemoryStore.update(
-          stored.id,
-          { embeddingModel: model },
-          { skipChromaSync: true }
-        );
+        await this.vectorDb.upsertFeedbackMemory(payload);
+        await this.feedbackMemoryStore.update(stored.id, { embeddingModel: model }, {});
       } catch (error) {
         if (String(error.message).includes('dimension mismatch')) {
           logger.warn('[OrganizationSuggestionService] Resetting feedback memory collection');
-          await this.chromaDb.resetFeedbackMemory();
+          await this.vectorDb.resetFeedbackMemory();
           try {
             const { vector, model } = await this.folderMatcher.embedText(stored.text);
-            await this.chromaDb.upsertFeedbackMemory({
+            await this.vectorDb.upsertFeedbackMemory({
               id: stored.id,
               vector,
               metadata: {
@@ -1269,11 +1235,7 @@ class OrganizationSuggestionServiceCore {
               },
               document: stored.text
             });
-            await this.feedbackMemoryStore.update(
-              stored.id,
-              { embeddingModel: model },
-              { skipChromaSync: true }
-            );
+            await this.feedbackMemoryStore.update(stored.id, { embeddingModel: model }, {});
           } catch (retryError) {
             logger.warn('[OrganizationSuggestionService] Retry upsert failed', {
               error: retryError.message
@@ -1324,13 +1286,13 @@ class OrganizationSuggestionServiceCore {
         source: metadata.source || existing.source,
         updatedAt
       },
-      { skipChromaSync: true }
+      {}
     );
 
-    if (updated && this.chromaDb && this.folderMatcher) {
+    if (updated && this.vectorDb && this.folderMatcher) {
       try {
         const { vector, model } = await this.folderMatcher.embedText(updated.text);
-        await this.chromaDb.upsertFeedbackMemory({
+        await this.vectorDb.upsertFeedbackMemory({
           id: updated.id,
           vector,
           metadata: {
@@ -1340,11 +1302,7 @@ class OrganizationSuggestionServiceCore {
           },
           document: updated.text
         });
-        await this.feedbackMemoryStore.update(
-          updated.id,
-          { embeddingModel: model },
-          { skipChromaSync: true }
-        );
+        await this.feedbackMemoryStore.update(updated.id, { embeddingModel: model }, {});
       } catch (error) {
         if (String(error.message).includes('dimension mismatch')) {
           await this.rebuildFeedbackMemoryEmbeddings();
@@ -1364,10 +1322,10 @@ class OrganizationSuggestionServiceCore {
 
   async deleteFeedbackMemory(id) {
     await this._ensureFeedbackMemoryLoaded();
-    const removed = await this.feedbackMemoryStore.remove(id, { skipChromaSync: true });
-    if (removed && this.chromaDb) {
+    const removed = await this.feedbackMemoryStore.remove(id);
+    if (removed && this.vectorDb) {
       try {
-        await this.chromaDb.deleteFeedbackMemory(id);
+        await this.vectorDb.deleteFeedbackMemory(id);
       } catch (error) {
         logger.warn('[OrganizationSuggestionService] Failed to delete feedback memory vector', {
           error: error.message
@@ -1388,11 +1346,11 @@ class OrganizationSuggestionServiceCore {
     }
 
     let memoryMatches = [];
-    if (this.chromaDb && this.folderMatcher) {
+    if (this.vectorDb && this.folderMatcher) {
       try {
         const summary = generateFileSummary(file);
         const { vector } = await this.folderMatcher.embedText(summary || file.name);
-        memoryMatches = await this.chromaDb.queryFeedbackMemory(vector, 5);
+        memoryMatches = await this.vectorDb.queryFeedbackMemory(vector, 5);
         // MED-16: Validate response is array
         if (!Array.isArray(memoryMatches)) {
           memoryMatches = [];
@@ -1481,16 +1439,16 @@ class OrganizationSuggestionServiceCore {
 
   async rebuildFeedbackMemoryEmbeddings() {
     if (this._rebuildingFeedbackMemory) return;
-    if (!this.chromaDb || !this.folderMatcher) return;
+    if (!this.vectorDb || !this.folderMatcher) return;
     this._rebuildingFeedbackMemory = true;
     try {
       const entries = await this.feedbackMemoryStore.list();
       if (!entries || entries.length === 0) return;
-      await this.chromaDb.resetFeedbackMemory();
+      await this.vectorDb.resetFeedbackMemory();
       for (const entry of entries) {
         try {
           const { vector, model } = await this.folderMatcher.embedText(entry.text);
-          await this.chromaDb.upsertFeedbackMemory({
+          await this.vectorDb.upsertFeedbackMemory({
             id: entry.id,
             vector,
             metadata: {
@@ -1500,11 +1458,7 @@ class OrganizationSuggestionServiceCore {
             },
             document: entry.text
           });
-          await this.feedbackMemoryStore.update(
-            entry.id,
-            { embeddingModel: model },
-            { skipChromaSync: true }
-          );
+          await this.feedbackMemoryStore.update(entry.id, { embeddingModel: model }, {});
         } catch (error) {
           logger.warn('[OrganizationSuggestionService] Failed to rebuild memory entry', {
             id: entry.id,

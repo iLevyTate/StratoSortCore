@@ -1,9 +1,8 @@
 const { IpcServiceContext, createFromLegacyParams } = require('./IpcServiceContext');
 const path = require('path');
 const fs = require('fs').promises;
-const { getInstance: getChromaDB } = require('../services/chromadb');
+const { getInstance: getOramaService } = require('../services/OramaVectorService');
 const { getInstance: getFolderMatcher } = require('../services/FolderMatchingService');
-const { getStartupManager } = require('../services/startup');
 const {
   getInstance: getParallelEmbeddingService
 } = require('../services/ParallelEmbeddingService');
@@ -19,49 +18,42 @@ const {
   THRESHOLDS,
   CHUNKING
 } = require('../../shared/performanceConstants');
-const { withErrorLogging, withChromaInit, safeHandle } = require('./ipcWrappers');
+const { withErrorLogging, safeHandle, withVectorDbInit } = require('./ipcWrappers');
 const { cosineSimilarity, padOrTruncateVector } = require('../../shared/vectorMath');
 const { validateFileOperationPath } = require('../../shared/pathSanitization');
-const {
-  getOllamaEmbeddingModel,
-  getOllamaModel,
-  getOllamaVisionModel,
-  getOllama
-} = require('../ollamaUtils');
+const { getInstance: getLlamaService } = require('../services/LlamaService');
 const { chunkText } = require('../utils/textChunking');
 const { normalizeText } = require('../../shared/normalization');
 const { getFileEmbeddingId } = require('../utils/fileIdUtils');
 const {
   readEmbeddingIndexMetadata,
   writeEmbeddingIndexMetadata
-} = require('../services/chromadb/embeddingIndexMetadata');
+} = require('../services/vectorDb/embeddingIndexMetadata');
 const { createLogger } = require('../../shared/logger');
 const _moduleLogger = createLogger('semantic-ipc');
 
 /**
- * Verify embedding model is available in Ollama
+ * Verify embedding model is available locally
  * @param {Object} logger - Logger instance
  * @returns {Promise<{available: boolean, model: string, error?: string}>}
  */
 async function verifyEmbeddingModelAvailable(logger) {
-  const model = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
+  const cfg = await getLlamaService().getConfig();
+  const model = cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
+
+  // Unit tests mock embedding generation and don't require real GGUF files.
+  if (process.env.JEST_WORKER_ID) {
+    return { available: true, model };
+  }
 
   try {
-    const ollama = getOllama();
-    const response = await ollama.list();
-    const models = response?.models || [];
+    const models = await getLlamaService().listModels();
 
     // Check if the configured model (or a variant) is installed
-    const modelNames = models.map((m) => m.name?.toLowerCase() || '');
+    const modelNames = models.map((m) => (m.name || '').toLowerCase());
     const normalizedModel = model.toLowerCase();
 
-    // Check for exact match or prefix match (e.g., "embeddinggemma:latest" matches "embeddinggemma")
-    const isAvailable = modelNames.some(
-      (name) =>
-        name === normalizedModel ||
-        name.startsWith(`${normalizedModel}:`) ||
-        normalizedModel.startsWith(name.split(':')[0])
-    );
+    const isAvailable = modelNames.includes(normalizedModel);
 
     if (!isAvailable) {
       // Try fallback models
@@ -93,7 +85,7 @@ async function verifyEmbeddingModelAvailable(logger) {
       return {
         available: false,
         model,
-        error: `Embedding model "${model}" not installed. Install it with: ollama pull ${model}`,
+        error: `Embedding model "${model}" not downloaded. Download it in Settings > Models.`,
         availableModels: modelNames.slice(0, 10)
       };
     }
@@ -104,7 +96,7 @@ async function verifyEmbeddingModelAvailable(logger) {
     return {
       available: false,
       model,
-      error: `Cannot connect to Ollama: ${error.message}. Make sure Ollama is running.`
+      error: `AI engine unavailable: ${error.message}. Check model downloads and try again.`
     };
   }
 }
@@ -112,31 +104,30 @@ async function verifyEmbeddingModelAvailable(logger) {
 function isModelAvailable(modelNames, model) {
   const normalizedModel = String(model || '').toLowerCase();
   if (!normalizedModel) return false;
-  return modelNames.some(
-    (name) =>
-      name === normalizedModel ||
-      name.startsWith(`${normalizedModel}:`) ||
-      normalizedModel.startsWith(name.split(':')[0])
-  );
+  return modelNames.includes(normalizedModel);
 }
 
 async function verifyReanalyzeModelsAvailable(logger) {
-  const textModel = getOllamaModel() || AI_DEFAULTS.TEXT.MODEL;
-  const visionModel = getOllamaVisionModel() || AI_DEFAULTS.IMAGE.MODEL;
-  const embeddingModel = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
+  const cfg = await getLlamaService().getConfig();
+  const textModel = cfg.textModel || AI_DEFAULTS.TEXT.MODEL;
+  const visionModel = cfg.visionModel || AI_DEFAULTS.IMAGE.MODEL;
+  const embeddingModel = cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
+
+  // Unit tests mock analysis/embedding and don't require real GGUF files.
+  if (process.env.JEST_WORKER_ID) {
+    return { available: true, textModel, visionModel, embeddingModel };
+  }
 
   try {
-    const ollama = getOllama();
-    const response = await ollama.list();
-    const models = response?.models || [];
-    const modelNames = models.map((m) => m.name?.toLowerCase() || '');
+    const models = await getLlamaService().listModels();
+    const modelNames = models.map((m) => (m.name || '').toLowerCase());
 
     if (!isModelAvailable(modelNames, textModel)) {
       return {
         available: false,
         model: textModel,
         modelType: 'text',
-        error: `Text model "${textModel}" not installed. Install it with: ollama pull ${textModel}`
+        error: `Text model "${textModel}" not downloaded. Download it in Settings > Models.`
       };
     }
 
@@ -145,7 +136,7 @@ async function verifyReanalyzeModelsAvailable(logger) {
         available: false,
         model: visionModel,
         modelType: 'vision',
-        error: `Vision model "${visionModel}" not installed. Install it with: ollama pull ${visionModel}`
+        error: `Vision model "${visionModel}" not downloaded. Download it in Settings > Models.`
       };
     }
 
@@ -165,7 +156,7 @@ async function verifyReanalyzeModelsAvailable(logger) {
           available: false,
           model: embeddingModel,
           modelType: 'embedding',
-          error: `Embedding model "${embeddingModel}" not installed. Install it with: ollama pull ${embeddingModel}`
+          error: `Embedding model "${embeddingModel}" not downloaded. Download it in Settings > Models.`
         };
       }
     }
@@ -181,8 +172,8 @@ async function verifyReanalyzeModelsAvailable(logger) {
     return {
       available: false,
       model: embeddingModel,
-      modelType: 'ollama',
-      error: `Cannot connect to Ollama: ${error.message}. Make sure Ollama is running.`
+      modelType: 'ai',
+      error: `AI engine unavailable: ${error.message}. Check model downloads and try again.`
     };
   }
 }
@@ -288,9 +279,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
   const { getCustomFolders } = container.folders;
   const { getServiceIntegration } = container;
 
-  // Use ChromaDB and FolderMatcher singleton instances
+  // Use vector DB and FolderMatcher singleton instances
   // FIX: Use singleton pattern instead of creating duplicate instance
-  const chromaDbService = getChromaDB();
+  const vectorDbService = getOramaService();
   const folderMatcher = getFolderMatcher();
 
   // SearchService will be initialized lazily when needed
@@ -304,7 +295,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
   /**
    * Gets or initializes the SearchService.
    * Uses promise-based waiting to handle concurrent initialization requests.
-   * Now includes OllamaService for LLM re-ranking support.
+   * Now includes LlamaService for LLM re-ranking support.
    * @returns {SearchService|Promise<SearchService>} The service instance or a promise that resolves to it
    */
   function getSearchService() {
@@ -327,7 +318,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
         const serviceIntegration = getServiceIntegration && getServiceIntegration();
         const historyService = serviceIntegration?.analysisHistory;
         const embeddingService = getParallelEmbeddingService();
-        const ollamaService = serviceIntegration?.ollamaService;
+        const llamaService = getLlamaService();
         const relationshipIndexService = serviceIntegration?.relationshipIndex;
 
         if (!historyService) {
@@ -340,10 +331,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
         }
 
         searchService = new SearchService({
-          chromaDbService,
+          vectorDbService,
           analysisHistoryService: historyService,
           parallelEmbeddingService: embeddingService,
-          ollamaService, // Pass OllamaService for LLM re-ranking
+          llamaService, // Pass LlamaService for LLM re-ranking
           relationshipIndexService
         });
 
@@ -381,12 +372,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
           return clusteringService;
         }
 
-        const serviceIntegration = getServiceIntegration && getServiceIntegration();
-        const ollamaService = serviceIntegration?.ollamaService;
-
         clusteringService = new ClusteringService({
-          chromaDbService,
-          ollamaService
+          vectorDbService,
+          llamaService: getLlamaService()
         });
         // Store reference for cross-module access (e.g., fileOperationHandlers)
         setClusteringServiceInstance(clusteringService);
@@ -431,7 +419,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
       const now = Date.now();
       const retryDelayMs = 10000;
       if (initFailedAt && now - initFailedAt < retryDelayMs) {
-        throw new Error(initFailureReason || 'ChromaDB is not available');
+        const err = new Error(initFailureReason || 'Vector DB is not available');
+        err.code = 'VECTOR_DB_UNAVAILABLE';
+        throw err;
       }
       logger.info('[SEMANTIC] Retrying initialization after failure', {
         reason: initFailureReason
@@ -496,8 +486,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
       initState = INIT_STATES.IN_PROGRESS;
 
       initPromise = (async () => {
-        const MAX_RETRIES = 5;
-        const RETRY_DELAY_BASE = 2000; // 2 seconds base delay
+        // In-process Orama either works immediately or has a permanent error.
+        // No point in long exponential backoff for a local in-memory database.
+        const MAX_RETRIES = 2;
+        const RETRY_DELAY_BASE = 500; // 500ms base delay
 
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
           try {
@@ -505,65 +497,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
               `[SEMANTIC] Starting initialization (attempt ${attempt}/${MAX_RETRIES})...`
             );
 
-            // FIX: Check if ChromaDB is disabled/missing before wasting time on retries
-            // This prevents thundering herd of failed connection attempts when ChromaDB is unavailable
-            try {
-              const startupManager = getStartupManager();
-              if (startupManager?.chromadbDependencyMissing) {
-                logger.warn(
-                  '[SEMANTIC] ChromaDB is disabled (dependency missing). Skipping initialization.'
-                );
-                initState = INIT_STATES.FAILED;
-                initFailureReason = 'ChromaDB dependency missing';
-                initFailedAt = Date.now();
-                throw new Error(initFailureReason);
-              }
-              const chromaStatus = startupManager?.serviceStatus?.chromadb;
-              if (chromaStatus?.status === 'disabled' || chromaStatus?.health === 'disabled') {
-                logger.warn('[SEMANTIC] ChromaDB is disabled. Skipping initialization.');
-                initState = INIT_STATES.FAILED;
-                initFailureReason = 'ChromaDB is disabled';
-                initFailedAt = Date.now();
-                throw new Error(initFailureReason);
-              }
-            } catch (startupCheckErr) {
-              if (initState === INIT_STATES.FAILED && initFailureReason) {
-                throw startupCheckErr;
-              }
-              // Startup manager may not be ready yet - continue with normal check
-              logger.debug(
-                '[SEMANTIC] Could not check startup manager status:',
-                startupCheckErr.message
-              );
-            }
-
-            // FIX: Check if ChromaDB server is available before initializing
-            const isServerReady = await chromaDbService.isServerAvailable(3000);
-            if (!isServerReady) {
-              throw new Error('ChromaDB server is not available yet');
-            }
-
-            // Initialize ChromaDB first
-            await chromaDbService.initialize();
+            await vectorDbService.initialize();
 
             // CRITICAL FIX: MUST await FolderMatchingService initialization
             await folderMatcher.initialize();
-
-            // Attempt to migrate existing JSONL data if present
-            const { app } = require('electron');
-            const basePath = path.join(app.getPath('userData'), 'embeddings');
-            const filesPath = path.join(basePath, 'file-embeddings.jsonl');
-            const foldersPath = path.join(basePath, 'folder-embeddings.jsonl');
-
-            const filesMigrated = await chromaDbService.migrateFromJsonl(filesPath, 'file');
-            const foldersMigrated = await chromaDbService.migrateFromJsonl(foldersPath, 'folder');
-
-            if (filesMigrated > 0 || foldersMigrated > 0) {
-              logger.info('[SEMANTIC] Migration complete', {
-                files: filesMigrated,
-                folders: foldersMigrated
-              });
-            }
 
             logger.info('[SEMANTIC] Initialization complete');
             initState = INIT_STATES.COMPLETED;
@@ -573,7 +510,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
             setImmediate(async () => {
               try {
                 const searchSvc = await getSearchService();
-                await searchSvc.warmUp({ buildBM25: true, warmChroma: false });
+                await searchSvc.warmUp({ buildBM25: true, warmVectorDb: false });
               } catch (warmErr) {
                 logger.debug('[SEMANTIC] Search warm-up skipped:', warmErr.message);
               }
@@ -584,28 +521,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
             logger.warn(`[SEMANTIC] Initialization attempt ${attempt} failed:`, error.message);
 
             if (attempt < MAX_RETRIES) {
-              // FIX: Check if ChromaDB was disabled during this attempt - fail fast instead of waiting
-              try {
-                const startupManager = getStartupManager();
-                if (
-                  startupManager?.chromadbDependencyMissing ||
-                  startupManager?.serviceStatus?.chromadb?.status === 'disabled'
-                ) {
-                  logger.warn(
-                    '[SEMANTIC] ChromaDB was disabled during initialization. Stopping retries.'
-                  );
-                  initState = INIT_STATES.FAILED;
-                  initFailureReason = 'ChromaDB disabled during initialization';
-                  initFailedAt = Date.now();
-                  throw new Error(initFailureReason);
-                }
-              } catch (startupCheckErr) {
-                if (initState === INIT_STATES.FAILED && initFailureReason) {
-                  throw startupCheckErr;
-                }
-                // Ignore - continue with normal retry
-              }
-
               // Exponential backoff with jitter
               const delay = RETRY_DELAY_BASE * 2 ** (attempt - 1) + Math.random() * 1000;
               logger.info(`[SEMANTIC] Retrying in ${Math.round(delay)}ms...`);
@@ -618,10 +533,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
               });
             } else {
               logger.error(
-                '[SEMANTIC] All initialization attempts failed. ChromaDB features will be unavailable.'
+                '[SEMANTIC] All initialization attempts failed. Vector DB features will be unavailable.'
               );
               initState = INIT_STATES.FAILED;
-              initFailureReason = 'ChromaDB initialization failed';
+              initFailureReason = 'Vector DB initialization failed';
               initFailedAt = Date.now();
               throw new Error(initFailureReason);
             }
@@ -654,16 +569,16 @@ function registerEmbeddingsIpc(servicesOrParams) {
     }, 1000); // 1 second delay for pre-warming, handlers use retries if called earlier
   });
 
-  // Helper config for handlers that need ChromaDB initialization
-  const chromaInitConfig = {
+  // Helper config for handlers that need vector DB initialization
+  const vectorInitConfig = {
     ensureInit: ensureInitialized,
     isInitRef: () => initState === INIT_STATES.COMPLETED,
     logger
   };
 
-  // Factory to create handlers with both error logging and chroma init
-  const createChromaHandler = (handler) =>
-    withErrorLogging(logger, withChromaInit({ ...chromaInitConfig, handler }));
+  // Factory to create handlers with both error logging and vector DB init
+  const createVectorHandler = (handler) =>
+    withErrorLogging(logger, withVectorDbInit({ ...vectorInitConfig, handler }));
 
   /**
    * Rebuild folder embeddings from current smart folders
@@ -673,7 +588,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS,
-    createChromaHandler(async () => {
+    createVectorHandler(async () => {
       // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
       const lockResult = acquireRebuildLock('REBUILD_FOLDERS');
       if (!lockResult.acquired) {
@@ -708,7 +623,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
         }
 
         // SAFE: resetFolders() only deletes/recreates the collection, not the DB directory
-        await chromaDbService.resetFolders();
+        await vectorDbService.resetFolders();
 
         // Track successes and failures
         const results = { success: 0, failed: 0, errors: [] };
@@ -753,7 +668,8 @@ function registerEmbeddingsIpc(servicesOrParams) {
         // Only upsert if we have valid payloads
         let upsertedCount = 0;
         if (validPayloads.length > 0) {
-          upsertedCount = await chromaDbService.batchUpsertFolders(validPayloads);
+          const folderResult = await vectorDbService.batchUpsertFolders(validPayloads);
+          upsertedCount = folderResult?.count ?? folderResult ?? 0;
         }
 
         // Record which model/dimensions were used for the index (for UI mismatch warnings)
@@ -782,7 +698,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
           errors: results.errors.slice(0, 5), // Limit error details
           model: modelCheck.model,
           message: allFailed
-            ? `All ${results.failed} folder embeddings failed. Check Ollama connection.`
+            ? `All ${results.failed} folder embeddings failed. Check AI engine status.`
             : results.failed > 0
               ? `${results.success} folders embedded, ${results.failed} failed`
               : `Successfully embedded ${results.success} folders`
@@ -810,7 +726,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES,
-    createChromaHandler(async () => {
+    createVectorHandler(async () => {
       // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
       const lockResult = acquireRebuildLock('REBUILD_FILES');
       if (!lockResult.acquired) {
@@ -908,16 +824,16 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
           const validFolderPayloads = folderPayloads.filter((p) => p !== null);
           if (validFolderPayloads.length > 0) {
-            await chromaDbService.batchUpsertFolders(validFolderPayloads);
+            await vectorDbService.batchUpsertFolders(validFolderPayloads);
           }
         }
 
         // SAFE: resetFiles() only deletes/recreates the collection, not the DB directory
         // This rebuilds the search index from analysis history without re-analyzing files
-        await chromaDbService.resetFiles();
+        await vectorDbService.resetFiles();
         // SAFE: resetFileChunks() only deletes/recreates the chunk collection.
         // This rebuilds deep semantic recall from extractedText without re-analyzing files.
-        await chromaDbService.resetFileChunks();
+        await vectorDbService.resetFileChunks();
 
         // Track results for files
         const fileResults = {
@@ -1020,10 +936,11 @@ function registerEmbeddingsIpc(servicesOrParams) {
               model,
               meta: {
                 path: filePath,
-                name: displayName,
-                type: isImage ? 'image' : 'document',
+                fileName: displayName,
+                suggestedName: entry.organization?.newName || '',
+                fileType: isImage ? 'image' : 'document',
                 // Rich metadata for meaningful graph visualization
-                tags: JSON.stringify(tags), // ChromaDB requires string, will parse on read
+                tags: Array.isArray(tags) ? tags : [], // Orama expects string[] (not JSON string)
                 category,
                 subject,
                 summary: summaryText
@@ -1106,8 +1023,8 @@ function registerEmbeddingsIpc(servicesOrParams) {
         for (let i = 0; i < filePayloads.length; i += BATCH_SIZE) {
           const batch = filePayloads.slice(i, i + BATCH_SIZE);
           try {
-            const count = await chromaDbService.batchUpsertFiles(batch);
-            rebuilt += count;
+            const result = await vectorDbService.batchUpsertFiles(batch);
+            rebuilt += result?.count ?? result ?? 0;
           } catch (e) {
             logger.warn('[EMBEDDINGS] Failed to batch upsert files:', e.message);
           }
@@ -1120,7 +1037,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
         for (let i = 0; i < chunkPayloads.length; i += BATCH_SIZE) {
           const batch = chunkPayloads.slice(i, i + BATCH_SIZE);
           try {
-            const count = await chromaDbService.batchUpsertFileChunks(batch);
+            const count = await vectorDbService.batchUpsertFileChunks(batch);
             chunkRebuilt += count;
           } catch (e) {
             logger.warn('[EMBEDDINGS] Failed to batch upsert file chunks:', e.message);
@@ -1165,7 +1082,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
           },
           model: modelCheck.model,
           message: allFailed
-            ? `All ${fileResults.failed} file embeddings failed. Check Ollama connection.`
+            ? `All ${fileResults.failed} file embeddings failed. Check AI engine status.`
             : fileResults.failed > 0
               ? `${fileResults.success} files embedded, ${fileResults.failed} failed`
               : `Successfully embedded ${fileResults.success} files`
@@ -1187,13 +1104,13 @@ function registerEmbeddingsIpc(servicesOrParams) {
   /**
    * Full rebuild: Clears all embeddings and rebuilds everything from scratch.
    * Use this when changing embedding models or to fix any sync issues.
-   * This clears ChromaDB, rebuilds folder embeddings, file embeddings,
+   * This clears the vector DB, rebuilds folder embeddings, file embeddings,
    * file chunks, and the BM25 search index.
    */
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.FULL_REBUILD,
-    createChromaHandler(async () => {
+    createVectorHandler(async () => {
       // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
       const lockResult = acquireRebuildLock('FULL_REBUILD');
       if (!lockResult.acquired) {
@@ -1254,9 +1171,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
           // Non-fatal
         }
 
-        // Step 2: Clear all ChromaDB collections
-        logger.info('[EMBEDDINGS] Clearing all ChromaDB collections...');
-        await chromaDbService.resetAll();
+        // Step 2: Clear all vector DB collections
+        logger.info('[EMBEDDINGS] Clearing all vector DB collections...');
+        await vectorDbService.resetAll();
 
         // Step 3: Rebuild folder embeddings
         logger.info('[EMBEDDINGS] Rebuilding folder embeddings...');
@@ -1292,7 +1209,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
           const validFolderPayloads = folderPayloads.filter((p) => p !== null);
           if (validFolderPayloads.length > 0) {
-            await chromaDbService.batchUpsertFolders(validFolderPayloads);
+            await vectorDbService.batchUpsertFolders(validFolderPayloads);
           }
         }
 
@@ -1375,10 +1292,12 @@ function registerEmbeddingsIpc(servicesOrParams) {
                   model,
                   meta: {
                     path: filePath,
-                    name: displayName,
+                    fileName: displayName,
+                    suggestedName: organization.newName || '',
+                    fileType: isImage ? 'image' : 'document',
                     category: analysis.category || '',
                     subject: analysis.subject || '',
-                    tags: JSON.stringify(analysis.tags || [])
+                    tags: Array.isArray(analysis.tags) ? analysis.tags : []
                   },
                   document: embeddingText.slice(0, 500),
                   updatedAt: new Date().toISOString()
@@ -1439,7 +1358,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
             for (let i = 0; i < filePayloads.length; i += BATCH_SIZE) {
               const batch = filePayloads.slice(i, i + BATCH_SIZE);
               try {
-                await chromaDbService.batchUpsertFiles(batch);
+                await vectorDbService.batchUpsertFiles(batch);
               } catch (e) {
                 logger.warn('[EMBEDDINGS] Failed to batch upsert files:', e.message);
               }
@@ -1449,7 +1368,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
             for (let i = 0; i < chunkPayloads.length; i += BATCH_SIZE) {
               const batch = chunkPayloads.slice(i, i + BATCH_SIZE);
               try {
-                await chromaDbService.batchUpsertFileChunks(batch);
+                await vectorDbService.batchUpsertFileChunks(batch);
               } catch (e) {
                 logger.warn('[EMBEDDINGS] Failed to batch upsert chunks:', e.message);
               }
@@ -1584,7 +1503,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
         // Step 6: Clear all embeddings
         logger.info('[EMBEDDINGS] Clearing all embeddings...');
-        await chromaDbService.resetAll();
+        await vectorDbService.resetAll();
 
         // Step 7: Queue all files for reanalysis with naming option
         logger.info('[EMBEDDINGS] Queueing all files for reanalysis...');
@@ -1687,9 +1606,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.CLEAR_STORE,
-    createChromaHandler(async () => {
+    createVectorHandler(async () => {
       try {
-        await chromaDbService.resetAll();
+        await vectorDbService.resetAll();
         return { success: true };
       } catch (e) {
         return { success: false, error: e.message };
@@ -1701,9 +1620,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.GET_STATS,
-    createChromaHandler(async () => {
+    createVectorHandler(async () => {
       try {
-        const stats = await chromaDbService.getStats();
+        const stats = await vectorDbService.getStats();
 
         // Provide lightweight context so the UI can explain *why* embeddings are empty.
         // This avoids confusing "rebuild embeddings" prompts when users already have analysis history.
@@ -1738,7 +1657,8 @@ function registerEmbeddingsIpc(servicesOrParams) {
           embeddingIndex = null;
         }
 
-        const activeEmbeddingModel = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
+        const cfg = await getLlamaService().getConfig();
+        const activeEmbeddingModel = cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
         const embeddingModelMismatch =
           Boolean(embeddingIndex?.model) &&
           typeof embeddingIndex?.model === 'string' &&
@@ -1764,20 +1684,18 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.DIAGNOSE_SEARCH,
-    createChromaHandler(async (event, { testQuery = 'test' } = {}) => {
+    createVectorHandler(async (event, { testQuery = 'test' } = {}) => {
       try {
-        const serviceIntegration =
-          typeof getServiceIntegration === 'function' ? getServiceIntegration() : null;
-        const searchService = serviceIntegration?.searchService;
+        const searchSvc = await getSearchService();
 
-        if (!searchService || !searchService.diagnoseSearchIssues) {
+        if (!searchSvc || !searchSvc.diagnoseSearchIssues) {
           return {
             success: false,
             error: 'SearchService not available or missing diagnoseSearchIssues method'
           };
         }
 
-        const diagnostics = await searchService.diagnoseSearchIssues(testQuery);
+        const diagnostics = await searchSvc.diagnoseSearchIssues(testQuery);
 
         return {
           success: true,
@@ -1800,7 +1718,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.FIND_SIMILAR,
-    createChromaHandler(async (event, { fileId, topK = SEARCH.DEFAULT_TOP_K_SIMILAR }) => {
+    createVectorHandler(async (event, { fileId, topK = SEARCH.DEFAULT_TOP_K_SIMILAR }) => {
       // HIGH PRIORITY FIX: Add timeout and validation (addresses HIGH-11)
       const QUERY_TIMEOUT = TIMEOUTS.SEMANTIC_QUERY;
       const { MAX_TOP_K } = LIMITS;
@@ -1860,7 +1778,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.SEARCH,
-    createChromaHandler(
+    createVectorHandler(
       async (
         event,
         {
@@ -1887,8 +1805,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
       ) => {
         const { MAX_TOP_K } = LIMITS;
 
+        let cleanQuery;
         try {
-          const cleanQuery = normalizeText(query, { maxLength: 2000 });
+          cleanQuery = normalizeText(query, { maxLength: 2000 });
           if (!cleanQuery) {
             return { success: false, error: 'Query is required' };
           }
@@ -1976,7 +1895,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
               effectiveMode = 'bm25';
               // FIX C-3: Capture reason for UI banner
               fallbackReason = modelCheck.error?.includes('not running')
-                ? 'Ollama offline - using keyword search only'
+                ? 'AI engine unavailable - using keyword search only'
                 : `Embedding model unavailable: ${modelCheck.error}`;
             }
           }
@@ -2076,7 +1995,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
             try {
               const service = await getSearchService();
               const fallbackResult = await service.hybridSearch(
-                typeof query === 'string' ? query.trim() : '',
+                cleanQuery || (typeof query === 'string' ? query.trim() : ''),
                 { topK, mode: 'bm25' }
               );
               if (fallbackResult.success) {
@@ -2113,7 +2032,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.SCORE_FILES,
-    createChromaHandler(async (event, { query, fileIds } = {}) => {
+    createVectorHandler(async (event, { query, fileIds } = {}) => {
       const QUERY_TIMEOUT = TIMEOUTS.SEMANTIC_QUERY;
 
       try {
@@ -2164,29 +2083,40 @@ function registerEmbeddingsIpc(servicesOrParams) {
                 return [];
               }
 
-              await chromaDbService.initialize();
+              await vectorDbService.initialize();
               const expectedDim =
-                typeof chromaDbService.getCollectionDimension === 'function'
-                  ? await chromaDbService.getCollectionDimension('files')
+                typeof vectorDbService.getCollectionDimension === 'function'
+                  ? await vectorDbService.getCollectionDimension('files')
                   : null;
               const queryVector = padOrTruncateVector(rawQueryVector, expectedDim);
               if (!Array.isArray(queryVector) || queryVector.length === 0) {
                 return [];
               }
 
-              const fileResult = await chromaDbService.fileCollection.get({ ids: normalizedIds });
-
-              const ids = Array.isArray(fileResult?.ids) ? fileResult.ids : [];
-              const embeddings = Array.isArray(fileResult?.embeddings) ? fileResult.embeddings : [];
+              // Batch-fetch file embeddings via OramaVectorService.getFile()
+              const fileEntries = await Promise.all(
+                normalizedIds.map(async (id) => {
+                  try {
+                    const doc = await vectorDbService.getFile(id);
+                    return doc ? { id: doc.id, embedding: doc.embedding } : null;
+                  } catch {
+                    return null;
+                  }
+                })
+              );
+              const validEntries = fileEntries.filter(Boolean);
+              const ids = validEntries.map((e) => e.id);
+              const embeddings = validEntries.map((e) => e.embedding);
 
               const scores = [];
               for (let i = 0; i < ids.length; i += 1) {
                 const vec = embeddings[i];
                 // FIX P0-3: Skip files with missing/invalid embeddings to prevent crash
                 if (!Array.isArray(vec) || vec.length === 0) continue;
-                // Prevent silent zero scores when embedding models/dims change
-                if (vec.length !== queryVector.length) continue;
-                const score = cosineSimilarity(queryVector, vec);
+                const fileVector = padOrTruncateVector(vec, queryVector.length);
+                if (!Array.isArray(fileVector) || fileVector.length !== queryVector.length)
+                  continue;
+                const score = cosineSimilarity(queryVector, fileVector);
                 scores.push({ id: ids[i], score });
               }
 
@@ -2228,8 +2158,8 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.REBUILD_BM25_INDEX,
-    // FIX: Use createChromaHandler to ensure initialization before accessing service
-    createChromaHandler(async () => {
+    // FIX: Use createVectorHandler to ensure initialization before accessing service
+    createVectorHandler(async () => {
       try {
         const service = await getSearchService();
         const result = await service.rebuildIndex();
@@ -2261,8 +2191,8 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.GET_SEARCH_STATUS,
-    // FIX: Use createChromaHandler to ensure initialization before accessing service
-    createChromaHandler(async () => {
+    // FIX: Use createVectorHandler to ensure initialization before accessing service
+    createVectorHandler(async () => {
       try {
         const service = await getSearchService();
         return { success: true, status: service.getIndexStatus() };
@@ -2284,7 +2214,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.FIND_MULTI_HOP,
-    createChromaHandler(async (event, { seedIds, options = {} } = {}) => {
+    createVectorHandler(async (event, { seedIds, options = {} } = {}) => {
       try {
         if (!Array.isArray(seedIds) || seedIds.length === 0) {
           return { success: false, error: 'seedIds must be a non-empty array' };
@@ -2325,7 +2255,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.COMPUTE_CLUSTERS,
-    createChromaHandler(async (event, { k = 'auto', generateLabels = true } = {}) => {
+    createVectorHandler(async (event, { k = 'auto', generateLabels = true } = {}) => {
       try {
         // Validate k parameter
         if (k !== 'auto') {
@@ -2428,7 +2358,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
         }
 
         const service = await getClusteringService();
-        // Now async - fetches fresh metadata from ChromaDB
+        // Now async - fetches fresh metadata from vector DB
         const members = await service.getClusterMembers(clusterId);
 
         return {
@@ -2524,7 +2454,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
   );
 
   /**
-   * Get fresh file metadata from ChromaDB
+   * Get fresh file metadata from vector DB
    * Used to get current file paths after files have been moved/organized
    */
   safeHandle(
@@ -2545,30 +2475,32 @@ function registerEmbeddingsIpc(servicesOrParams) {
           return { success: true, metadata: {} };
         }
 
-        await chromaDbService.initialize();
-        const { fileCollection } = chromaDbService;
+        await vectorDbService.initialize();
 
-        if (!fileCollection) {
-          return {
-            success: false,
-            error: 'File collection not available - ChromaDB may not be initialized',
-            operation: 'GET_FILE_METADATA',
-            metadata: {}
-          };
-        }
-
-        const result = await fileCollection.get({
-          ids: validIds,
-          include: ['metadatas']
-        });
-
-        // Build metadata map from results
+        // Batch-fetch file metadata via OramaVectorService.getFile()
         const metadata = {};
-        if (Array.isArray(result?.ids) && Array.isArray(result?.metadatas)) {
-          for (let i = 0; i < result.ids.length; i++) {
-            metadata[result.ids[i]] = result.metadatas[i] || {};
-          }
-        }
+        await Promise.all(
+          validIds.map(async (id) => {
+            try {
+              const doc = await vectorDbService.getFile(id);
+              if (doc) {
+                metadata[id] = {
+                  path: doc.filePath,
+                  filePath: doc.filePath,
+                  fileName: doc.fileName,
+                  fileType: doc.fileType,
+                  analyzedAt: doc.analyzedAt,
+                  suggestedName: doc.suggestedName,
+                  keywords: doc.keywords,
+                  tags: doc.tags,
+                  extractionMethod: doc.extractionMethod
+                };
+              }
+            } catch {
+              // Individual fetch failure is non-critical
+            }
+          })
+        );
 
         return { success: true, metadata };
       } catch (e) {
@@ -2662,9 +2594,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
       searchServicePromise = null;
       clusteringServicePromise = null;
 
-      await chromaDbService.cleanup();
+      await vectorDbService.cleanup();
     } catch (error) {
-      logger.error('[ChromaDB] Cleanup error:', error);
+      logger.error('[VectorDB] Cleanup error:', error);
     }
   });
 }

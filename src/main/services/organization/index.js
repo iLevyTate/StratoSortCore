@@ -38,23 +38,23 @@ const OrganizationSuggestionService = OrganizationSuggestionServiceCore;
  * @returns {OrganizationSuggestionService} A new service instance
  */
 function createWithDefaults(config = {}) {
-  const { getInstance: getChromaDB } = require('../chromadb');
+  const { getInstance: getOramaService } = require('../OramaVectorService');
   const FolderMatchingService = require('../FolderMatchingService');
   const { getInstance: getSettingsService } = require('../SettingsService');
   const { ClusteringService } = require('../ClusteringService');
-  const { getInstance: getOllamaInstance } = require('../OllamaService');
+  const { getInstance: getLlamaInstance } = require('../LlamaService');
 
-  const chromaDbService = getChromaDB();
-  const folderMatchingService = new FolderMatchingService(chromaDbService);
+  const vectorDbService = getOramaService();
+  const folderMatchingService = new FolderMatchingService(vectorDbService);
   const settingsService = getSettingsService();
-  const ollamaService = getOllamaInstance();
+  const llamaService = getLlamaInstance();
   const clusteringService = new ClusteringService({
-    chromaDbService,
-    ollamaService
+    vectorDbService,
+    llamaService
   });
 
   return new OrganizationSuggestionService({
-    chromaDbService,
+    vectorDbService,
     folderMatchingService,
     settingsService,
     clusteringService,

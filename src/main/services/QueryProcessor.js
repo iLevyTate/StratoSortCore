@@ -4,22 +4,15 @@
  * Handles real-world user input with:
  * - Spell correction using Levenshtein distance
  * - Phonetic matching (Soundex) for badly misspelled words
- * - Synonym expansion via WordNet (offline)
+ * - Lightweight synonym expansion via lemmatization
  * - Domain vocabulary that extends from user's indexed content
  *
  * @module services/QueryProcessor
  */
 
-const WordPOS = require('wordpos');
-const fs = require('fs');
-const path = require('path');
-
-let wordnetDbPath = null;
-try {
-  wordnetDbPath = require('wordnet-db');
-} catch {
-  wordnetDbPath = null;
-}
+const winkNLP = require('wink-nlp');
+const model = require('wink-eng-lite-web-model');
+const its = require('wink-nlp/src/its.js');
 const { distance } = require('fastest-levenshtein');
 const { createLogger } = require('../../shared/logger');
 const { LRUCache } = require('../../shared/LRUCache');
@@ -31,9 +24,8 @@ const logger = createLogger('QueryProcessor');
  */
 class QueryProcessor {
   constructor(options = {}) {
-    this.wordpos = null; // Lazy loaded
-    this._wordposPromise = null;
-    this.wordposUnavailable = false;
+    this._nlp = null; // Lazy loaded
+    this._nlpUnavailable = false;
 
     // Common English stop words that should NEVER be spell-corrected
     // These are function words that provide grammatical structure
@@ -295,70 +287,21 @@ class QueryProcessor {
     }
   }
 
-  _resolveWordNetDictPath() {
-    const candidates = [];
-    if (wordnetDbPath) candidates.push(wordnetDbPath);
-    candidates.push(path.join(process.cwd(), 'node_modules', 'wordnet-db', 'dict'));
-    if (process.resourcesPath) {
-      candidates.push(
-        path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'wordnet-db', 'dict')
+  _getNlp() {
+    if (this._nlp) return this._nlp;
+    if (this._nlpUnavailable) return null;
+
+    try {
+      this._nlp = winkNLP(model);
+      return this._nlp;
+    } catch (error) {
+      this._nlpUnavailable = true;
+      logger.warn(
+        '[QueryProcessor] wink-nlp unavailable; synonym expansion limited:',
+        error.message
       );
-      candidates.push(path.join(process.resourcesPath, 'node_modules', 'wordnet-db', 'dict'));
+      return null;
     }
-
-    for (const candidate of candidates) {
-      if (candidate && fs.existsSync(candidate)) {
-        return candidate;
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Lazy load WordPOS to avoid startup delay
-   * @returns {Promise<WordPOS>}
-   */
-  async _getWordPOS() {
-    if (this.wordpos) return this.wordpos;
-
-    if (this.wordposUnavailable) return null;
-
-    if (this._wordposPromise) return this._wordposPromise;
-
-    this._wordposPromise = (async () => {
-      try {
-        logger.debug('[QueryProcessor] Loading WordNet dictionary...');
-        const startTime = Date.now();
-        if (typeof WordPOS !== 'function') {
-          throw new Error('WordPOS constructor is unavailable');
-        }
-        const dictPath = this._resolveWordNetDictPath();
-        if (!dictPath) {
-          throw new Error('WordNet dictionary not found');
-        }
-        logger.debug('[QueryProcessor] Using WordNet dictionary path:', dictPath);
-        const instance = new WordPOS({ dictPath });
-        if (!instance || typeof instance.lookup !== 'function') {
-          throw new Error('WordPOS instance missing lookup()');
-        }
-        this.wordpos = instance;
-        logger.info(`[QueryProcessor] WordNet loaded in ${Date.now() - startTime}ms`);
-        return this.wordpos;
-      } catch (error) {
-        this.wordposUnavailable = true;
-        logger.warn(
-          '[QueryProcessor] WordNet unavailable; synonym expansion disabled:',
-          error.message
-        );
-        // Return null - synonyms will be skipped but spell correction still works
-        return null;
-      } finally {
-        this._wordposPromise = null;
-      }
-    })();
-
-    return this._wordposPromise;
   }
 
   /**
@@ -431,7 +374,7 @@ class QueryProcessor {
 
       processed.push(currentWord);
 
-      // Step 2: Add synonyms from WordNet (offline)
+      // Step 2: Add lemma variants (lightweight synonym expansion)
       if (expandSynonyms) {
         const synonyms = await this._getSynonyms(currentWord);
         const limitedSynonyms = synonyms.slice(0, maxSynonymsPerWord);
@@ -529,10 +472,10 @@ class QueryProcessor {
   }
 
   /**
-   * Get synonyms for a word using WordNet
+   * Get lightweight "synonyms" using wink-nlp lemmas
    *
-   * @param {string} word - Word to find synonyms for
-   * @returns {Promise<string[]>} Array of synonyms
+   * @param {string} word - Word to find normalized variants for
+   * @returns {Promise<string[]>} Array of variants
    */
   async _getSynonyms(word) {
     // FIX: Use LRUCache API which handles size limits atomically
@@ -549,27 +492,22 @@ class QueryProcessor {
     };
 
     try {
-      const wordpos = await this._getWordPOS();
-      if (!wordpos) {
+      const nlp = this._getNlp();
+      if (!nlp) {
         const emptySynonyms = [];
         cacheSynonyms(emptySynonyms);
         return emptySynonyms;
       }
 
-      // WordNet lookup (works offline)
-      const results = await wordpos.lookup(word);
+      const doc = nlp.readDoc(word);
+      const lemma = doc.tokens().out(its.lemma)[0];
+      const pos = doc.tokens().out(its.pos)[0];
       const synonyms = new Set();
 
-      // Extract synonyms from WordNet results
-      for (const result of results.slice(0, 3)) {
-        if (result.synonyms) {
-          for (const syn of result.synonyms) {
-            const normalizedSyn = syn.toLowerCase().replace(/_/g, ' ');
-            // Only add single-word synonyms to avoid query explosion
-            if (!normalizedSyn.includes(' ') && normalizedSyn !== word) {
-              synonyms.add(normalizedSyn);
-            }
-          }
+      if (lemma && lemma !== word) {
+        // Keep expansions conservative: only add lemma for content words
+        if (['NOUN', 'VERB', 'ADJ', 'PROPN'].includes(pos)) {
+          synonyms.add(lemma.toLowerCase());
         }
       }
 
@@ -758,8 +696,8 @@ class QueryProcessor {
       this._unsubscribe = null;
     }
     this.synonymCache.clear();
-    this.wordpos = null;
-    this._wordposPromise = null;
+    this._nlp = null;
+    this._nlpUnavailable = false;
     logger.info('[QueryProcessor] Cleanup complete');
   }
 }

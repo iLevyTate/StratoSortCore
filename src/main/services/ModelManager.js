@@ -1,13 +1,18 @@
 /**
- * Model Manager Service - Universal Ollama Model Support
- * Ensures the application works with ANY available Ollama model
+ * Model Manager Service - Universal Llama Model Support
+ * Ensures the application works with available GGUF models
  */
 
 const { createLogger } = require('../../shared/logger');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
-const { SERVICE_URLS } = require('../../shared/configDefaults');
-const { getOllama, getOllamaHost } = require('../ollamaUtils');
+const { getInstance: getLlamaService } = require('./LlamaService');
 const { createSingletonHelpers } = require('../../shared/singletonFactory');
+const { ERROR_CODES } = require('../../shared/errorCodes');
+
+const attachErrorCode = (error, code) => {
+  error.code = code;
+  return error;
+};
 const {
   MODEL_CATEGORY_PREFIXES,
   FALLBACK_MODEL_PREFERENCES
@@ -24,9 +29,7 @@ function getSettings() {
 
 const logger = createLogger('ModelManager');
 class ModelManager {
-  constructor(host = SERVICE_URLS.OLLAMA_HOST) {
-    // Use shared Ollama instance via getter to ensure we always get the current one
-    this._host = getOllamaHost() || host;
+  constructor() {
     this.availableModels = [];
     this.selectedModel = null;
     this.modelCapabilities = new Map();
@@ -43,12 +46,8 @@ class ModelManager {
     this.fallbackPreferences = FALLBACK_MODEL_PREFERENCES;
   }
 
-  get ollamaClient() {
-    return getOllama();
-  }
-
-  get host() {
-    return getOllamaHost() || this._host;
+  get llamaService() {
+    return getLlamaService();
   }
 
   /**
@@ -125,12 +124,12 @@ class ModelManager {
   }
 
   /**
-   * Discover all available models from Ollama
+   * Discover all available models from the local models directory
    */
   async discoverModels() {
     try {
-      const response = await this.ollamaClient.list();
-      this.availableModels = response.models || [];
+      const models = await this.llamaService.listModels();
+      this.availableModels = models || [];
 
       // Analyze model capabilities
       for (const model of this.availableModels) {
@@ -232,7 +231,7 @@ class ModelManager {
       return bestModel;
     }
 
-    throw new Error('No working Ollama models found');
+    throw attachErrorCode(new Error('No working models found'), ERROR_CODES.LLAMA_MODEL_NOT_FOUND);
   }
 
   /**
@@ -288,19 +287,12 @@ class ModelManager {
     try {
       logger.debug(`[ModelManager] Testing model: ${modelName}`);
 
-      const { buildOllamaOptions } = require('./PerformanceService');
-      const perfOptions = await buildOllamaOptions('text');
-
       // Create the test promise with abort signal support
-      const testPromise = this.ollamaClient.generate({
+      const testPromise = this.llamaService.generateText({
         model: modelName,
         prompt: 'Hello',
-        options: {
-          ...perfOptions,
-          num_predict: 5,
-          temperature: 0.1
-        },
-        // Pass abort signal if ollama client supports it
+        maxTokens: 5,
+        temperature: 0.1,
         signal: abortController.signal
       });
 
@@ -309,7 +301,7 @@ class ModelManager {
         timeoutId = setTimeout(() => {
           // Signal cancellation to all operations
           abortController.abort();
-          reject(new Error('Model test timeout'));
+          reject(attachErrorCode(new Error('Model test timeout'), ERROR_CODES.TIMEOUT));
         }, timeout);
         // Allow process to exit if this timer is the only thing keeping it alive
         // Critical for Jest test cleanup - the timeout still fires during Promise.race
@@ -394,7 +386,10 @@ class ModelManager {
    */
   async setSelectedModel(modelName) {
     if (!this.availableModels.some((m) => m.name === modelName)) {
-      throw new Error(`Model ${modelName} is not available`);
+      throw attachErrorCode(
+        new Error(`Model ${modelName} is not available`),
+        ERROR_CODES.LLAMA_MODEL_NOT_FOUND
+      );
     }
 
     this.selectedModel = modelName;
@@ -440,17 +435,11 @@ class ModelManager {
       try {
         logger.debug(`[ModelManager] Attempting generation with: ${modelName}`);
 
-        const { buildOllamaOptions } = require('./PerformanceService');
-        const perfOptions = await buildOllamaOptions('text');
-        const response = await this.ollamaClient.generate({
+        const response = await this.llamaService.generateText({
           model: modelName,
           prompt,
-          options: {
-            ...perfOptions,
-            temperature: 0.1,
-            num_predict: 500,
-            ...options
-          }
+          maxTokens: options.maxTokens || 500,
+          temperature: options.temperature ?? 0.1
         });
 
         if (response.response && response.response.trim()) {
@@ -466,7 +455,10 @@ class ModelManager {
       }
     }
 
-    throw new Error('All models failed to generate response');
+    throw attachErrorCode(
+      new Error('All models failed to generate response'),
+      ERROR_CODES.LLAMA_INFERENCE_FAILED
+    );
   }
 
   /**
@@ -476,7 +468,6 @@ class ModelManager {
     try {
       const settings = await getSettings().load();
       this.selectedModel = settings.textModel || null;
-      this._host = settings.ollamaHost || this._host;
       logger.debug(`[ModelManager] Loaded config: ${this.selectedModel}`);
     } catch (error) {
       logger.error('[ModelManager] Error loading config', {

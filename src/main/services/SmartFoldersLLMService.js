@@ -2,12 +2,8 @@ const { createLogger } = require('../../shared/logger');
 
 const logger = createLogger('SmartFoldersLLMService');
 const { extractAndParseJSON } = require('../utils/jsonRepair');
-const { fetchWithRetry } = require('../utils/ollamaApiRetry');
-const { getOllamaHost } = require('../ollamaUtils');
-const { DEFAULT_AI_MODELS } = require('../../shared/constants');
-const { SERVICE_URLS } = require('../../shared/configDefaults');
-
-async function enhanceSmartFolderWithLLM(folderData, existingFolders, getOllamaModel) {
+const { getInstance: getLlamaService } = require('./LlamaService');
+async function enhanceSmartFolderWithLLM(folderData, existingFolders, _getTextModel) {
   try {
     logger.info('[LLM-ENHANCEMENT] Analyzing smart folder for optimization:', folderData.name);
 
@@ -36,32 +32,15 @@ Please provide a JSON response with the following enhancements:
   "confidence": 0.8
 }`;
 
-    const modelToUse =
-      (typeof getOllamaModel === 'function' && getOllamaModel()) || DEFAULT_AI_MODELS.TEXT_ANALYSIS;
-
-    const host = typeof getOllamaHost === 'function' ? getOllamaHost() : SERVICE_URLS.OLLAMA_HOST;
-
     try {
-      const response = await fetchWithRetry(`${host}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: modelToUse,
-          prompt,
-          stream: false,
-          format: 'json',
-          options: { temperature: 0.3, num_predict: 500 }
-        })
+      const llamaService = getLlamaService();
+      await llamaService.initialize();
+      const result = await llamaService.generateText({
+        prompt,
+        maxTokens: 500,
+        temperature: 0.3
       });
-
-      if (!response?.ok) {
-        return {
-          error: `HTTP error ${response?.status || 'unknown'}`
-        };
-      }
-
-      const data = await response.json();
-      const enhancement = extractAndParseJSON(data?.response, null);
+      const enhancement = extractAndParseJSON(result?.response, null);
 
       if (enhancement && typeof enhancement === 'object') {
         logger.info('[LLM-ENHANCEMENT] Successfully enhanced smart folder');
@@ -69,8 +48,8 @@ Please provide a JSON response with the following enhancements:
       }
 
       logger.warn('[LLM-ENHANCEMENT] Failed to parse LLM response', {
-        responseLength: data?.response?.length,
-        responsePreview: data?.response?.substring?.(0, 300)
+        responseLength: result?.response?.length,
+        responsePreview: result?.response?.substring?.(0, 300)
       });
       return { error: 'Invalid JSON response from LLM' };
     } catch (serviceError) {
@@ -83,13 +62,9 @@ Please provide a JSON response with the following enhancements:
   }
 }
 
-async function calculateFolderSimilarities(suggestedCategory, folderCategories, getOllamaModel) {
+async function calculateFolderSimilarities(suggestedCategory, folderCategories, _getTextModel) {
   try {
     const similarities = [];
-    const modelToUse =
-      (typeof getOllamaModel === 'function' && getOllamaModel()) || DEFAULT_AI_MODELS.TEXT_ANALYSIS;
-    const host = typeof getOllamaHost === 'function' ? getOllamaHost() : SERVICE_URLS.OLLAMA_HOST;
-
     if (!Array.isArray(folderCategories) || folderCategories.length === 0) {
       return [];
     }
@@ -121,20 +96,15 @@ Rate similarity from 0.0 to 1.0 where:
 Respond with only a number between 0.0 and 1.0:`;
 
       try {
-        const response = await fetchWithRetry(`${host}/api/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: modelToUse,
-            prompt,
-            stream: false,
-            options: { temperature: 0.1, num_predict: 10 }
-          })
+        const llamaService = getLlamaService();
+        await llamaService.initialize();
+        const result = await llamaService.generateText({
+          prompt,
+          maxTokens: 10,
+          temperature: 0.1
         });
-
-        if (response?.ok) {
-          const data = await response.json();
-          const raw = data?.response || '';
+        const raw = result?.response || '';
+        if (raw) {
           try {
             const similarity = parseFloat((raw || '').trim());
             if (!isNaN(similarity) && similarity >= 0 && similarity <= 1) {
@@ -155,7 +125,7 @@ Respond with only a number between 0.0 and 1.0:`;
             pushFallback(folder);
           }
         } else {
-          logger.warn(`[SEMANTIC] Service error for folder ${folder.name}`);
+          logger.warn(`[SEMANTIC] Service returned empty response for folder ${folder.name}`);
           pushFallback(folder);
         }
       } catch (folderError) {

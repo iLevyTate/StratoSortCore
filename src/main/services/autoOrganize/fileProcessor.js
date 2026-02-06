@@ -289,8 +289,8 @@ async function processNewFile(filePath, smartFolders, options, suggestionService
 
   try {
     // Analyze the file first
-    const { analyzeDocumentFile } = require('../../analysis/ollamaDocumentAnalysis');
-    const { analyzeImageFile } = require('../../analysis/ollamaImageAnalysis');
+    const { analyzeDocumentFile } = require('../../analysis/documentAnalysis');
+    const { analyzeImageFile } = require('../../analysis/imageAnalysis');
     const extension = path.extname(filePath).toLowerCase();
 
     let analysis;

@@ -11,8 +11,7 @@ const { createLogger } = require('../../../shared/logger');
 const { TIMEOUTS } = require('../../../shared/performanceConstants');
 const { withAbortableTimeout } = require('../../../shared/promiseUtils');
 const { AI_DEFAULTS } = require('../../../shared/constants');
-const { getOllama, getOllamaModel } = require('../../ollamaUtils');
-const { buildOllamaOptions } = require('../PerformanceService');
+const { getInstance: getLlamaService } = require('../LlamaService');
 const { globalDeduplicator } = require('../../utils/llmOptimization');
 const { extractAndParseJSON } = require('../../utils/jsonRepair');
 
@@ -29,12 +28,13 @@ const MAX_RESPONSE_SIZE = 1024 * 1024; // 1MB
  */
 async function getLLMAlternativeSuggestions(file, smartFolders, config = {}) {
   try {
-    const ollama = getOllama();
-    const model = getOllamaModel() || AI_DEFAULTS.TEXT.MODEL;
+    const llamaService = getLlamaService();
+    const model = AI_DEFAULTS.TEXT.MODEL;
 
-    if (!ollama) {
+    if (!llamaService) {
       return [];
     }
+    await llamaService.initialize();
 
     const llmTemperature = config.llmTemperature || 0.7;
     const llmMaxTokens = config.llmMaxTokens || 500;
@@ -64,8 +64,6 @@ Return JSON: {
   ]
 }`;
 
-    const perfOptions = await buildOllamaOptions('text');
-
     // Use deduplication to prevent duplicate LLM calls
     const deduplicationKey = globalDeduplicator.generateKey({
       fileName: file.name,
@@ -79,15 +77,11 @@ Return JSON: {
     const response = await withAbortableTimeout(
       (abortController) =>
         globalDeduplicator.deduplicate(deduplicationKey, () =>
-          ollama.generate({
+          llamaService.generateText({
             model,
             prompt,
-            format: 'json',
-            options: {
-              ...perfOptions,
-              temperature: llmTemperature,
-              num_predict: llmMaxTokens
-            },
+            temperature: llmTemperature,
+            maxTokens: llmMaxTokens,
             signal: abortController.signal
           })
         ),

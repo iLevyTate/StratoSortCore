@@ -3,8 +3,6 @@
  * Provides operational error handling with actionable user guidance
  */
 
-const { SERVICE_URLS } = require('../../shared/configDefaults');
-
 class AnalysisError extends Error {
   constructor(code, metadata = {}) {
     // Extract cause from metadata if provided (for error cause chaining)
@@ -33,7 +31,7 @@ class AnalysisError extends Error {
       PDF_PROCESSING_FAILURE: 'Failed to extract text from PDF document',
       IMAGE_ANALYSIS_FAILURE: 'Failed to analyze image content',
       MODEL_NOT_INSTALLED: `AI model not found: ${this.metadata.requiredModel}`,
-      OLLAMA_CONNECTION_FAILURE: 'Cannot connect to Ollama AI service',
+      AI_ENGINE_CONNECTION_FAILURE: 'AI engine unavailable or failed to initialize',
       DOCUMENT_ANALYSIS_FAILURE: 'Document analysis failed',
       PDF_NO_TEXT_CONTENT: 'PDF contains no extractable text',
       MODEL_VERIFICATION_FAILED: 'Failed to verify AI model availability',
@@ -52,11 +50,10 @@ class AnalysisError extends Error {
       IMAGE_ANALYSIS_FAILURE:
         "This image couldn't be analyzed. Please check the file format and try again.",
       MODEL_NOT_INSTALLED: `Missing AI model: ${this.metadata.requiredModel}. Please install it to continue.`,
-      OLLAMA_CONNECTION_FAILURE: 'Cannot connect to AI service. Please start Ollama and try again.',
+      AI_ENGINE_CONNECTION_FAILURE: 'AI engine unavailable. Check Settings > Models and try again.',
       DOCUMENT_ANALYSIS_FAILURE: 'Failed to analyze this document. Please check the file format.',
       PDF_NO_TEXT_CONTENT: 'This PDF appears to be image-based. Try using image analysis instead.',
-      MODEL_VERIFICATION_FAILED:
-        'AI model verification failed. Please check your Ollama installation.',
+      MODEL_VERIFICATION_FAILED: 'AI model verification failed. Please check your model downloads.',
       DEPENDENCY_MISSING: `System component missing: ${this.metadata.dependency}. Please reinstall the application.`,
       FILE_TYPE_UNSUPPORTED: `File type "${this.metadata.fileType}" is not supported for AI analysis.`,
       FILE_TOO_LARGE: 'File is too large for processing. Please use a smaller file.'
@@ -67,9 +64,13 @@ class AnalysisError extends Error {
 
   getActionableSteps() {
     const actions = {
-      MODEL_NOT_INSTALLED: [`ollama pull ${this.metadata.requiredModel}`],
-      OLLAMA_CONNECTION_FAILURE: ['ollama serve', 'Check if Ollama is installed: ollama --version'],
-      DEPENDENCY_MISSING: [`npm install ${this.metadata.dependency}`, 'npm install'],
+      MODEL_NOT_INSTALLED: ['Open Settings > Models and download the missing model'],
+      AI_ENGINE_CONNECTION_FAILURE: ['Check Settings > Models', 'Restart the app'],
+      DEPENDENCY_MISSING: [
+        `Check that ${this.metadata.dependency} is installed correctly`,
+        'Restart the application',
+        'Reinstall the application if the issue persists'
+      ],
       PDF_NO_TEXT_CONTENT: ['Try image analysis instead', 'Convert PDF to text format'],
       FILE_TYPE_UNSUPPORTED: [
         'Convert file to supported format',
@@ -86,7 +87,7 @@ class ModelMissingError extends AnalysisError {
   constructor(modelName) {
     super('MODEL_NOT_INSTALLED', {
       requiredModel: modelName,
-      installCommand: `ollama pull ${modelName}`,
+      installCommand: `Download model in Settings > Models: ${modelName}`,
       category: 'model'
     });
   }
@@ -96,17 +97,21 @@ class DependencyMissingError extends AnalysisError {
   constructor(dependencyName) {
     super('DEPENDENCY_MISSING', {
       dependency: dependencyName,
-      installCommand: `npm install ${dependencyName}`,
+      installCommand: `Install via Settings or check documentation for: ${dependencyName}`,
       category: 'dependency'
     });
   }
 }
 
-class OllamaConnectionError extends AnalysisError {
-  constructor(host = SERVICE_URLS.OLLAMA_HOST) {
-    super('OLLAMA_CONNECTION_FAILURE', {
-      host,
-      category: 'connection'
+/**
+ * Thrown when the in-process AI engine fails to initialize or run inference.
+ * Named for backward compatibility (was HTTP-based, now in-process).
+ */
+class AiEngineConnectionError extends AnalysisError {
+  constructor(details = {}) {
+    super('AI_ENGINE_CONNECTION_FAILURE', {
+      category: 'ai_engine',
+      ...details
     });
   }
 }
@@ -126,6 +131,6 @@ module.exports = {
   AnalysisError,
   ModelMissingError,
   DependencyMissingError,
-  OllamaConnectionError,
+  AiEngineConnectionError,
   FileProcessingError
 };

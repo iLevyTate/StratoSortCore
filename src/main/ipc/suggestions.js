@@ -25,49 +25,66 @@ function registerSuggestionsIpc(servicesOrParams) {
   const { getServiceIntegration } = container;
 
   // Retrieve services from integration if available
-  let chromaDbService = null;
+  let vectorDbService = null;
   let folderMatchingService = null;
 
   // Legacy support: if servicesOrParams has them directly
   if (!(servicesOrParams instanceof IpcServiceContext)) {
-    chromaDbService = servicesOrParams.chromaDbService;
+    vectorDbService = servicesOrParams.vectorDbService;
     folderMatchingService = servicesOrParams.folderMatchingService;
   }
 
   // If not found, try getting from serviceIntegration
-  if ((!chromaDbService || !folderMatchingService) && getServiceIntegration) {
+  if ((!vectorDbService || !folderMatchingService) && getServiceIntegration) {
     const integration = getServiceIntegration();
     if (integration) {
-      chromaDbService = chromaDbService || integration.chromaDbService;
+      // Back-compat: ServiceIntegration historically exposed `vectorDbService`.
+      // After the Orama migration it stores the instance on `vectorService`.
+      vectorDbService =
+        vectorDbService ||
+        integration.vectorDbService ||
+        integration.vectorService ||
+        integration.vectorDb;
       folderMatchingService = folderMatchingService || integration.folderMatchingService;
     }
   }
 
   const context = 'Suggestions';
 
-  // Initialize the suggestion service (may have null services if ChromaDB unavailable)
+  // Initialize the suggestion service when dependencies are available.
+  // If services aren't ready at registration time, handlers will return a
+  // fallback response and we will try again via lazy init below.
   let suggestionService = null;
-  try {
-    suggestionService = new OrganizationSuggestionService({
-      chromaDbService,
-      folderMatchingService,
-      settingsService
+  if (vectorDbService && folderMatchingService) {
+    try {
+      suggestionService = new OrganizationSuggestionService({
+        vectorDbService,
+        folderMatchingService,
+        settingsService
+      });
+      logger.info('[SUGGESTIONS] OrganizationSuggestionService initialized');
+    } catch (error) {
+      logger.warn('[SUGGESTIONS] Failed to initialize suggestion service:', error.message);
+      // Continue anyway - handlers will check for null service
+    }
+  } else {
+    logger.debug('[SUGGESTIONS] Suggestion service dependencies not ready at registration time', {
+      hasVectorDbService: !!vectorDbService,
+      hasFolderMatchingService: !!folderMatchingService
     });
-    logger.info('[SUGGESTIONS] OrganizationSuggestionService initialized');
-  } catch (error) {
-    logger.warn('[SUGGESTIONS] Failed to initialize suggestion service:', error.message);
-    // Continue anyway - handlers will check for null service
   }
 
   // Helper to get suggestion service -- lazily re-create if initial construction
-  // failed because ChromaDB/FolderMatchingService weren't ready at registration time
+  // failed because vector DB / FolderMatchingService weren't ready at registration time
   const getSuggestionService = () => {
     if (!suggestionService && getServiceIntegration) {
       const integration = getServiceIntegration();
-      if (integration?.chromaDbService && integration?.folderMatchingService) {
+      const resolvedVectorDb =
+        integration?.vectorDbService || integration?.vectorService || integration?.vectorDb;
+      if (resolvedVectorDb && integration?.folderMatchingService) {
         try {
           suggestionService = new OrganizationSuggestionService({
-            chromaDbService: integration.chromaDbService,
+            vectorDbService: resolvedVectorDb,
             folderMatchingService: integration.folderMatchingService,
             settingsService
           });
@@ -92,7 +109,7 @@ function registerSuggestionsIpc(servicesOrParams) {
       getService: getSuggestionService,
       fallbackResponse: {
         success: false,
-        error: 'Suggestion service unavailable (ChromaDB may not be running)',
+        error: 'Suggestion service unavailable (vector DB may not be ready)',
         primary: null,
         alternatives: [],
         confidence: 0
@@ -132,7 +149,7 @@ function registerSuggestionsIpc(servicesOrParams) {
       getService: getSuggestionService,
       fallbackResponse: {
         success: false,
-        error: 'Suggestion service unavailable (ChromaDB may not be running)',
+        error: 'Suggestion service unavailable (vector DB may not be ready)',
         groups: [],
         recommendations: []
       },

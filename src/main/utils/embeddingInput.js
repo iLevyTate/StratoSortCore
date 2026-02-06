@@ -1,4 +1,4 @@
-const { OLLAMA } = require('../../shared/performanceConstants');
+const { LLAMA } = require('../../shared/performanceConstants');
 
 const DEFAULT_CHARS_PER_TOKEN = 4;
 const DEFAULT_HEADROOM_RATIO = 0.9;
@@ -14,7 +14,7 @@ function getEmbeddingTokenLimit(explicitLimit) {
   const base =
     typeof explicitLimit === 'number' && explicitLimit > 0
       ? explicitLimit
-      : OLLAMA.CONTEXT_EMBEDDINGS || 512;
+      : LLAMA.CONTEXT_EMBEDDINGS || 512;
   return Math.max(32, Math.floor(base * DEFAULT_HEADROOM_RATIO));
 }
 

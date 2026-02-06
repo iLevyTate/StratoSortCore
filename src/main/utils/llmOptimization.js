@@ -73,7 +73,7 @@ class LLMRequestDeduplicator {
    */
   /**
    * Evict stale entries that have been pending longer than maxRequestAgeMs.
-   * Only evicts entries whose promises are likely stuck (e.g., hung Ollama calls).
+   * Only evicts entries whose promises are likely stuck (e.g., hung model calls).
    */
   _evictStale() {
     const now = Date.now();

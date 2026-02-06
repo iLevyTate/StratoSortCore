@@ -9,6 +9,7 @@ const { createHandler, createErrorResponse, safeHandle } = require('./ipcWrapper
 const { schemas } = require('./validationSchemas');
 const { normalizeText } = require('../../shared/normalization');
 const { getSemanticFileId } = require('../../shared/fileIdUtils');
+const { container: diContainer, ServiceIds } = require('../services/ServiceContainer');
 
 // FIX: Safety cap for "get all" requests to prevent memory exhaustion
 // This limits the maximum number of history entries that can be retrieved at once
@@ -29,7 +30,17 @@ function registerAnalysisHistoryIpc(servicesOrParams) {
 
   // Helper to get analysis history service
   const getHistoryService = () => getServiceIntegration()?.analysisHistory;
-  const getChromaDbService = () => getServiceIntegration()?.chromaDbService;
+  const getOramaService = () => {
+    const integration =
+      typeof getServiceIntegration === 'function' ? getServiceIntegration() : null;
+    const activeContainer = integration?.container || diContainer;
+    if (!activeContainer || typeof activeContainer.resolve !== 'function') return null;
+    try {
+      return activeContainer.resolve(ServiceIds.ORAMA_VECTOR);
+    } catch {
+      return null;
+    }
+  };
 
   // Get analysis statistics
   safeHandle(
@@ -208,8 +219,8 @@ function registerAnalysisHistoryIpc(servicesOrParams) {
       handler: async (event, service) => {
         try {
           // Mark embeddings as orphaned before clearing history to keep search/embeddings in sync.
-          const chromaDb = getChromaDbService();
-          if (chromaDb && typeof chromaDb.markEmbeddingsOrphaned === 'function') {
+          const oramaService = getOramaService();
+          if (oramaService && typeof oramaService.markEmbeddingsOrphaned === 'function') {
             await service.initialize();
             const entries = Object.values(service.analysisHistory?.entries || {});
             const fileIds = Array.from(
@@ -221,7 +232,7 @@ function registerAnalysisHistoryIpc(servicesOrParams) {
               )
             );
             if (fileIds.length > 0) {
-              await chromaDb.markEmbeddingsOrphaned(fileIds);
+              await oramaService.markEmbeddingsOrphaned(fileIds);
             }
           }
           await service.createDefaultStructures();

@@ -2,10 +2,8 @@
  * Background Setup Module
  *
  * Fully automated first-run dependency setup in the background:
- * - Install Ollama (Windows) if missing
- * - Install ChromaDB Python module if missing
- * - Start services (Ollama + ChromaDB) best-effort
- * - Pull configured default models in the background
+ * - Install Tesseract (optional) if missing
+ * - Record setup completion marker
  *
  * This runs asynchronously and does not block startup.
  *
@@ -21,10 +19,7 @@ const { promisify } = require('util');
 const { createLogger } = require('../../shared/logger');
 // FIX: Import safeSend for validated IPC event sending
 const { safeSend } = require('../ipc/ipcWrappers');
-const { getInstance: getDependencyManager } = require('../services/DependencyManagerService');
-const { getStartupManager } = require('../services/startup');
-const { getOllama } = require('../ollamaUtils');
-const { getInstance: getSettingsService } = require('../services/SettingsService');
+// Legacy dependency manager removed (in-process AI stack)
 
 const logger = createLogger('BackgroundSetup');
 const execFileAsync = promisify(execFile);
@@ -232,147 +227,11 @@ async function markSetupComplete() {
   }
 }
 
-/**
- * Run Ollama setup check and install models if needed
- */
-function normalizeOllamaModelName(name) {
-  if (!name || typeof name !== 'string') return null;
-  const trimmed = name.trim();
-  if (!trimmed) return null;
-  return trimmed.includes(':') ? trimmed : `${trimmed}:latest`;
-}
-
-async function pullModelsInBackground(models) {
-  const unique = Array.from(new Set((Array.isArray(models) ? models : []).filter(Boolean)));
-  if (unique.length === 0) return;
-
-  const ollama = getOllama();
-  for (const model of unique) {
-    emitDependencyProgress({
-      message: `Downloading model: ${model}…`,
-      dependency: 'ollama',
-      stage: 'model-download',
-      model
-    });
-    try {
-      await ollama.pull({
-        model,
-        stream: (progress) => {
-          try {
-            const win = BrowserWindow.getAllWindows()[0];
-            if (win && !win.isDestroyed()) {
-              // FIX: Use safeSend for validated IPC event sending
-              safeSend(win.webContents, 'operation-progress', {
-                type: 'ollama-pull',
-                model,
-                progress
-              });
-            }
-          } catch {
-            // Intentionally ignored: window may be closing during model pull
-            // This is non-fatal for the download process
-          }
-        }
-      });
-    } catch (e) {
-      emitDependencyProgress({
-        message: `Model download failed: ${model} (${e.message})`,
-        dependency: 'ollama',
-        stage: 'error',
-        model
-      });
-    }
-  }
-}
-
 async function runAutomatedDependencySetup() {
-  const settingsService = getSettingsService();
-  const settings = await settingsService.load();
+  emitDependencyProgress({ message: 'Checking runtime dependencies…', stage: 'check' });
 
-  // Use singleton to share lock with IPC handlers (prevents race conditions)
-  const manager = getDependencyManager({
-    onProgress: (data) => emitDependencyProgress(data)
-  });
-
-  emitDependencyProgress({ message: 'Checking AI dependencies…', stage: 'check' });
-  const status = await manager.getStatus();
-
-  // 1) Install Ollama if missing (Windows only)
-  if (!status.ollama.installed) {
-    emitDependencyProgress({ message: 'Ollama missing. Installing…', dependency: 'ollama' });
-    await manager.installOllama();
-  } else {
-    emitDependencyProgress({ message: 'Ollama is installed.', dependency: 'ollama' });
-  }
-
-  // 2) Install ChromaDB python module if missing
-  if (!status.chromadb.pythonModuleInstalled && !process.env.CHROMA_SERVER_URL) {
-    emitDependencyProgress({ message: 'ChromaDB missing. Installing…', dependency: 'chromadb' });
-    await manager.installChromaDb({ upgrade: false, userInstall: true });
-  } else if (process.env.CHROMA_SERVER_URL) {
-    emitDependencyProgress({
-      message: `Using external ChromaDB server: ${process.env.CHROMA_SERVER_URL}`,
-      dependency: 'chromadb'
-    });
-  } else {
-    emitDependencyProgress({ message: 'ChromaDB module is installed.', dependency: 'chromadb' });
-  }
-
-  // 2.5) Install Tesseract OCR if missing (best-effort)
+  // Install Tesseract OCR if missing (best-effort)
   await installTesseractIfMissing();
-
-  // 3) Best-effort start services (StartupManager already has robust logic)
-  const startupManager = getStartupManager();
-  try {
-    emitDependencyProgress({ message: 'Starting Ollama…', dependency: 'ollama', stage: 'start' });
-    await startupManager.startOllama();
-  } catch (e) {
-    logger.warn('[BACKGROUND] Failed to start Ollama', { error: e?.message });
-  }
-  try {
-    // CRITICAL FIX: Clear dependency missing flag before starting
-    // This ensures freshly installed ChromaDB module is detected
-    startupManager.setChromadbDependencyMissing(false);
-    emitDependencyProgress({
-      message: 'Starting ChromaDB…',
-      dependency: 'chromadb',
-      stage: 'start'
-    });
-    await startupManager.startChromaDB();
-  } catch (e) {
-    logger.warn('[BACKGROUND] Failed to start ChromaDB', { error: e?.message });
-  }
-
-  // 4) Pull configured default models (non-blocking for UI)
-  const modelsToPull = [
-    normalizeOllamaModelName(settings?.textModel),
-    normalizeOllamaModelName(settings?.visionModel),
-    normalizeOllamaModelName(settings?.embeddingModel)
-  ].filter(Boolean);
-  await pullModelsInBackground(modelsToPull);
-
-  // 5) Optional: auto-update dependencies if consent is enabled (best-effort)
-  // Note: we do not run this on every launch—only on first-run automation.
-  if (settings?.autoUpdateOllama) {
-    emitDependencyProgress({
-      message: 'Auto-updating Ollama…',
-      dependency: 'ollama',
-      stage: 'update'
-    });
-    await manager
-      .updateOllama()
-      .catch((err) => logger.warn('[BACKGROUND] Ollama auto-update failed:', err.message));
-  }
-  if (settings?.autoUpdateChromaDb) {
-    emitDependencyProgress({
-      message: 'Auto-updating ChromaDB…',
-      dependency: 'chromadb',
-      stage: 'update'
-    });
-    await manager
-      .updateChromaDb()
-      .catch((err) => logger.warn('[BACKGROUND] ChromaDB auto-update failed:', err.message));
-  }
 }
 
 /**
@@ -399,45 +258,8 @@ async function runBackgroundSetup() {
     } else {
       logger.debug('[BACKGROUND] Not first run, skipping automated dependency setup');
 
-      // Reliability improvement:
-      // Even after first-run, users can end up with services stopped (crash, killed process, reboot).
-      // On normal launches we should still attempt a best-effort restart so features recover.
-      const startupManager = getStartupManager();
-
-      // Attempt to recover Ollama if not running
-      try {
-        const { isOllamaRunning } = require('../utils/ollamaDetection');
-        const ollamaRunning = await isOllamaRunning();
-        if (!ollamaRunning) {
-          logger.info('[BACKGROUND] Ollama is offline. Attempting restart…');
-          emitDependencyProgress({
-            message: 'Ollama is offline. Attempting restart…',
-            dependency: 'ollama',
-            stage: 'recover'
-          });
-          await startupManager.startOllama();
-        } else {
-          logger.debug('[BACKGROUND] Ollama already running');
-        }
-      } catch (e) {
-        logger.debug('[BACKGROUND] Non-fatal Ollama restart attempt failed:', e?.message);
-      }
-
-      // Attempt to recover ChromaDB if not running
-      try {
-        const { isChromaDBRunning } = require('../services/startup/chromaService');
-        const running = await isChromaDBRunning();
-        if (!running) {
-          emitDependencyProgress({
-            message: 'ChromaDB is offline. Attempting restart…',
-            dependency: 'chromadb',
-            stage: 'recover'
-          });
-          await startupManager.startChromaDB();
-        }
-      } catch (e) {
-        logger.debug('[BACKGROUND] Non-fatal ChromaDB restart attempt failed:', e?.message);
-      }
+      // In-process AI stack is always available; no external recovery needed.
+      logger.debug('[BACKGROUND] In-process AI stack - no external service recovery required');
     }
 
     // Mark background setup as complete

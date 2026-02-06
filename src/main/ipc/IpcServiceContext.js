@@ -37,23 +37,9 @@
  * @typedef {Object} AnalysisServices
  * @property {Function} analyzeDocumentFile - Document analysis function
  * @property {Function} analyzeImageFile - Image analysis function
- * @property {Object} tesseract - Tesseract OCR library
  */
 
 /**
- * @typedef {Object} OllamaConfig
- * @property {Function} getOllama - Get Ollama client
- * @property {Function} getOllamaHost - Get Ollama host
- * @property {Function} setOllamaHost - Set Ollama host
- * @property {Function} getOllamaModel - Get text model
- * @property {Function} setOllamaModel - Set text model
- * @property {Function} getOllamaVisionModel - Get vision model
- * @property {Function} setOllamaVisionModel - Set vision model
- * @property {Function} getOllamaEmbeddingModel - Get embedding model
- * @property {Function} setOllamaEmbeddingModel - Set embedding model
- * @property {Function} buildOllamaOptions - Build performance options
- */
-
 /**
  * @typedef {Object} SettingsServices
  * @property {Object} settingsService - Settings service instance
@@ -70,7 +56,6 @@ class IpcServiceContext {
     this._electron = null;
     this._folders = null;
     this._analysis = null;
-    this._ollama = null;
     this._settings = null;
     this._systemAnalytics = null;
     this._serviceIntegration = null;
@@ -109,15 +94,6 @@ class IpcServiceContext {
    */
   setAnalysis(services) {
     this._analysis = services;
-    return this;
-  }
-
-  /**
-   * Set Ollama configuration services
-   * @param {OllamaConfig} config
-   */
-  setOllama(config) {
-    this._ollama = config;
     return this;
   }
 
@@ -163,10 +139,6 @@ class IpcServiceContext {
 
   get analysis() {
     return this._analysis;
-  }
-
-  get ollama() {
-    return this._ollama;
   }
 
   get settings() {
@@ -245,17 +217,11 @@ class IpcServiceContext {
         return this._analysis?.analyzeDocumentFile;
       case 'analyzeImageFile':
         return this._analysis?.analyzeImageFile;
-      case 'tesseract':
-        return this._analysis?.tesseract;
       case 'settingsService':
         return this._settings?.settingsService;
       case 'onSettingsChanged':
         return this._settings?.onSettingsChanged;
       default:
-        // Check Ollama config
-        if (this._ollama && name in this._ollama) {
-          return this._ollama[name];
-        }
         return null;
     }
   }
@@ -309,18 +275,6 @@ class IpcServiceContext {
       // Analysis
       analyzeDocumentFile: this._analysis?.analyzeDocumentFile,
       analyzeImageFile: this._analysis?.analyzeImageFile,
-      tesseract: this._analysis?.tesseract,
-      // Ollama
-      getOllama: this._ollama?.getOllama,
-      getOllamaHost: this._ollama?.getOllamaHost,
-      setOllamaHost: this._ollama?.setOllamaHost,
-      getOllamaModel: this._ollama?.getOllamaModel,
-      setOllamaModel: this._ollama?.setOllamaModel,
-      getOllamaVisionModel: this._ollama?.getOllamaVisionModel,
-      setOllamaVisionModel: this._ollama?.setOllamaVisionModel,
-      getOllamaEmbeddingModel: this._ollama?.getOllamaEmbeddingModel,
-      setOllamaEmbeddingModel: this._ollama?.setOllamaEmbeddingModel,
-      buildOllamaOptions: this._ollama?.buildOllamaOptions,
       // Settings
       settingsService: this._settings?.settingsService,
       onSettingsChanged: this._settings?.onSettingsChanged
@@ -353,20 +307,7 @@ function createFromLegacyParams(params) {
     })
     .setAnalysis({
       analyzeDocumentFile: params.analyzeDocumentFile,
-      analyzeImageFile: params.analyzeImageFile,
-      tesseract: params.tesseract
-    })
-    .setOllama({
-      getOllama: params.getOllama,
-      getOllamaHost: params.getOllamaHost,
-      setOllamaHost: params.setOllamaHost,
-      getOllamaModel: params.getOllamaModel,
-      setOllamaModel: params.setOllamaModel,
-      getOllamaVisionModel: params.getOllamaVisionModel,
-      setOllamaVisionModel: params.setOllamaVisionModel,
-      getOllamaEmbeddingModel: params.getOllamaEmbeddingModel,
-      setOllamaEmbeddingModel: params.setOllamaEmbeddingModel,
-      buildOllamaOptions: params.buildOllamaOptions
+      analyzeImageFile: params.analyzeImageFile
     })
     .setSettings({
       settingsService: params.settingsService,

@@ -15,10 +15,10 @@ const normalizePath = (filePath) => {
 
 const { container, ServiceIds } = require('./ServiceContainer');
 
-// Lazy-load ChromaDB to avoid circular dependencies
-function getChromaDbService() {
+// Lazy-load vector DB to avoid circular dependencies
+function getVectorDbService() {
   try {
-    return container.tryResolve(ServiceIds.CHROMA_DB);
+    return container.tryResolve(ServiceIds.ORAMA_VECTOR);
   } catch {
     return null;
   }
@@ -456,15 +456,15 @@ class UndoRedoService {
       case 'FILE_MOVE':
         // Move file back to original location
         await this.safeMove(action.data.newPath, action.data.originalPath);
-        // Update ChromaDB path
-        await this.updateChromaDbPath(action.data.newPath, action.data.originalPath);
+        // Update vector DB path
+        await this.updateVectorDbPath(action.data.newPath, action.data.originalPath);
         break;
 
       case 'FILE_RENAME':
         // Rename file back to original name
         await this.safeMove(action.data.newPath, action.data.originalPath);
-        // Update ChromaDB path
-        await this.updateChromaDbPath(action.data.newPath, action.data.originalPath);
+        // Update vector DB path
+        await this.updateVectorDbPath(action.data.newPath, action.data.originalPath);
         break;
 
       case 'FILE_DELETE': {
@@ -537,7 +537,7 @@ class UndoRedoService {
               newPath: operation.newPath,
               type: operation.type
             });
-            // Collect path changes for batch ChromaDB update
+            // Collect path changes for batch vector DB update
             if (result.success && (operation.type === 'move' || operation.type === 'rename')) {
               pathChanges.push({
                 oldPath: operation.newPath,
@@ -558,8 +558,8 @@ class UndoRedoService {
             });
           }
         }
-        // Batch update ChromaDB paths for successful operations
-        await this.updateChromaDbPaths(pathChanges);
+        // Batch update vector DB paths for successful operations
+        await this.updateVectorDbPaths(pathChanges);
         // Store results for return
         action._operationResults = operationResults;
         break;
@@ -575,15 +575,15 @@ class UndoRedoService {
       case 'FILE_MOVE':
         // Move file to new location
         await this.safeMove(action.data.originalPath, action.data.newPath);
-        // Update ChromaDB path
-        await this.updateChromaDbPath(action.data.originalPath, action.data.newPath);
+        // Update vector DB path
+        await this.updateVectorDbPath(action.data.originalPath, action.data.newPath);
         break;
 
       case 'FILE_RENAME':
         // Rename file to new name
         await this.safeMove(action.data.originalPath, action.data.newPath);
-        // Update ChromaDB path
-        await this.updateChromaDbPath(action.data.originalPath, action.data.newPath);
+        // Update vector DB path
+        await this.updateVectorDbPath(action.data.originalPath, action.data.newPath);
         break;
 
       case 'FILE_DELETE':
@@ -616,7 +616,7 @@ class UndoRedoService {
               destination: operation.newPath,
               type: operation.type
             });
-            // Collect path changes for batch ChromaDB update
+            // Collect path changes for batch vector DB update
             if (operation.type === 'move' || operation.type === 'rename') {
               pathChanges.push({
                 oldPath: operation.originalPath,
@@ -637,8 +637,8 @@ class UndoRedoService {
             });
           }
         }
-        // Batch update ChromaDB paths for successful operations
-        await this.updateChromaDbPaths(pathChanges);
+        // Batch update vector DB paths for successful operations
+        await this.updateVectorDbPaths(pathChanges);
         // Store results for return
         action._operationResults = operationResults;
         break;
@@ -708,11 +708,11 @@ class UndoRedoService {
   }
 
   /**
-   * Update ChromaDB path after file move
+   * Update vector DB path after file move
    * @param {string} oldPath - Original file path
    * @param {string} newPath - New file path
    */
-  async updateChromaDbPath(oldPath, newPath) {
+  async updateVectorDbPath(oldPath, newPath) {
     try {
       const coordinator = getFilePathCoordinator();
       if (coordinator) {
@@ -723,8 +723,8 @@ class UndoRedoService {
         return;
       }
 
-      const chromaDb = getChromaDbService();
-      if (chromaDb) {
+      const vectorDb = getVectorDbService();
+      if (vectorDb) {
         const normalizedOld = normalizePathForIndex(oldPath);
         const normalizedNew = normalizePathForIndex(newPath);
         const newMeta = {
@@ -740,7 +740,7 @@ class UndoRedoService {
           updates.push({ oldId: `file:${oldPath}`, newId: `file:${newPath}`, newMeta });
           updates.push({ oldId: `image:${oldPath}`, newId: `image:${newPath}`, newMeta });
         }
-        await chromaDb.updateFilePaths(updates);
+        await vectorDb.updateFilePaths(updates);
       }
 
       // Keep pending embedding queue IDs consistent with undo/redo moves too.
@@ -773,7 +773,7 @@ class UndoRedoService {
       }
     } catch (error) {
       // Non-fatal - log but don't fail the undo/redo
-      logger.warn('[UndoRedoService] Failed to update ChromaDB path', {
+      logger.warn('[UndoRedoService] Failed to update vector DB path', {
         oldPath,
         newPath,
         error: error.message
@@ -782,10 +782,10 @@ class UndoRedoService {
   }
 
   /**
-   * Batch update ChromaDB paths
+   * Batch update vector DB paths
    * @param {Array<{oldPath: string, newPath: string}>} pathChanges
    */
-  async updateChromaDbPaths(pathChanges) {
+  async updateVectorDbPaths(pathChanges) {
     if (!pathChanges || pathChanges.length === 0) return;
 
     try {
@@ -795,8 +795,8 @@ class UndoRedoService {
         return;
       }
 
-      const chromaDb = getChromaDbService();
-      if (chromaDb) {
+      const vectorDb = getVectorDbService();
+      if (vectorDb) {
         // Update both file: and image: prefixed entries for each path change
         const updates = [];
         for (const { oldPath, newPath } of pathChanges) {
@@ -817,7 +817,7 @@ class UndoRedoService {
             updates.push({ oldId: `image:${oldPath}`, newId: `image:${newPath}`, newMeta });
           }
         }
-        await chromaDb.updateFilePaths(updates);
+        await vectorDb.updateFilePaths(updates);
       }
 
       // Also update any pending embeddings in the queue (so they flush under the new IDs).
@@ -847,7 +847,7 @@ class UndoRedoService {
         // Non-fatal
       }
     } catch (error) {
-      logger.warn('[UndoRedoService] Failed to batch update ChromaDB paths', {
+      logger.warn('[UndoRedoService] Failed to batch update vector DB paths', {
         count: pathChanges.length,
         error: error.message
       });

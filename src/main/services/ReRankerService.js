@@ -1,7 +1,7 @@
 /**
  * ReRankerService - LLM-Based Re-Ranking for Semantic Search
  *
- * Uses the Ollama text model to re-rank top search results based on
+ * Uses the AI text model to re-rank top search results based on
  * true semantic relevance to the query. This ensures conceptually
  * relevant files rank above keyword-only matches.
  *
@@ -56,13 +56,13 @@ class ReRankerService {
    * Create a new ReRankerService
    *
    * @param {Object} options - Configuration options
-   * @param {Object} options.ollamaService - OllamaService instance for LLM calls
+   * @param {Object} options.llamaService - AI service instance for LLM calls
    * @param {string} options.textModel - Model to use (default: configured text model)
    * @param {number} options.topN - Number of candidates to re-rank
    */
   constructor(options = {}) {
-    this.ollamaService = options.ollamaService;
-    this.textModel = options.textModel || null; // Will use OllamaService default
+    this.llamaService = options.llamaService;
+    this.textModel = options.textModel || null; // Will use AI service default
     this.config = { ...DEFAULT_CONFIG, ...options };
 
     // FIX: Use LRUCache with periodic cleanup instead of plain Map
@@ -170,8 +170,8 @@ class ReRankerService {
       return candidates;
     }
 
-    if (!this.ollamaService) {
-      logger.warn('[ReRankerService] No OllamaService available, returning original order');
+    if (!this.llamaService) {
+      logger.warn('[ReRankerService] No AI service available, returning original order');
       return candidates;
     }
 
@@ -355,12 +355,10 @@ class ReRankerService {
     });
 
     try {
-      const responsePromise = this.ollamaService.analyzeText(prompt, {
-        model: this.textModel,
-        ollamaOptions: {
-          temperature: 0.1, // Low temperature for consistent scoring
-          num_predict: 10 // Short response expected
-        }
+      const responsePromise = this.llamaService.generateText({
+        prompt,
+        temperature: 0.1, // Low temperature for consistent scoring
+        maxTokens: 10 // Short response expected
       });
 
       const response = await Promise.race([responsePromise, timeoutPromise]);
@@ -456,7 +454,7 @@ class ReRankerService {
    * @returns {boolean} True if service can re-rank
    */
   isAvailable() {
-    return !!this.ollamaService;
+    return !!this.llamaService;
   }
 
   /**
@@ -470,7 +468,7 @@ class ReRankerService {
       this._unsubscribe = null;
     }
     await this.scoreCache.shutdown();
-    this.ollamaService = null;
+    this.llamaService = null;
     logger.info('[ReRankerService] Cleanup complete');
   }
 }
@@ -492,16 +490,16 @@ const {
 
 /**
  * Get singleton ReRankerService instance
- * FIX: Wrapped to handle ollamaService injection safely after initialization
+ * FIX: Wrapped to handle llamaService injection safely after initialization
  * @param {Object} options - Options for initialization
  * @returns {ReRankerService}
  */
 function getInstance(options = {}) {
   const instance = _getInstance(options);
-  // FIX: Handle ollamaService injection after singleton is created
+  // FIX: Handle llamaService injection after singleton is created
   // This is safe because we're setting a property, not creating a new instance
-  if (options.ollamaService && instance && !instance.ollamaService) {
-    instance.ollamaService = options.ollamaService;
+  if (options.llamaService && instance && !instance.llamaService) {
+    instance.llamaService = options.llamaService;
   }
   return instance;
 }

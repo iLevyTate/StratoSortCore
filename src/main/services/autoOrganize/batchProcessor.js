@@ -241,7 +241,7 @@ async function batchOrganize(
   // Get batch suggestions
   const batchSuggestions = await suggestionService.getBatchSuggestions(files, smartFolders);
 
-  if (!batchSuggestions.success) {
+  if (!batchSuggestions?.success) {
     throw new Error('Failed to get batch suggestions');
   }
 

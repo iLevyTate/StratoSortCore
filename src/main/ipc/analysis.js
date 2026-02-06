@@ -32,7 +32,7 @@ function registerAnalysisIpc(servicesOrParams) {
   }
 
   const { ipcMain, IPC_CHANNELS, logger } = container.core;
-  const { analyzeDocumentFile, analyzeImageFile, tesseract } = container.analysis;
+  const { analyzeDocumentFile, analyzeImageFile } = container.analysis;
   const { systemAnalytics, getServiceIntegration } = container;
   const { getCustomFolders } = container.folders;
 
@@ -178,7 +178,7 @@ function registerAnalysisIpc(servicesOrParams) {
       throw new Error('Invalid file path provided');
     }
     const start = performance.now();
-    const ocrResult = await recognizeIfAvailable(tesseract, cleanPath, {
+    const ocrResult = await recognizeIfAvailable(null, cleanPath, {
       lang: 'eng',
       oem: 1,
       psm: 3

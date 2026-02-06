@@ -35,7 +35,7 @@ function resolveServices() {
     };
 
     return {
-      chromaDbService: safeResolve(ServiceIds.CHROMA_DB),
+      vectorDbService: safeResolve(ServiceIds.ORAMA_VECTOR),
       analysisHistoryService: safeResolve(ServiceIds.ANALYSIS_HISTORY),
       folderMatchingService: safeResolve(ServiceIds.FOLDER_MATCHING),
       learningFeedbackService: safeResolve(ServiceIds.LEARNING_FEEDBACK)
@@ -43,7 +43,7 @@ function resolveServices() {
   } catch (error) {
     logger.debug('[EmbeddingSync] Failed to resolve services:', error?.message);
     return {
-      chromaDbService: null,
+      vectorDbService: null,
       analysisHistoryService: null,
       folderMatchingService: null,
       learningFeedbackService: null
@@ -118,10 +118,10 @@ async function removeEmbeddingsForPath(filePath, services, log = logger) {
     ? embeddingQueueManager.removeByFilePath(filePath)
     : 0;
 
-  const chromaDbService = services.chromaDbService;
-  if (!chromaDbService) {
+  const vectorDbService = services.vectorDbService;
+  if (!vectorDbService) {
     log.warn(
-      '[EmbeddingSync] ChromaDB service unavailable for embedding removal - potential orphaned embeddings',
+      '[EmbeddingSync] Vector DB service unavailable for embedding removal - potential orphaned embeddings',
       { filePath }
     );
     return { removed: embeddingQueueRemoved, error: 'service_unavailable' };
@@ -138,8 +138,8 @@ async function removeEmbeddingsForPath(filePath, services, log = logger) {
     const ids = Array.from(idsToDelete);
     let dbRemovedCount = 0;
 
-    if (typeof chromaDbService.batchDeleteFileEmbeddings === 'function') {
-      const result = await chromaDbService.batchDeleteFileEmbeddings(ids);
+    if (typeof vectorDbService.batchDeleteFileEmbeddings === 'function') {
+      const result = await vectorDbService.batchDeleteFileEmbeddings(ids);
       // FIX: Check return value for success/queued status
       if (result && result.success) {
         dbRemovedCount = ids.length;
@@ -149,9 +149,9 @@ async function removeEmbeddingsForPath(filePath, services, log = logger) {
       } else if (result && result.error) {
         log.warn('[EmbeddingSync] Batch delete failed', { error: result.error });
       }
-    } else if (typeof chromaDbService.deleteFileEmbedding === 'function') {
+    } else if (typeof vectorDbService.deleteFileEmbedding === 'function') {
       for (const id of ids) {
-        const result = await chromaDbService.deleteFileEmbedding(id);
+        const result = await vectorDbService.deleteFileEmbedding(id);
         // FIX: Check return value
         if (result === true || (result && (result.success || result.queued))) {
           dbRemovedCount++;
@@ -160,10 +160,10 @@ async function removeEmbeddingsForPath(filePath, services, log = logger) {
     }
 
     // PERF: Batch deleteFileChunks calls in parallel instead of sequential
-    if (typeof chromaDbService.deleteFileChunks === 'function') {
+    if (typeof vectorDbService.deleteFileChunks === 'function') {
       const chunkDeletePromises = pathVariants.flatMap((variant) => [
-        chromaDbService.deleteFileChunks(`file:${variant}`),
-        chromaDbService.deleteFileChunks(`image:${variant}`)
+        vectorDbService.deleteFileChunks(`file:${variant}`),
+        vectorDbService.deleteFileChunks(`image:${variant}`)
       ]);
       const chunkResults = await Promise.allSettled(chunkDeletePromises);
       const failures = chunkResults.filter((result) => result.status === 'rejected');
@@ -280,14 +280,14 @@ async function syncEmbeddingForMove({
   const sourceId = sourcePath ? getSemanticFileId(sourcePath) : null;
 
   // Optimization: if an embedding already exists for this destination ID, update metadata
-  // in-place via ChromaDB (avoids recomputing vectors during moves).
-  const chromaDbService = services.chromaDbService;
-  if (chromaDbService?.updateFilePaths) {
+  // in-place via vector DB (avoids recomputing vectors during moves).
+  const vectorDbService = services.vectorDbService;
+  if (vectorDbService?.updateFilePaths) {
     try {
-      await chromaDbService.initialize?.();
-      if (chromaDbService.isOnline) {
+      await vectorDbService.initialize?.();
+      if (vectorDbService.isOnline) {
         const oldId = operation === 'copy' || !sourceId ? destId : sourceId;
-        const updated = await chromaDbService.updateFilePaths([
+        const updated = await vectorDbService.updateFilePaths([
           { oldId, newId: destId, newMeta: meta }
         ]);
         if (updated > 0) {

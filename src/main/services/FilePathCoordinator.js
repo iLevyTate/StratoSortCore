@@ -6,7 +6,7 @@
  * scenarios where some systems have the new path while others have the old.
  *
  * Systems coordinated:
- * - ChromaDB metadata (embeddings)
+ * - Vector DB metadata (embeddings)
  * - AnalysisHistoryService (search indexes)
  * - EmbeddingQueue (pending embeddings)
  * - ProcessingStateService (in-progress jobs)
@@ -55,7 +55,7 @@ class FilePathCoordinator extends EventEmitter {
     super();
 
     // Service references - set via setServices() after construction
-    this._chromaDbService = options.chromaDbService || null;
+    this._vectorDbService = options.vectorDbService || null;
     this._analysisHistoryService = options.analysisHistoryService || null;
     this._embeddingQueue = options.embeddingQueue || null;
     this._processingStateService = options.processingStateService || null;
@@ -78,7 +78,7 @@ class FilePathCoordinator extends EventEmitter {
    * @param {Object} services - Service instances
    */
   setServices(services) {
-    if (services.chromaDbService) this._chromaDbService = services.chromaDbService;
+    if (services.vectorDbService) this._vectorDbService = services.vectorDbService;
     if (services.analysisHistoryService)
       this._analysisHistoryService = services.analysisHistoryService;
     if (services.embeddingQueue) this._embeddingQueue = services.embeddingQueue;
@@ -87,7 +87,7 @@ class FilePathCoordinator extends EventEmitter {
     if (services.cacheInvalidationBus) this._cacheInvalidationBus = services.cacheInvalidationBus;
 
     logger.debug('[FilePathCoordinator] Services updated', {
-      hasChromaDb: !!this._chromaDbService,
+      hasVectorDb: !!this._vectorDbService,
       hasAnalysisHistory: !!this._analysisHistoryService,
       hasEmbeddingQueue: !!this._embeddingQueue,
       hasProcessingState: !!this._processingStateService,
@@ -102,7 +102,7 @@ class FilePathCoordinator extends EventEmitter {
    * @param {string} newPath - New file path
    * @param {Object} options - Options
    * @param {string} options.type - Change type (move, rename, copy)
-   * @param {boolean} options.skipChromaDb - Skip ChromaDB update
+   * @param {boolean} options.skipVectorDb - Skip vector DB update
    * @param {boolean} options.skipAnalysisHistory - Skip analysis history update
    * @param {boolean} options.skipEmbeddingQueue - Skip embedding queue update
    * @param {boolean} options.skipProcessingState - Skip processing state update
@@ -124,7 +124,7 @@ class FilePathCoordinator extends EventEmitter {
 
     const errors = [];
     const updated = {
-      chromaDb: false,
+      vectorDb: false,
       analysisHistory: false,
       embeddingQueue: false,
       processingState: false,
@@ -139,22 +139,22 @@ class FilePathCoordinator extends EventEmitter {
         startTime,
         type: options.type || PathChangeType.MOVE
       });
-      // 1. Update ChromaDB metadata (embeddings)
-      if (!options.skipChromaDb && this._chromaDbService) {
+      // 1. Update vector DB metadata (embeddings)
+      if (!options.skipVectorDb && this._vectorDbService) {
         try {
-          await this._updateChromaDbPath(oldPath, newPath);
-          updated.chromaDb = true;
-          // PATH-TRACE: Log ChromaDB update success
-          traceDbUpdate('chromadb', oldPath, newPath, true);
+          await this._updateVectorDbPath(oldPath, newPath);
+          updated.vectorDb = true;
+          // PATH-TRACE: Log vector DB update success
+          traceDbUpdate('vectordb', oldPath, newPath, true);
         } catch (err) {
-          errors.push({ system: 'chromaDb', error: err.message });
-          logger.warn('[FilePathCoordinator] ChromaDB update failed', { error: err.message });
-          // PATH-TRACE: Log ChromaDB update failure
-          traceDbUpdate('chromadb', oldPath, newPath, false, err.message);
+          errors.push({ system: 'vectorDb', error: err.message });
+          logger.warn('[FilePathCoordinator] Vector DB update failed', { error: err.message });
+          // PATH-TRACE: Log vector DB update failure
+          traceDbUpdate('vectordb', oldPath, newPath, false, err.message);
         }
-      } else if (!options.skipChromaDb) {
-        errors.push({ system: 'chromaDb', error: 'ChromaDB service unavailable' });
-        logger.warn('[FilePathCoordinator] ChromaDB service unavailable for path update');
+      } else if (!options.skipVectorDb) {
+        errors.push({ system: 'vectorDb', error: 'Vector DB service unavailable' });
+        logger.warn('[FilePathCoordinator] Vector DB service unavailable for path update');
       }
 
       // 2. Update AnalysisHistoryService (search indexes)
@@ -289,18 +289,20 @@ class FilePathCoordinator extends EventEmitter {
 
       const errorCountBeforeBatch = errors.length;
 
-      // 1. Batch update ChromaDB
-      if (!options.skipChromaDb && this._chromaDbService) {
+      // 1. Batch update vector DB
+      if (!options.skipVectorDb && this._vectorDbService) {
         try {
-          await this._batchUpdateChromaDbPaths(batch);
+          await this._batchUpdateVectorDbPaths(batch);
         } catch (err) {
-          errors.push({ system: 'chromaDb', error: err.message, batch: i / this._batchSize });
-          logger.warn('[FilePathCoordinator] ChromaDB batch update failed', { error: err.message });
+          errors.push({ system: 'vectorDb', error: err.message, batch: i / this._batchSize });
+          logger.warn('[FilePathCoordinator] Vector DB batch update failed', {
+            error: err.message
+          });
         }
-      } else if (!options.skipChromaDb && !missingSystems.has('chromaDb')) {
-        errors.push({ system: 'chromaDb', error: 'ChromaDB service unavailable' });
-        missingSystems.add('chromaDb');
-        logger.warn('[FilePathCoordinator] ChromaDB service unavailable for batch update');
+      } else if (!options.skipVectorDb && !missingSystems.has('vectorDb')) {
+        errors.push({ system: 'vectorDb', error: 'Vector DB service unavailable' });
+        missingSystems.add('vectorDb');
+        logger.warn('[FilePathCoordinator] Vector DB service unavailable for batch update');
       }
 
       // 2. Batch update Analysis History
@@ -407,25 +409,25 @@ class FilePathCoordinator extends EventEmitter {
 
     const errors = [];
     const cleaned = {
-      chromaDb: false,
+      vectorDb: false,
       analysisHistory: false,
       embeddingQueue: false,
       processingState: false,
       cacheInvalidated: false
     };
 
-    // 1. Remove from ChromaDB
-    if (!options.skipChromaDb && this._chromaDbService) {
+    // 1. Remove from vector DB
+    if (!options.skipVectorDb && this._vectorDbService) {
       try {
-        await this._deleteFromChromaDb(filePath);
-        cleaned.chromaDb = true;
+        await this._deleteFromVectorDb(filePath);
+        cleaned.vectorDb = true;
       } catch (err) {
-        errors.push({ system: 'chromaDb', error: err.message });
-        logger.warn('[FilePathCoordinator] ChromaDB deletion failed', { error: err.message });
+        errors.push({ system: 'vectorDb', error: err.message });
+        logger.warn('[FilePathCoordinator] Vector DB deletion failed', { error: err.message });
       }
-    } else if (!options.skipChromaDb) {
-      errors.push({ system: 'chromaDb', error: 'ChromaDB service unavailable' });
-      logger.warn('[FilePathCoordinator] ChromaDB service unavailable for deletion');
+    } else if (!options.skipVectorDb) {
+      errors.push({ system: 'vectorDb', error: 'Vector DB service unavailable' });
+      logger.warn('[FilePathCoordinator] Vector DB service unavailable for deletion');
     }
 
     // 2. Remove from Analysis History
@@ -525,23 +527,23 @@ class FilePathCoordinator extends EventEmitter {
 
     const errors = [];
     const cloned = {
-      chromaDb: false,
+      vectorDb: false,
       analysisHistory: false,
       cacheInvalidated: false
     };
 
-    // 1. Clone ChromaDB embedding
-    if (!options.skipChromaDb && this._chromaDbService) {
+    // 1. Clone vector DB embedding
+    if (!options.skipVectorDb && this._vectorDbService) {
       try {
-        await this._cloneChromaDbEntry(sourcePath, destPath);
-        cloned.chromaDb = true;
+        await this._cloneVectorDbEntry(sourcePath, destPath);
+        cloned.vectorDb = true;
       } catch (err) {
-        errors.push({ system: 'chromaDb', error: err.message });
-        logger.warn('[FilePathCoordinator] ChromaDB clone failed', { error: err.message });
+        errors.push({ system: 'vectorDb', error: err.message });
+        logger.warn('[FilePathCoordinator] Vector DB clone failed', { error: err.message });
       }
-    } else if (!options.skipChromaDb) {
-      errors.push({ system: 'chromaDb', error: 'ChromaDB service unavailable' });
-      logger.warn('[FilePathCoordinator] ChromaDB service unavailable for copy');
+    } else if (!options.skipVectorDb) {
+      errors.push({ system: 'vectorDb', error: 'Vector DB service unavailable' });
+      logger.warn('[FilePathCoordinator] Vector DB service unavailable for copy');
     }
 
     // 2. Clone Analysis History entry
@@ -601,10 +603,10 @@ class FilePathCoordinator extends EventEmitter {
   // ==================== Private Helper Methods ====================
 
   /**
-   * Update ChromaDB path for a single file
+   * Update vector DB path for a single file
    * @private
    */
-  async _updateChromaDbPath(oldPath, newPath) {
+  async _updateVectorDbPath(oldPath, newPath) {
     const normalizedNew = normalizePathForIndex(newPath);
     const newMeta = {
       path: newPath,
@@ -637,16 +639,16 @@ class FilePathCoordinator extends EventEmitter {
       }
     });
 
-    if (pathUpdates.length > 0 && this._chromaDbService.updateFilePaths) {
-      await this._chromaDbService.updateFilePaths(pathUpdates);
+    if (pathUpdates.length > 0 && this._vectorDbService.updateFilePaths) {
+      await this._vectorDbService.updateFilePaths(pathUpdates);
     }
   }
 
   /**
-   * Batch update ChromaDB paths
+   * Batch update vector DB paths
    * @private
    */
-  async _batchUpdateChromaDbPaths(changes) {
+  async _batchUpdateVectorDbPaths(changes) {
     const pathUpdates = [];
     const seenUpdates = new Set();
 
@@ -686,16 +688,16 @@ class FilePathCoordinator extends EventEmitter {
       });
     }
 
-    if (pathUpdates.length > 0 && this._chromaDbService.updateFilePaths) {
-      await this._chromaDbService.updateFilePaths(pathUpdates);
+    if (pathUpdates.length > 0 && this._vectorDbService.updateFilePaths) {
+      await this._vectorDbService.updateFilePaths(pathUpdates);
     }
   }
 
   /**
-   * Delete from ChromaDB
+   * Delete from vector DB
    * @private
    */
-  async _deleteFromChromaDb(filePath) {
+  async _deleteFromVectorDb(filePath) {
     const pathVariants = getPathVariants(filePath);
     const idsToDelete = new Set();
 
@@ -705,35 +707,35 @@ class FilePathCoordinator extends EventEmitter {
     }
 
     const ids = Array.from(idsToDelete);
-    if (typeof this._chromaDbService.batchDeleteFileEmbeddings === 'function') {
-      await this._chromaDbService.batchDeleteFileEmbeddings(ids);
+    if (typeof this._vectorDbService.batchDeleteFileEmbeddings === 'function') {
+      await this._vectorDbService.batchDeleteFileEmbeddings(ids);
     } else {
       for (const id of ids) {
-        if (this._chromaDbService.deleteFileEmbedding) {
-          await this._chromaDbService.deleteFileEmbedding(id);
+        if (this._vectorDbService.deleteFileEmbedding) {
+          await this._vectorDbService.deleteFileEmbedding(id);
         }
       }
     }
 
     // Also delete associated chunks
-    if (typeof this._chromaDbService.deleteFileChunks === 'function') {
+    if (typeof this._vectorDbService.deleteFileChunks === 'function') {
       for (const variant of pathVariants) {
-        await this._chromaDbService.deleteFileChunks(`file:${variant}`);
-        await this._chromaDbService.deleteFileChunks(`image:${variant}`);
+        await this._vectorDbService.deleteFileChunks(`file:${variant}`);
+        await this._vectorDbService.deleteFileChunks(`image:${variant}`);
       }
     }
   }
 
   /**
-   * Clone ChromaDB entry for file copy
+   * Clone vector DB entry for file copy
    * @private
    */
-  async _cloneChromaDbEntry(sourcePath, destPath) {
+  async _cloneVectorDbEntry(sourcePath, destPath) {
     const normalizedSource = normalizePathForIndex(sourcePath);
     const normalizedDest = normalizePathForIndex(destPath);
 
-    if (this._chromaDbService.cloneFileEmbedding) {
-      await this._chromaDbService.cloneFileEmbedding(
+    if (this._vectorDbService.cloneFileEmbedding) {
+      await this._vectorDbService.cloneFileEmbedding(
         `file:${normalizedSource}`,
         `file:${normalizedDest}`,
         {
@@ -742,11 +744,11 @@ class FilePathCoordinator extends EventEmitter {
         }
       );
     } else {
-      throw new Error('ChromaDB cloneFileEmbedding not available');
+      throw new Error('Vector DB cloneFileEmbedding not available');
     }
 
-    if (typeof this._chromaDbService.cloneFileChunks === 'function') {
-      await this._chromaDbService.cloneFileChunks(
+    if (typeof this._vectorDbService.cloneFileChunks === 'function') {
+      await this._vectorDbService.cloneFileChunks(
         `file:${normalizedSource}`,
         `file:${normalizedDest}`,
         {
@@ -755,7 +757,7 @@ class FilePathCoordinator extends EventEmitter {
         }
       );
     } else {
-      throw new Error('ChromaDB cloneFileChunks not available');
+      throw new Error('Vector DB cloneFileChunks not available');
     }
   }
 
@@ -879,7 +881,7 @@ class FilePathCoordinator extends EventEmitter {
   getStats() {
     return {
       pendingOperations: this._pendingOperations.size,
-      hasChromaDb: !!this._chromaDbService,
+      hasVectorDb: !!this._vectorDbService,
       hasAnalysisHistory: !!this._analysisHistoryService,
       hasEmbeddingQueue: !!this._embeddingQueue,
       hasProcessingState: !!this._processingStateService,

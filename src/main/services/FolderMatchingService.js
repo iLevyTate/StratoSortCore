@@ -1,13 +1,11 @@
 const crypto = require('crypto');
-const { getOllama, getOllamaEmbeddingModel } = require('../ollamaUtils');
+const { getInstance: getLlamaService } = require('./LlamaService');
 const { createLogger } = require('../../shared/logger');
 
 const logger = createLogger('FolderMatchingService');
 const EmbeddingCache = require('./EmbeddingCache');
 const { getInstance: getParallelEmbeddingService } = require('./ParallelEmbeddingService');
 const { get: getConfig } = require('../../shared/config/index');
-const { buildOllamaOptions } = require('./PerformanceService');
-const { getInstance: getOllamaInstance } = require('./OllamaService');
 const { enrichFolderTextForEmbedding } = require('../analysis/semanticExtensionMap');
 const { validateEmbeddingDimensions } = require('../../shared/vectorMath');
 const { capEmbeddingInput } = require('../utils/embeddingInput');
@@ -78,27 +76,27 @@ function getEmbeddingDimension(modelName) {
  *
  * This service uses vector embeddings to match files with appropriate folders
  * based on semantic similarity. It supports dependency injection for:
- * - chromaDbService: Vector database for storing/querying embeddings
+ * - vectorDbService: Vector database for storing/querying embeddings
  * - embeddingCache: Cache for embedding results (optional, created if not provided)
  * - parallelEmbeddingService: Service for parallel embedding generation (optional)
  *
  * @example
  * // Using dependency injection (recommended)
- * const folderMatcher = new FolderMatchingService(chromaDb, {
+ * const folderMatcher = new FolderMatchingService(vectorDb, {
  *   embeddingCache: myCache,
  *   parallelEmbeddingService: myParallelService
  * });
  *
  * // Using with ServiceContainer
  * container.registerSingleton(ServiceIds.FOLDER_MATCHING, (c) => {
- *   return new FolderMatchingService(c.resolve(ServiceIds.CHROMA_DB));
+ *   return new FolderMatchingService(c.resolve(ServiceIds.ORAMA_VECTOR));
  * });
  */
 class FolderMatchingService {
   /**
    * Create a FolderMatchingService instance
    *
-   * @param {Object} chromaDbService - ChromaDB service for vector storage (required)
+   * @param {Object} vectorDbService - Vector DB service for vector storage (required)
    * @param {Object} options - Configuration options
    * @param {Object} [options.embeddingCache] - Pre-configured embedding cache (optional)
    * @param {Object} [options.parallelEmbeddingService] - Pre-configured parallel embedding service (optional)
@@ -107,12 +105,12 @@ class FolderMatchingService {
    * @param {number} [options.maxCacheSize] - Maximum cache size
    * @param {number} [options.cacheTtl] - Cache TTL in milliseconds
    */
-  constructor(chromaDbService, options = {}) {
-    // Support both old signature (chromaDbService, cacheOptions) and new signature (chromaDbService, { embeddingCache, ... })
+  constructor(vectorDbService, options = {}) {
+    // Support both old signature (vectorDbService, cacheOptions) and new signature (vectorDbService, { embeddingCache, ... })
     const cacheOptions = options.maxCacheSize || options.cacheTtl ? options : {};
 
-    this.chromaDbService = chromaDbService;
-    this.ollama = null;
+    this.vectorDbService = vectorDbService;
+    this.llamaService = getLlamaService(); // Use LlamaService directly
     this.modelName = '';
     this._upsertedFolderIds = new Set();
     // FIX: Maximum size for upsertedFolderIds to prevent unbounded memory growth
@@ -180,15 +178,15 @@ class FolderMatchingService {
   }
 
   /**
-   * Subscribe to OllamaService model change events
+   * Subscribe to LlamaService model change events
    * Invalidates embedding cache when embedding model changes
    * @private
    */
   _subscribeToModelChanges() {
     try {
-      const ollamaService = getOllamaInstance();
-      if (ollamaService && typeof ollamaService.onModelChange === 'function') {
-        this._modelChangeUnsubscribe = ollamaService.onModelChange(
+      const llamaService = getLlamaService();
+      if (llamaService && typeof llamaService.onModelChange === 'function') {
+        this._modelChangeUnsubscribe = llamaService.onModelChange(
           async ({ type, previousModel, newModel }) => {
             if (type === 'embedding') {
               // FIX: Invalidate in-memory embedding cache
@@ -208,28 +206,28 @@ class FolderMatchingService {
                 }
               }
 
-              // FIX: CRITICAL - Also clear ChromaDB collections when embedding model changes
-              // Previously, only the in-memory cache was cleared, but ChromaDB still contained
+              // FIX: CRITICAL - Also clear vector DB collections when embedding model changes
+              // Previously, only the in-memory cache was cleared, but the vector DB still contained
               // vectors with the old dimension. This caused query failures or incorrect similarity
               // calculations when new embeddings (with different dimensions) were added.
-              if (this.chromaDbService) {
+              if (this.vectorDbService) {
                 try {
                   logger.warn(
-                    '[FolderMatchingService] Clearing ChromaDB collections due to embedding model change',
+                    '[FolderMatchingService] Clearing vector DB collections due to embedding model change',
                     {
                       from: previousModel,
                       to: newModel
                     }
                   );
                   // Reset both file and folder collections to clear old-dimension vectors
-                  await this.chromaDbService.resetAll();
+                  await this.vectorDbService.resetAll();
                   logger.info(
-                    '[FolderMatchingService] ChromaDB collections reset after model change'
+                    '[FolderMatchingService] Vector DB collections reset after model change'
                   );
-                } catch (chromaError) {
+                } catch (vectorDbError) {
                   logger.error(
-                    '[FolderMatchingService] Failed to reset ChromaDB collections:',
-                    chromaError.message
+                    '[FolderMatchingService] Failed to reset vector DB collections:',
+                    vectorDbError.message
                   );
                   // Continue - the cache is still cleared, and users can manually rebuild
                 }
@@ -325,11 +323,12 @@ class FolderMatchingService {
     const startTime = Date.now();
 
     try {
-      const ollama = getOllama();
+      const llamaService = getLlamaService();
       // FIX: Add fallback to default embedding model when none configured
       const { AI_DEFAULTS } = require('../../shared/constants');
-      const model = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
-      const perfOptions = await buildOllamaOptions('embeddings');
+      const cfg = await llamaService.getConfig();
+      const model = cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
+      // Legacy perf options omitted; not needed for LlamaService
       const originalText = String(text || '');
       const capped = capEmbeddingInput(originalText);
       const embeddingInput = capped.text;
@@ -369,21 +368,12 @@ class FolderMatchingService {
       }
 
       // Cache miss - generate embedding via API
-      // Use the newer embed() API with 'input' parameter (embeddings() with 'prompt' is deprecated)
-      const response = await ollama.embed({
-        model,
-        input: embeddingInput || '',
-        options: { ...perfOptions }
-      });
+      // Use LlamaService.generateEmbedding
+      const response = await llamaService.generateEmbedding(embeddingInput || '');
 
-      // embed() returns embeddings array; extract first vector
-      const embeddings = response?.embeddings;
-      if (!Array.isArray(embeddings) || embeddings.length === 0 || !Array.isArray(embeddings[0])) {
-        const emptyError = new Error(`Embedding response missing vector for model "${model}"`);
-        emptyError.code = 'EMBEDDING_FAILED';
-        throw emptyError;
-      }
-      let vector = embeddings[0];
+      // generateEmbedding returns { embedding: number[] }
+      const vector = response?.embedding;
+
       if (!Array.isArray(vector) || vector.length === 0) {
         const emptyError = new Error(
           `Embedding response returned empty vector for model "${model}"`
@@ -404,6 +394,7 @@ class FolderMatchingService {
           (key) => key !== 'default' && model.toLowerCase().includes(key.toLowerCase())
         );
 
+      let adjustedVector = vector;
       if (actualDim !== expectedDim && actualDim > 0) {
         if (modelIsKnown) {
           logger.warn('[FolderMatchingService] Embedding dimension mismatch for known model', {
@@ -413,9 +404,9 @@ class FolderMatchingService {
             action: actualDim < expectedDim ? 'padding' : 'truncating'
           });
           if (actualDim < expectedDim) {
-            vector = vector.concat(new Array(expectedDim - actualDim).fill(0));
+            adjustedVector = adjustedVector.concat(new Array(expectedDim - actualDim).fill(0));
           } else if (actualDim > expectedDim) {
-            vector = vector.slice(0, expectedDim);
+            adjustedVector = adjustedVector.slice(0, expectedDim);
           }
         } else {
           logger.info('[FolderMatchingService] Unknown model dimension, using actual', {
@@ -427,10 +418,10 @@ class FolderMatchingService {
         }
       }
 
-      const result = { vector, model };
+      const result = { vector: adjustedVector, model };
 
       // Store in cache for future use
-      this.embeddingCache.set(embeddingInput, model, vector);
+      this.embeddingCache.set(embeddingInput, model, adjustedVector);
 
       const duration = Date.now() - startTime;
       logger.debug(`[FolderMatchingService] Embedding generated in ${duration}ms (cache: MISS)`);
@@ -499,12 +490,12 @@ class FolderMatchingService {
 
   async upsertFolderEmbedding(folder) {
     try {
-      // CRITICAL FIX: Ensure ChromaDB is initialized before upserting
-      if (!this.chromaDbService) {
-        throw new Error('ChromaDB service not available');
+      // CRITICAL FIX: Ensure vector DB is initialized before upserting
+      if (!this.vectorDbService) {
+        throw new Error('Vector DB service not available');
       }
 
-      await this.chromaDbService.initialize();
+      await this.vectorDbService.initialize();
 
       // Enrich folder text with semantic context for better file type matching
       // e.g., "3D Prints - Models for my Ender 3" becomes enriched with "stl obj 3mf gcode"
@@ -530,7 +521,7 @@ class FolderMatchingService {
         updatedAt: new Date().toISOString()
       };
 
-      await this.chromaDbService.upsertFolder(payload);
+      await this.vectorDbService.upsertFolder(payload);
       logger.debug('[FolderMatchingService] Upserted folder embedding', {
         id: folderId,
         name: folder.name
@@ -563,25 +554,25 @@ class FolderMatchingService {
         return { count: 0, skipped: [], stats: null };
       }
 
-      // CRITICAL FIX: Ensure ChromaDB is initialized before upserting
-      if (!this.chromaDbService) {
-        throw new Error('ChromaDB service not available');
+      // CRITICAL FIX: Ensure vector DB is initialized before upserting
+      if (!this.vectorDbService) {
+        throw new Error('Vector DB service not available');
       }
 
-      // Startup-safety: Chroma can still be booting even after process spawn.
+      // Startup-safety: vector DB can still be booting even after process spawn.
       // If initialization fails, treat folder upsert as non-fatal and retry later via subsequent calls.
       try {
-        await this.chromaDbService.initialize();
+        await this.vectorDbService.initialize();
       } catch (initError) {
         const msg = initError?.message || '';
         const isStartupLike =
-          initError?.name === 'ChromaNotFoundError' ||
+          initError?.name === 'VectorDbNotReadyError' ||
           /requested resource could not be found/i.test(msg) ||
           /ECONNREFUSED|ENOTFOUND|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH/i.test(msg);
 
         // Avoid log spam during boot: log at warn once per call, and skip.
         logger.warn(
-          '[FolderMatchingService] ChromaDB not ready; deferring folder embedding upsert',
+          '[FolderMatchingService] Vector DB not ready; deferring folder embedding upsert',
           {
             reason: msg
           }
@@ -590,7 +581,7 @@ class FolderMatchingService {
           count: 0,
           skipped: folders.map((f) => ({
             folder: f,
-            error: isStartupLike ? 'chromadb_not_ready' : msg
+            error: isStartupLike ? 'vector_db_not_ready' : msg
           })),
           stats: {
             total: folders.length,
@@ -606,6 +597,10 @@ class FolderMatchingService {
       const skipped = [];
       const payloads = [];
 
+      const { AI_DEFAULTS } = require('../../shared/constants');
+      const cfg = await getLlamaService().getConfig();
+      const model = cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
+
       // FIX: Check cache first and separate cached vs uncached folders
       const uncachedFolders = [];
       const cachedPayloads = [];
@@ -613,9 +608,6 @@ class FolderMatchingService {
       for (const folder of folders) {
         // Enrich folder text with semantic context for better file type matching
         const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
-        // FIX: Add fallback to default embedding model when none configured
-        const { AI_DEFAULTS } = require('../../shared/constants');
-        const model = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
         const folderId = folder.id || this.generateFolderId(folder);
 
         if (this._upsertedFolderIds.has(folderId)) {
@@ -722,9 +714,9 @@ class FolderMatchingService {
         });
       }
 
-      // Batch upsert to ChromaDB
+      // Batch upsert to vector DB
       if (payloads.length > 0) {
-        await this.chromaDbService.batchUpsertFolders(payloads);
+        await this.vectorDbService.batchUpsertFolders(payloads);
         logger.debug('[FolderMatchingService] Batch upserted folder embeddings', {
           count: payloads.length,
           skipped: skipped.length
@@ -744,14 +736,14 @@ class FolderMatchingService {
     } catch (error) {
       const msg = error?.message || '';
       const isStartupLike =
-        error?.name === 'ChromaNotFoundError' ||
+        error?.name === 'VectorDbNotReadyError' ||
         /requested resource could not be found/i.test(msg) ||
         /ECONNREFUSED|ENOTFOUND|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH/i.test(msg);
 
       // During startup, don't spam error logs; treat as deferred/non-fatal.
       if (isStartupLike) {
         logger.warn(
-          '[FolderMatchingService] Folder embedding upsert deferred (ChromaDB not ready)',
+          '[FolderMatchingService] Folder embedding upsert deferred (vector DB not ready)',
           {
             error: msg,
             totalFolders: folders?.length || 0
@@ -759,7 +751,7 @@ class FolderMatchingService {
         );
         return {
           count: 0,
-          skipped: (folders || []).map((f) => ({ folder: f, error: 'chromadb_not_ready' })),
+          skipped: (folders || []).map((f) => ({ folder: f, error: 'vector_db_not_ready' })),
           stats: {
             total: folders?.length || 0,
             cached: 0,
@@ -781,27 +773,22 @@ class FolderMatchingService {
 
   async upsertFileEmbedding(fileId, contentSummary, fileMeta = {}, options = {}) {
     try {
-      // CRITICAL FIX: Ensure ChromaDB is initialized before upserting
-      if (!this.chromaDbService) {
-        throw new Error('ChromaDB service not available');
+      // CRITICAL FIX: Ensure vector DB is initialized before upserting
+      if (!this.vectorDbService) {
+        throw new Error('Vector DB service not available');
       }
 
-      await this.chromaDbService.initialize();
+      await this.vectorDbService.initialize();
 
       // FIX: Check if existing embedding is better before overwriting
       // This prevents OrganizationSuggestionService (metadata-only) from overwriting
-      // high-quality embeddings generated by OllamaDocumentAnalysis (full text)
+      // high-quality embeddings generated by document analysis (full text)
       if (options.checkExisting) {
         try {
           // Use get() to check metadata without fetching heavy vector
-          const existing = await this.chromaDbService.fileCollection.get({
-            ids: [fileId],
-            include: ['metadatas']
-          });
-
-          if (existing && existing.metadatas && existing.metadatas.length > 0) {
-            const metadata = existing.metadatas[0] || {};
-            const existingMethod = metadata.extractionMethod;
+          const existing = await this.vectorDbService.getFile(fileId);
+          if (existing) {
+            const existingMethod = existing.extractionMethod;
             const newMethod = fileMeta.extractionMethod; // Might be undefined for metadata-only
 
             // Priority: content/full_text > archive > metadata/undefined
@@ -825,7 +812,6 @@ class FolderMatchingService {
           // If check fails (e.g. ID not found), just proceed to upsert
           // Ignore "not found" errors as they are expected for new files
           const isNotFound =
-            checkError.name === 'ChromaNotFoundError' ||
             checkError.message.includes('not found') ||
             checkError.message.includes('does not exist');
 
@@ -855,7 +841,7 @@ class FolderMatchingService {
         );
       }
 
-      await this.chromaDbService.upsertFile({
+      await this.vectorDbService.upsertFile({
         id: fileId,
         vector,
         model,
@@ -889,16 +875,17 @@ class FolderMatchingService {
    */
   async batchGenerateFileEmbeddings(fileSummaries, options = {}) {
     try {
-      if (!this.chromaDbService) {
-        throw new Error('ChromaDB service not available');
+      if (!this.vectorDbService) {
+        throw new Error('Vector DB service not available');
       }
 
-      await this.chromaDbService.initialize();
+      await this.vectorDbService.initialize();
 
       const { onProgress = null } = options;
       // FIX: Add fallback to default embedding model when none configured
       const { AI_DEFAULTS } = require('../../shared/constants');
-      const model = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
+      const cfg = await getLlamaService().getConfig();
+      const model = cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
 
       // FIX: Check cache first and separate cached vs uncached files
       const uncachedFiles = [];
@@ -1013,9 +1000,9 @@ class FolderMatchingService {
 
   async matchFileToFolders(fileId, topK = 5) {
     try {
-      // CRITICAL FIX: Ensure ChromaDB is initialized before querying
-      if (!this.chromaDbService) {
-        logger.error('[FolderMatchingService] ChromaDB service not available');
+      // CRITICAL FIX: Ensure vector DB is initialized before querying
+      if (!this.vectorDbService) {
+        logger.error('[FolderMatchingService] Vector DB service not available');
         return [];
       }
 
@@ -1023,15 +1010,15 @@ class FolderMatchingService {
       const MAX_TOP_K = 100;
       const validTopK = Math.max(1, Math.min(Number.isInteger(topK) ? topK : 5, MAX_TOP_K));
 
-      // Ensure ChromaDB is initialized
-      await this.chromaDbService.initialize();
+      // Ensure vector DB is initialized
+      await this.vectorDbService.initialize();
 
       logger.debug('[FolderMatchingService] Querying folder matches', {
         fileId,
         topK: validTopK
       });
 
-      const results = await this.chromaDbService.queryFolders(fileId, validTopK);
+      const results = await this.vectorDbService.queryFolders(fileId, validTopK);
 
       if (!Array.isArray(results)) {
         logger.warn('[FolderMatchingService] Invalid results format', {
@@ -1047,7 +1034,7 @@ class FolderMatchingService {
         topScore: results[0]?.score
       });
 
-      return results;
+      return this._normalizeFolderMatches(results);
     } catch (error) {
       logger.error('[FolderMatchingService] Failed to match file to folders:', {
         fileId,
@@ -1067,19 +1054,25 @@ class FolderMatchingService {
    */
   async batchMatchFilesToFolders(fileIds, topK = 5) {
     try {
-      if (!this.chromaDbService) {
-        logger.error('[FolderMatchingService] ChromaDB service not available');
+      if (!this.vectorDbService) {
+        logger.error('[FolderMatchingService] Vector DB service not available');
         return {};
       }
 
-      await this.chromaDbService.initialize();
+      await this.vectorDbService.initialize();
 
       logger.debug('[FolderMatchingService] Batch querying folder matches', {
         fileCount: fileIds.length,
         topK
       });
 
-      return await this.chromaDbService.batchQueryFolders(fileIds, topK);
+      const raw = await this.vectorDbService.batchQueryFolders(fileIds, topK);
+      if (!raw || typeof raw !== 'object') return {};
+      const normalized = {};
+      for (const [fileId, matches] of Object.entries(raw)) {
+        normalized[fileId] = this._normalizeFolderMatches(matches);
+      }
+      return normalized;
     } catch (error) {
       logger.error('[FolderMatchingService] Failed to batch match files:', {
         fileCount: fileIds.length,
@@ -1090,6 +1083,40 @@ class FolderMatchingService {
   }
 
   /**
+   * Normalize folder match results across vector DB implementations.
+   *
+   * Orama returns matches like: { id, score, metadata: { folderName, folderPath, description } }
+   * Legacy/other implementations may return: { folderId, name, path, description, score }
+   *
+   * Downstream code (e.g. OrganizationSuggestionService) expects `folderId`, `name`, and `path`.
+   *
+   * @param {Array} matches
+   * @returns {Array}
+   * @private
+   */
+  _normalizeFolderMatches(matches) {
+    if (!Array.isArray(matches)) return [];
+    return matches.filter(Boolean).map((match) => {
+      if (!match || typeof match !== 'object') return match;
+
+      const folderId = match.folderId || match.folderID || match.id;
+      const metadata = match.metadata && typeof match.metadata === 'object' ? match.metadata : null;
+      const name = match.name || metadata?.folderName || metadata?.name;
+      const path = match.path || metadata?.folderPath || metadata?.path;
+      const description = match.description || metadata?.description;
+
+      // Only add fields when we can derive them; do not overwrite present values.
+      return {
+        ...match,
+        ...(folderId && !match.folderId ? { folderId } : null),
+        ...(name && !match.name ? { name } : null),
+        ...(path && !match.path ? { path } : null),
+        ...(description && !match.description ? { description } : null)
+      };
+    });
+  }
+
+  /**
    * Match a raw embedding vector to folders
    * @param {Array<number>} vector - Embedding vector
    * @param {number} topK - Number of matches
@@ -1097,14 +1124,15 @@ class FolderMatchingService {
    */
   async matchVectorToFolders(vector, topK = 5) {
     try {
-      if (!this.chromaDbService) {
-        logger.error('[FolderMatchingService] ChromaDB service not available');
+      if (!this.vectorDbService) {
+        logger.error('[FolderMatchingService] Vector DB service not available');
         return [];
       }
 
-      await this.chromaDbService.initialize();
+      await this.vectorDbService.initialize();
 
-      return await this.chromaDbService.queryFoldersByEmbedding(vector, topK);
+      const results = await this.vectorDbService.queryFoldersByEmbedding(vector, topK);
+      return this._normalizeFolderMatches(results);
     } catch (error) {
       logger.error('[FolderMatchingService] Failed to match vector to folders:', {
         error: error.message
@@ -1121,13 +1149,13 @@ class FolderMatchingService {
    */
   async findSimilarFilesByVector(queryVector, topK = 10) {
     try {
-      if (!this.chromaDbService) {
-        logger.error('[FolderMatchingService] ChromaDB service not available');
+      if (!this.vectorDbService) {
+        logger.error('[FolderMatchingService] Vector DB service not available');
         return [];
       }
-      await this.chromaDbService.initialize();
+      await this.vectorDbService.initialize();
 
-      return await this.chromaDbService.querySimilarFiles(queryVector, topK);
+      return await this.vectorDbService.querySimilarFiles(queryVector, topK);
     } catch (error) {
       logger.error('[FolderMatchingService] Failed to find similar files by vector:', error);
       return [];
@@ -1139,24 +1167,18 @@ class FolderMatchingService {
    */
   async findSimilarFiles(fileId, topK = 10) {
     try {
-      // CRITICAL FIX: Ensure ChromaDB is initialized before accessing collections
-      if (!this.chromaDbService) {
-        logger.error('[FolderMatchingService] ChromaDB service not available');
+      // CRITICAL FIX: Ensure vector DB is initialized before accessing collections
+      if (!this.vectorDbService) {
+        logger.error('[FolderMatchingService] Vector DB service not available');
         return [];
       }
-      await this.chromaDbService.initialize();
+      await this.vectorDbService.initialize();
 
       // Get the file's embedding first
-      const fileResult = await this.chromaDbService.fileCollection.get({
-        ids: [fileId]
-      });
+      const fileResult = await this.vectorDbService.getFile(fileId);
 
       // FIX: Add explicit array check for embeddings
-      if (
-        !fileResult.embeddings ||
-        !Array.isArray(fileResult.embeddings) ||
-        fileResult.embeddings.length === 0
-      ) {
+      if (!fileResult || !fileResult.embedding) {
         logger.warn(
           '[FolderMatchingService] File not found or invalid embeddings for similarity search:',
           fileId
@@ -1164,8 +1186,8 @@ class FolderMatchingService {
         return [];
       }
 
-      const fileEmbedding = fileResult.embeddings[0];
-      return await this.chromaDbService.querySimilarFiles(fileEmbedding, topK);
+      const fileEmbedding = fileResult.embedding;
+      return await this.vectorDbService.querySimilarFiles(fileEmbedding, topK);
     } catch (error) {
       logger.error('[FolderMatchingService] Failed to find similar files:', error);
       return [];
@@ -1197,12 +1219,12 @@ class FolderMatchingService {
     const clampedDecay = Math.min(0.9, Math.max(0.5, decayFactor));
 
     try {
-      // CRITICAL FIX: Ensure ChromaDB is initialized
-      if (!this.chromaDbService) {
-        logger.error('[FolderMatchingService] ChromaDB service not available');
+      // CRITICAL FIX: Ensure vector DB is initialized
+      if (!this.vectorDbService) {
+        logger.error('[FolderMatchingService] Vector DB service not available');
         return [];
       }
-      await this.chromaDbService.initialize();
+      await this.vectorDbService.initialize();
 
       // Keep seeds separate - they should never appear in results (they're the query, not a discovery)
       const seedSet = new Set(seedIds);
@@ -1316,8 +1338,8 @@ class FolderMatchingService {
   async getStats() {
     try {
       // CRITICAL FIX: Check service availability
-      if (!this.chromaDbService) {
-        logger.warn('[FolderMatchingService] ChromaDB service not available for stats');
+      if (!this.vectorDbService) {
+        logger.warn('[FolderMatchingService] Vector DB service not available for stats');
         return {
           error: 'Service not available',
           folderCount: 0,
@@ -1325,7 +1347,7 @@ class FolderMatchingService {
           lastUpdate: null
         };
       }
-      return await this.chromaDbService.getStats();
+      return await this.vectorDbService.getStats();
     } catch (error) {
       logger.error('[FolderMatchingService] Failed to get stats:', error);
       return {
@@ -1510,14 +1532,15 @@ class FolderMatchingService {
  * Create a FolderMatchingService instance with default dependencies
  *
  * This factory function creates a FolderMatchingService with the default
- * ChromaDB singleton. Use for simple cases where DI is not needed.
+ * vector service singleton. Use for simple cases where DI is not needed.
  *
  * @param {Object} options - Configuration options passed to constructor
  * @returns {FolderMatchingService} A new service instance
  */
 function createWithDefaults(options = {}) {
-  const { getInstance: getChromaDB } = require('./chromadb');
-  return new FolderMatchingService(getChromaDB(), options);
+  // Use OramaVectorService (in-process), fall back to legacy vector DB for backward compatibility
+  const { getInstance: getOramaVector } = require('./OramaVectorService');
+  return new FolderMatchingService(getOramaVector(), options);
 }
 
 // Singleton factory pattern for DI container support

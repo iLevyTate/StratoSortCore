@@ -40,16 +40,16 @@ function registerChatIpc(servicesOrParams) {
     };
 
     const searchService = safeResolve(ServiceIds.SEARCH_SERVICE);
-    const chromaDbService = safeResolve(ServiceIds.CHROMA_DB);
+    const vectorDbService = safeResolve(ServiceIds.ORAMA_VECTOR);
     const embeddingService = safeResolve(ServiceIds.PARALLEL_EMBEDDING);
-    const ollamaService = safeResolve(ServiceIds.OLLAMA_SERVICE);
+    const llamaService = safeResolve(ServiceIds.LLAMA_SERVICE);
     const settingsService = safeResolve(ServiceIds.SETTINGS);
 
     // FIX 85: Don't cache ChatService when critical deps are null.
-    // If cached with null ollamaService, all chat queries fail for the entire session.
-    if (!ollamaService) {
-      const isRegistered = diContainer?.has?.(ServiceIds.OLLAMA_SERVICE);
-      logger.warn('[Chat] Ollama service not available', {
+    // If cached with null llamaService, all chat queries fail for the entire session.
+    if (!llamaService) {
+      const isRegistered = diContainer?.has?.(ServiceIds.LLAMA_SERVICE);
+      logger.warn('[Chat] Llama service not available', {
         registered: isRegistered,
         containerAvailable: !!diContainer
       });
@@ -59,9 +59,9 @@ function registerChatIpc(servicesOrParams) {
     try {
       chatService = new ChatService({
         searchService,
-        chromaDbService,
+        vectorDbService,
         embeddingService,
-        ollamaService,
+        llamaService,
         settingsService
       });
     } catch (error) {

@@ -203,7 +203,7 @@ if (!z) {
   /**
    * Optional URL validation (relaxed: protocol optional, trims whitespace)
    *
-   * Also supports extracting a URL from common pasted commands (e.g. `curl http://127.0.0.1:11434/api/tags`).
+   * Also supports extracting a URL from common pasted commands (e.g. `curl http://127.0.0.1:8080/api/endpoint`).
    * Uses optional+nullable to allow both undefined and null values.
    * Uses shared URL_PATTERN from settingsValidation.js
    */
@@ -251,7 +251,7 @@ if (!z) {
     // Trim trailing punctuation that often comes from prose/snippets
     s = s.replace(/[),;]+$/, '').trim();
 
-    // Collapse duplicate protocols (e.g. "http://http://127.0.0.1:11434")
+    // Collapse duplicate protocols (e.g. "http://http://127.0.0.1:8080")
     // so validation and downstream normalization don't reject common paste mistakes.
     s = collapseDuplicateProtocols(s);
     return s;
@@ -261,7 +261,7 @@ if (!z) {
     .preprocess(extractUrlLikeToken, z.string())
     .refine(
       (val) => val === undefined || val === null || val === '' || URL_PATTERN.test(val),
-      'Invalid Ollama URL format (expected host[:port] with optional http/https)'
+      'Invalid URL format (expected host[:port] with optional http/https)'
     )
     .optional()
     .nullable();
@@ -291,7 +291,6 @@ if (!z) {
   const settingsSchema = z
     .object({
       // AI Models & Config
-      ollamaHost: optionalUrlSchema,
       textModel: modelNameSchema,
       visionModel: modelNameSchema,
       embeddingModel: modelNameSchema,
@@ -300,14 +299,6 @@ if (!z) {
       defaultEmbeddingPolicy: z.enum(['embed', 'skip', 'web_only']).nullish(),
       chatPersona: chatPersonaSchema,
       chatResponseMode: z.enum(['fast', 'deep']).nullish(),
-      autoUpdateOllama: z.boolean().nullish(),
-      autoUpdateChromaDb: z.boolean().nullish(),
-
-      // Onboarding / Wizards
-      dependencyWizardShown: z.boolean().nullish(),
-      dependencyWizardLastPromptAt: z.string().nullable().optional(),
-      dependencyWizardPromptIntervalDays: z.number().int().min(1).max(365).nullish(),
-
       // Application Behavior
       launchOnStartup: z.boolean().nullish(),
       autoOrganize: z.boolean().nullish(),
@@ -744,20 +735,6 @@ if (!z) {
     smartFolders: z.array(smartFolderSchema).min(1)
   });
 
-  // ===== Ollama Schemas =====
-
-  /**
-   * Ollama connection test input
-   * Uses relaxed URL validation that allows URLs with or without protocol
-   * (e.g., "localhost:11434", "http://127.0.0.1:11434")
-   */
-  const ollamaHostSchema = optionalUrlSchema;
-
-  /**
-   * Ollama model pull input
-   */
-  const ollamaPullSchema = z.array(z.string().min(1));
-
   // ===== Backup Schemas =====
 
   /**
@@ -823,10 +800,6 @@ if (!z) {
     // Chat
     chatQuery: chatQuerySchema,
     chatReset: chatResetSchema,
-
-    // Ollama
-    ollamaHost: ollamaHostSchema,
-    ollamaPull: ollamaPullSchema,
 
     // Backup
     backupPath: backupPathSchema

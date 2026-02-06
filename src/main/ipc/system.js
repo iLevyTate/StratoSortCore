@@ -165,6 +165,38 @@ function registerSystemIpc(servicesOrParams) {
       }
     })
   );
+
+  // Handle remote logs from Renderer process
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.SYSTEM.LOG,
+    createHandler({
+      logger,
+      context,
+      handler: async (_event, payload) => {
+        try {
+          if (!payload || typeof payload !== 'object') return { success: false };
+          const { level, message, data } = payload;
+
+          // Route to main logger (which writes to the file)
+          // We use a prefix to distinguish renderer logs
+          const rendererContext = `Renderer${data?.context ? `:${data.context}` : ''}`;
+          const loggerWithContext = logger.pino.child({ context: rendererContext });
+
+          // Call the appropriate level
+          const logMethod = loggerWithContext[level] || loggerWithContext.info;
+          if (typeof logMethod === 'function') {
+            logMethod.call(loggerWithContext, data || {}, message);
+          }
+
+          return { success: true };
+        } catch {
+          // Don't log this error to avoid infinite loops if logging itself fails
+          return { success: false };
+        }
+      }
+    })
+  );
 }
 
 module.exports = registerSystemIpc;

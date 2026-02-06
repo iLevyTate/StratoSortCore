@@ -28,9 +28,9 @@ const logger = createLogger('InitializationUtils');
  *
  * @example
  * const { ensureInitialized, isInitialized } = createInitializer({
- *   serviceName: '[CHROMADB]',
+ *   serviceName: '[VECTOR_DB]',
  *   initFn: async () => {
- *     await chromaDbService.initialize();
+ *     await vectorDbService.initialize();
  *     await folderMatcher.initialize();
  *   }
  * });

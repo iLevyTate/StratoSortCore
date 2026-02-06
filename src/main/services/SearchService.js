@@ -11,7 +11,7 @@
  * @module services/SearchService
  */
 
-const lunr = require('lunr');
+const { create, insertMultiple, search: oramaSearch } = require('@orama/orama');
 const fs = require('fs').promises;
 const { createLogger } = require('../../shared/logger');
 const { THRESHOLDS, TIMEOUTS, SEARCH } = require('../../shared/performanceConstants');
@@ -48,7 +48,7 @@ const DEFAULT_OPTIONS = {
   // Chunk results improve deep recall for natural-language queries.
   chunkWeight: 0.5,
   // Query processing options
-  expandSynonyms: true, // Expand query with WordNet synonyms
+  expandSynonyms: true, // Expand query with lemma variants
   // Spell correction enabled by default with strict length checks (min 4 chars)
   correctSpelling: true,
   // Re-ranking options
@@ -74,26 +74,28 @@ class SearchService {
    * Create a new SearchService instance
    *
    * @param {Object} dependencies - Service dependencies
-   * @param {Object} dependencies.chromaDbService - ChromaDB service for vector search
+   * @param {Object} dependencies.vectorDbService - Vector DB service for search
    * @param {Object} dependencies.analysisHistoryService - Analysis history for document data
    * @param {Object} dependencies.parallelEmbeddingService - Embedding service for query vectors
    * @param {Object} [dependencies.queryProcessor] - Optional QueryProcessor for spell correction/synonyms
    * @param {Object} [dependencies.reRankerService] - Optional ReRankerService for LLM re-ranking
-   * @param {Object} [dependencies.ollamaService] - Optional OllamaService for re-ranking
+   * @param {Object} [dependencies.llamaService] - Optional AI service for re-ranking
    * @param {Object} [dependencies.relationshipIndexService] - Optional RelationshipIndexService for graph expansion
    */
   constructor({
-    chromaDbService,
+    vectorDbService,
     analysisHistoryService,
     parallelEmbeddingService,
     queryProcessor,
     reRankerService,
-    ollamaService,
+    llamaService,
     relationshipIndexService
   } = {}) {
+    const vectorDb = vectorDbService || null;
+
     // Validate required dependencies
-    if (!chromaDbService) {
-      throw new Error('SearchService requires chromaDbService dependency');
+    if (!vectorDb) {
+      throw new Error('SearchService requires vectorDbService dependency');
     }
     if (!analysisHistoryService) {
       throw new Error('SearchService requires analysisHistoryService dependency');
@@ -102,14 +104,14 @@ class SearchService {
       throw new Error('SearchService requires parallelEmbeddingService dependency');
     }
 
-    this.chromaDb = chromaDbService;
+    this.vectorDb = vectorDb;
     this.history = analysisHistoryService;
     this.embedding = parallelEmbeddingService;
 
     // Optional enhanced services - use singletons if not provided
     this.queryProcessor = queryProcessor || null;
     this.reRanker = reRankerService || null;
-    this.ollamaService = ollamaService || null;
+    this.llamaService = llamaService || null;
     this.relationshipIndex = relationshipIndexService || null;
 
     // Lazy initialize optional services
@@ -177,14 +179,14 @@ class SearchService {
     if (this._reRankerInitialized) return this.reRanker;
 
     try {
-      // ReRanker needs OllamaService
-      if (!this.ollamaService) {
-        logger.debug('[SearchService] ReRanker unavailable: no OllamaService');
+      // Re-ranker needs AI service
+      if (!this.llamaService) {
+        logger.debug('[SearchService] Re-ranker unavailable: no AI service');
         this._reRankerInitialized = true;
         return null;
       }
 
-      this.reRanker = getReRanker({ ollamaService: this.ollamaService });
+      this.reRanker = getReRanker({ llamaService: this.llamaService });
       this._reRankerInitialized = true;
       return this.reRanker;
     } catch (error) {
@@ -195,11 +197,11 @@ class SearchService {
   }
 
   /**
-   * Set OllamaService for re-ranking (can be set after construction)
-   * @param {Object} ollamaService - OllamaService instance
+   * Set AI service for re-ranking (can be set after construction)
+   * @param {Object} aiService - AI service instance
    */
-  setOllamaService(ollamaService) {
-    this.ollamaService = ollamaService;
+  setAiService(aiService) {
+    this.llamaService = aiService;
     // Reset reranker initialization so it can be created with the new service
     this._reRankerInitialized = false;
     this.reRanker = null;
@@ -308,94 +310,95 @@ class SearchService {
 
       // Build index into local variables first so a build failure doesn't leave partial state behind.
       const nextDocumentMap = new Map();
-      const self = this;
       const seenIds = new Set();
-      const nextIndex = lunr(function () {
-        // Configure fields with boosting
-        // FIX P1-4: Increased extractedText boost from 1 to 2.5 so content matches
-        // compete better with metadata matches (subject, tags) in search results
-        this.ref('id');
-        this.field('fileName', { boost: 3 });
-        this.field('subject', { boost: 2 });
-        this.field('summary', { boost: 1.5 });
-        this.field('tags', { boost: 2 });
-        this.field('category', { boost: 1.5 });
-        this.field('entity', { boost: 1.4 });
-        this.field('project', { boost: 1.4 });
-        this.field('purpose', { boost: 1.2 });
-        this.field('documentType', { boost: 1.2 });
-        this.field('keyEntities', { boost: 1.2 });
-        this.field('documentDate', { boost: 0.8 });
-        this.field('reasoning', { boost: 0.6 });
-        this.field('extractedText', { boost: 2.5 });
-
-        // Add documents
-        for (const doc of documents) {
-          const analysis = doc.analysis || {};
-          const organization = doc.organization || {};
-
-          // FIX: Use current path/name after organization, not original path
-          // If file was moved/renamed, use the actual destination path
-          const currentPath = organization.actual || doc.originalPath;
-          const currentName = organization.newName || doc.fileName || '';
-
-          // Use normalizePathForIndex for Windows case-insensitivity consistency
-          // This ensures BM25 index keys match ChromaDB lookups
-          const normalizedPath = normalizePathForIndex(currentPath || '');
-          const canonicalId = getSemanticFileId(normalizedPath);
-
-          // De-dupe: keep the most recent analysis per canonical file ID
-          if (!currentPath || seenIds.has(canonicalId)) {
-            continue;
-          }
-          seenIds.add(canonicalId);
-
-          const normalizedTags = normalizeList(analysis.tags);
-          const normalizedKeyEntities = normalizeList(analysis.keyEntities);
-
-          const indexDoc = {
-            id: canonicalId,
-            fileName: currentName,
-            subject: analysis.subject || '',
-            summary: analysis.summary || '',
-            tags: normalizedTags.join(' '),
-            category: analysis.category || '',
-            entity: analysis.entity || '',
-            project: analysis.project || '',
-            purpose: analysis.purpose || '',
-            documentType: analysis.documentType || analysis.type || '',
-            keyEntities: normalizedKeyEntities.join(' '),
-            documentDate: analysis.documentDate || analysis.date || '',
-            reasoning: analysis.reasoning || '',
-            confidence: analysis.confidence || 0,
-            extractedText: self._truncateText(analysis.extractedText, 5000)
-          };
-
-          this.add(indexDoc);
-
-          // Store document metadata for result enrichment
-          nextDocumentMap.set(canonicalId, {
-            id: canonicalId,
-            analysisId: doc.id,
-            path: currentPath,
-            name: currentName,
-            type: doc.mimeType || 'document',
-            subject: analysis.subject,
-            summary: analysis.summary,
-            tags: normalizedTags,
-            category: analysis.category,
-            entity: analysis.entity || null,
-            project: analysis.project || null,
-            purpose: analysis.purpose || null,
-            documentType: analysis.documentType || analysis.type || null,
-            documentDate: analysis.documentDate || analysis.date || null,
-            reasoning: analysis.reasoning || null,
-            confidence: analysis.confidence,
-            keyEntities: normalizedKeyEntities,
-            dates: analysis.dates || []
-          });
+      const nextIndex = await create({
+        schema: {
+          id: 'string',
+          fileName: 'string',
+          subject: 'string',
+          summary: 'string',
+          tags: 'string[]',
+          category: 'string',
+          entity: 'string',
+          project: 'string',
+          purpose: 'string',
+          documentType: 'string',
+          keyEntities: 'string[]',
+          documentDate: 'string',
+          reasoning: 'string',
+          extractedText: 'string'
         }
       });
+
+      const indexDocs = [];
+      for (const doc of documents) {
+        const analysis = doc.analysis || {};
+        const organization = doc.organization || {};
+
+        // FIX: Use current path/name after organization, not original path
+        // If file was moved/renamed, use the actual destination path
+        const currentPath = organization.actual || doc.originalPath;
+        const currentName = organization.newName || doc.fileName || '';
+
+        // Use normalizePathForIndex for Windows case-insensitivity consistency
+        // This ensures BM25 index keys match vector DB lookups
+        const normalizedPath = normalizePathForIndex(currentPath || '');
+        const canonicalId = getSemanticFileId(normalizedPath);
+
+        // De-dupe: keep the most recent analysis per canonical file ID
+        if (!currentPath || seenIds.has(canonicalId)) {
+          continue;
+        }
+        seenIds.add(canonicalId);
+
+        const normalizedTags = normalizeList(analysis.tags);
+        const normalizedKeyEntities = normalizeList(analysis.keyEntities);
+
+        const indexDoc = {
+          id: canonicalId,
+          fileName: currentName,
+          subject: analysis.subject || '',
+          summary: analysis.summary || '',
+          tags: normalizedTags,
+          category: analysis.category || '',
+          entity: analysis.entity || '',
+          project: analysis.project || '',
+          purpose: analysis.purpose || '',
+          documentType: analysis.documentType || analysis.type || '',
+          keyEntities: normalizedKeyEntities,
+          documentDate: analysis.documentDate || analysis.date || '',
+          reasoning: analysis.reasoning || '',
+          extractedText: this._truncateText(analysis.extractedText, 5000)
+        };
+
+        indexDocs.push(indexDoc);
+
+        // Store document metadata for result enrichment
+        nextDocumentMap.set(canonicalId, {
+          id: canonicalId,
+          analysisId: doc.id,
+          path: currentPath,
+          name: currentName,
+          type: doc.mimeType || 'document',
+          subject: analysis.subject,
+          summary: analysis.summary,
+          tags: normalizedTags,
+          category: analysis.category,
+          entity: analysis.entity || null,
+          project: analysis.project || null,
+          purpose: analysis.purpose || null,
+          documentType: analysis.documentType || analysis.type || null,
+          documentDate: analysis.documentDate || analysis.date || null,
+          reasoning: analysis.reasoning || null,
+          confidence: analysis.confidence,
+          keyEntities: normalizedKeyEntities,
+          dates: analysis.dates || []
+        });
+      }
+
+      if (indexDocs.length > 0) {
+        await insertMultiple(nextIndex, indexDocs);
+      }
 
       // Commit the new index atomically.
       this.bm25Index = nextIndex;
@@ -404,38 +407,9 @@ class SearchService {
       this.indexBuiltAt = Date.now();
       this.indexVersion++;
 
-      // Cache serialized index for faster subsequent loads (with size limit)
-      // Lunr indexes support JSON serialization
-      try {
-        // Release old serialized caches before creating new ones to avoid
-        // holding both old and new serialized strings in memory simultaneously.
-        this._serializedIndex = null;
-        this._serializedDocMap = null;
-
-        const serializedIndex = JSON.stringify(this.bm25Index);
-        const serializedDocMap = JSON.stringify(Array.from(this.documentMap.entries()));
-        const totalSize =
-          Buffer.byteLength(serializedIndex, 'utf8') + Buffer.byteLength(serializedDocMap, 'utf8');
-
-        if (totalSize < this._maxCacheSize) {
-          this._serializedIndex = serializedIndex;
-          this._serializedDocMap = serializedDocMap;
-          logger.debug(
-            `[SearchService] Index serialized for caching (${Math.round(totalSize / 1024)}KB)`
-          );
-        } else {
-          // Clear cache if too large to prevent memory issues
-          this._serializedIndex = null;
-          this._serializedDocMap = null;
-          logger.warn(
-            `[SearchService] Index too large to cache (${Math.round(totalSize / 1024 / 1024)}MB > ${this._maxCacheSize / 1024 / 1024}MB limit)`
-          );
-        }
-      } catch (serializeErr) {
-        logger.warn('[SearchService] Failed to serialize index:', serializeErr.message);
-        this._serializedIndex = null;
-        this._serializedDocMap = null;
-      }
+      // Clear legacy serialized caches (Orama index is kept in memory)
+      this._serializedIndex = null;
+      this._serializedDocMap = null;
 
       // Log sample of indexed content for debugging
       const sampleDocs = documents.slice(0, 3).map((d) => ({
@@ -459,30 +433,7 @@ class SearchService {
    * @returns {boolean} True if loaded from cache
    */
   _tryLoadFromCache() {
-    if (!this._serializedIndex || !this._serializedDocMap) {
-      return false;
-    }
-
-    try {
-      const startTime = Date.now();
-
-      // Release old references before assigning new ones to avoid
-      // holding both old and new data structures in memory simultaneously.
-      this.bm25Index = null;
-      this.documentMap = new Map();
-
-      this.bm25Index = lunr.Index.load(JSON.parse(this._serializedIndex));
-      this.documentMap = new Map(JSON.parse(this._serializedDocMap));
-      this.indexBuiltAt = Date.now();
-
-      logger.info(`[SearchService] Index loaded from cache in ${Date.now() - startTime}ms`);
-      return true;
-    } catch (error) {
-      logger.warn('[SearchService] Failed to load from cache:', error.message);
-      this._serializedIndex = null;
-      this._serializedDocMap = null;
-      return false;
-    }
+    return false;
   }
 
   /**
@@ -513,7 +464,7 @@ class SearchService {
   async _normalizeQueryVector(vector, collectionType) {
     if (!Array.isArray(vector) || vector.length === 0) return null;
     try {
-      const expectedDim = await this.chromaDb.getCollectionDimension(collectionType);
+      const expectedDim = await this.vectorDb.getCollectionDimension(collectionType);
 
       // If collection is empty, any dimension is valid
       if (expectedDim == null) return vector;
@@ -542,7 +493,7 @@ class SearchService {
       return vector;
     } catch (e) {
       // FIX C-1: Re-throw dimension mismatch errors so UI can display actionable message
-      // Other errors (like ChromaDB unavailable) can fail safely to null
+      // Other errors (like vector DB unavailable) can fail safely to null
       if (e.isDimensionMismatch) {
         throw e; // Propagate to UI with clear message
       }
@@ -559,35 +510,47 @@ class SearchService {
    * @param {number} topK - Number of results to return
    * @returns {Array} Search results with scores
    */
-  bm25Search(query, topK = 20) {
+  async bm25Search(query, topK = 20) {
     if (!this.bm25Index) {
       logger.warn('[SearchService] BM25 index not built');
       return [];
     }
 
     try {
-      // Escape special lunr characters
-      const safeQuery = this._escapeLunrQuery(query);
-      logger.debug(`[SearchService] BM25 search query: "${query}" -> escaped: "${safeQuery}"`);
-      const results = this.bm25Index.search(safeQuery);
-      logger.debug(`[SearchService] BM25 raw results: ${results.length}`);
+      const trimmedQuery = typeof query === 'string' ? query.trim() : '';
+      if (!trimmedQuery) return [];
+      logger.debug(`[SearchService] BM25 search query: "${trimmedQuery}"`);
 
-      const mapped = results.slice(0, topK).map((result) => {
-        const meta = this.documentMap.get(result.ref) || {};
-
-        // Extract matched terms and fields from Lunr matchData for match explanations
-        const matchedTerms = [];
-        const matchedFields = new Set();
-
-        if (result.matchData && result.matchData.metadata) {
-          Object.entries(result.matchData.metadata).forEach(([term, fields]) => {
-            matchedTerms.push(term);
-            Object.keys(fields).forEach((field) => matchedFields.add(field));
-          });
+      const results = await oramaSearch(this.bm25Index, {
+        term: trimmedQuery,
+        limit: topK,
+        boost: {
+          fileName: 3,
+          subject: 2,
+          summary: 1.5,
+          tags: 2,
+          category: 1.5,
+          entity: 1.4,
+          project: 1.4,
+          purpose: 1.2,
+          documentType: 1.2,
+          keyEntities: 1.2,
+          documentDate: 0.8,
+          reasoning: 0.6,
+          extractedText: 2.5
         }
+      });
+      const hits = Array.isArray(results?.hits) ? results.hits : [];
+      logger.debug(`[SearchService] BM25 raw results: ${hits.length}`);
+
+      const queryTerms = this._extractQueryTerms(trimmedQuery);
+      const mapped = hits.slice(0, topK).map((result) => {
+        const meta = this.documentMap.get(result.id) || {};
+        const doc = result.document || {};
+        const { matchedFields, matchedTerms } = this._inferMatchDetails(queryTerms, doc);
 
         return {
-          id: result.ref,
+          id: result.id,
           score: result.score,
           metadata: {
             path: meta.path,
@@ -601,7 +564,7 @@ class SearchService {
           source: 'bm25',
           matchDetails: {
             matchedTerms: matchedTerms.slice(0, 5), // Limit to top 5 terms
-            matchedFields: Array.from(matchedFields)
+            matchedFields
           }
         };
       });
@@ -625,21 +588,66 @@ class SearchService {
     }
   }
 
-  /**
-   * Escape special characters for lunr query
-   *
-   * @param {string} query - Raw query string
-   * @returns {string} Escaped query
-   */
-  _escapeLunrQuery(query) {
-    if (!query || typeof query !== 'string') return '';
+  _extractQueryTerms(query) {
+    if (!query || typeof query !== 'string') return [];
+    return query
+      .toLowerCase()
+      .replace(/[^\w\s-]+/g, ' ')
+      .split(/\s+/)
+      .map((term) => term.trim())
+      .filter((term) => term.length > 1);
+  }
 
-    // Escape lunr special characters: + - && || ! ( ) { } [ ] ^ " ~ * ? : \
-    return query.replace(/[+\-&|!(){}[\]^"~*?:\\/]/g, ' ').trim();
+  _inferMatchDetails(queryTerms, doc = {}) {
+    if (!queryTerms.length) {
+      return { matchedFields: [], matchedTerms: [] };
+    }
+
+    const toText = (value) => {
+      if (!value) return '';
+      if (Array.isArray(value)) return value.join(' ');
+      return String(value);
+    };
+
+    const fields = {
+      fileName: toText(doc.fileName),
+      subject: toText(doc.subject),
+      summary: toText(doc.summary),
+      tags: toText(doc.tags),
+      category: toText(doc.category),
+      entity: toText(doc.entity),
+      project: toText(doc.project),
+      purpose: toText(doc.purpose),
+      documentType: toText(doc.documentType),
+      keyEntities: toText(doc.keyEntities),
+      documentDate: toText(doc.documentDate),
+      reasoning: toText(doc.reasoning),
+      extractedText: toText(doc.extractedText)
+    };
+
+    const matchedFields = [];
+    const matchedTerms = new Set();
+
+    for (const [field, rawValue] of Object.entries(fields)) {
+      if (!rawValue) continue;
+      const value = rawValue.toLowerCase();
+      let matched = false;
+      for (const term of queryTerms) {
+        if (value.includes(term)) {
+          matched = true;
+          matchedTerms.add(term);
+        }
+      }
+      if (matched) {
+        matchedFields.push(field);
+      }
+    }
+
+    return { matchedFields, matchedTerms: Array.from(matchedTerms) };
   }
 
   /**
-   * Search using vector similarity via ChromaDB
+   * Search using vector similarity via the vector DB
    *
    * @param {string} query - Search query
    * @param {number} topK - Number of results to return
@@ -664,12 +672,12 @@ class SearchService {
         return [];
       }
 
-      // Query ChromaDB
-      const chromaResults = await this.chromaDb.querySimilarFiles(queryVector, topK);
-      logger.debug(`[SearchService] ChromaDB returned ${chromaResults?.length || 0} results`);
+      // Query Orama
+      const vectorResults = await this.vectorDb.querySimilarFiles(queryVector, topK);
+      logger.debug(`[SearchService] Vector DB returned ${vectorResults?.length || 0} results`);
 
-      if (!chromaResults || !Array.isArray(chromaResults)) {
-        logger.warn('[SearchService] ChromaDB returned no results or invalid format');
+      if (!vectorResults || !Array.isArray(vectorResults)) {
+        logger.warn('[SearchService] Vector DB returned no results or invalid format');
         return [];
       }
 
@@ -679,9 +687,9 @@ class SearchService {
         .split(/\s+/)
         .filter((w) => w.length > 2);
 
-      return chromaResults.map((result) => {
+      return vectorResults.map((result) => {
         // FIX: Use score if available, otherwise convert distance to similarity
-        // ChromaDB cosine distance is in range [0, 2], convert with: 1 - distance/2
+        // Vector DB cosine distance is in range [0, 2], convert with: 1 - distance/2
         // Also handle score=0 as a valid score (not falsy fallback)
         const semanticScore =
           typeof result.score === 'number'
@@ -689,7 +697,7 @@ class SearchService {
             : Math.max(0, 1 - (result.distance || 0) / 2);
         const metadata = result.metadata || {};
 
-        // FIX: Tags are stored as JSON string in ChromaDB, need to parse them
+        // FIX: Tags are stored as JSON string in vector DB, need to parse them
         let tags = [];
         if (Array.isArray(metadata.tags)) {
           tags = metadata.tags;
@@ -750,12 +758,9 @@ class SearchService {
     try {
       // Inspect chunk collection availability and count
       try {
-        const chunkCollection = this.chromaDb?.fileChunkCollection;
-        if (!chunkCollection) {
-          logger.warn('[SearchService] Chunk collection unavailable; skipping chunk search');
-          return [];
-        }
-        const chunkCount = (await chunkCollection.count?.()) ?? null;
+        const stats = await this.vectorDb.getStats();
+        const chunkCount = stats?.fileChunks || 0;
+
         if (chunkCount === 0) {
           logger.debug('[SearchService] Chunk collection empty; no chunk results available');
           return [];
@@ -780,7 +785,7 @@ class SearchService {
         return [];
       }
 
-      const chunkResults = await this.chromaDb.querySimilarFileChunks(queryVector, topKChunks);
+      const chunkResults = await this.vectorDb.querySimilarFileChunks(queryVector, topKChunks);
       if (!Array.isArray(chunkResults) || chunkResults.length === 0) {
         logger.debug('[SearchService] Chunk search returned no results');
         return [];
@@ -842,8 +847,8 @@ class SearchService {
       chunkContextMaxChars = DEFAULT_OPTIONS.chunkContextMaxChars
     } = options;
 
-    const chunkCollection = this.chromaDb?.fileChunkCollection;
-    if (!chunkCollection) return;
+    // Requires OramaVectorService.getChunksForFile() to retrieve neighboring chunks
+    if (typeof this.vectorDb?.getChunksForFile !== 'function') return;
 
     const candidates = results
       .filter((r) => Number.isInteger(r?.matchDetails?.chunkIndex))
@@ -851,25 +856,19 @@ class SearchService {
 
     if (candidates.length === 0) return;
 
+    // Cache chunk maps per file to avoid redundant DB queries
     const chunkMaps = new Map();
     const loadChunkMap = async (fileId) => {
       if (chunkMaps.has(fileId)) return chunkMaps.get(fileId);
       try {
-        const response = await chunkCollection.get({
-          where: { fileId },
-          include: ['metadatas', 'documents']
-        });
-        const ids = response?.ids || [];
-        const metadatas = response?.metadatas || [];
-        const documents = response?.documents || [];
+        const chunks = await this.vectorDb.getChunksForFile(fileId);
         const map = new Map();
-        for (let i = 0; i < ids.length; i += 1) {
-          const meta = metadatas[i] || {};
-          const index = Number.isInteger(meta.chunkIndex) ? meta.chunkIndex : null;
-          if (index == null) continue;
-          const doc = documents[i] || meta.snippet || '';
-          if (typeof doc === 'string' && doc.trim().length > 0) {
-            map.set(index, doc);
+        for (const chunk of chunks) {
+          if (Number.isInteger(chunk.chunkIndex)) {
+            const text = chunk.text || chunk.snippet || '';
+            if (text.trim().length > 0) {
+              map.set(chunk.chunkIndex, text);
+            }
           }
         }
         chunkMaps.set(fileId, map);
@@ -1184,7 +1183,7 @@ class SearchService {
         });
 
         // Prefer vector search metadata (has current file names) over BM25 (may have old names)
-        // Vector search uses ChromaDB which is updated when files are organized
+        // Vector search uses the vector DB which is updated when files are organized
         const existing = resultData.get(id);
         if (!existing || (result.source === 'vector' && existing.source !== 'vector')) {
           resultData.set(id, result);
@@ -1346,12 +1345,12 @@ class SearchService {
     }
 
     // Trigger async cleanup of ghost entries (don't block search response)
-    if (triggerCleanup && ghostIds.length > 0 && this.chromaDb) {
+    if (triggerCleanup && ghostIds.length > 0 && this.vectorDb) {
       setImmediate(async () => {
         try {
-          // Delete ghost entries from ChromaDB
-          if (typeof this.chromaDb.batchDeleteFileEmbeddings === 'function') {
-            await this.chromaDb.batchDeleteFileEmbeddings(ghostIds);
+          // Delete ghost entries from vector DB
+          if (typeof this.vectorDb.batchDeleteFileEmbeddings === 'function') {
+            await this.vectorDb.batchDeleteFileEmbeddings(ghostIds);
             logger.info('[SearchService] Cleaned up ghost entries from search results', {
               count: ghostIds.length
             });
@@ -1468,12 +1467,11 @@ class SearchService {
     try {
       // Log collection and index status to aid troubleshooting
       try {
-        const fileCount = await this.chromaDb?.fileCollection?.count?.();
-        const chunkCount = await this.chromaDb?.fileChunkCollection?.count?.();
+        const stats = await this.vectorDb?.getStats?.();
         const bm25Status = this.getIndexStatus();
         logger.debug('[SearchService] Search preflight status', {
-          fileEmbeddings: fileCount,
-          chunkEmbeddings: chunkCount,
+          fileEmbeddings: stats?.files || 0,
+          chunkEmbeddings: stats?.fileChunks || 0,
           bm25Indexed: bm25Status.documentCount,
           bm25Stale: bm25Status.isStale,
           topK,
@@ -1497,7 +1495,7 @@ class SearchService {
       // Handle different search modes
       if (mode === 'bm25') {
         // Use expanded query for BM25 (benefits from synonyms)
-        const results = this.bm25Search(processedQuery, topK);
+        const results = await this.bm25Search(processedQuery, topK);
         const filtered = this._filterByScore(results, minScore);
         return { success: true, results: filtered, mode: 'bm25', queryMeta };
       }
@@ -1512,7 +1510,7 @@ class SearchService {
 
       // Hybrid mode: combine both search types with timeout protection
       // FIX P2-1: Use expanded query for BM25, normalized for vector (consistent preprocessing)
-      const bm25Results = this.bm25Search(processedQuery, topK * 2);
+      const bm25Results = await this.bm25Search(processedQuery, topK * 2);
       const { results: vectorResults, timedOut } = await this._vectorSearchWithTimeout(
         normalizedQuery,
         topK * 2
@@ -1753,11 +1751,50 @@ class SearchService {
         this._autoRunDiagnostics('Vector search returned 0 results with BM25 having results');
       }
 
+      // Vector + BM25 both empty: check if embeddings exist but are orphaned or unavailable
+      if (vectorResults.length === 0 && bm25Results.length === 0) {
+        try {
+          const stats = await this.vectorDb.getStats();
+          const fileCount = stats?.files || 0;
+          if (fileCount === 0) {
+            diagnosticWarnings.push({
+              type: 'VECTOR_DB_EMPTY',
+              severity: 'medium',
+              message: 'No embeddings are available yet. Analyze files or run "Rebuild Embeddings".'
+            });
+          } else {
+            diagnosticWarnings.push({
+              type: 'VECTOR_SEARCH_EMPTY',
+              severity: 'high',
+              message:
+                'Search returned no results while embeddings exist. This can indicate all embeddings are orphaned or the embedding model is unavailable.'
+            });
+            try {
+              const orphaned = await this.vectorDb.getOrphanedEmbeddings();
+              if (orphaned.length >= fileCount) {
+                diagnosticWarnings.push({
+                  type: 'ALL_EMBEDDINGS_ORPHANED',
+                  severity: 'high',
+                  message:
+                    'All embeddings appear orphaned. Run "Rebuild Embeddings" or rescan your folders.'
+                });
+              }
+            } catch {
+              // Non-fatal orphan check
+            }
+            this._autoRunDiagnostics('Search returned no results while embeddings exist');
+          }
+        } catch {
+          // Non-fatal
+        }
+      }
+
       // Chunk search empty when file embeddings exist indicates chunks weren't built
       if (chunkResults.length === 0 && vectorResults.length > 0) {
         // Only warn if file collection has entries (otherwise chunk collection being empty is expected)
         try {
-          const chunkCount = (await this.chromaDb?.fileChunkCollection?.count?.()) || 0;
+          const stats = await this.vectorDb.getStats();
+          const chunkCount = stats?.fileChunks || 0;
           if (chunkCount === 0) {
             diagnosticWarnings.push({
               type: 'CHUNKS_NOT_BUILT',
@@ -1824,7 +1861,7 @@ class SearchService {
 
       // Last resort: try BM25-only on complete failure
       try {
-        const bm25Results = this.bm25Search(query, topK);
+        const bm25Results = await this.bm25Search(query, topK);
         if (bm25Results.length > 0) {
           logger.info('[SearchService] Falling back to BM25-only after hybrid failure');
           const filtered = this._filterByScore(bm25Results, minScore);
@@ -1977,12 +2014,12 @@ class SearchService {
    *
    * @param {Object} options - Warm-up options
    * @param {boolean} [options.buildBM25=true] - Build BM25 index
-   * @param {boolean} [options.warmChroma=true] - Warm ChromaDB connection
-   * @returns {Promise<{success: boolean, bm25Indexed: number, chromaReady: boolean}>}
+   * @param {boolean} [options.warmVectorDb=true] - Warm vector DB connection
+   * @returns {Promise<{success: boolean, bm25Indexed: number, vectorDbReady: boolean}>}
    */
   async warmUp(options = {}) {
-    const { buildBM25 = true, warmChroma = true } = options;
-    const result = { success: true, bm25Indexed: 0, chromaReady: false };
+    const { buildBM25 = true, warmVectorDb = true } = options;
+    const result = { success: true, bm25Indexed: 0, vectorDbReady: false };
 
     try {
       logger.info('[SearchService] Starting warm-up...');
@@ -1999,11 +2036,11 @@ class SearchService {
         );
       }
 
-      // Warm ChromaDB connection
-      if (warmChroma && this.chromaDb) {
+      // Warm vector DB connection
+      if (warmVectorDb && this.vectorDb) {
         tasks.push(
-          this.chromaDb.initialize().then(() => {
-            result.chromaReady = true;
+          this.vectorDb.initialize().then(() => {
+            result.vectorDbReady = true;
             return true;
           })
         );
@@ -2036,30 +2073,27 @@ class SearchService {
 
   /**
    * Get embedding health diagnostics
-   * Analyzes ChromaDB state, model distribution, and orphaned entries
+   * Analyzes vector DB state, model distribution, and orphaned entries
    *
    * @returns {Promise<Object>} Health report
    */
   async getEmbeddingHealth() {
     try {
-      const stats = await this.chromaDb.getStats();
+      const stats = await this.vectorDb.getStats();
       const historyEntries = this.history.analysisHistory?.entries || {};
       const historyCount = Object.keys(historyEntries).length;
 
       // Get sample of file embeddings to check model/dimensions
       const fileSample = [];
       try {
-        if (this.chromaDb.fileCollection) {
-          const result = await this.chromaDb.fileCollection.peek({ limit: 50 });
-          if (result && result.ids && result.ids.length > 0) {
-            // Reconstruct objects from columnar arrays
-            for (let i = 0; i < result.ids.length; i++) {
-              fileSample.push({
-                id: result.ids[i],
-                embedding: result.embeddings ? result.embeddings[i] : [],
-                metadata: result.metadatas ? result.metadatas[i] : {}
-              });
-            }
+        const result = await this.vectorDb.peekFiles(50);
+        if (result && result.ids && result.ids.length > 0) {
+          for (let i = 0; i < result.ids.length; i++) {
+            fileSample.push({
+              id: result.ids[i],
+              embedding: result.embeddings ? result.embeddings[i] : [],
+              metadata: result.metadatas ? result.metadatas[i] : {}
+            });
           }
         }
       } catch (e) {
@@ -2122,20 +2156,21 @@ class SearchService {
     };
 
     try {
-      // 1. Check ChromaDB collection status
+      // 1. Check vector DB collection status
       let fileCount = 0;
       let chunkCount = 0;
       let folderCount = 0;
 
       try {
-        fileCount = (await this.chromaDb?.fileCollection?.count?.()) || 0;
-        chunkCount = (await this.chromaDb?.fileChunkCollection?.count?.()) || 0;
-        folderCount = (await this.chromaDb?.folderCollection?.count?.()) || 0;
+        const stats = await this.vectorDb?.getStats?.();
+        fileCount = stats?.files || 0;
+        chunkCount = stats?.fileChunks || 0;
+        folderCount = stats?.folders || 0;
       } catch (e) {
         diagnostics.issues.push({
-          type: 'CHROMADB_ERROR',
+          type: 'VECTOR_DB_ERROR',
           severity: 'critical',
-          message: `ChromaDB connection error: ${e.message}`
+          message: `Vector DB connection error: ${e.message}`
         });
       }
 
@@ -2194,7 +2229,7 @@ class SearchService {
       let dimensionMismatch = false;
 
       try {
-        storedDimension = await this.chromaDb.getCollectionDimension('files');
+        storedDimension = await this.vectorDb.getCollectionDimension('files');
         diagnostics.details.storedDimension = storedDimension;
 
         // Generate a test embedding to check current model dimensions
@@ -2222,10 +2257,10 @@ class SearchService {
             type: 'EMBEDDING_GENERATION_FAILED',
             severity: 'critical',
             message:
-              'Failed to generate test embedding. Ollama may not be running or embedding model may not be available.'
+              'Failed to generate test embedding. The AI engine may be unavailable or the embedding model is missing.'
           });
           diagnostics.recommendations.push(
-            'Ensure Ollama is running and the embedding model is installed (ollama pull embeddinggemma).'
+            'Ensure the embedding model is downloaded and available in Settings > Models.'
           );
         }
       } catch (e) {
@@ -2239,7 +2274,7 @@ class SearchService {
       // 4. Check chunk collection dimension (for hybrid search)
       if (chunkCount > 0 && !dimensionMismatch) {
         try {
-          const chunkDimension = await this.chromaDb.getCollectionDimension('fileChunks');
+          const chunkDimension = await this.vectorDb.getCollectionDimension('fileChunks');
           diagnostics.details.chunkDimension = chunkDimension;
 
           if (chunkDimension && queryDimension && chunkDimension !== queryDimension) {
@@ -2285,45 +2320,48 @@ class SearchService {
         // Non-critical
       }
 
-      // 6. Check Ollama health status
+      // 6. Check AI engine health status
       try {
-        if (this.ollamaService?.getHealthStatus) {
-          const healthStatus = await this.ollamaService.getHealthStatus();
-          const ollamaHealth = healthStatus?.resilientClient || {};
-          diagnostics.details.ollama = {
-            isHealthy: ollamaHealth.isHealthy ?? healthStatus?.available ?? false,
-            consecutiveFailures: ollamaHealth.consecutiveFailures || 0,
-            lastHealthCheck: ollamaHealth.lastHealthCheck,
-            offlineQueueSize: ollamaHealth.offlineQueueSize || 0,
-            available: healthStatus?.available,
-            latencyMs: healthStatus?.latencyMs
+        if (this.llamaService?.getHealthStatus) {
+          const healthStatus = this.llamaService.getHealthStatus();
+          // LlamaService.getHealthStatus() returns { initialized, gpuBackend, metrics, memory }
+          diagnostics.details.llama = {
+            isHealthy: healthStatus?.initialized ?? false,
+            gpuBackend: healthStatus?.gpuBackend || 'none',
+            metrics: healthStatus?.metrics || {},
+            memory: healthStatus?.memory || {}
           };
 
-          if (!diagnostics.details.ollama.isHealthy) {
+          if (!diagnostics.details.llama.isHealthy) {
             diagnostics.issues.push({
-              type: 'OLLAMA_UNHEALTHY',
+              type: 'LLAMA_UNHEALTHY',
               severity: 'critical',
-              message: `Ollama server is unhealthy. Consecutive failures: ${ollamaHealth.consecutiveFailures || 0}`
+              message: 'AI engine is not initialized. Check model downloads and AI engine status.'
             });
-            diagnostics.recommendations.push('Check if Ollama is running: ollama serve');
+            diagnostics.recommendations.push('Check model downloads and AI engine status.');
           }
 
-          if (ollamaHealth.offlineQueueSize > 0) {
+          if (
+            healthStatus?.memory?.currentMemoryUsage > 0 &&
+            healthStatus?.memory?.memoryLimit > 0 &&
+            healthStatus.memory.currentMemoryUsage / healthStatus.memory.memoryLimit > 0.9
+          ) {
             diagnostics.warnings.push({
-              type: 'OLLAMA_OFFLINE_QUEUE',
+              type: 'LLAMA_HIGH_MEMORY',
               severity: 'medium',
-              message: `${ollamaHealth.offlineQueueSize} Ollama requests queued offline waiting for server recovery.`
+              message:
+                'AI engine memory usage is above 90%. Consider reducing model sizes or closing other applications.'
             });
           }
         }
       } catch (e) {
-        // Non-critical - Ollama service may not be available
-        logger.debug('[SearchService] Could not get Ollama health status:', e.message);
+        // Non-critical - AI service may not be available
+        logger.debug('[SearchService] Could not get AI health status:', e.message);
       }
 
-      // 7. Check ChromaDB circuit breaker status
+      // 7. Check vector DB circuit breaker status
       try {
-        const circuitStats = this.chromaDb?.getCircuitStats?.();
+        const circuitStats = this.vectorDb?.getCircuitStats?.();
         if (circuitStats) {
           diagnostics.details.circuitBreaker = circuitStats;
 
@@ -2331,7 +2369,7 @@ class SearchService {
             diagnostics.issues.push({
               type: 'CIRCUIT_BREAKER_OPEN',
               severity: 'critical',
-              message: `ChromaDB circuit breaker is OPEN due to ${circuitStats.failures} failures. All vector operations are blocked.`
+              message: `Vector DB circuit breaker is OPEN due to ${circuitStats.failures} failures. All vector operations are blocked.`
             });
             diagnostics.recommendations.push(
               'Wait for circuit breaker to reset or restart the application.'
@@ -2340,7 +2378,7 @@ class SearchService {
             diagnostics.warnings.push({
               type: 'CIRCUIT_BREAKER_RECOVERING',
               severity: 'medium',
-              message: 'ChromaDB circuit breaker is recovering (HALF_OPEN state).'
+              message: 'Vector DB circuit breaker is recovering (HALF_OPEN state).'
             });
           }
         }
@@ -2348,19 +2386,15 @@ class SearchService {
         // Non-critical
       }
 
-      // 8. Check ChromaDB offline queue status
+      // 8. Check vector DB stats
       try {
-        const queueStats = this.chromaDb?.getQueueStats?.();
-        if (queueStats) {
-          diagnostics.details.chromaOfflineQueue = queueStats;
-
-          if (queueStats.queueSize > 0) {
-            diagnostics.warnings.push({
-              type: 'CHROMADB_OFFLINE_QUEUE',
-              severity: 'medium',
-              message: `${queueStats.queueSize} ChromaDB operations queued offline. These will process when server recovers.`
-            });
-          }
+        const stats = this.vectorDb?.getStats ? await this.vectorDb.getStats() : null;
+        if (stats) {
+          diagnostics.details.vectorDbStats = {
+            files: stats.files || 0,
+            folders: stats.folders || 0,
+            chunks: stats.fileChunks || 0
+          };
         }
       } catch {
         // Non-critical
@@ -2368,7 +2402,7 @@ class SearchService {
 
       // 9. Check query cache stats
       try {
-        const cacheStats = this.chromaDb?.getQueryCacheStats?.();
+        const cacheStats = this.vectorDb?.getQueryCacheStats?.();
         if (cacheStats) {
           diagnostics.details.queryCache = cacheStats;
 
@@ -2450,8 +2484,8 @@ class SearchService {
 
       // 11. Check for orphaned embeddings
       try {
-        const orphanedFiles = await this.chromaDb?.getOrphanedEmbeddings?.({ maxAge: null });
-        const orphanedChunks = await this.chromaDb?.getOrphanedChunks?.({ maxAge: null });
+        const orphanedFiles = await this.vectorDb?.getOrphanedEmbeddings?.(null);
+        const orphanedChunks = await this.vectorDb?.getOrphanedChunks?.(null);
 
         if (orphanedFiles?.length > 0 || orphanedChunks?.length > 0) {
           diagnostics.details.orphaned = {
@@ -2621,19 +2655,16 @@ class SearchService {
     }
     lines.push('');
 
-    // Ollama status
-    if (diagnostics.details?.ollama) {
-      lines.push('OLLAMA STATUS:');
+    // AI engine status
+    if (diagnostics.details?.llama) {
+      lines.push('AI ENGINE STATUS:');
       lines.push(subDivider);
-      lines.push(`  Available:          ${diagnostics.details.ollama.available ? 'YES' : 'NO'}`);
-      lines.push(`  Healthy:            ${diagnostics.details.ollama.isHealthy ? 'YES' : 'NO'}`);
-      if (diagnostics.details.ollama.latencyMs) {
-        lines.push(`  Latency:            ${diagnostics.details.ollama.latencyMs}ms`);
+      lines.push(`  Available:          ${diagnostics.details.llama.available ? 'YES' : 'NO'}`);
+      lines.push(`  Healthy:            ${diagnostics.details.llama.isHealthy ? 'YES' : 'NO'}`);
+      if (diagnostics.details.llama.latencyMs) {
+        lines.push(`  Latency:            ${diagnostics.details.llama.latencyMs}ms`);
       }
-      lines.push(`  Consecutive Fails:  ${diagnostics.details.ollama.consecutiveFailures || 0}`);
-      if (diagnostics.details.ollama.offlineQueueSize > 0) {
-        lines.push(`  Offline Queue:      ${diagnostics.details.ollama.offlineQueueSize}`);
-      }
+      lines.push(`  Consecutive Fails:  ${diagnostics.details.llama.consecutiveFailures || 0}`);
       lines.push('');
     }
 

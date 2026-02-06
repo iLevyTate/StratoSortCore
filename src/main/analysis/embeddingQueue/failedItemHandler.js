@@ -8,7 +8,7 @@
 
 const { logger } = require('../../../shared/logger');
 const { RETRY } = require('../../../shared/performanceConstants');
-const { persistFailedItems, persistDeadLetterQueue } = require('./persistence');
+const { persistFailedItems, persistDeadLetterQueue, SQLITE_KEYS } = require('./persistence');
 
 /**
  * Create a failed item handler instance
@@ -26,7 +26,8 @@ function createFailedItemHandler(config) {
     maxDeadLetterSize,
     maxFailedItemsSize = 1000,
     failedItemsPath,
-    deadLetterPath
+    deadLetterPath,
+    persistenceKeys = SQLITE_KEYS
   } = config;
 
   // State
@@ -83,9 +84,11 @@ function createFailedItemHandler(config) {
     });
 
     // Persist failed items to disk for recovery
-    persistFailedItems(failedItemsPath, failedItems).catch((err) => {
-      logger.warn('[EmbeddingQueue] Failed to persist failed items:', err.message);
-    });
+    persistFailedItems(failedItemsPath, failedItems, { key: persistenceKeys.failedItems }).catch(
+      (err) => {
+        logger.warn('[EmbeddingQueue] Failed to persist failed items:', err.message);
+      }
+    );
 
     logger.debug(
       `[EmbeddingQueue] Tracked failed item ${item.id} (retry ${retryCount}/${itemMaxRetries})`
@@ -127,7 +130,9 @@ function createFailedItemHandler(config) {
     );
 
     // Persist dead letter queue to disk
-    persistDeadLetterQueue(deadLetterPath, deadLetterQueue).catch((err) => {
+    persistDeadLetterQueue(deadLetterPath, deadLetterQueue, {
+      key: persistenceKeys.deadLetter
+    }).catch((err) => {
       logger.warn('[EmbeddingQueue] Failed to persist dead letter queue:', err.message);
     });
   }
@@ -174,7 +179,7 @@ function createFailedItemHandler(config) {
       // Use splice(0, 0, ...batch) in chunks to avoid stack overflow and O(n*m) unshift loop
       queue.splice(0, 0, ...itemsToRetry);
       await persistQueue();
-      await persistFailedItems(failedItemsPath, failedItems);
+      await persistFailedItems(failedItemsPath, failedItems, { key: persistenceKeys.failedItems });
     }
   }
 
@@ -194,7 +199,9 @@ function createFailedItemHandler(config) {
   async function clearDeadLetterQueue() {
     const count = deadLetterQueue.length;
     deadLetterQueue = [];
-    await persistDeadLetterQueue(deadLetterPath, deadLetterQueue);
+    await persistDeadLetterQueue(deadLetterPath, deadLetterQueue, {
+      key: persistenceKeys.deadLetter
+    });
     logger.info(`[EmbeddingQueue] Cleared ${count} items from dead letter queue`);
     return count;
   }
@@ -216,7 +223,9 @@ function createFailedItemHandler(config) {
     const entry = deadLetterQueue.splice(index, 1)[0];
     queue.push(entry.item);
     await persistQueue();
-    await persistDeadLetterQueue(deadLetterPath, deadLetterQueue);
+    await persistDeadLetterQueue(deadLetterPath, deadLetterQueue, {
+      key: persistenceKeys.deadLetter
+    });
     logger.info(`[EmbeddingQueue] Manually re-queued dead letter item ${itemId}`);
     return true;
   }
@@ -240,7 +249,9 @@ function createFailedItemHandler(config) {
       queue.push(item);
     }
     await persistQueue();
-    await persistDeadLetterQueue(deadLetterPath, deadLetterQueue);
+    await persistDeadLetterQueue(deadLetterPath, deadLetterQueue, {
+      key: persistenceKeys.deadLetter
+    });
     logger.info(`[EmbeddingQueue] Manually re-queued ${count} dead letter items`);
     return count;
   }
@@ -257,8 +268,10 @@ function createFailedItemHandler(config) {
    * Persist all state
    */
   async function persistAll() {
-    await persistFailedItems(failedItemsPath, failedItems);
-    await persistDeadLetterQueue(deadLetterPath, deadLetterQueue);
+    await persistFailedItems(failedItemsPath, failedItems, { key: persistenceKeys.failedItems });
+    await persistDeadLetterQueue(deadLetterPath, deadLetterQueue, {
+      key: persistenceKeys.deadLetter
+    });
   }
 
   /**

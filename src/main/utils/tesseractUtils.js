@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { logger: baseLogger, createLogger } = require('../../shared/logger');
 const { resolveRuntimePath } = require('./runtimePaths');
+const { getOcrPool, destroyOcrPool, shouldUsePiscina } = require('./workerPools');
 
 const execFileAsync = promisify(execFile);
 
@@ -86,6 +87,17 @@ async function isTesseractAvailable() {
         binaryPath,
         error: error.message
       });
+      try {
+        if (shouldUsePiscina()) {
+          getOcrPool();
+          availabilityCache = { value: true, checkedAt: Date.now() };
+          return true;
+        }
+      } catch (poolError) {
+        logger?.warn?.('[OCR] OCR worker pool unavailable, falling back', {
+          error: poolError.message
+        });
+      }
       try {
         await getJsWorker();
         availabilityCache = { value: true, checkedAt: Date.now() };
@@ -171,6 +183,23 @@ async function ensureJsWorkerLanguage(worker, lang = 'eng') {
 }
 
 async function recognizeWithTesseractJs(input, options = {}) {
+  const pool = getOcrPool();
+  if (pool) {
+    try {
+      const result = await pool.run({ input, options });
+      // FIX: ocrWorker now returns { text, error? } instead of throwing
+      // to prevent uncaught exceptions in the Piscina thread
+      if (result?.error) {
+        throw new Error(result.error);
+      }
+      return result?.text || '';
+    } catch (error) {
+      logger?.warn?.('[OCR] Worker pool failed, falling back to local worker', {
+        error: error.message
+      });
+    }
+  }
+
   const task = async () => {
     const worker = await getJsWorker();
     const lang = options.lang || 'eng';
@@ -236,6 +265,7 @@ async function recognizeIfAvailable(tesseract, input, options = {}) {
  * Safe to call even if no worker was created.
  */
 async function terminateJsWorker() {
+  await destroyOcrPool();
   if (!jsWorkerPromise) return;
   try {
     const worker = await jsWorkerPromise;

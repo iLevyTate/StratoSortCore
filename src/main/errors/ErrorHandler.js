@@ -192,8 +192,7 @@ class ErrorHandler {
 
     if (error instanceof Error) {
       // Determine error type and provide actionable messages
-      // Note: AI/Ollama check comes before network check because Ollama connection
-      // errors should be classified as AI_UNAVAILABLE, not NETWORK_ERROR
+      // AI engine errors are classified before generic network errors
       if (isNotFoundError(error)) {
         errorInfo.type = ERROR_TYPES.FILE_NOT_FOUND;
         errorInfo.message = 'Could not find the file or folder. It may have been moved or deleted.';
@@ -201,18 +200,19 @@ class ErrorHandler {
         errorInfo.type = ERROR_TYPES.PERMISSION_DENIED;
         errorInfo.message =
           'Access denied. Check that you have permission to access this location.';
-      } else if (error.message.includes('AI') || error.message.includes('Ollama')) {
+      } else if (
+        error.message.includes('AI') ||
+        error.message.includes('Llama') ||
+        error.message.includes('llama')
+      ) {
         errorInfo.type = ERROR_TYPES.AI_UNAVAILABLE;
-        // Provide specific guidance based on the error
-        if (error.message.includes('ECONNREFUSED') || error.message.includes('connection')) {
-          errorInfo.message =
-            'Cannot connect to Ollama. Make sure Ollama is running (ollama serve).';
-        } else if (error.message.includes('model')) {
+        if (error.message.includes('model') || error.message.includes('GGUF')) {
           errorInfo.message =
             'AI model not available. Check Settings to ensure your model is installed.';
+        } else if (error.message.includes('OOM') || error.message.includes('memory')) {
+          errorInfo.message = 'Out of memory. Try a smaller model or close other applications.';
         } else {
-          errorInfo.message =
-            'AI service unavailable. Check that Ollama is running and configured in Settings.';
+          errorInfo.message = 'AI engine unavailable. Check Settings > Models and try again.';
         }
       } else if (isNetworkError(error)) {
         errorInfo.type = ERROR_TYPES.NETWORK_ERROR;
@@ -220,7 +220,7 @@ class ErrorHandler {
           errorInfo.message =
             'Request timed out. The AI model may be loading or your system is busy.';
         } else {
-          errorInfo.message = 'Connection issue. Check your network and Ollama status.';
+          errorInfo.message = 'A network-related error occurred. Please try again.';
         }
       } else {
         // Keep original message if it's user-friendly, otherwise provide generic

@@ -14,7 +14,7 @@ const {
   squaredEuclideanDistance,
   validateEmbeddingDimensions
 } = require('../../shared/vectorMath');
-const { getOllamaModel } = require('../ollamaUtils');
+const { getTextModel } = require('../llamaUtils');
 const { AI_DEFAULTS } = require('../../shared/constants');
 const { FILE_TYPE_CATEGORIES } = require('./autoOrganize/fileTypeUtils');
 
@@ -155,17 +155,17 @@ class ClusteringService {
    * Create a new ClusteringService instance
    *
    * @param {Object} dependencies - Service dependencies
-   * @param {Object} dependencies.chromaDbService - ChromaDB service for embeddings
-   * @param {Object} dependencies.ollamaService - Ollama service for label generation
+   * @param {Object} dependencies.vectorDbService - Vector DB service for embeddings
+   * @param {Object} dependencies.llamaService - AI service for label generation
    */
-  constructor({ chromaDbService, ollamaService }) {
+  constructor({ vectorDbService, llamaService }) {
     // Validate required dependency
-    if (!chromaDbService) {
-      throw new Error('ClusteringService requires chromaDbService dependency');
+    if (!vectorDbService) {
+      throw new Error('ClusteringService requires vectorDbService dependency');
     }
 
-    this.chromaDb = chromaDbService;
-    this.ollama = ollamaService; // Optional - label generation will be skipped if null
+    this.vectorDb = vectorDbService;
+    this.llama = llamaService; // Optional - label generation will be skipped if null
 
     // Cached cluster data
     this.clusters = [];
@@ -203,28 +203,23 @@ class ClusteringService {
   }
 
   /**
-   * Get all file embeddings from ChromaDB
+   * Get all file embeddings from the vector DB
    *
    * @returns {Promise<Array>} Array of {id, embedding, metadata}
    */
   async getAllFileEmbeddings() {
     try {
-      await this.chromaDb.initialize();
+      await this.vectorDb.initialize();
 
-      // Null check for fileCollection to prevent runtime crash
-      const { fileCollection } = this.chromaDb;
-      if (!fileCollection) {
+      const MAX_CLUSTERING_EMBEDDINGS = 10000;
+      const result = await this.vectorDb.peekFiles(MAX_CLUSTERING_EMBEDDINGS);
+
+      if (!result || !result.ids) {
         logger.warn('[ClusteringService] File collection not available');
         return [];
       }
 
-      const MAX_CLUSTERING_EMBEDDINGS = 10000;
-      const result = await fileCollection.get({
-        include: ['embeddings', 'metadatas'],
-        limit: MAX_CLUSTERING_EMBEDDINGS
-      });
-
-      if (result.ids && result.ids.length >= MAX_CLUSTERING_EMBEDDINGS) {
+      if (result.ids.length >= MAX_CLUSTERING_EMBEDDINGS) {
         logger.warn(
           `[ClusteringService] Clustering limited to ${MAX_CLUSTERING_EMBEDDINGS} embeddings. Some files may be excluded from cluster analysis.`
         );
@@ -718,7 +713,7 @@ class ClusteringService {
     const summary = meta.summary || meta.description || '';
     const category = meta.category || '';
 
-    // Tags are stored as JSON string in Chroma; normalize to array of strings.
+    // Tags are stored as JSON string; normalize to array of strings.
     let tags = meta.tags || [];
     if (typeof tags === 'string' && tags.trim()) {
       try {
@@ -809,7 +804,7 @@ class ClusteringService {
     const commonTags = this._getCommonTags(members, 0.4);
 
     // 3. Always use LLM to generate cluster name (if available)
-    if (this.ollama) {
+    if (this.llama) {
       try {
         const fileNames = members
           .slice(0, 8)
@@ -848,8 +843,9 @@ Respond with ONLY the cluster name, nothing else.
 
 Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials", "Product Launch Assets", "Client Meeting Notes", "Marketing Campaign Images"`;
 
-        const response = await this.ollama.analyzeText(prompt, {
-          model: getOllamaModel() || AI_DEFAULTS.TEXT.MODEL,
+        const response = await this.llama.generateText({
+          model: getTextModel() || AI_DEFAULTS.TEXT.MODEL,
+          prompt,
           maxTokens: 30
         });
 
@@ -1183,7 +1179,7 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
   }
 
   /**
-   * Get members of a specific cluster with fresh metadata from ChromaDB
+   * Get members of a specific cluster with fresh metadata from the vector DB
    *
    * @param {number} clusterId - Cluster ID
    * @returns {Promise<Array>} Cluster members with current metadata
@@ -1194,25 +1190,34 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
 
     const memberIds = cluster.members.map((m) => m.id);
 
-    // Fetch fresh metadata from ChromaDB to get current file paths/names
+    // Fetch fresh metadata from the vector DB to get current file paths/names
     try {
-      await this.chromaDb.initialize();
+      await this.vectorDb.initialize();
 
-      const result = await this.chromaDb.fileCollection.get({
-        ids: memberIds,
-        include: ['metadatas']
-      });
-
-      // Guard against null/malformed result from ChromaDB
-      if (!result || !Array.isArray(result.ids)) {
-        logger.warn('[ClusteringService] ChromaDB returned invalid result, using cached metadata');
-        return cluster.members.map((m) => ({ id: m.id, metadata: m.metadata }));
-      }
-
-      // Build a map of fresh metadata
+      // Batch-fetch fresh metadata via individual getFile() calls
       const freshMetadata = new Map();
-      for (let i = 0; i < result.ids.length; i++) {
-        freshMetadata.set(result.ids[i], result.metadatas?.[i] || {});
+      await Promise.all(
+        memberIds.map(async (id) => {
+          try {
+            const doc = await this.vectorDb.getFile(id);
+            if (doc) {
+              freshMetadata.set(id, {
+                path: doc.filePath,
+                filePath: doc.filePath,
+                fileName: doc.fileName,
+                fileType: doc.fileType,
+                model: doc.extractionMethod || 'unknown'
+              });
+            }
+          } catch {
+            // Individual fetch failure is non-critical
+          }
+        })
+      );
+
+      if (freshMetadata.size === 0) {
+        logger.warn('[ClusteringService] Vector DB returned no results, using cached metadata');
+        return cluster.members.map((m) => ({ id: m.id, metadata: m.metadata }));
       }
 
       // Return members with fresh metadata (current paths and names)
@@ -1434,26 +1439,33 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
 
     try {
       // Get embeddings for the specified files
-      await this.chromaDb.initialize();
+      await this.vectorDb.initialize();
 
-      const result = await this.chromaDb.fileCollection.get({
-        ids: fileIds,
-        include: ['embeddings', 'metadatas']
-      });
-
-      if (!result.ids || result.ids.length < 2) {
-        return [];
-      }
-
-      // Build a map of id -> embedding
+      // Fetch each file's embedding individually
       const embeddings = new Map();
-      for (let i = 0; i < result.ids.length; i++) {
-        if (result.embeddings?.[i]) {
-          embeddings.set(result.ids[i], {
-            vector: result.embeddings[i],
-            metadata: result.metadatas?.[i] || {}
-          });
-        }
+      await Promise.all(
+        fileIds.map(async (id) => {
+          try {
+            const doc = await this.vectorDb.getFile(id);
+            if (doc && Array.isArray(doc.embedding) && doc.embedding.length > 0) {
+              embeddings.set(id, {
+                vector: doc.embedding,
+                metadata: {
+                  path: doc.filePath,
+                  filePath: doc.filePath,
+                  fileName: doc.fileName,
+                  fileType: doc.fileType
+                }
+              });
+            }
+          } catch {
+            // Individual fetch failure is non-critical
+          }
+        })
+      );
+
+      if (embeddings.size < 2) {
+        return [];
       }
 
       // Compute pairwise similarities
@@ -1536,22 +1548,19 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
     }
 
     try {
-      await this.chromaDb.initialize();
+      await this.vectorDb.initialize();
 
-      // Get all files with embeddings
-      const collection = this.chromaDb.fileCollection;
-      const count = await collection.count();
+      // Get file count from stats
+      const stats = await this.vectorDb.getStats();
+      const fileCount = stats?.files || 0;
 
-      if (count < 2) {
+      if (fileCount < 2) {
         return { success: true, groups: [], totalDuplicates: 0 };
       }
 
       // Get all embeddings (limited to prevent memory issues)
-      const limit = Math.min(count, 1000);
-      const result = await collection.get({
-        limit,
-        include: ['embeddings', 'metadatas']
-      });
+      const limit = Math.min(fileCount, 1000);
+      const result = await this.vectorDb.peekFiles(limit);
 
       if (!result.ids || result.ids.length < 2) {
         return { success: true, groups: [], totalDuplicates: 0 };

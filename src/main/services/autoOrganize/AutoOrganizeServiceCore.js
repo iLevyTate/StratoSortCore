@@ -199,7 +199,7 @@ class AutoOrganizeServiceCore {
           );
 
           if (
-            !batchSuggestions.success ||
+            !batchSuggestions?.success ||
             !batchSuggestions.groups ||
             batchSuggestions.groups.length === 0
           ) {

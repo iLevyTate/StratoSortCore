@@ -10,213 +10,12 @@
 const fs = require('fs').promises;
 const path = require('path');
 const { app } = require('electron');
-const axios = require('axios');
 const { createLogger } = require('../../../shared/logger');
-const { asyncSpawn } = require('../../utils/asyncSpawnUtils');
-const { findOllamaBinary, getOllamaVersion } = require('../../utils/ollamaDetection');
-const { resolveRuntimePath } = require('../../utils/runtimePaths');
-const { isWindows } = require('../../../shared/platformUtils');
 const { withTimeout } = require('../../../shared/promiseUtils');
-const { CHROMA_HEALTH_ENDPOINTS } = require('../../../shared/config/chromaDefaults');
+const { getInstance: getLlamaService } = require('../LlamaService');
+// Vector DB is in-process (Orama) - no external health endpoints needed
 
 const logger = createLogger('StartupManager:Preflight');
-// FIX 3.3: Use consistent timeout from environment or default
-const getDefaultTimeout = () => {
-  const envTimeout = parseInt(process.env.SERVICE_CHECK_TIMEOUT, 10);
-  if (!isNaN(envTimeout) && envTimeout >= 100 && envTimeout <= 60000) {
-    return envTimeout;
-  }
-  return 2000; // Default: 2 seconds
-};
-
-const DEFAULT_AXIOS_TIMEOUT = getDefaultTimeout();
-
-/**
- * Check if Python is installed
- * @returns {Promise<{installed: boolean, version: string|null}>}
- */
-async function checkPythonInstallation() {
-  logger.debug('[PREFLIGHT] Checking Python installation...');
-
-  const embeddedExe = resolveRuntimePath('python', isWindows ? 'python.exe' : 'python3');
-  try {
-    await fs.access(embeddedExe);
-    const embeddedRes = await asyncSpawn(embeddedExe, ['--version'], {
-      timeout: 3000,
-      windowsHide: true,
-      shell: false
-    });
-    if (embeddedRes.status === 0) {
-      const version = (embeddedRes.stdout + embeddedRes.stderr).toString().trim();
-      logger.debug(`[PREFLIGHT] Embedded Python found: ${version}`);
-      return { installed: true, version, source: 'embedded' };
-    }
-  } catch {
-    // fall through to system checks
-  }
-
-  const pythonCommands = isWindows
-    ? [
-        { cmd: 'py', args: ['-3', '--version'] },
-        { cmd: 'python3', args: ['--version'] },
-        { cmd: 'python', args: ['--version'] }
-      ]
-    : [
-        { cmd: 'python3', args: ['--version'] },
-        { cmd: 'python', args: ['--version'] }
-      ];
-
-  for (const { cmd, args } of pythonCommands) {
-    try {
-      logger.debug(`[PREFLIGHT] Trying Python command: ${cmd} ${args.join(' ')}`);
-      const result = await asyncSpawn(cmd, args, {
-        timeout: 3000,
-        windowsHide: true
-      });
-
-      if (result.status === 0) {
-        const version = (result.stdout + result.stderr).toString().trim();
-        logger.debug(`[PREFLIGHT] Python found: ${cmd} - ${version}`);
-        return { installed: true, version, source: 'system' };
-      }
-      logger.debug(`[PREFLIGHT] ${cmd} returned status ${result.status}`);
-    } catch (error) {
-      logger.debug(`[PREFLIGHT] ${cmd} failed: ${error.message}`);
-    }
-  }
-
-  logger.debug('[PREFLIGHT] No Python installation found');
-  return { installed: false, version: null, source: null };
-}
-
-/**
- * Check if Ollama is installed
- * @returns {Promise<{installed: boolean, version: string|null}>}
- */
-async function checkOllamaInstallation() {
-  logger.debug('[PREFLIGHT] Checking Ollama installation...');
-
-  try {
-    const detection = await findOllamaBinary();
-    if (!detection?.found) {
-      return { installed: false, version: null, source: null };
-    }
-    const version = await getOllamaVersion();
-    logger.debug(`[PREFLIGHT] Ollama found: ${version || 'unknown'}`);
-    return { installed: true, version: version || null, source: detection.source || null };
-  } catch (error) {
-    logger.debug(`[PREFLIGHT] Ollama check failed: ${error.message}`);
-    return { installed: false, version: null, source: null };
-  }
-}
-
-/**
- * Check if a port is available
- * @param {string} host - Host to check
- * @param {number} port - Port to check
- * @returns {Promise<boolean>}
- */
-async function isPortAvailable(host, port) {
-  try {
-    await axios.get(`http://${host}:${port}`, {
-      timeout: DEFAULT_AXIOS_TIMEOUT,
-      validateStatus: () => true
-    });
-    // If we get here, something responded on the port, so it's NOT available for binding.
-    return false;
-  } catch (error) {
-    // FIX 3.2: Improved port check logic with better timeout handling
-    // ECONNREFUSED is the reliable signal that nothing is listening
-    if (error?.code === 'ECONNREFUSED') {
-      logger.debug(`[PREFLIGHT] Port ${host}:${port} appears free (${error.code})`);
-      return true;
-    }
-
-    // FIX 3.2: Explicit handling for timeout and connection reset errors
-    // These indicate a service may be bound but unhealthy - treat as occupied
-    if (error?.code === 'ETIMEDOUT' || error?.code === 'ECONNRESET') {
-      logger.debug(`[PREFLIGHT] Port ${host}:${port} check timed out or reset - assuming occupied`);
-      return false;
-    }
-
-    // HTTP response received - port is definitely occupied
-    if (error.response) {
-      logger.debug(`[PREFLIGHT] Port ${host}:${port} in use (HTTP ${error.response.status})`);
-      return false;
-    }
-
-    // FIX: DNS/network errors indicate host is unreachable; treat as not available
-    if (['ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH'].includes(error?.code)) {
-      logger.warn(
-        `[PREFLIGHT] Port check failed for ${host}:${port} (${error.code}); host unreachable`
-      );
-      return false;
-    }
-
-    // Unknown errors - be conservative and treat as occupied to avoid false "free" signal
-    logger.warn(
-      `[PREFLIGHT] Port check inconclusive for ${host}:${port} (${error.code || error.message}); assuming occupied`
-    );
-    return false;
-  }
-}
-
-/**
- * Check if a ChromaDB server is reachable on the given host/port.
- * FIX Issue 2.4: Support both full URLs (with protocol) and host/port pairs
- * @param {string} hostOrUrl - Host name or full URL (e.g., "localhost" or "https://chroma.example.com")
- * @param {number} [port] - Port number (optional if full URL provided)
- * @returns {Promise<boolean>}
- */
-async function isChromaReachable(hostOrUrl, port) {
-  // FIX Issue 2.4: Support HTTPS by allowing full URL or building from host/port
-  let baseUrl;
-  if (hostOrUrl.startsWith('http://') || hostOrUrl.startsWith('https://')) {
-    // Full URL provided - use as-is (may need port appended)
-    const url = new URL(hostOrUrl);
-    if (port && !url.port) {
-      url.port = port;
-    }
-    baseUrl = url.origin;
-  } else {
-    // Host/port provided - build URL with http default
-    baseUrl = `http://${hostOrUrl}:${port}`;
-  }
-
-  // FIX Issue 2.6: Use configurable timeout from environment
-  const timeout = parseInt(process.env.SERVICE_CHECK_TIMEOUT || '2000', 10);
-  const endpoints = CHROMA_HEALTH_ENDPOINTS;
-
-  for (const endpoint of endpoints) {
-    try {
-      const res = await axios.get(`${baseUrl}${endpoint}`, {
-        timeout,
-        validateStatus: () => true
-      });
-      if (res.status === 200) return true;
-    } catch {
-      // try next endpoint
-    }
-  }
-  return false;
-}
-
-/**
- * Check if an Ollama server is reachable on the given host/port.
- * @returns {Promise<boolean>}
- */
-async function isOllamaReachable(host, port) {
-  const baseUrl = `http://${host}:${port}`;
-  try {
-    const res = await axios.get(`${baseUrl}/api/tags`, {
-      timeout: 1000,
-      validateStatus: () => true
-    });
-    return res.status === 200;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * FIX Issue 3.7: Validate environment variables before startup
@@ -225,32 +24,6 @@ async function isOllamaReachable(host, port) {
  */
 function validateEnvironmentVariables() {
   const errors = [];
-
-  // Validate OLLAMA_BASE_URL format
-  if (process.env.OLLAMA_BASE_URL) {
-    try {
-      new URL(process.env.OLLAMA_BASE_URL);
-    } catch {
-      errors.push(`OLLAMA_BASE_URL is not a valid URL: "${process.env.OLLAMA_BASE_URL}"`);
-    }
-  }
-
-  // Validate CHROMA_SERVER_URL format
-  if (process.env.CHROMA_SERVER_URL) {
-    try {
-      new URL(process.env.CHROMA_SERVER_URL);
-    } catch {
-      errors.push(`CHROMA_SERVER_URL is not a valid URL: "${process.env.CHROMA_SERVER_URL}"`);
-    }
-  }
-
-  // Validate CHROMA_SERVER_PORT is a valid port number
-  if (process.env.CHROMA_SERVER_PORT) {
-    const port = parseInt(process.env.CHROMA_SERVER_PORT, 10);
-    if (isNaN(port) || port < 1 || port > 65535) {
-      errors.push(`CHROMA_SERVER_PORT must be 1-65535, got: "${process.env.CHROMA_SERVER_PORT}"`);
-    }
-  }
 
   // Validate SERVICE_CHECK_TIMEOUT is a positive number
   if (process.env.SERVICE_CHECK_TIMEOUT) {
@@ -331,70 +104,23 @@ async function runPreflightChecks({ reportProgress, errors }) {
     });
   }
 
-  // FIX: Run checks 2-5 in PARALLEL to save 6-12 seconds of startup time
-  logger.debug('[PREFLIGHT] Running Python, Ollama, ports, and disk checks in parallel...');
+  // Run AI engine, model availability, and disk checks in parallel
+  logger.debug('[PREFLIGHT] Running AI engine, model, and disk checks in parallel...');
 
-  const [pythonResult, ollamaResult, portsResult, diskResult] = await Promise.allSettled([
-    // Check 2: Python installation
+  const [aiResult, modelsResult, diskResult] = await Promise.allSettled([
     (async () => {
-      logger.debug('[PREFLIGHT] Starting Python installation check...');
-      const pythonCheck = await checkPythonInstallation();
-      logger.debug(
-        `[PREFLIGHT] Python check result: installed=${pythonCheck.installed}, version=${pythonCheck.version}`
-      );
-      return pythonCheck;
+      const service = getLlamaService();
+      return await service.testConnection();
     })(),
-
-    // Check 3: Ollama installation
     (async () => {
-      logger.debug('[PREFLIGHT] Starting Ollama installation check...');
-      const ollamaCheck = await checkOllamaInstallation();
-      logger.debug(
-        `[PREFLIGHT] Ollama check result: installed=${ollamaCheck.installed}, version=${ollamaCheck.version}`
-      );
-      return ollamaCheck;
+      const service = getLlamaService();
+      const cfg = await service.getConfig();
+      const models = await service.listModels();
+      const available = new Set(models.map((m) => m.name));
+      const required = [cfg.textModel, cfg.visionModel, cfg.embeddingModel].filter(Boolean);
+      const missing = required.filter((m) => !available.has(m));
+      return { required, missing, availableCount: models.length, config: cfg };
     })(),
-
-    // Check 4: Port availability (runs ChromaDB and Ollama reachability in parallel too)
-    (async () => {
-      logger.debug('[PREFLIGHT] Starting port availability check...');
-      const chromaPort = parseInt(process.env.CHROMA_SERVER_PORT, 10) || 8000;
-      const ollamaPort = 11434;
-      logger.debug(`[PREFLIGHT] Checking ports: ChromaDB=${chromaPort}, Ollama=${ollamaPort}`);
-
-      // FIX 3.1: Atomic port check - combines reachability and port availability in single operation
-      // This prevents race conditions where port state could change between separate checks
-      const atomicPortCheck = async (host, port, reachabilityFn, serviceName) => {
-        const reachable = await reachabilityFn(host, port);
-        if (reachable) {
-          logger.debug(`[PREFLIGHT] ${serviceName} is reachable on ${host}:${port}`);
-          return { reachable: true, portFree: false };
-        }
-        // Only check port availability if service isn't reachable
-        const portFree = await isPortAvailable(host, port);
-        logger.debug(
-          `[PREFLIGHT] ${serviceName} not reachable, port ${host}:${port} is ${portFree ? 'free' : 'occupied'}`
-        );
-        return { reachable: false, portFree };
-      };
-
-      // Run atomic checks in parallel
-      const [chromaStatus, ollamaStatus] = await Promise.all([
-        atomicPortCheck('127.0.0.1', chromaPort, isChromaReachable, 'ChromaDB'),
-        atomicPortCheck('127.0.0.1', ollamaPort, isOllamaReachable, 'Ollama')
-      ]);
-
-      return {
-        chromaPort,
-        ollamaPort,
-        chromaReachable: chromaStatus.reachable,
-        ollamaReachable: ollamaStatus.reachable,
-        chromaPortFree: chromaStatus.portFree,
-        ollamaPortFree: ollamaStatus.portFree
-      };
-    })(),
-
-    // Check 5: Disk space
     (async () => {
       logger.debug('[PREFLIGHT] Starting disk space check...');
       const userDataPath = app.getPath('userData');
@@ -403,105 +129,51 @@ async function runPreflightChecks({ reportProgress, errors }) {
     })()
   ]);
 
-  // Process Python result
-  if (pythonResult.status === 'fulfilled') {
-    const pythonCheck = pythonResult.value;
+  if (aiResult.status === 'fulfilled') {
+    const ai = aiResult.value || {};
     checks.push({
-      name: 'Python Installation',
-      status: pythonCheck.installed ? 'ok' : 'warn',
-      version: pythonCheck.version
-    });
-    if (!pythonCheck.installed) {
-      logger.warn('[PREFLIGHT] Python not found - ChromaDB features will be disabled');
-      errors.push({
-        check: 'python',
-        error: 'Python not found. ChromaDB features will be disabled.',
-        critical: false
-      });
-    }
-  } else {
-    logger.error('[PREFLIGHT] Python installation check threw error:', pythonResult.reason);
-    checks.push({
-      name: 'Python Installation',
-      status: 'warn',
-      error: pythonResult.reason?.message || 'Unknown error'
-    });
-  }
-
-  // Process Ollama result
-  if (ollamaResult.status === 'fulfilled') {
-    const ollamaCheck = ollamaResult.value;
-    checks.push({
-      name: 'Ollama Installation',
-      status: ollamaCheck.installed ? 'ok' : 'warn'
-    });
-    if (!ollamaCheck.installed) {
-      logger.warn('[PREFLIGHT] Ollama not found - AI features will be limited');
-      errors.push({
-        check: 'ollama',
-        error: 'Ollama not found. AI features will be limited.',
-        critical: false
-      });
-    }
-  } else {
-    logger.error('[PREFLIGHT] Ollama installation check threw error:', ollamaResult.reason);
-    checks.push({
-      name: 'Ollama Installation',
-      status: 'warn',
-      error: ollamaResult.reason?.message || 'Unknown error'
-    });
-  }
-
-  // Process ports result
-  if (portsResult.status === 'fulfilled') {
-    const {
-      chromaPort,
-      ollamaPort,
-      chromaReachable,
-      ollamaReachable,
-      chromaPortFree,
-      ollamaPortFree
-    } = portsResult.value;
-    const chromaOk = chromaReachable || chromaPortFree;
-    const ollamaOk = ollamaReachable || ollamaPortFree;
-
-    logger.debug('[PREFLIGHT] ChromaDB reachability/port:', {
-      chromaPort,
-      chromaReachable,
-      chromaPortFree
-    });
-    logger.debug('[PREFLIGHT] Ollama reachability/port:', {
-      ollamaPort,
-      ollamaReachable,
-      ollamaPortFree
-    });
-
-    checks.push({
-      name: 'Service Ports',
-      status: chromaOk && ollamaOk ? 'ok' : 'warn',
+      name: 'AI Engine',
+      status: ai.success ? 'ok' : 'warn',
       details: {
-        chromaPort,
-        ollamaPort,
-        chromaReachable,
-        ollamaReachable,
-        chromaPortFree,
-        ollamaPortFree
+        status: ai.status,
+        gpuBackend: ai.gpuBackend,
+        modelCount: ai.modelCount
       }
     });
-
-    if (!chromaOk || !ollamaOk) {
+    if (!ai.success) {
       errors.push({
-        check: 'port-availability',
-        error: `Service port issue: chroma(${chromaReachable ? 'reachable' : chromaPortFree ? 'free' : 'blocked'}), ollama(${ollamaReachable ? 'reachable' : ollamaPortFree ? 'free' : 'blocked'})`,
+        check: 'ai-engine',
+        error: ai.error || 'AI engine unavailable',
         critical: false
       });
     }
   } else {
-    logger.error('[PREFLIGHT] Port availability check threw error:', portsResult.reason);
     checks.push({
-      name: 'Service Ports',
+      name: 'AI Engine',
       status: 'warn',
-      error: portsResult.reason?.message || 'Unknown error'
+      error: aiResult.reason?.message || 'Unknown error'
+    });
+  }
+
+  if (modelsResult.status === 'fulfilled') {
+    const { required, missing, availableCount } = modelsResult.value || {};
+    checks.push({
+      name: 'Models',
+      status: Array.isArray(missing) && missing.length === 0 ? 'ok' : 'warn',
+      details: { required, missing, availableCount }
+    });
+    if (Array.isArray(missing) && missing.length > 0) {
+      errors.push({
+        check: 'models',
+        error: `Missing models: ${missing.join(', ')}`,
+        critical: false
+      });
+    }
+  } else {
+    checks.push({
+      name: 'Models',
+      status: 'warn',
+      error: modelsResult.reason?.message || 'Unknown error'
     });
   }
 
@@ -524,10 +196,6 @@ async function runPreflightChecks({ reportProgress, errors }) {
 }
 
 module.exports = {
-  checkPythonInstallation,
-  checkOllamaInstallation,
-  isPortAvailable,
   runPreflightChecks,
-  validateEnvironmentVariables,
-  DEFAULT_AXIOS_TIMEOUT
+  validateEnvironmentVariables
 };

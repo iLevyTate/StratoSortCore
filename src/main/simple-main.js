@@ -6,35 +6,41 @@ try {
   /* dotenv not available in production */
 }
 
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, crashReporter } = require('electron');
 
 const isDev = process.env.NODE_ENV === 'development';
 
 // Logging utility
-const tesseract = require('node-tesseract-ocr');
 const fs = require('fs').promises;
 const path = require('path');
 const { createLogger } = require('../shared/logger');
 const { withTimeout } = require('../shared/promiseUtils');
 
 const logger = createLogger('Main');
+
+// Initialize Crash Reporter (Scaffolding)
+try {
+  const crashDumpsDir = path.join(app.getPath('userData'), 'crash-dumps');
+  app.setPath('crashDumps', crashDumpsDir);
+  crashReporter.start({
+    uploadToServer: false,
+    compress: true
+  });
+  logger.info('[CRASH-REPORTER] Initialized locally', { crashDumpsDir });
+} catch (error) {
+  logger.error('[CRASH-REPORTER] Failed to initialize:', error.message);
+}
+
 // Import error handling system
 const errorHandler = require('./errors/ErrorHandler');
 
 const { scanDirectory } = require('./folderScanner');
 const {
-  getOllama,
-  getOllamaModel,
-  getOllamaVisionModel,
-  getOllamaEmbeddingModel,
-  getOllamaHost,
-  setOllamaModel,
-  setOllamaVisionModel,
-  setOllamaEmbeddingModel,
-  setOllamaHost,
-  loadOllamaConfig
-} = require('./ollamaUtils');
-const { buildOllamaOptions } = require('./services/PerformanceService');
+  setTextModel,
+  setVisionModel,
+  setEmbeddingModel,
+  loadLlamaConfig
+} = require('./llamaUtils');
 const { getInstance: getSettingsService } = require('./services/SettingsService');
 // Import service integration
 const ServiceIntegration = require('./services/ServiceIntegration');
@@ -52,8 +58,8 @@ const { isPathDangerous } = require('../shared/pathSanitization');
 const { safeSend } = require('./ipc/ipcWrappers');
 
 // Import services
-const { analyzeDocumentFile } = require('./analysis/ollamaDocumentAnalysis');
-const { analyzeImageFile } = require('./analysis/ollamaImageAnalysis');
+const { analyzeDocumentFile } = require('./analysis/documentAnalysis');
+const { analyzeImageFile } = require('./analysis/imageAnalysis');
 
 // Import OCR library
 // platformUtils imported in core/jumpList.js for Windows detection
@@ -118,8 +124,6 @@ const setForceQuit = (val) => {
   _forceQuit = val;
   _shutdownState.forceQuit = val;
 };
-let chromaDbProcess = null;
-
 // Track cleanup handlers for proper memory management
 let metricsInterval = null;
 let eventListeners = [];
@@ -129,6 +133,16 @@ let globalProcessListeners = [];
 // Ensure any tracked timers are cleared during shutdown
 eventListeners.push(() => {
   clearAllTrackedTimers();
+});
+// Ensure OCR worker is terminated on shutdown
+eventListeners.push(() => {
+  const { terminateJsWorker } = require('./utils/tesseractUtils');
+  terminateJsWorker().catch(() => {});
+});
+// Ensure embedding worker pool is terminated on shutdown
+eventListeners.push(() => {
+  const { destroyEmbeddingPool } = require('./utils/workerPools');
+  destroyEmbeddingPool().catch(() => {});
 });
 
 const trackedTimers = new Map();
@@ -439,13 +453,25 @@ function handleSettingsChanged(settings) {
 const { registerAllIpc, IpcServiceContext } = require('./ipc');
 
 // Prevent multiple instances
+// FIX: If the lock fails AND the env var STRATOSORT_FORCE_LAUNCH is set,
+// proceed anyway. This provides an escape hatch when a zombie process
+// holds the lock and the user cannot start the app.
 const gotTheLock = app.requestSingleInstanceLock();
-logger.debug('Single instance lock:', gotTheLock);
+logger.info('[STARTUP] Single instance lock:', gotTheLock);
 
 if (!gotTheLock) {
-  logger.debug('Failed to get lock, quitting');
-  app.quit();
-} else {
+  if (process.env.STRATOSORT_FORCE_LAUNCH === '1') {
+    logger.warn('[STARTUP] Lock failed but STRATOSORT_FORCE_LAUNCH is set — continuing');
+  } else {
+    logger.info(
+      '[STARTUP] Failed to get lock, quitting (set STRATOSORT_FORCE_LAUNCH=1 to override)'
+    );
+    app.quit();
+  }
+}
+
+// Proceed with setup (runs for both lock holder and forced launches)
+if (gotTheLock || process.env.STRATOSORT_FORCE_LAUNCH === '1') {
   const secondInstanceHandler = (_event, argv) => {
     // Someone tried to run a second instance, restore and focus our window
     // HIGH-2 FIX: Use event-driven window state manager
@@ -498,6 +524,7 @@ if (!gotTheLock) {
 
 // Initialize services after app is ready
 app.whenReady().then(async () => {
+  logger.info('[STARTUP] app.whenReady resolved');
   // FIX: Create a referenced interval to keep the event loop alive during startup
   // This prevents premature exit when async operations use unreferenced timeouts
   const startupKeepalive = trackInterval(() => {}, 1000);
@@ -542,7 +569,7 @@ app.whenReady().then(async () => {
     // Previously had separate 30s timeouts for StartupManager and ServiceIntegration,
     // which could result in up to 60s total wait time. Now uses single 45s timeout.
     const { TIMEOUTS } = require('../shared/performanceConstants');
-    let startupResult;
+    let _startupResult;
 
     // Create ServiceIntegration early so it's available for the coordinated startup
     serviceIntegration = new ServiceIntegration();
@@ -550,12 +577,12 @@ app.whenReady().then(async () => {
     try {
       // Coordinated startup with single timeout
       const coordinatedStartup = async () => {
-        // Phase 1: Start external services (Ollama, ChromaDB)
-        logger.info('[STARTUP] Phase 1: Starting external services...');
+        // Phase 1: Initialize AI services and vector storage
+        logger.info('[STARTUP] Phase 1: Starting AI services...');
         const servicesResult = await startupManager.startup();
 
         // Phase 2: Initialize DI container and internal services
-        // FIX: Pass startup result to skip redundant ChromaDB availability check (saves 2-4s)
+        // FIX: Pass startup result to skip redundant vector DB readiness check (saves 2-4s)
         logger.info('[STARTUP] Phase 2: Initializing service integration...');
         await serviceIntegration.initialize({ startupResult: servicesResult });
 
@@ -593,7 +620,7 @@ app.whenReady().then(async () => {
           throw error;
         });
 
-        startupResult = await Promise.race([coordinatedStartupPromise, timeoutPromise]);
+        _startupResult = await Promise.race([coordinatedStartupPromise, timeoutPromise]);
         logger.info('[STARTUP] Coordinated startup completed successfully');
       } finally {
         if (timeoutId) clearTimeout(timeoutId);
@@ -606,7 +633,7 @@ app.whenReady().then(async () => {
       });
       // Continue in degraded mode - don't block startup
       logger.warn('[STARTUP] Continuing startup in degraded mode');
-      startupResult = { degraded: true, error: error.message };
+      _startupResult = { degraded: true, error: error.message };
     }
 
     // Load custom folders
@@ -736,8 +763,9 @@ app.whenReady().then(async () => {
       logger.warn('[RESUME] Failed to check incomplete batches:', resumeErr.message);
     }
 
-    // Verify AI models on startup (only if Ollama is running)
-    if (startupResult?.services?.ollama?.success) {
+    // Verify AI models on startup (when AI services are available)
+    const serviceStatus = startupManager?.getServiceStatus?.();
+    if (serviceStatus?.services?.llama?.status === 'running') {
       // Use ModelManager singleton which is now the single source of truth for model verification
       const { getInstance: getModelManager } = require('./services/ModelManager');
       const modelManager = getModelManager();
@@ -790,20 +818,7 @@ app.whenReady().then(async () => {
       })
       .setAnalysis({
         analyzeDocumentFile,
-        analyzeImageFile,
-        tesseract
-      })
-      .setOllama({
-        getOllama,
-        getOllamaModel,
-        getOllamaVisionModel,
-        getOllamaEmbeddingModel,
-        getOllamaHost,
-        setOllamaHost,
-        setOllamaModel,
-        setOllamaVisionModel,
-        setOllamaEmbeddingModel,
-        buildOllamaOptions
+        analyzeImageFile
       })
       .setSettings({
         settingsService,
@@ -962,10 +977,6 @@ app.whenReady().then(async () => {
       },
       getServiceIntegration: () => serviceIntegration,
       getSettingsService: () => settingsService,
-      getChromaDbProcess: () => chromaDbProcess,
-      setChromaDbProcess: (val) => {
-        chromaDbProcess = val;
-      },
       getEventListeners: () => eventListeners,
       setEventListeners: (val) => {
         eventListeners = val;
@@ -1018,14 +1029,13 @@ app.whenReady().then(async () => {
       clearTrackedTimer(resumeTimeout);
     });
 
-    // Load Ollama config and apply any saved selections (LOW-3: renamed cfg to ollamaConfig)
-    const ollamaConfig = await loadOllamaConfig();
-    if (ollamaConfig.selectedTextModel) await setOllamaModel(ollamaConfig.selectedTextModel);
-    if (ollamaConfig.selectedVisionModel)
-      await setOllamaVisionModel(ollamaConfig.selectedVisionModel);
-    if (ollamaConfig.selectedEmbeddingModel)
-      await setOllamaEmbeddingModel(ollamaConfig.selectedEmbeddingModel);
-    logger.info('[STARTUP] Ollama configuration loaded');
+    // Load Llama config and apply any saved selections
+    const llamaConfig = await loadLlamaConfig();
+    if (llamaConfig.selectedTextModel) await setTextModel(llamaConfig.selectedTextModel);
+    if (llamaConfig.selectedVisionModel) await setVisionModel(llamaConfig.selectedVisionModel);
+    if (llamaConfig.selectedEmbeddingModel)
+      await setEmbeddingModel(llamaConfig.selectedEmbeddingModel);
+    logger.info('[STARTUP] Llama configuration loaded');
 
     // Install React DevTools in development (opt-in to avoid noisy warnings)
     try {

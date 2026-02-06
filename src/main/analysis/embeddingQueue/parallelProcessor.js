@@ -9,13 +9,14 @@
 const { logger } = require('../../../shared/logger');
 const { withTimeout } = require('../../../shared/promiseUtils');
 const { TIMEOUTS } = require('../../../shared/performanceConstants');
+const PQueue = require('p-queue').default;
 
 /**
  * Process items in parallel with semaphore-based concurrency control
  * @param {Object} params - Processing parameters
  * @param {Array} params.items - Items to process
  * @param {string} params.type - 'file' or 'folder'
- * @param {Object} params.chromaDbService - ChromaDB service instance
+ * @param {Object} params.vectorDbService - Vector DB service instance
  * @param {Set} params.failedItemIds - Set to track failed item IDs
  * @param {number} params.startProcessedCount - Starting count for progress
  * @param {number} params.totalBatchSize - Total batch size for progress
@@ -27,7 +28,7 @@ const { TIMEOUTS } = require('../../../shared/performanceConstants');
 async function processItemsInParallel({
   items,
   type,
-  chromaDbService,
+  vectorDbService,
   failedItemIds,
   startProcessedCount,
   totalBatchSize,
@@ -41,7 +42,7 @@ async function processItemsInParallel({
   const batchMethod = type === 'file' ? 'batchUpsertFiles' : 'batchUpsertFolders';
   const singleMethod = type === 'file' ? 'upsertFile' : 'upsertFolder';
 
-  if (typeof chromaDbService[batchMethod] === 'function') {
+  if (typeof vectorDbService[batchMethod] === 'function') {
     try {
       if (type === 'folder') {
         // Format folders for batch upsert
@@ -54,7 +55,7 @@ async function processItemsInParallel({
           updatedAt: item.updatedAt
         }));
         const result = await withTimeout(
-          chromaDbService[batchMethod](formattedItems),
+          vectorDbService[batchMethod](formattedItems),
           TIMEOUTS.BATCH_EMBEDDING_MAX || 5 * 60 * 1000,
           `Batch ${type} upsert`
         );
@@ -66,7 +67,7 @@ async function processItemsInParallel({
         }
       } else {
         const result = await withTimeout(
-          chromaDbService[batchMethod](items),
+          vectorDbService[batchMethod](items),
           TIMEOUTS.BATCH_EMBEDDING_MAX || 5 * 60 * 1000,
           `Batch ${type} upsert`
         );
@@ -96,52 +97,14 @@ async function processItemsInParallel({
     }
   }
 
-  // Semaphore-based parallel processing
+  // Queue-based parallel processing
   logger.debug(
     `[EmbeddingQueue] Processing ${items.length} ${type}s with concurrency ${concurrency}`
   );
 
-  let activeCount = 0;
-  const waitQueue = [];
-
-  // FIX P0-3: Use increment-first pattern for atomic semaphore acquisition
-  // The previous check-then-increment pattern had a race condition where multiple
-  // async operations could check activeCount simultaneously, all see it as < concurrency,
-  // and all increment - exceeding the concurrency limit.
-  const acquireSlot = () => {
-    // Atomic: increment first, then check
-    activeCount++;
-    if (activeCount <= concurrency) {
-      return Promise.resolve();
-    }
-    // Exceeded limit - decrement and queue
-    activeCount--;
-    return new Promise((resolve) => waitQueue.push(resolve));
-  };
-
-  // FIX HIGH #9: Improved semaphore release with drain function
-  // Using a while-loop drain ensures only one synchronous pass schedules tasks,
-  // so two concurrent releaseSlot calls cannot both over-schedule.
-  const drainQueue = () => {
-    while (waitQueue.length > 0 && activeCount < concurrency) {
-      activeCount++;
-      const next = waitQueue.shift();
-      // Use setImmediate to ensure the next task starts in a new microtask
-      // This prevents deep call stacks when many items complete rapidly
-      setImmediate(next);
-    }
-  };
-
-  const releaseSlot = () => {
-    // Decrement first, ensuring we don't go below 0
-    if (activeCount > 0) {
-      activeCount--;
-    }
-    drainQueue();
-  };
+  const queue = new PQueue({ concurrency });
 
   const processItem = async (item) => {
-    await acquireSlot();
     try {
       const payload =
         type === 'folder'
@@ -162,7 +125,7 @@ async function processItemsInParallel({
             };
 
       const result = await withTimeout(
-        chromaDbService[singleMethod](payload),
+        vectorDbService[singleMethod](payload),
         TIMEOUTS.EMBEDDING_REQUEST || 30000,
         `Upsert ${type}`
       );
@@ -185,13 +148,10 @@ async function processItemsInParallel({
       logger.warn(`[EmbeddingQueue] Failed to upsert ${type} ${item.id}:`, itemError.message);
       failedItemIds.add(item.id);
       onItemFailed(item, itemError.message);
-    } finally {
-      releaseSlot();
     }
   };
 
-  // Launch all tasks - semaphore controls actual concurrency
-  await Promise.all(items.map(processItem));
+  await Promise.all(items.map((item) => queue.add(() => processItem(item))));
 
   return processedCount;
 }

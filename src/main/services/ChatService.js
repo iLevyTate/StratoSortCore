@@ -33,20 +33,13 @@ const RESPONSE_MODES = {
 };
 
 class ChatService {
-  constructor({
-    searchService,
-    chromaDbService,
-    embeddingService,
-    ollamaService,
-    settingsService
-  }) {
+  constructor({ searchService, vectorDbService, embeddingService, llamaService, settingsService }) {
     this.searchService = searchService;
-    this.chromaDbService = chromaDbService;
+    this.vectorDbService = vectorDbService;
     this.embeddingService = embeddingService;
-    this.ollamaService = ollamaService;
+    this.llamaService = llamaService;
     this.settingsService = settingsService;
     this.sessions = new Map();
-    this._langchainMemoryModule = null;
   }
 
   async resetSession(sessionId) {
@@ -74,10 +67,10 @@ class ChatService {
       return { success: false, error: 'Query must be at least 2 characters' };
     }
 
-    if (!this.ollamaService) {
+    if (!this.llamaService) {
       logger.error('[ChatService] Service unavailable', {
         hasSearch: Boolean(this.searchService),
-        hasOllama: Boolean(this.ollamaService)
+        hasLlama: Boolean(this.llamaService)
       });
       return { success: false, error: 'Chat service unavailable' };
     }
@@ -105,7 +98,7 @@ Return ONLY valid JSON:
 }`;
 
       try {
-        const result = await this.ollamaService.analyzeText(prompt, { format: 'json' });
+        const result = await this.llamaService.analyzeText(prompt, { format: 'json' });
         if (result?.success) {
           const parsed = this._parseResponse(result.response, []);
           await this._saveMemoryTurn(memory, cleanQuery, this._formatForMemory(parsed));
@@ -162,22 +155,22 @@ Return ONLY valid JSON:
       persona
     });
 
-    const ollamaResult = await this.ollamaService.analyzeText(prompt, {
+    const llamaResult = await this.llamaService.analyzeText(prompt, {
       format: 'json'
     });
 
-    if (!ollamaResult?.success) {
+    if (!llamaResult?.success) {
       logger.warn('[ChatService] LLM response failed', {
-        error: ollamaResult?.error || 'Unknown error'
+        error: llamaResult?.error || 'Unknown error'
       });
       return {
         success: false,
-        error: ollamaResult?.error || 'LLM response failed',
+        error: llamaResult?.error || 'LLM response failed',
         sources: retrieval.sources
       };
     }
 
-    const parsed = this._parseResponse(ollamaResult.response, retrieval.sources);
+    const parsed = this._parseResponse(llamaResult.response, retrieval.sources);
     if (!retrieval?.sources?.length) {
       parsed.documentAnswer = [];
     }
@@ -227,45 +220,7 @@ Return ONLY valid JSON:
   }
 
   async _createMemory() {
-    try {
-      if (!this._langchainMemoryModule) {
-        this._langchainMemoryModule = await this._loadMemoryModule();
-      }
-
-      const MemoryClass = this._resolveMemoryClass(this._langchainMemoryModule);
-      if (!MemoryClass) {
-        logger.warn(
-          '[ChatService] LangChain memory module loaded but no constructable memory class found'
-        );
-        return this._createFallbackMemory();
-      }
-
-      return new MemoryClass({
-        memoryKey: 'history',
-        inputKey: 'input',
-        outputKey: 'output',
-        k: DEFAULTS.memoryWindow,
-        returnMessages: false
-      });
-    } catch (error) {
-      logger.warn('[ChatService] Falling back to simple memory:', error.message);
-      return this._createFallbackMemory();
-    }
-  }
-
-  async _loadMemoryModule() {
-    return await import('@langchain/core/memory');
-  }
-
-  _resolveMemoryClass(moduleRef) {
-    const candidates = [
-      moduleRef?.BufferWindowMemory,
-      moduleRef?.BufferMemory,
-      moduleRef?.default?.BufferWindowMemory,
-      moduleRef?.default?.BufferMemory
-    ];
-
-    return candidates.find((candidate) => typeof candidate === 'function') || null;
+    return this._createFallbackMemory();
   }
 
   _createFallbackMemory() {
@@ -540,7 +495,7 @@ Return ONLY valid JSON:
 
   async _scoreContextFiles(query, fileIds) {
     try {
-      if (!this.embeddingService || !this.chromaDbService) return [];
+      if (!this.embeddingService || !this.vectorDbService) return [];
       const cleanIds = fileIds
         .filter((id) => typeof id === 'string' && id.length > 0)
         .slice(0, DEFAULTS.contextFileLimit);
@@ -550,29 +505,47 @@ Return ONLY valid JSON:
       const embedResult = await this.embeddingService.embedText(query);
       if (!embedResult?.vector?.length) return [];
 
-      await this.chromaDbService.initialize();
+      await this.vectorDbService.initialize();
       const expectedDim =
-        typeof this.chromaDbService.getCollectionDimension === 'function'
-          ? await this.chromaDbService.getCollectionDimension('files')
+        typeof this.vectorDbService.getCollectionDimension === 'function'
+          ? await this.vectorDbService.getCollectionDimension('files')
           : null;
       const queryVector = this._padOrTruncateVector(embedResult.vector, expectedDim);
       if (!queryVector?.length) return [];
 
-      const fileResult = await this.chromaDbService.fileCollection.get({ ids: cleanIds });
-      const ids = Array.isArray(fileResult?.ids) ? fileResult.ids : [];
-      const embeddings = Array.isArray(fileResult?.embeddings) ? fileResult.embeddings : [];
-      const metadatas = Array.isArray(fileResult?.metadatas) ? fileResult.metadatas : [];
+      const fileDocs = await Promise.all(
+        cleanIds.map(async (id) => {
+          try {
+            return await this.vectorDbService.getFile(id);
+          } catch {
+            return null;
+          }
+        })
+      );
 
       const scored = [];
-      for (let i = 0; i < ids.length; i += 1) {
-        const vec = embeddings[i];
+      for (let i = 0; i < cleanIds.length; i += 1) {
+        const doc = fileDocs[i];
+        const vec = doc?.embedding;
         if (!Array.isArray(vec) || vec.length === 0) continue;
         if (vec.length !== queryVector.length) continue;
 
         scored.push({
-          id: ids[i],
+          id: cleanIds[i],
           score: cosineSimilarity(queryVector, vec),
-          metadata: metadatas[i] || {}
+          metadata: doc
+            ? {
+                path: doc.filePath,
+                filePath: doc.filePath,
+                fileName: doc.fileName,
+                fileType: doc.fileType,
+                analyzedAt: doc.analyzedAt,
+                suggestedName: doc.suggestedName,
+                keywords: doc.keywords,
+                tags: doc.tags,
+                extractionMethod: doc.extractionMethod
+              }
+            : {}
         });
       }
 

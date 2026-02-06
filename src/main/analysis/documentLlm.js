@@ -1,10 +1,8 @@
 const path = require('path');
-const { getOllamaModel, loadOllamaConfig, getOllama } = require('../ollamaUtils');
-const { buildOllamaOptions } = require('../services/PerformanceService');
+const { getInstance: getLlamaService } = require('../services/LlamaService');
 const { globalDeduplicator } = require('../utils/llmOptimization');
-const { generateWithRetry } = require('../utils/ollamaApiRetry');
 const { extractAndParseJSON } = require('../utils/jsonRepair');
-const { attemptJsonRepairWithOllama } = require('../utils/ollamaJsonRepair');
+const { attemptJsonRepairWithLlama } = require('../utils/llmJsonRepair');
 const { AI_DEFAULTS } = require('../../shared/constants');
 const { withAbortableTimeout } = require('../../shared/promiseUtils');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
@@ -21,7 +19,6 @@ const AppConfig = {
   ai: {
     textAnalysis: {
       defaultModel: AI_DEFAULTS.TEXT.MODEL,
-      defaultHost: AI_DEFAULTS.TEXT.HOST,
       timeout: TIMEOUTS.AI_ANALYSIS_LONG,
       maxContentLength: AI_DEFAULTS.TEXT.MAX_CONTENT_LENGTH,
       temperature: AI_DEFAULTS.TEXT.TEMPERATURE,
@@ -30,44 +27,16 @@ const AppConfig = {
   }
 };
 
-const DOCUMENT_ANALYSIS_TOOL = {
-  type: 'function',
-  function: {
-    name: 'document_analysis',
-    description: 'Extract structured document analysis JSON.',
-    parameters: {
-      type: 'object',
-      properties: {
-        date: { type: ['string', 'null'] },
-        entity: { type: ['string', 'null'] },
-        type: { type: ['string', 'null'] },
-        category: { type: ['string', 'null'] },
-        project: { type: ['string', 'null'] },
-        purpose: { type: ['string', 'null'] },
-        summary: { type: ['string', 'null'] },
-        keywords: { type: 'array', items: { type: 'string' } },
-        keyEntities: { type: 'array', items: { type: 'string' } },
-        confidence: { type: 'number' },
-        suggestedName: { type: ['string', 'null'] },
-        reasoning: { type: ['string', 'null'] }
-      },
-      required: ['category', 'keywords', 'confidence']
-    }
-  }
-};
-
-// Use shared client from ollamaUtils
-
-// Re-export for backward compatibility
+// Re-export for folder matching
 const normalizeCategoryToSmartFolders = FolderMatchingService.matchCategoryToFolder;
 
 // normalizeTextForModel moved to ./textNormalization.js
 // Using normalizeForModel from that module instead
 
-// JSON repair constants and function consolidated to ../utils/ollamaJsonRepair.js
+// JSON repair constants and function consolidated to ../utils/llmJsonRepair.js
 // FIX HIGH-1: Import moved to top of file - removed duplicate import here
 
-async function analyzeTextWithOllama(
+async function analyzeTextWithLlama(
   textContent,
   originalFileName,
   smartFolders = [],
@@ -75,24 +44,24 @@ async function analyzeTextWithOllama(
   namingContext = []
 ) {
   try {
-    const cfg = await loadOllamaConfig();
+    const cfg = await getLlamaService().getConfig();
     const modelToUse =
-      getOllamaModel() ||
-      cfg.selectedTextModel ||
-      cfg.selectedModel ||
-      AppConfig.ai.textAnalysis.defaultModel;
+      cfg.textModel || cfg.selectedTextModel || AppConfig.ai.textAnalysis.defaultModel;
+    const contextSize = Number(cfg?.contextSize) || AI_DEFAULTS.TEXT.CONTEXT_SIZE;
+    const maxContentLength = Math.min(AppConfig.ai.textAnalysis.maxContentLength, contextSize * 2);
+    const maxTokens = Math.min(
+      AppConfig.ai.textAnalysis.maxTokens,
+      Math.max(256, Math.floor(contextSize * 0.25))
+    );
 
     // Normalize and chunk text to reduce truncation loss
-    const normalized = normalizeForModel(
-      textContent,
-      AppConfig.ai.textAnalysis.maxContentLength * 4
-    );
+    const normalized = normalizeForModel(textContent, maxContentLength * 4);
     const { combined: combinedChunks, chunks } = chunkTextForAnalysis(normalized, {
-      chunkSize: Math.min(4000, AppConfig.ai.textAnalysis.maxContentLength),
+      chunkSize: Math.min(4000, maxContentLength),
       overlap: 400,
-      maxTotalLength: AppConfig.ai.textAnalysis.maxContentLength
+      maxTotalLength: maxContentLength
     });
-    const maxLen = AppConfig.ai.textAnalysis.maxContentLength;
+    const maxLen = maxContentLength;
     const truncatedRaw =
       combinedChunks || normalizeForModel(normalized, AppConfig.ai.textAnalysis.maxContentLength);
     // Hard cap the final text to maxLen. chunkTextForAnalysis tries to respect maxTotalLength,
@@ -184,26 +153,10 @@ ${truncated}`;
         .join(',')
     });
 
-    const client = await getOllama();
-    const perfOptions = await buildOllamaOptions('text');
-    const useToolCalling = Boolean(cfg?.useToolCalling);
-    const generateRequest = {
-      model: modelToUse,
-      prompt,
-      options: {
-        temperature: AppConfig.ai.textAnalysis.temperature,
-        num_predict: AppConfig.ai.textAnalysis.maxTokens,
-        ...perfOptions
-      },
-      format: 'json'
-    };
-    if (useToolCalling) {
-      generateRequest.tools = [DOCUMENT_ANALYSIS_TOOL];
-      generateRequest.tool_choice = {
-        type: 'function',
-        function: { name: DOCUMENT_ANALYSIS_TOOL.function.name }
-      };
-    }
+    const llamaService = getLlamaService();
+    // Performance tuning handled by LlamaService
+    // const useToolCalling = Boolean(cfg?.useToolCalling); // Not used with basic generateText
+
     // FIX MED #11: Reduce retries to prevent exceeding outer timeout
     // With 60s outer timeout and ~20s per LLM call, 2 retries (3 attempts) + delays fits within budget
     // Previous: 3 retries with 4s max delay could exceed 60s (4 attempts × 20s + 7s delays = 87s)
@@ -214,21 +167,18 @@ ${truncated}`;
         timeoutMs: AppConfig.ai.textAnalysis.timeout
       });
       const response = await withAbortableTimeout(
-        (abortController) => {
-          const requestWithSignal = { ...generateRequest, signal: abortController.signal };
-          return globalDeduplicator.deduplicate(
+        (abortController) =>
+          globalDeduplicator.deduplicate(
             deduplicationKey,
             () =>
-              generateWithRetry(client, requestWithSignal, {
-                operation: `Document analysis for ${originalFileName}`,
-                maxRetries: 2,
-                initialDelay: 1000,
-                maxDelay: 2000,
-                maxTotalTime: AppConfig.ai.textAnalysis.timeout
+              llamaService.generateText({
+                prompt,
+                maxTokens,
+                temperature: AppConfig.ai.textAnalysis.temperature,
+                signal: abortController.signal
               }),
             { type: 'document', fileName: originalFileName } // Metadata for debugging cache hits
-          );
-        },
+          ),
         AppConfig.ai.textAnalysis.timeout,
         `Document analysis for ${originalFileName}`
       );
@@ -243,16 +193,17 @@ ${truncated}`;
           });
 
           if (!parsedJson) {
-            const repairedResponse = await attemptJsonRepairWithOllama(
-              client,
-              modelToUse,
+            // Attempt JSON repair via LLM using the same pattern as imageAnalysis.js
+            const repairedResponse = await attemptJsonRepairWithLlama(
+              llamaService,
               response.response,
               {
                 schema: ANALYSIS_SCHEMA_PROMPT,
-                maxTokens: AppConfig.ai.textAnalysis.maxTokens,
+                maxTokens,
                 operation: 'Document analysis'
               }
             );
+
             if (repairedResponse) {
               parsedJson = extractAndParseJSON(repairedResponse, null, {
                 source: 'documentLlm.repair',
@@ -268,7 +219,7 @@ ${truncated}`;
               model: modelToUse
             });
             return {
-              error: 'Failed to parse document analysis JSON from Ollama.',
+              error: 'Failed to parse document analysis JSON from AI engine.',
               keywords: [],
               confidence: 65
             };
@@ -390,14 +341,14 @@ ${truncated}`;
         } catch (e) {
           logger.error('[documentLlm] Unexpected error processing response:', e.message);
           return {
-            error: 'Failed to parse document analysis from Ollama.',
+            error: 'Failed to parse document analysis from AI engine.',
             keywords: [],
             confidence: 65
           };
         }
       }
       return {
-        error: 'No content in Ollama response for document',
+        error: 'No content in AI response for document',
         keywords: [],
         confidence: 60
       };
@@ -407,7 +358,7 @@ ${truncated}`;
     }
   } catch (error) {
     return {
-      error: `Ollama API error for document: ${error.message}`,
+      error: `AI engine error for document: ${error.message}`,
       keywords: [],
       confidence: 60
     };
@@ -416,7 +367,6 @@ ${truncated}`;
 
 module.exports = {
   AppConfig,
-  getOllama,
-  analyzeTextWithOllama,
+  analyzeTextWithLlama,
   normalizeCategoryToSmartFolders
 };

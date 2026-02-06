@@ -22,6 +22,63 @@ const EXTRACTION_TIMEOUTS = {
 // ReferenceError (Temporal Dead Zone) when fast-xml-parser was missing.
 const logger = createLogger('DocumentExtractors');
 
+let unpdfRenderer = null;
+let unpdfRendererInit = null;
+
+function ensurePromiseResolversPolyfill() {
+  if (typeof Promise.withResolvers === 'function') return;
+  Promise.withResolvers = () => {
+    let resolve;
+    let reject;
+    const promise = new Promise((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  };
+}
+
+async function getUnpdfRenderer() {
+  if (unpdfRenderer) return unpdfRenderer;
+  if (unpdfRendererInit) return unpdfRendererInit;
+  unpdfRendererInit = (async () => {
+    let definePDFJSModule;
+    let renderPageAsImage;
+    try {
+      ({ definePDFJSModule, renderPageAsImage } = require('unpdf'));
+    } catch (requireError) {
+      try {
+        const mod = await import('unpdf');
+        definePDFJSModule = mod.definePDFJSModule || mod.default?.definePDFJSModule;
+        renderPageAsImage = mod.renderPageAsImage || mod.default?.renderPageAsImage;
+      } catch (importError) {
+        logger.warn('[OCR] unpdf renderer unavailable', {
+          error: importError.message || requireError.message
+        });
+        return null;
+      }
+    }
+
+    if (typeof definePDFJSModule !== 'function' || typeof renderPageAsImage !== 'function') {
+      logger.warn('[OCR] unpdf renderer APIs missing');
+      return null;
+    }
+
+    ensurePromiseResolversPolyfill();
+    try {
+      // eslint-disable-next-line import/no-unresolved -- dynamic import resolved at runtime by webpack
+      await definePDFJSModule(() => import('pdfjs-dist/legacy/build/pdf.js'));
+    } catch (error) {
+      logger.warn('[OCR] Failed to load pdfjs-dist renderer', { error: error.message });
+      return null;
+    }
+
+    unpdfRenderer = { renderPageAsImage };
+    return unpdfRenderer;
+  })();
+  return unpdfRendererInit;
+}
+
 let XMLParser;
 try {
   // Prefer the full parser when available
@@ -352,85 +409,33 @@ async function extractTextFromPdf(filePath, fileName) {
   await checkFileSize(filePath, fileName);
 
   let dataBuffer = null;
-  let parser = null;
-
   try {
-    dataBuffer = await fs.readFile(filePath);
-    let pdfText = '';
-
-    // pdf-parse 2.x is an ESM module - need to handle both require and dynamic import
-    // The CJS bundle exports PDFParse as a named export
+    const rawBuffer = await fs.readFile(filePath);
+    // FIX: unpdf (pdf.js) requires Uint8Array, not Node.js Buffer.
+    // Buffer is a Uint8Array subclass but pdf.js does a strict instanceof check.
+    dataBuffer = new Uint8Array(rawBuffer.buffer, rawBuffer.byteOffset, rawBuffer.byteLength);
+    let extractText;
     try {
-      const pdfModule = require('pdf-parse');
+      ({ extractText } = require('unpdf'));
+    } catch {
+      const mod = await import('unpdf');
+      extractText = mod.extractText || mod.default?.extractText;
+    }
+    if (typeof extractText !== 'function') {
+      throw new Error('unpdf extractText is unavailable');
+    }
+    const result = await extractText(dataBuffer);
 
-      // pdf-parse 2.x: Check for PDFParse class (named export in CJS bundle)
-      const PDFParseClass = pdfModule.PDFParse || pdfModule.default?.PDFParse;
-
-      if (PDFParseClass && typeof PDFParseClass === 'function') {
-        logger.debug('[PDF] Using pdf-parse 2.x API');
-        try {
-          parser = new PDFParseClass({ data: dataBuffer });
-          await parser.load();
-          const textResult = await parser.getText();
-
-          // getText() returns object with 'text' property (combined text from all pages)
-          if (textResult && textResult.text) {
-            pdfText = textResult.text.trim();
-            logger.debug('[PDF] Extracted text length:', pdfText.length);
-          }
-        } catch (v2Error) {
-          logger.warn('[PDF] pdf-parse 2.x extraction failed:', {
-            error: v2Error.message,
-            stack: v2Error.stack
-          });
-          throw v2Error;
-        }
-      } else if (typeof pdfModule === 'function') {
-        // pdf-parse 1.x uses direct function call
-        logger.debug('[PDF] Using pdf-parse 1.x API (function)');
-        const pdfData = await pdfModule(dataBuffer);
-        pdfText = pdfData.text || '';
-      } else if (pdfModule.default && typeof pdfModule.default === 'function') {
-        // ESM default export fallback
-        logger.debug('[PDF] Using pdf-parse ESM default export');
-        const pdfData = await pdfModule.default(dataBuffer);
-        pdfText = pdfData.text || '';
-      } else {
-        // Log what we got from require to help debug
-        logger.error('[PDF] Unable to determine pdf-parse API version', {
-          moduleType: typeof pdfModule,
-          hasDefault: !!pdfModule.default,
-          hasPDFParse: !!pdfModule.PDFParse,
-          keys: Object.keys(pdfModule).slice(0, 10)
-        });
-        throw new Error(
-          `Unable to determine pdf-parse API version. Got module type: ${typeof pdfModule}, keys: ${Object.keys(pdfModule).slice(0, 5).join(', ')}`
-        );
-      }
-    } catch (requireError) {
-      // If CommonJS require fails, try dynamic import for ESM
-      logger.warn('[PDF] CommonJS require failed, trying dynamic import:', requireError.message);
-      try {
-        const pdfModule = await import('pdf-parse');
-        const PDFParseClass = pdfModule.PDFParse || pdfModule.default?.PDFParse;
-
-        if (PDFParseClass) {
-          parser = new PDFParseClass({ data: dataBuffer });
-          await parser.load();
-          const textResult = await parser.getText();
-          if (textResult && textResult.text) {
-            pdfText = textResult.text.trim();
-          }
-        } else {
-          throw new Error('PDFParse class not found in dynamic import');
-        }
-      } catch (importError) {
-        logger.error('[PDF] Both require and import failed:', {
-          requireError: requireError.message,
-          importError: importError.message
-        });
-        throw requireError;
-      }
+    // unpdf may return text as a string or, in edge cases, as an array of page
+    // strings.  Normalise to a single string so downstream .trim() never fails.
+    let pdfText;
+    const rawText = result?.text;
+    if (typeof rawText === 'string') {
+      pdfText = rawText;
+    } else if (Array.isArray(rawText)) {
+      pdfText = rawText.filter((p) => typeof p === 'string').join('\n');
+    } else {
+      pdfText = rawText != null ? String(rawText) : '';
     }
 
     if (!pdfText || pdfText.trim().length === 0) {
@@ -440,20 +445,14 @@ async function extractTextFromPdf(filePath, fileName) {
     }
 
     // Fixed: Truncate text to prevent memory issues and clean up buffer
-    const result = truncateText(cleanWhitespace(pdfText));
-    dataBuffer = null; // Explicit cleanup to help GC
-    return result;
+    return truncateText(cleanWhitespace(pdfText));
+  } catch (error) {
+    logger.warn('[PDF] Extraction failed:', {
+      fileName,
+      error: error?.message
+    });
+    throw error;
   } finally {
-    // Always destroy parser to free memory (required by v2 API)
-    if (parser && typeof parser.destroy === 'function') {
-      try {
-        await parser.destroy();
-      } catch (destroyError) {
-        logger.debug('[PDF] Parser destroy error:', destroyError.message);
-      }
-    }
-    // FIX P1-7: Clear parser reference after destruction to allow GC
-    parser = null;
     // Ensure buffer is dereferenced even on error
     dataBuffer = null;
   }
@@ -461,7 +460,6 @@ async function extractTextFromPdf(filePath, fileName) {
 
 async function ocrPdfIfNeeded(filePath) {
   const sharp = require('sharp');
-  const tesseract = require('node-tesseract-ocr');
   let pdfBuffer = null;
   let rasterPng = null;
 
@@ -498,8 +496,27 @@ async function ocrPdfIfNeeded(filePath) {
     // A 40MB PDF at 200 DPI could become 150MB+ PNG, causing OOM
     let sharpPipeline = sharp(pdfBuffer, { density: OCR_DENSITY });
 
-    // Get metadata to check if resize is needed
-    const metadata = await sharpPipeline.metadata();
+    // Verify sharp can actually process this PDF (requires libvips PDF support).
+    // Without poppler/pdfium compiled into libvips, sharp throws
+    // "Input buffer contains unsupported image format".
+    let metadata;
+    try {
+      metadata = await sharpPipeline.metadata();
+    } catch (metaError) {
+      logger.debug('[OCR] sharp cannot rasterise this PDF (libvips PDF support may be missing)', {
+        filePath,
+        error: metaError.message
+      });
+      const fallbackText = await ocrPdfWithCanvasRenderer(pdfBuffer, {
+        lang: 'eng',
+        oem: 1,
+        psm: 3
+      });
+      if (fallbackText) {
+        return fallbackText;
+      }
+      return '';
+    }
     if (metadata.width > OCR_MAX_WIDTH || metadata.height > OCR_MAX_HEIGHT) {
       logger.debug('[OCR] Resizing large image for OCR', {
         originalWidth: metadata.width,
@@ -513,12 +530,28 @@ async function ocrPdfIfNeeded(filePath) {
       });
     }
 
-    rasterPng = await sharpPipeline.png({ compressionLevel: 6 }).toBuffer();
+    try {
+      rasterPng = await sharpPipeline.png({ compressionLevel: 6 }).toBuffer();
+    } catch (renderError) {
+      logger.debug('[OCR] sharp rasterization failed, attempting canvas renderer fallback', {
+        filePath,
+        error: renderError.message
+      });
+      const fallbackText = await ocrPdfWithCanvasRenderer(pdfBuffer, {
+        lang: 'eng',
+        oem: 1,
+        psm: 3
+      });
+      if (fallbackText) {
+        return fallbackText;
+      }
+      return '';
+    }
 
     // Clear PDF buffer before OCR to reduce peak memory
     pdfBuffer = null;
 
-    const ocrResult = await recognizeIfAvailable(tesseract, rasterPng, {
+    const ocrResult = await recognizeIfAvailable(null, rasterPng, {
       lang: 'eng',
       oem: 1,
       psm: 3
@@ -547,6 +580,53 @@ async function ocrPdfIfNeeded(filePath) {
   }
 }
 
+async function ocrPdfWithCanvasRenderer(pdfBuffer, options = {}) {
+  if (!pdfBuffer || pdfBuffer.length === 0) return '';
+
+  const renderer = await getUnpdfRenderer();
+  if (!renderer) return '';
+
+  let canvasModule;
+  try {
+    canvasModule = require('@napi-rs/canvas');
+  } catch (error) {
+    logger.warn('[OCR] @napi-rs/canvas unavailable, cannot render PDF pages for OCR', {
+      error: error.message
+    });
+    return '';
+  }
+
+  const canvasImport = () => Promise.resolve(canvasModule);
+  const dataBuffer = new Uint8Array(pdfBuffer.buffer, pdfBuffer.byteOffset, pdfBuffer.byteLength);
+  const MAX_PAGES = 3;
+  const SCALE = 1.5;
+
+  let combinedText = '';
+  for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
+    try {
+      const rendered = await renderer.renderPageAsImage(dataBuffer, pageNumber, {
+        canvasImport,
+        scale: SCALE
+      });
+      const imageBuffer = Buffer.from(rendered);
+      const ocrResult = await recognizeIfAvailable(null, imageBuffer, options);
+      if (ocrResult.success && ocrResult.text && ocrResult.text.trim()) {
+        combinedText += `${ocrResult.text.trim()}\n\n`;
+      }
+    } catch (error) {
+      logger.debug('[OCR] PDF page render failed', {
+        pageNumber,
+        error: error.message
+      });
+    }
+  }
+
+  const trimmed = combinedText.trim();
+  if (!trimmed) return '';
+  logger.info('[OCR] Successfully extracted text via PDF page renderer fallback');
+  return truncateText(trimmed);
+}
+
 async function extractTextFromDoc(filePath) {
   try {
     const signature = await readFileSignature(filePath, 8);
@@ -573,7 +653,6 @@ async function extractTextFromDoc(filePath) {
 
 async function extractImagesFromOfficeArchiveAndOcr(filePath, mediaPathPrefix) {
   const AdmZip = require('adm-zip');
-  const tesseract = require('node-tesseract-ocr');
   const sharp = require('sharp');
   const OCR_MAX_WIDTH = 2480; // ~A4 at 150 DPI
   const OCR_MAX_HEIGHT = 3508; // ~A4 at 150 DPI
@@ -637,7 +716,7 @@ async function extractImagesFromOfficeArchiveAndOcr(filePath, mediaPathPrefix) {
           error: prepError.message
         });
       }
-      const ocrResult = await recognizeIfAvailable(tesseract, ocrBuffer, {
+      const ocrResult = await recognizeIfAvailable(null, ocrBuffer, {
         lang: 'eng',
         oem: 1,
         psm: 3

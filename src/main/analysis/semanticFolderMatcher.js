@@ -2,11 +2,11 @@
  * Unified Semantic Folder Matching
  *
  * This module consolidates duplicate folder matching logic from:
- * - ollamaDocumentAnalysis.js:246-401 (applyDocumentFolderMatching)
- * - ollamaImageAnalysis.js:743-922 (applySemanticFolderMatching)
+ * - document analysis (applyDocumentFolderMatching)
+ * - image analysis (applySemanticFolderMatching)
  *
  * Both implementations shared ~80% identical code for:
- * - ChromaDB/FolderMatchingService initialization
+ * - Vector DB/FolderMatchingService initialization
  * - Embedding generation and folder matching
  * - Queue management for embeddings
  * - Confidence-based category override logic
@@ -31,15 +31,15 @@ const { shouldEmbed } = require('../services/embedding/embeddingGate');
 
 const logger = createLogger('SemanticFolderMatcher');
 /**
- * Get or initialize ChromaDB and FolderMatchingService
+ * Get or initialize vector DB and FolderMatchingService
  * Uses lazy initialization to prevent startup failures
  *
- * @returns {{ chromaDb: Object|null, matcher: FolderMatchingService|null }}
+ * @returns {{ vectorDb: Object|null, matcher: FolderMatchingService|null }}
  */
 function getServices() {
-  const chromaDb = container.tryResolve(ServiceIds.CHROMA_DB);
+  const vectorDb = container.tryResolve(ServiceIds.ORAMA_VECTOR);
   const matcher = container.tryResolve(ServiceIds.FOLDER_MATCHING);
-  return { chromaDb, matcher };
+  return { vectorDb, matcher };
 }
 
 /**
@@ -63,7 +63,7 @@ function validateMatcher(matcher) {
  * Unified semantic folder matching for documents and images
  *
  * This function:
- * 1. Initializes ChromaDB and FolderMatchingService if needed
+ * 1. Initializes vector DB and FolderMatchingService if needed
  * 2. Upserts smart folder embeddings
  * 3. Generates embedding for the file's content summary
  * 4. Matches the embedding against folder embeddings
@@ -115,10 +115,10 @@ async function applySemanticFolderMatching(params) {
   }
 
   // Get services with lazy initialization
-  const { chromaDb, matcher } = getServices();
+  const { vectorDb, matcher } = getServices();
 
-  if (!chromaDb) {
-    logger.warn('[FolderMatcher] ChromaDB not available, skipping semantic folder matching');
+  if (!vectorDb) {
+    logger.warn('[FolderMatcher] Vector DB not available, skipping semantic folder matching');
     return analysis;
   }
 
@@ -177,9 +177,9 @@ async function applySemanticFolderMatching(params) {
   }
 
   try {
-    // Initialize ChromaDB if needed
-    if (chromaDb && typeof chromaDb.initialize === 'function') {
-      await chromaDb.initialize();
+    // Initialize vector DB if needed
+    if (vectorDb && typeof vectorDb.initialize === 'function') {
+      await vectorDb.initialize();
     }
 
     // Generate embedding

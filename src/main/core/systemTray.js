@@ -15,10 +15,25 @@ const { createLogger } = require('../../shared/logger');
 const { safeSend } = require('../ipc/ipcWrappers');
 
 const logger = createLogger('Tray');
+
+// Resolve app root reliably in both dev (webpack bundles to dist/) and packaged builds.
+// Avoids __dirname which points to dist/ after webpack bundling.
+function _getAppRoot() {
+  try {
+    const appPath = app.getAppPath();
+    if (appPath.endsWith('src/main') || appPath.endsWith('src\\main')) {
+      return path.resolve(appPath, '../..');
+    }
+    return appPath;
+  } catch {
+    return process.cwd();
+  }
+}
+
 const getAssetPath = (...paths) => {
   const RESOURCES_PATH = app.isPackaged
     ? path.join(process.resourcesPath, 'assets')
-    : path.join(__dirname, '../../../assets');
+    : path.join(_getAppRoot(), 'assets');
   return path.join(RESOURCES_PATH, ...paths);
 };
 

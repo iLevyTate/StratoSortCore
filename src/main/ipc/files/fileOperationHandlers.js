@@ -335,14 +335,16 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
           // In test environments, also trigger the first mock instance explicitly so
           // Jest spies observe the call even if a separate instance is resolved.
           if (process.env.NODE_ENV === 'test') {
-            let getChromaDB;
+            let getVectorDb;
             try {
-              const { getInstance: getChromaDBInstance } = require('../../services/chromadb');
-              getChromaDB = getChromaDBInstance;
+              const {
+                getInstance: getVectorDbInstance
+              } = require('../../services/OramaVectorService');
+              getVectorDb = getVectorDbInstance;
             } catch {
               // ignore
             }
-            const testMockInstance = getChromaDB?.mock?.results?.[0]?.value;
+            const testMockInstance = getVectorDb?.mock?.results?.[0]?.value;
             if (testMockInstance?.updateFilePaths) {
               try {
                 await testMockInstance.updateFilePaths([]);
@@ -358,7 +360,7 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
             log
           );
 
-          // FIX HIGH-75: Removed duplicate ChromaDB path update block
+          // FIX HIGH-75: Removed duplicate vector DB path update block
           // updateDatabasePath already handles this, including both file: and image: prefixes
 
           // NOTE: Analysis history updates are now handled by FilePathCoordinator
@@ -509,7 +511,7 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
           );
 
           // Use FilePathCoordinator for atomic copy handling across all systems
-          // This ensures analysis history and ChromaDB entries are cloned atomically
+          // This ensures analysis history and vector DB entries are cloned atomically
           const coordinator = getFilePathCoordinator();
           if (coordinator) {
             log.debug('[FILE-OPS] Using FilePathCoordinator for atomic copy handling');

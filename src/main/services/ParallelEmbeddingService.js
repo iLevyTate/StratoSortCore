@@ -1,8 +1,9 @@
 const os = require('os');
-const { getOllama, getOllamaEmbeddingModel } = require('../ollamaUtils');
+const path = require('path');
 const { createLogger } = require('../../shared/logger');
-const { isRetryableError } = require('../utils/ollamaApiRetry');
-const { getInstance: getOllamaService } = require('./OllamaService');
+const { getInstance: getLlamaService } = require('./LlamaService');
+const { getEmbeddingPool } = require('../utils/workerPools');
+const { ERROR_CODES } = require('../../shared/errorCodes');
 
 const logger = createLogger('ParallelEmbeddingService');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
@@ -22,7 +23,7 @@ const SEMAPHORE_CONFIG = {
  *
  * Provides controlled concurrent embedding generation to improve analysis performance.
  * Uses a semaphore pattern to limit concurrent API calls and prevent overwhelming
- * the Ollama service.
+ * the AI engine.
  *
  * Key features:
  * - Configurable concurrency limit (default: 5, max: 10)
@@ -205,61 +206,89 @@ class ParallelEmbeddingService {
    * @returns {Promise<{vector: number[], model: string}>}
    */
   async _embedTextWithRetry(text) {
-    // FIX: Delegate to OllamaService for consistent model resolution and fallback logic
+    // FIX: Delegate to LlamaService for consistent model resolution and fallback logic
     // This ensures ingestion uses the same logic as search
     try {
-      const ollamaService = getOllamaService();
+      const pool = getEmbeddingPool();
+      if (pool) {
+        try {
+          const config = await getLlamaService().getConfig();
+          const modelPath =
+            config?.modelsPath && config?.embeddingModel
+              ? path.join(config.modelsPath, config.embeddingModel)
+              : null;
+          if (modelPath) {
+            const result = await pool.run({
+              text,
+              modelPath,
+              gpuLayers: config?.gpuLayers ?? -1
+            });
+            if (result?.embedding) {
+              return {
+                success: true,
+                vector: result.embedding,
+                model: config?.embeddingModel || 'local-model'
+              };
+            }
+          }
+        } catch (workerError) {
+          logger.warn('[ParallelEmbeddingService] Embedding worker failed, falling back', {
+            error: workerError.message
+          });
+        }
+      }
+
+      const llamaService = getLlamaService();
 
       // Health check enhancement: Fail fast if service is known to be unhealthy
-      const ollamaClient = ollamaService.getClient();
-      if (ollamaClient && typeof ollamaClient.isHealthy === 'boolean' && !ollamaClient.isHealthy) {
-        const error = new Error('Ollama service is unhealthy (circuit open or disconnected)');
+      const health = llamaService.getHealthStatus();
+      if (health && !health.initialized) {
+        const error = new Error('Llama service is unhealthy (not initialized)');
         error.code = 'SERVICE_UNAVAILABLE';
         throw error;
       }
 
-      // Pass retry configuration to OllamaService
+      // Pass retry configuration to LlamaService
+      // Note: LlamaService handles retries internally via LlamaResilience, but we pass options if supported
       const options = {
-        maxRetries: this.maxRetries,
-        initialDelay: this.initialRetryDelayMs,
-        maxDelay: this.maxRetryDelayMs
+        // maxRetries: this.maxRetries, // LlamaService uses internal config for retries
+        // initialDelay: this.initialRetryDelayMs,
+        // maxDelay: this.maxRetryDelayMs
       };
 
-      const result = await ollamaService.generateEmbedding(text, options);
+      const result = await llamaService.generateEmbedding(text, options);
 
       // Normalize shape to { vector, model, success } expected by callers
-      if (result && result.success) {
+      if (result && result.embedding) {
+        // LlamaService.generateEmbedding() returns {embedding: [...]} without model name.
+        // Read model from config so batch model-consistency checks work correctly.
+        const configModel = llamaService.getConfig?.()?.embeddingModel;
         const normalized = {
           success: true,
-          vector: result.embedding || result.vector || [],
-          model: result.model || 'fallback'
+          vector: result.embedding || [],
+          model: result.model || configModel || 'local-model'
         };
-        // Reduce log verbosity for successful embeddings - only log debug if needed
-        // logger.debug('[ParallelEmbeddingService] Embedding generated', {
-        //   model: normalized.model,
-        //   dim: Array.isArray(normalized.vector) ? normalized.vector.length : 0
-        // });
         return normalized;
       }
 
       // Propagate structured failure for upstream handling
       const err = new Error(result?.error || 'Embedding failed');
-      err.code = 'EMBEDDING_FAILED';
+      err.code = ERROR_CODES.EMBEDDING_GENERATION_FAILED;
       logger.warn('[ParallelEmbeddingService] Embedding failed', {
         model: result?.model,
         error: err.message
       });
       throw err;
     } catch (error) {
-      logger.error('[ParallelEmbeddingService] Embedding failed via OllamaService', {
+      logger.error('[ParallelEmbeddingService] Embedding failed via AI service', {
         error: error.message,
-        retryable: isRetryableError(error)
+        retryable: this._isRetryableError(error)
       });
 
       const embeddingError = new Error(`Embedding failed: ${error.message}`);
-      embeddingError.code = 'EMBEDDING_FAILED';
+      embeddingError.code = ERROR_CODES.EMBEDDING_GENERATION_FAILED;
       embeddingError.originalError = error;
-      embeddingError.retryable = isRetryableError(error);
+      embeddingError.retryable = this._isRetryableError(error);
       throw embeddingError;
     }
   }
@@ -285,7 +314,8 @@ class ParallelEmbeddingService {
     // If the model changes during a batch, different items would have different dimensions,
     // causing vector store corruption
     const { AI_DEFAULTS } = require('../../shared/constants');
-    const batchModel = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
+    const batchCfg = await getLlamaService().getConfig();
+    const batchModel = batchCfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
 
     const startTime = Date.now();
     const results = new Array(items.length);
@@ -303,7 +333,8 @@ class ParallelEmbeddingService {
     const processItem = async (item, index) => {
       try {
         // FIX: Check model before each item to prevent mixed-dimension vectors
-        const currentModel = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
+        const currentCfg = await getLlamaService().getConfig();
+        const currentModel = currentCfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
         if (currentModel !== batchModel) {
           modelChangedDuringBatch = true;
           const errorMsg = `Model changed during batch operation (started with ${batchModel}, now ${currentModel}). Aborting batch to prevent vector dimension mismatch.`;
@@ -549,14 +580,14 @@ class ParallelEmbeddingService {
   }
 
   /**
-   * Check if Ollama service is healthy
+   * Check if Llama service is healthy
    * @returns {Promise<boolean>}
    */
   async isServiceHealthy() {
     try {
-      const ollama = getOllama();
-      await ollama.list();
-      return true;
+      const llamaService = getLlamaService();
+      const status = await llamaService.testConnection();
+      return status && status.success;
     } catch (error) {
       logger.warn('[ParallelEmbeddingService] Health check failed:', error.message);
       return false;
@@ -564,7 +595,7 @@ class ParallelEmbeddingService {
   }
 
   /**
-   * Wait for Ollama service to become available
+   * Wait for AI service to become available
    * @param {Object} options - Options
    * @param {number} [options.maxWaitMs=30000] - Maximum wait time
    * @param {number} [options.checkIntervalMs=2000] - Check interval
@@ -587,7 +618,7 @@ class ParallelEmbeddingService {
       });
     }
 
-    logger.warn('[ParallelEmbeddingService] Timeout waiting for Ollama service');
+    logger.warn('[ParallelEmbeddingService] Timeout waiting for Llama service');
     return false;
   }
 

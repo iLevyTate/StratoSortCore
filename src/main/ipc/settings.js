@@ -21,14 +21,6 @@ const { settingsSchema, backupPathSchema, z } = require('./validationSchemas');
 const { SETTINGS_VALIDATION, PROTOTYPE_POLLUTION_KEYS } = require('../../shared/securityConfig');
 const { validateFileOperationPathSync } = require('../../shared/pathSanitization');
 const {
-  normalizeSlashes,
-  normalizeProtocolCase,
-  extractBaseUrl,
-  hasProtocol,
-  ensureProtocol
-} = require('../../shared/urlUtils');
-const {
-  LENIENT_URL_PATTERN,
   LOGGING_LEVELS,
   NUMERIC_LIMITS,
   MODEL_NAME_PATTERN,
@@ -46,6 +38,7 @@ const {
  * @param {string} url - The URL to sanitize
  * @returns {string} URL with credentials redacted
  */
+// eslint-disable-next-line no-unused-vars -- retained for future URL-setting IPC handlers
 function sanitizeUrlForLogging(url) {
   if (!url || typeof url !== 'string') return '[invalid-url]';
   try {
@@ -66,56 +59,33 @@ function sanitizeUrlForLogging(url) {
   }
 }
 
-function normalizeOllamaHostForValidation(value) {
-  if (!value || typeof value !== 'string') return value;
-  let trimmed = value.trim();
-  if (!trimmed) return trimmed;
-
-  trimmed = normalizeSlashes(trimmed);
-  if (hasProtocol(trimmed)) {
-    trimmed = normalizeProtocolCase(trimmed);
-  }
-
-  trimmed = extractBaseUrl(trimmed);
-
-  if (!hasProtocol(trimmed)) {
-    trimmed = ensureProtocol(trimmed);
-  }
-
-  return trimmed;
-}
-
 /**
- * Apply settings to Ollama services and system configuration
+ * Apply settings to AI services and system configuration
  * Extracted to avoid code duplication across save/import/restore handlers
  * @param {object} merged - The merged settings object
  * @param {object} context - Context containing service setters and logger
  * @returns {Promise<void>}
  */
 async function applySettingsToServices(merged, { logger }) {
-  // FIX: Use OllamaService.updateConfig() to ensure model change events fire properly
+  // Use LlamaService.updateConfig() to ensure model change events fire properly
   // This is critical for embedding model changes - FolderMatchingService needs to be notified
-  // to clear its cache and reset ChromaDB when the embedding model changes
-  const OllamaService = require('../services/OllamaService');
-  const ollamaService = OllamaService.getInstance();
+  // to clear its cache and reset the vector DB when the embedding model changes
+  const { getInstance: getLlamaService } = require('../services/LlamaService');
+  const llamaService = getLlamaService();
 
   // Build config object with all model settings
-  const ollamaConfig = {};
-  if (merged.ollamaHost) ollamaConfig.host = merged.ollamaHost;
-  if (merged.textModel) ollamaConfig.textModel = merged.textModel;
-  if (merged.visionModel) ollamaConfig.visionModel = merged.visionModel;
-  if (merged.embeddingModel) ollamaConfig.embeddingModel = merged.embeddingModel;
+  const llamaConfig = {};
+  const textModel = merged.textModel;
+  const visionModel = merged.visionModel;
+  const embeddingModel = merged.embeddingModel;
+  if (textModel) llamaConfig.textModel = textModel;
+  if (visionModel) llamaConfig.visionModel = visionModel;
+  if (embeddingModel) llamaConfig.embeddingModel = embeddingModel;
 
-  // Apply all Ollama config changes through OllamaService to trigger proper notifications
+  // Apply all Llama config changes through LlamaService to trigger proper notifications
   // skipSave: true because we're already in a save operation (settings are saved by the caller)
-  if (Object.keys(ollamaConfig).length > 0) {
-    const result = await ollamaService.updateConfig(ollamaConfig, { skipSave: true });
-    if (result.modelDowngraded) {
-      logger.warn('[SETTINGS] Embedding model was downgraded to default due to invalid selection');
-    }
-    if (!result.success) {
-      logger.error('[SETTINGS] Failed to apply Ollama config:', result.error);
-    }
+  if (Object.keys(llamaConfig).length > 0) {
+    await llamaService.updateConfig(llamaConfig);
   }
 
   if (typeof merged.launchOnStartup === 'boolean') {
@@ -172,26 +142,6 @@ function validateImportedSettings(settings, logger) {
   }
 
   const normalized = { ...filtered };
-  if (typeof normalized.ollamaHost === 'string') {
-    const rawHost = normalized.ollamaHost.trim();
-    if (rawHost) {
-      const candidate = ensureProtocol(normalizeProtocolCase(normalizeSlashes(rawHost)));
-      if (!LENIENT_URL_PATTERN.test(rawHost)) {
-        throw new Error('Invalid ollamaHost: URL format is invalid');
-      }
-      let parsed;
-      try {
-        parsed = new URL(candidate);
-      } catch (urlError) {
-        throw new Error(`Invalid ollamaHost: ${urlError.message || 'URL is malformed'}`);
-      }
-      if (parsed.username || parsed.password) {
-        throw new Error('Invalid ollamaHost: URLs with credentials are not allowed');
-      }
-    }
-    normalized.ollamaHost = normalizeOllamaHostForValidation(normalized.ollamaHost);
-  }
-
   // Validate without dropping invalid values so imports fail fast.
   const validation = validateSettings(normalized);
 
@@ -236,9 +186,6 @@ function validateImportedSettings(settings, logger) {
     'autoOrganize',
     'autoChunkOnAnalysis',
     'backgroundMode',
-    'autoUpdateOllama',
-    'autoUpdateChromaDb',
-    'dependencyWizardShown',
     'notifications',
     'notifyOnAutoAnalysis',
     'notifyOnLowConfidence',
@@ -355,38 +302,6 @@ function validateImportedSettings(settings, logger) {
     });
   }
 
-  // Additional safety checks for Ollama host on imports
-  if (typeof validated.ollamaHost === 'string') {
-    const trimmed = normalizeOllamaHostForValidation(validated.ollamaHost);
-    if (trimmed) {
-      const lowerValue = trimmed.toLowerCase();
-      if (lowerValue.includes('0.0.0.0') || lowerValue.includes('[::]')) {
-        logger.warn(
-          `[SETTINGS-IMPORT] Blocking potentially unsafe URL: ${sanitizeUrlForLogging(trimmed)}`
-        );
-        throw new Error('Invalid ollamaHost: potentially unsafe URL pattern detected');
-      }
-      let parsed;
-      try {
-        parsed = new URL(trimmed);
-      } catch (urlError) {
-        logger.warn(
-          `[SETTINGS-IMPORT] Rejecting malformed URL: ${sanitizeUrlForLogging(trimmed)}`,
-          {
-            error: urlError.message
-          }
-        );
-        throw new Error('Invalid ollamaHost: URL is malformed and cannot be parsed');
-      }
-      if (parsed.username || parsed.password) {
-        logger.warn(
-          `[SETTINGS-IMPORT] Blocking URL with credentials: ${sanitizeUrlForLogging(trimmed)}`
-        );
-        throw new Error('Invalid ollamaHost: URLs with credentials are not allowed');
-      }
-    }
-  }
-
   return sanitizeSettings(validated);
 }
 
@@ -398,15 +313,7 @@ function validateImportedSettings(settings, logger) {
  * @returns {Promise<Object>} IPC response
  */
 async function handleSettingsSaveCore(settings, deps) {
-  const {
-    settingsService,
-    setOllamaHost: _setOllamaHost,
-    setOllamaModel: _setOllamaModel,
-    setOllamaVisionModel: _setOllamaVisionModel,
-    setOllamaEmbeddingModel: _setOllamaEmbeddingModel,
-    onSettingsChanged,
-    logger
-  } = deps;
+  const { settingsService, onSettingsChanged, logger } = deps;
 
   try {
     const normalizedInput =
@@ -481,8 +388,6 @@ function registerSettingsIpc(servicesOrParams) {
 
   const { ipcMain, IPC_CHANNELS, logger } = container.core;
   const { settingsService, onSettingsChanged } = container.settings;
-  const { setOllamaHost, setOllamaModel, setOllamaVisionModel, setOllamaEmbeddingModel } =
-    container.ollama;
 
   safeHandle(
     ipcMain,
@@ -517,10 +422,6 @@ function registerSettingsIpc(servicesOrParams) {
   // Dependencies for save handler (captured in closure)
   const saveDeps = {
     settingsService,
-    setOllamaHost,
-    setOllamaModel,
-    setOllamaVisionModel,
-    setOllamaEmbeddingModel,
     onSettingsChanged,
     logger
   };

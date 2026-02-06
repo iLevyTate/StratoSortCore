@@ -1,9 +1,10 @@
 const { globalBatchProcessor } = require('../utils/llmOptimization');
 const { createLogger } = require('../../shared/logger');
+const { Semaphore } = require('../../shared/promiseUtils');
 
 const logger = createLogger('BatchAnalysisService');
-const { analyzeDocumentFile } = require('../analysis/ollamaDocumentAnalysis');
-const { analyzeImageFile } = require('../analysis/ollamaImageAnalysis');
+const { analyzeDocumentFile } = require('../analysis/documentAnalysis');
+const { analyzeImageFile } = require('../analysis/imageAnalysis');
 const { getInstance: getParallelEmbeddingService } = require('./ParallelEmbeddingService');
 const { analysisQueue } = require('../analysis/embeddingQueue/stageQueues');
 const embeddingQueueManager = require('../analysis/embeddingQueue/queueManager');
@@ -38,6 +39,10 @@ class BatchAnalysisService {
       maxRetries: configRetryAttempts
     });
 
+    // FIX: Mutex for embedding backpressure checks
+    // Ensures only one worker checks the queue capacity at a time, preventing "check-then-act" races
+    this.backpressureLock = new Semaphore(1);
+
     // FIX: Track embedding progress for comprehensive reporting
     this._embeddingProgressUnsubscribe = null;
 
@@ -71,7 +76,7 @@ class BatchAnalysisService {
       });
     }
 
-    // Cap at global Ollama semaphore limit (3) to avoid holding memory while waiting for slots
+    // Cap at global AI semaphore limit (3) to avoid holding memory while waiting for slots
     concurrency = Math.min(concurrency, 3);
 
     logger.debug('[BATCH-ANALYSIS] Calculated optimal concurrency', {
@@ -155,68 +160,75 @@ class BatchAnalysisService {
   async _executeAnalysis(filePaths, smartFolders, options) {
     const { concurrency, onProgress, stopOnError, startTime } = options;
 
+    // FIX P3-1: Backpressure control constants
+    const BACKPRESSURE_TIMEOUT_MS = 60000; // Max 60 seconds wait
+    const BACKPRESSURE_INITIAL_DELAY_MS = 500;
+    const BACKPRESSURE_MAX_DELAY_MS = 5000;
+
     // FIX: Track embedding statistics for this batch
     const embeddingStats = {
       startQueueSize: analysisQueue.getStats().queueLength,
       embeddings: 0
     };
 
-    // FIX P3-1: Backpressure control to prevent embedding queue overflow
-    // When queue is too full, wait for it to drain before adding more work
-    // FIX P1-6: Added timeout and exponential backoff to prevent infinite loops
-    const BACKPRESSURE_TIMEOUT_MS = 60000; // Max 60 seconds wait
-    const BACKPRESSURE_INITIAL_DELAY_MS = 500;
-    const BACKPRESSURE_MAX_DELAY_MS = 5000;
-
     const checkBackpressure = async () => {
-      const stats = analysisQueue.getStats();
-      if (stats.capacityPercent >= 75) {
-        logger.warn('[BATCH-ANALYSIS] Backpressure: embedding queue at capacity', {
-          capacityPercent: stats.capacityPercent,
-          queueLength: stats.queueLength
-        });
+      // Acquire lock to serialize queue capacity checks
+      await this.backpressureLock.acquire();
 
-        const backpressureStart = Date.now();
-        let delay = BACKPRESSURE_INITIAL_DELAY_MS;
-        let iterations = 0;
-
-        // Wait for queue to drain below 50% before resuming, with timeout
-        while (analysisQueue.getStats().capacityPercent > 50) {
-          const elapsed = Date.now() - backpressureStart;
-          if (elapsed >= BACKPRESSURE_TIMEOUT_MS) {
-            logger.warn('[BATCH-ANALYSIS] Backpressure timeout reached, continuing anyway', {
-              elapsed,
-              capacityPercent: analysisQueue.getStats().capacityPercent
-            });
-            break;
-          }
-
-          await new Promise((resolve) => setTimeout(resolve, delay));
-          // Exponential backoff with cap
-          delay = Math.min(delay * 1.5, BACKPRESSURE_MAX_DELAY_MS);
-          iterations++;
-
-          if (iterations % 10 === 0) {
-            logger.debug('[BATCH-ANALYSIS] Waiting for embedding queue to drain', {
-              elapsed,
-              capacityPercent: analysisQueue.getStats().capacityPercent,
-              iterations
-            });
-          }
-        }
-
-        if (Date.now() - backpressureStart < BACKPRESSURE_TIMEOUT_MS) {
-          logger.info('[BATCH-ANALYSIS] Embedding queue drained, resuming analysis', {
-            waitTime: Date.now() - backpressureStart
+      try {
+        const stats = analysisQueue.getStats();
+        if (stats.capacityPercent >= 75) {
+          logger.warn('[BATCH-ANALYSIS] Backpressure: embedding queue at capacity', {
+            capacityPercent: stats.capacityPercent,
+            queueLength: stats.queueLength
           });
+
+          const backpressureStart = Date.now();
+          let delay = BACKPRESSURE_INITIAL_DELAY_MS;
+          let iterations = 0;
+
+          // Wait for queue to drain below 50% before resuming, with timeout
+          // NOTE: We hold the lock while waiting! This stops ALL other workers from checking/adding.
+          // This effectively pauses the analysis pipeline until the embedding queue drains.
+          while (analysisQueue.getStats().capacityPercent > 50) {
+            const elapsed = Date.now() - backpressureStart;
+            if (elapsed >= BACKPRESSURE_TIMEOUT_MS) {
+              logger.warn('[BATCH-ANALYSIS] Backpressure timeout reached, continuing anyway', {
+                elapsed,
+                capacityPercent: analysisQueue.getStats().capacityPercent
+              });
+              break;
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            // Exponential backoff with cap
+            delay = Math.min(delay * 1.5, BACKPRESSURE_MAX_DELAY_MS);
+            iterations++;
+
+            if (iterations % 10 === 0) {
+              logger.debug('[BATCH-ANALYSIS] Waiting for embedding queue to drain', {
+                elapsed,
+                capacityPercent: analysisQueue.getStats().capacityPercent,
+                iterations
+              });
+            }
+          }
+
+          if (Date.now() - backpressureStart < BACKPRESSURE_TIMEOUT_MS) {
+            logger.info('[BATCH-ANALYSIS] Embedding queue drained, resuming analysis', {
+              waitTime: Date.now() - backpressureStart
+            });
+          }
         }
+      } finally {
+        this.backpressureLock.release();
       }
     };
 
     // Process each file
     const processFile = async (filePath, index) => {
       try {
-        // FIX P3-1: Check backpressure before starting file analysis
+        // FIX P3-1: Check backpressure using Mutex-guarded check
         await checkBackpressure();
 
         const extension = path.extname(filePath).toLowerCase();
@@ -238,6 +250,8 @@ class BatchAnalysisService {
         // Track embedding count
         embeddingStats.embeddings++;
 
+        // No semaphore release needed here as we used a lock-and-wait backpressure model
+
         return {
           filePath,
           success: true,
@@ -245,6 +259,8 @@ class BatchAnalysisService {
           type: isImage ? 'image' : 'document'
         };
       } catch (error) {
+        // No semaphore release needed here as we used a lock-and-wait backpressure model
+
         logger.error('[BATCH-ANALYSIS] File analysis failed', {
           index,
           path: filePath,
@@ -297,10 +313,8 @@ class BatchAnalysisService {
     try {
       const {
         flushAllEmbeddings: flushDocumentEmbeddings
-      } = require('../analysis/ollamaDocumentAnalysis');
-      const {
-        flushAllEmbeddings: flushImageEmbeddings
-      } = require('../analysis/ollamaImageAnalysis');
+      } = require('../analysis/documentAnalysis');
+      const { flushAllEmbeddings: flushImageEmbeddings } = require('../analysis/imageAnalysis');
 
       // Flush both queues to ensure all embeddings are persisted
       await Promise.allSettled([

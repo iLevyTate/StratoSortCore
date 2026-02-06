@@ -11,6 +11,12 @@ const fs = require('fs').promises;
 const path = require('path');
 const { createLogger } = require('../../../shared/logger');
 const { replaceFileWithRetry } = require('../../../shared/atomicFile');
+const {
+  createKeyValueStore,
+  shouldUseSqliteBackend,
+  isSqliteTransientError
+} = require('../../utils/sqliteStore');
+const { compressSync: compress, uncompressSync: uncompress } = require('lz4-napi');
 
 const logger = createLogger('AnalysisHistory-Persistence');
 const TRANSIENT_ERROR_CODES = new Set([
@@ -22,8 +28,100 @@ const TRANSIENT_ERROR_CODES = new Set([
   'ETIMEDOUT'
 ]);
 
+const SQLITE_DB_NAME = 'analysis-history.db';
+const SQLITE_TABLE = 'analysis_history_kv';
+const SQLITE_KEYS = {
+  config: 'config',
+  history: 'history',
+  index: 'index'
+};
+const SQLITE_COMPRESSION_ENABLED =
+  String(process.env.STRATOSORT_SQLITE_COMPRESS || 'true').toLowerCase() !== 'false';
+
+let sqliteStore = null;
+let sqliteDbPath = null;
+
 function isTransientError(error) {
   return Boolean(error?.code && TRANSIENT_ERROR_CODES.has(error.code));
+}
+
+function shouldUseSqlite() {
+  return shouldUseSqliteBackend('analysisHistory');
+}
+
+function getSqliteStore(referencePath) {
+  if (sqliteStore) return sqliteStore;
+  const dbPath = path.join(path.dirname(referencePath), SQLITE_DB_NAME);
+  sqliteDbPath = dbPath;
+  sqliteStore = createKeyValueStore({
+    dbPath,
+    tableName: SQLITE_TABLE,
+    serialize: (value) => {
+      const json = JSON.stringify(value);
+      if (!SQLITE_COMPRESSION_ENABLED) {
+        return Buffer.from(json, 'utf8');
+      }
+      return compress(Buffer.from(json, 'utf8'));
+    },
+    deserialize: (raw) => {
+      const buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+      const text = buffer.toString('utf8');
+      try {
+        return JSON.parse(text);
+      } catch (jsonError) {
+        try {
+          const decompressed = uncompress(buffer);
+          return JSON.parse(decompressed.toString('utf8'));
+        } catch (decompressError) {
+          const err = new Error('SQLite blob decode failed');
+          err.code = 'SQLITE_CORRUPT';
+          err.originalError = jsonError;
+          err.decompressError = decompressError;
+          throw err;
+        }
+      }
+    }
+  });
+  return sqliteStore;
+}
+
+function closeSqliteStore() {
+  if (sqliteStore && typeof sqliteStore.close === 'function') {
+    sqliteStore.close();
+  }
+  sqliteStore = null;
+  sqliteDbPath = null;
+}
+
+async function backupSqliteDb(reason) {
+  const dbPath = sqliteDbPath;
+  if (!dbPath) return;
+
+  // Close store to release file lock before moving
+  closeSqliteStore();
+
+  const backupPath = `${dbPath}.corrupt.${Date.now()}`;
+  try {
+    await fs.copyFile(dbPath, backupPath);
+    try {
+      await fs.unlink(dbPath);
+    } catch (unlinkError) {
+      logger.warn('[AnalysisHistory] Failed to delete corrupt sqlite db after backup', {
+        dbPath,
+        error: unlinkError?.message || unlinkError
+      });
+    }
+    logger.warn('[AnalysisHistory] Backed up corrupt sqlite db', {
+      dbPath,
+      backupPath,
+      reason: reason?.message || reason
+    });
+  } catch (backupError) {
+    logger.warn('[AnalysisHistory] Failed to back up corrupt sqlite db', {
+      dbPath,
+      error: backupError?.message || backupError
+    });
+  }
 }
 
 async function backupCorruptFile(filePath, reason) {
@@ -40,6 +138,41 @@ async function backupCorruptFile(filePath, reason) {
       filePath,
       error: backupError?.message || backupError
     });
+  }
+}
+
+async function migrateLegacyJson(filePath, key, description) {
+  try {
+    const json = await fs.readFile(filePath, 'utf8');
+    const parsed = JSON.parse(json);
+    const store = getSqliteStore(filePath);
+    store.set(key, parsed);
+    try {
+      await fs.rename(filePath, `${filePath}.legacy.${Date.now()}`);
+    } catch (renameError) {
+      logger.debug('[AnalysisHistory] Failed to rename legacy JSON file', {
+        filePath,
+        error: renameError.message
+      });
+    }
+    logger.info(`[AnalysisHistory] Migrated ${description} to SQLite`);
+    return parsed;
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return null;
+    }
+    if (error instanceof SyntaxError) {
+      await backupCorruptFile(filePath, error);
+      return null;
+    }
+    if (isTransientError(error)) {
+      error.transient = true;
+      throw error;
+    }
+    logger.warn(`[AnalysisHistory] Failed to migrate legacy ${description}`, {
+      error: error.message
+    });
+    return null;
   }
 }
 
@@ -73,14 +206,7 @@ async function atomicWriteFile(filePath, data) {
   }
 }
 
-/**
- * Load config from disk
- * @param {string} configPath - Path to config file
- * @param {Function} getDefaultConfig - Function to get default config
- * @param {Function} saveConfig - Function to save config
- * @returns {Promise<Object>} Config object
- */
-async function loadConfig(configPath, getDefaultConfig, saveConfig) {
+async function loadConfigFromJson(configPath, getDefaultConfig, saveConfig) {
   try {
     const configData = await fs.readFile(configPath, 'utf8');
     return JSON.parse(configData);
@@ -105,27 +231,81 @@ async function loadConfig(configPath, getDefaultConfig, saveConfig) {
   }
 }
 
-/**
- * Save config to disk
- * @param {string} configPath - Path to config file
- * @param {Object} config - Config object
- */
-async function saveConfig(configPath, config) {
+async function saveConfigToJson(configPath, config) {
   config.updatedAt = new Date().toISOString();
   await ensureParentDirectory(configPath);
   await atomicWriteFile(configPath, JSON.stringify(config, null, 2));
 }
 
 /**
- * Load history from disk
- * @param {string} historyPath - Path to history file
- * @param {string} schemaVersion - Current schema version
- * @param {Function} createEmptyHistory - Function to create empty history
- * @param {Function} saveHistory - Function to save history
- * @param {Function} migrateHistory - Function to migrate history
- * @returns {Promise<Object>} History object
+ * Load config from disk (SQLite-backed when available)
+ * @param {string} configPath - Path to config file
+ * @param {Function} getDefaultConfig - Function to get default config
+ * @param {Function} saveConfig - Function to save config
+ * @returns {Promise<Object>} Config object
  */
-async function loadHistory(
+async function loadConfig(configPath, getDefaultConfig, saveConfig) {
+  if (!shouldUseSqlite()) {
+    return loadConfigFromJson(configPath, getDefaultConfig, saveConfig);
+  }
+
+  try {
+    const store = getSqliteStore(configPath);
+    let existing;
+    try {
+      existing = store.get(SQLITE_KEYS.config);
+    } catch (error) {
+      if (error?.code === 'SQLITE_CORRUPT') {
+        await backupSqliteDb(error);
+        closeSqliteStore();
+      }
+      throw error;
+    }
+    if (existing !== undefined && existing !== null) {
+      return existing;
+    }
+    const migrated = await migrateLegacyJson(configPath, SQLITE_KEYS.config, 'config');
+    if (migrated) {
+      return migrated;
+    }
+    const config = getDefaultConfig();
+    store.set(SQLITE_KEYS.config, config);
+    return config;
+  } catch (error) {
+    if (
+      error?.code === 'SQLITE_CORRUPT' ||
+      error?.code === 'SQLITE_NOTADB' ||
+      (error?.message && error.message.includes('file is not a database'))
+    ) {
+      await backupSqliteDb(error);
+      // Fall through to JSON fallback
+    }
+    if (isSqliteTransientError(error)) {
+      error.transient = true;
+      throw error;
+    }
+    logger.warn('[AnalysisHistory] SQLite loadConfig failed, falling back to JSON', {
+      error: error.message
+    });
+    return loadConfigFromJson(configPath, getDefaultConfig, saveConfig);
+  }
+}
+
+/**
+ * Save config to disk
+ * @param {string} configPath - Path to config file
+ * @param {Object} config - Config object
+ */
+async function saveConfig(configPath, config) {
+  if (!shouldUseSqlite()) {
+    return saveConfigToJson(configPath, config);
+  }
+  const store = getSqliteStore(configPath);
+  config.updatedAt = new Date().toISOString();
+  store.set(SQLITE_KEYS.config, config, config.updatedAt);
+}
+
+async function loadHistoryFromJson(
   historyPath,
   schemaVersion,
   createEmptyHistory,
@@ -136,7 +316,6 @@ async function loadHistory(
     const historyData = await fs.readFile(historyPath, 'utf8');
     let history = JSON.parse(historyData);
 
-    // Validate schema version
     if (history.schemaVersion !== schemaVersion) {
       history = await migrateHistory(history);
       await saveHistory(history);
@@ -164,25 +343,106 @@ async function loadHistory(
   }
 }
 
-/**
- * Save history to disk
- * @param {string} historyPath - Path to history file
- * @param {Object} history - History object
- */
-async function saveHistory(historyPath, history) {
+async function saveHistoryToJson(historyPath, history) {
   history.updatedAt = new Date().toISOString();
   await ensureParentDirectory(historyPath);
   await atomicWriteFile(historyPath, JSON.stringify(history, null, 2));
 }
 
 /**
- * Load index from disk
- * @param {string} indexPath - Path to index file
- * @param {Function} createEmptyIndex - Function to create empty index
- * @param {Function} saveIndex - Function to save index
- * @returns {Promise<Object>} Index object
+ * Load history from disk
+ * @param {string} historyPath - Path to history file
+ * @param {string} schemaVersion - Current schema version
+ * @param {Function} createEmptyHistory - Function to create empty history
+ * @param {Function} saveHistory - Function to save history
+ * @param {Function} migrateHistory - Function to migrate history
+ * @returns {Promise<Object>} History object
  */
-async function loadIndex(indexPath, createEmptyIndex, saveIndex) {
+async function loadHistory(
+  historyPath,
+  schemaVersion,
+  createEmptyHistory,
+  saveHistory,
+  migrateHistory
+) {
+  if (!shouldUseSqlite()) {
+    return loadHistoryFromJson(
+      historyPath,
+      schemaVersion,
+      createEmptyHistory,
+      saveHistory,
+      migrateHistory
+    );
+  }
+
+  try {
+    const store = getSqliteStore(historyPath);
+    let history;
+    try {
+      history = store.get(SQLITE_KEYS.history);
+    } catch (error) {
+      if (error?.code === 'SQLITE_CORRUPT') {
+        await backupSqliteDb(error);
+        closeSqliteStore();
+      }
+      throw error;
+    }
+    if (history === undefined || history === null) {
+      history = await migrateLegacyJson(historyPath, SQLITE_KEYS.history, 'history');
+    }
+    if (history === undefined || history === null) {
+      history = createEmptyHistory();
+      store.set(SQLITE_KEYS.history, history);
+      return history;
+    }
+
+    if (history.schemaVersion !== schemaVersion) {
+      history = await migrateHistory(history);
+      store.set(SQLITE_KEYS.history, history);
+    }
+
+    return history;
+  } catch (error) {
+    if (
+      error?.code === 'SQLITE_CORRUPT' ||
+      error?.code === 'SQLITE_NOTADB' ||
+      (error?.message && error.message.includes('file is not a database'))
+    ) {
+      await backupSqliteDb(error);
+      // Fall through to JSON fallback
+    }
+    if (isSqliteTransientError(error)) {
+      error.transient = true;
+      throw error;
+    }
+    logger.warn('[AnalysisHistory] SQLite loadHistory failed, falling back to JSON', {
+      error: error.message
+    });
+    return loadHistoryFromJson(
+      historyPath,
+      schemaVersion,
+      createEmptyHistory,
+      saveHistory,
+      migrateHistory
+    );
+  }
+}
+
+/**
+ * Save history to disk
+ * @param {string} historyPath - Path to history file
+ * @param {Object} history - History object
+ */
+async function saveHistory(historyPath, history) {
+  if (!shouldUseSqlite()) {
+    return saveHistoryToJson(historyPath, history);
+  }
+  const store = getSqliteStore(historyPath);
+  history.updatedAt = new Date().toISOString();
+  store.set(SQLITE_KEYS.history, history, history.updatedAt);
+}
+
+async function loadIndexFromJson(indexPath, createEmptyIndex, saveIndex) {
   try {
     const indexData = await fs.readFile(indexPath, 'utf8');
     return JSON.parse(indexData);
@@ -207,15 +467,76 @@ async function loadIndex(indexPath, createEmptyIndex, saveIndex) {
   }
 }
 
+async function saveIndexToJson(indexPath, index) {
+  index.updatedAt = new Date().toISOString();
+  await ensureParentDirectory(indexPath);
+  await atomicWriteFile(indexPath, JSON.stringify(index, null, 2));
+}
+
+/**
+ * Load index from disk
+ * @param {string} indexPath - Path to index file
+ * @param {Function} createEmptyIndex - Function to create empty index
+ * @param {Function} saveIndex - Function to save index
+ * @returns {Promise<Object>} Index object
+ */
+async function loadIndex(indexPath, createEmptyIndex, saveIndex) {
+  if (!shouldUseSqlite()) {
+    return loadIndexFromJson(indexPath, createEmptyIndex, saveIndex);
+  }
+
+  try {
+    const store = getSqliteStore(indexPath);
+    let index;
+    try {
+      index = store.get(SQLITE_KEYS.index);
+    } catch (error) {
+      if (error?.code === 'SQLITE_CORRUPT') {
+        await backupSqliteDb(error);
+        closeSqliteStore();
+      }
+      throw error;
+    }
+    if (index === undefined || index === null) {
+      index = await migrateLegacyJson(indexPath, SQLITE_KEYS.index, 'index');
+    }
+    if (index === undefined || index === null) {
+      index = createEmptyIndex();
+      store.set(SQLITE_KEYS.index, index);
+    }
+    return index;
+  } catch (error) {
+    if (
+      error?.code === 'SQLITE_CORRUPT' ||
+      error?.code === 'SQLITE_NOTADB' ||
+      (error?.message && error.message.includes('file is not a database'))
+    ) {
+      await backupSqliteDb(error);
+      // Fall through to JSON fallback
+    }
+    if (isSqliteTransientError(error)) {
+      error.transient = true;
+      throw error;
+    }
+    logger.warn('[AnalysisHistory] SQLite loadIndex failed, falling back to JSON', {
+      error: error.message
+    });
+    return loadIndexFromJson(indexPath, createEmptyIndex, saveIndex);
+  }
+}
+
 /**
  * Save index to disk
  * @param {string} indexPath - Path to index file
  * @param {Object} index - Index object
  */
 async function saveIndex(indexPath, index) {
+  if (!shouldUseSqlite()) {
+    return saveIndexToJson(indexPath, index);
+  }
+  const store = getSqliteStore(indexPath);
   index.updatedAt = new Date().toISOString();
-  await ensureParentDirectory(indexPath);
-  await atomicWriteFile(indexPath, JSON.stringify(index, null, 2));
+  store.set(SQLITE_KEYS.index, index, index.updatedAt);
 }
 
 /**
@@ -236,11 +557,22 @@ async function createDefaultStructures(
   const history = createEmptyHistory();
   const index = createEmptyIndex();
 
-  await Promise.all([
-    saveConfig(paths.configPath, config),
-    saveHistory(paths.historyPath, history),
-    saveIndex(paths.indexPath, index)
-  ]);
+  if (shouldUseSqlite()) {
+    const store = getSqliteStore(paths.configPath);
+    const now = new Date().toISOString();
+    config.updatedAt = now;
+    history.updatedAt = now;
+    index.updatedAt = now;
+    store.set(SQLITE_KEYS.config, config, now);
+    store.set(SQLITE_KEYS.history, history, now);
+    store.set(SQLITE_KEYS.index, index, now);
+  } else {
+    await Promise.all([
+      saveConfigToJson(paths.configPath, config),
+      saveHistoryToJson(paths.historyPath, history),
+      saveIndexToJson(paths.indexPath, index)
+    ]);
+  }
 
   return { config, history, index };
 }
@@ -254,5 +586,6 @@ module.exports = {
   saveHistory,
   loadIndex,
   saveIndex,
-  createDefaultStructures
+  createDefaultStructures,
+  closeSqliteStore
 };

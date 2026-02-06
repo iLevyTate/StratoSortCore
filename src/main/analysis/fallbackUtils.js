@@ -536,8 +536,8 @@ function safeSuggestedName(fileName, extension) {
  * Create a unified fallback analysis result
  *
  * This factory function consolidates fallback creation patterns from:
- * - ollamaDocumentAnalysis.js (createDocumentFallback)
- * - ollamaImageAnalysis.js (createFallbackResult)
+ * - document analysis (createDocumentFallback)
+ * - image analysis (createFallbackResult)
  *
  * @param {Object} params - Parameters for fallback creation
  * @param {string} params.fileName - Original file name
@@ -556,7 +556,7 @@ function safeSuggestedName(fileName, extension) {
  * const fallback = createFallbackAnalysis({
  *   fileName: 'report.pdf',
  *   fileExtension: '.pdf',
- *   reason: 'Ollama unavailable',
+ *   reason: 'AI engine unavailable',
  *   smartFolders: folders,
  *   confidence: 60,
  *   type: 'document'

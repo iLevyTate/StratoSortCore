@@ -126,7 +126,7 @@ class SmartFolderWatcher {
    * @param {Function} deps.analyzeDocumentFile - Function to analyze document files
    * @param {Function} deps.analyzeImageFile - Function to analyze image files
    * @param {Object} deps.settingsService - Settings service
-   * @param {Object} deps.chromaDbService - ChromaDB service for embeddings
+   * @param {Object} deps.vectorDbService - Vector DB service for embeddings
    * @param {Object} deps.filePathCoordinator - FilePathCoordinator for atomic path updates
    * @param {Object} deps.folderMatcher - FolderMatchingService for generating embeddings
    * @param {Object} deps.notificationService - Notification service for user feedback
@@ -137,7 +137,7 @@ class SmartFolderWatcher {
     analyzeDocumentFile,
     analyzeImageFile,
     settingsService,
-    chromaDbService,
+    vectorDbService,
     filePathCoordinator,
     folderMatcher,
     notificationService
@@ -147,7 +147,7 @@ class SmartFolderWatcher {
     this.analyzeDocumentFile = analyzeDocumentFile;
     this.analyzeImageFile = analyzeImageFile;
     this.settingsService = settingsService;
-    this.chromaDbService = chromaDbService;
+    this.vectorDbService = vectorDbService;
     this.filePathCoordinator = filePathCoordinator || null;
     this.folderMatcher = folderMatcher;
     this.notificationService = notificationService;
@@ -1047,7 +1047,7 @@ class SmartFolderWatcher {
         // and the item is re-enqueued for retry, the expensive LLM call is not repeated.
         item._lastAnalysis = result;
 
-        // FIX: Immediately embed the analyzed file into ChromaDB for semantic search
+        // FIX: Immediately embed the analyzed file into the vector DB for semantic search
         // This ensures files watched by SmartFolderWatcher are searchable without manual rebuild
         await this._embedAnalyzedFile(filePath, result);
 
@@ -1184,7 +1184,7 @@ class SmartFolderWatcher {
   }
 
   /**
-   * Embed an analyzed file into ChromaDB for semantic search
+   * Embed an analyzed file into the vector DB for semantic search
    * This is called immediately after successful analysis to keep embeddings in sync
    * @private
    * @param {string} filePath - Path to the analyzed file
@@ -1192,7 +1192,7 @@ class SmartFolderWatcher {
    */
   async _embedAnalyzedFile(filePath, analysisResult) {
     // Skip if dependencies not available
-    if (!this.folderMatcher || !this.chromaDbService) {
+    if (!this.folderMatcher || !this.vectorDbService) {
       logger.debug('[SMART-FOLDER-WATCHER] Skipping embedding - services not available');
       return;
     }
@@ -1313,7 +1313,7 @@ class SmartFolderWatcher {
         throw new Error('Failed to generate embedding vector');
       }
 
-      // Prepare metadata for ChromaDB
+      // Prepare metadata for vector DB
       // IMPORTANT: IDs must match the rest of the semantic pipeline.
       const fileId = getCanonicalFileId(filePath, isImageFile(filePath));
       const fileName = path.basename(filePath);
@@ -1353,8 +1353,8 @@ class SmartFolderWatcher {
         }
       }
 
-      // Upsert to ChromaDB with comprehensive metadata for conversations
-      await this.chromaDbService.upsertFile({
+      // Upsert to vector DB with comprehensive metadata for conversations
+      await this.vectorDbService.upsertFile({
         id: fileId,
         vector: embedding.vector,
         model: embedding.model || 'unknown',
@@ -1395,8 +1395,8 @@ class SmartFolderWatcher {
           try {
             // FIX P2-2: Delete old chunks before creating new ones (for re-analysis)
             // This prevents orphaned chunks when file content changes
-            if (typeof this.chromaDbService.deleteFileChunks === 'function') {
-              await this.chromaDbService.deleteFileChunks(fileId);
+            if (typeof this.vectorDbService.deleteFileChunks === 'function') {
+              await this.vectorDbService.deleteFileChunks(fileId);
             }
 
             const chunks = chunkText(extractedText, {
@@ -1440,9 +1440,9 @@ class SmartFolderWatcher {
             // Batch upsert chunks if we have any
             if (
               chunkEmbeddings.length > 0 &&
-              typeof this.chromaDbService.batchUpsertFileChunks === 'function'
+              typeof this.vectorDbService.batchUpsertFileChunks === 'function'
             ) {
-              await this.chromaDbService.batchUpsertFileChunks(chunkEmbeddings);
+              await this.vectorDbService.batchUpsertFileChunks(chunkEmbeddings);
               logger.debug('[SMART-FOLDER-WATCHER] Embedded chunks:', {
                 file: fileName,
                 count: chunkEmbeddings.length
@@ -1605,8 +1605,8 @@ class SmartFolderWatcher {
    */
   async _finalizeDeletion(filePath) {
     try {
-      // Remove from ChromaDB (both file: and image: prefixes)
-      if (this.chromaDbService) {
+      // Remove from vector DB (both file: and image: prefixes)
+      if (this.vectorDbService) {
         const normalizedPath = normalizePathForIndex(filePath);
         const filePrefix = `file:${normalizedPath}`;
         const imagePrefix = `image:${normalizedPath}`;
@@ -1618,14 +1618,14 @@ class SmartFolderWatcher {
             : [filePrefix, imagePrefix, legacyFilePrefix, legacyImagePrefix];
 
         // Use batch delete for atomicity when available
-        if (typeof this.chromaDbService.batchDeleteFileEmbeddings === 'function') {
-          await this.chromaDbService.batchDeleteFileEmbeddings(idsToDelete);
+        if (typeof this.vectorDbService.batchDeleteFileEmbeddings === 'function') {
+          await this.vectorDbService.batchDeleteFileEmbeddings(idsToDelete);
         } else {
           // Fallback to individual deletes
           // FIX H-9: Wrap each delete in try-catch to continue on failure
           for (const id of idsToDelete) {
             try {
-              await this.chromaDbService.deleteFileEmbedding(id);
+              await this.vectorDbService.deleteFileEmbedding(id);
             } catch (delErr) {
               logger.debug(
                 '[SMART-FOLDER-WATCHER] Failed to delete embedding:',
@@ -1639,10 +1639,10 @@ class SmartFolderWatcher {
 
         // Delete associated chunks
         // FIX H-9: Wrap each chunk delete in try-catch to continue on failure
-        if (typeof this.chromaDbService.deleteFileChunks === 'function') {
+        if (typeof this.vectorDbService.deleteFileChunks === 'function') {
           for (const id of idsToDelete) {
             try {
-              await this.chromaDbService.deleteFileChunks(id);
+              await this.vectorDbService.deleteFileChunks(id);
             } catch (chunkErr) {
               logger.debug('[SMART-FOLDER-WATCHER] Failed to delete chunks:', id, chunkErr.message);
               // Continue with remaining IDs

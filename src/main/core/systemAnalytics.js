@@ -8,7 +8,7 @@ const systemAnalytics = {
   failedOperations: 0,
   totalProcessingTime: 0,
   errors: [],
-  ollamaHealth: { status: 'unknown', lastCheck: null },
+  llamaHealth: { status: 'unknown', lastCheck: null },
 
   recordProcessingTime(duration) {
     this.totalProcessingTime += duration;
@@ -44,7 +44,7 @@ const systemAnalytics = {
       avgProcessingTime: Math.round(avgProcessingTime),
       errorRate: this.processedFiles > 0 ? (this.failedOperations / this.processedFiles) * 100 : 0,
       recentErrors: this.errors.slice(-10),
-      ollamaHealth: this.ollamaHealth
+      llamaHealth: this.llamaHealth
     };
 
     try {

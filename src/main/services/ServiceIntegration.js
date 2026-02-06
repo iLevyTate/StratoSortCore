@@ -17,15 +17,15 @@ const logger = createLogger('ServiceIntegration');
  * This makes the initialization sequence clear and documentable.
  * Services are grouped by dependency tier:
  * - Tier 0: No dependencies (can init in parallel)
- * - Tier 1: Depends on external services (ChromaDB server)
+ * - Tier 1: Depends on vector DB services
  * - Tier 2: Depends on Tier 0/1 services
  */
 const SERVICE_INITIALIZATION_ORDER = {
   // Tier 0: Independent services (can init in parallel)
   tier0: ['analysisHistory', 'undoRedo', 'processingState'],
-  // Tier 1: ChromaDB (depends on external server)
-  tier1: ['chromaDb'],
-  // Tier 2: Services that depend on ChromaDB
+  // Tier 1: Vector DB (in-process Orama - no external server needed)
+  tier1: ['vectorDb'],
+  // Tier 2: Services that depend on Vector DB
   tier2: ['folderMatching']
 };
 
@@ -46,17 +46,17 @@ const SERVICE_INITIALIZATION_ORDER = {
  * await integration.initialize();
  *
  * // Access services via instance properties (backward compatible)
- * const chromaDb = integration.chromaDbService;
+ * const vectorDb = integration.vectorService;
  *
  * // Or via the container (recommended for new code)
- * const chromaDb = container.resolve(ServiceIds.CHROMA_DB);
+ * const vectorDb = container.resolve(ServiceIds.ORAMA_VECTOR);
  */
 class ServiceIntegration {
   constructor() {
     this.analysisHistory = null;
     this.undoRedo = null;
     this.processingState = null;
-    this.chromaDbService = null;
+    this.vectorService = null; // OramaVectorService (in-process)
     this.folderMatchingService = null;
     this.suggestionService = null;
     this.autoOrganizeService = null;
@@ -75,6 +75,22 @@ class ServiceIntegration {
 
     // Reference to the container for external access
     this.container = container;
+  }
+
+  /**
+   * Backward-compatible alias.
+   * Many legacy call sites (including some IPC registrars) still look for `vectorDbService`.
+   * In the Orama migration the instance is stored on `vectorService`.
+   */
+  get vectorDbService() {
+    return this.vectorService;
+  }
+
+  /**
+   * Additional alias for older code that expects `vectorDb`.
+   */
+  get vectorDb() {
+    return this.vectorService;
   }
 
   /**
@@ -139,11 +155,11 @@ class ServiceIntegration {
       this.processingState = container.resolve(ServiceIds.PROCESSING_STATE);
       this.relationshipIndex = container.resolve(ServiceIds.RELATIONSHIP_INDEX);
 
-      // Initialize ChromaDB and folder matching
-      this.chromaDbService = container.resolve(ServiceIds.CHROMA_DB);
-      if (!this.chromaDbService) {
+      // Initialize vector service and folder matching
+      this.vectorService = container.resolve(ServiceIds.ORAMA_VECTOR);
+      if (!this.vectorService) {
         logger.warn(
-          '[ServiceIntegration] ChromaDB service is null, some features will be unavailable'
+          '[ServiceIntegration] Vector service is null, some features will be unavailable'
         );
       }
 
@@ -160,53 +176,16 @@ class ServiceIntegration {
       // Initialize auto-organize service
       this.autoOrganizeService = container.resolve(ServiceIds.AUTO_ORGANIZE);
 
-      // FIX: Use startup result to skip redundant ChromaDB availability check (saves 2-4s)
-      // StartupManager already verified ChromaDB is running, so we don't need to recheck
-      let isChromaReady = false;
-      const { startupResult } = options;
+      // Vector DB availability check
+      // OramaVectorService is in-process, so it's always available (no external server)
+      // Only need to check if the service exists
+      let isVectorDbReady = !!this.vectorService;
+      const { startupResult: _startupResult } = options;
 
-      if (startupResult?.services?.chromadb?.success) {
-        // Trust the startup result - ChromaDB was already verified running
-        logger.info('[ServiceIntegration] Using startup result: ChromaDB is available');
-        isChromaReady = true;
-      } else if (!this.chromaDbService) {
-        logger.warn('[ServiceIntegration] ChromaDB service is null');
-        isChromaReady = false;
-      } else if (!startupResult) {
-        // No startup result provided - fall back to availability check (legacy path)
-        logger.debug('[ServiceIntegration] No startup result, checking ChromaDB availability...');
-        try {
-          let timeoutId;
-          const timeoutPromise = new Promise((resolve) => {
-            timeoutId = setTimeout(() => resolve(false), 2000);
-          });
-
-          try {
-            isChromaReady = await Promise.race([
-              this.chromaDbService.isServerAvailable(2000),
-              timeoutPromise
-            ]);
-          } finally {
-            if (timeoutId) clearTimeout(timeoutId);
-          }
-        } catch (error) {
-          logger.warn(
-            '[ServiceIntegration] ChromaDB availability check failed:',
-            error?.message || String(error)
-          );
-          isChromaReady = false;
-        }
-      } else {
-        // Startup result provided but ChromaDB wasn't successful
-        logger.warn('[ServiceIntegration] ChromaDB startup was not successful');
-        isChromaReady = false;
-      }
-
-      if (!isChromaReady) {
+      if (!isVectorDbReady) {
         logger.warn(
-          '[ServiceIntegration] ChromaDB server is not available. Running in degraded mode.'
+          '[ServiceIntegration] Vector service is not available. Running in degraded mode.'
         );
-        // Continue without ChromaDB - don't block startup
       }
 
       // FIX: Tiered initialization with explicit dependency ordering
@@ -234,15 +213,15 @@ class ServiceIntegration {
         }
       });
 
-      // Tier 1: Initialize ChromaDB if server is available
-      if (isChromaReady && this.chromaDbService) {
+      // Tier 1: Initialize Vector DB (OramaVectorService is in-process, always available)
+      if (isVectorDbReady && this.vectorService) {
         try {
-          await this.chromaDbService.initialize();
-          initStatus.initialized.push('chromaDb');
+          await this.vectorService.initialize();
+          initStatus.initialized.push('vectorDb');
 
-          // FIX: Wire up cascade orphan marking when analysis entries are removed
+          // Wire up cascade orphan marking when analysis entries are removed
           // This ensures embeddings and chunks are marked orphaned when their analysis entry is pruned
-          if (this.analysisHistory && this.chromaDbService) {
+          if (this.analysisHistory && this.vectorService) {
             this.analysisHistory.setOnEntriesRemovedCallback(async (removedEntries) => {
               if (!removedEntries || removedEntries.length === 0) return;
 
@@ -268,10 +247,10 @@ class ServiceIntegration {
               });
 
               try {
-                const result = await this.chromaDbService.markEmbeddingsOrphaned(fileIds);
+                const result = await this.vectorService.markEmbeddingsOrphaned(fileIds);
                 logger.info('[ServiceIntegration] Cascade orphan marking complete', {
-                  fileEmbeddings: result.file?.marked || 0,
-                  chunks: result.chunks?.marked || 0
+                  fileEmbeddings: result?.marked || 0,
+                  failed: result?.failed || 0
                 });
               } catch (error) {
                 logger.warn('[ServiceIntegration] Cascade orphan marking failed:', {
@@ -283,18 +262,20 @@ class ServiceIntegration {
           }
         } catch (error) {
           const errorMsg = error?.message || String(error);
-          initStatus.errors.push({ service: 'chromaDb', error: errorMsg });
-          logger.error('[ServiceIntegration] ChromaDB initialization failed:', errorMsg);
-          isChromaReady = false; // Prevent dependent services from initializing
+          initStatus.errors.push({ service: 'vectorDb', error: errorMsg });
+          logger.error('[ServiceIntegration] Vector DB initialization failed:', errorMsg);
+          isVectorDbReady = false; // Prevent dependent services from initializing
         }
       } else {
-        initStatus.skipped.push('chromaDb');
-        logger.warn('[ServiceIntegration] ChromaDB initialization skipped - server not available');
+        initStatus.skipped.push('vectorDb');
+        logger.warn(
+          '[ServiceIntegration] Vector DB initialization skipped - service not available'
+        );
       }
 
-      // Tier 2: Initialize services that depend on ChromaDB
-      // FolderMatchingService depends on ChromaDB for vector operations
-      if (this.folderMatchingService && isChromaReady) {
+      // Tier 2: Initialize services that depend on Vector DB
+      // FolderMatchingService depends on vector DB for vector operations
+      if (this.folderMatchingService && isVectorDbReady) {
         try {
           await this.folderMatchingService.initialize();
           initStatus.initialized.push('folderMatching');
@@ -309,7 +290,7 @@ class ServiceIntegration {
         }
       } else if (this.folderMatchingService) {
         initStatus.skipped.push('folderMatching');
-        logger.warn('[ServiceIntegration] FolderMatchingService skipped - ChromaDB not available');
+        logger.warn('[ServiceIntegration] FolderMatchingService skipped - Vector DB not available');
       }
 
       // Log initialization summary
@@ -370,10 +351,10 @@ class ServiceIntegration {
       });
     }
 
-    // Register ChromaDB service (singleton) - using registerWithContainer pattern
-    if (!container.has(ServiceIds.CHROMA_DB)) {
-      const { registerWithContainer: registerChromaDB } = require('./chromadb');
-      registerChromaDB(container, ServiceIds.CHROMA_DB);
+    // Register OramaVectorService (in-process vector DB)
+    if (!container.has(ServiceIds.ORAMA_VECTOR)) {
+      const { registerWithContainer: registerOramaVector } = require('./OramaVectorService');
+      registerOramaVector(container, ServiceIds.ORAMA_VECTOR);
     }
 
     // Register state management services
@@ -395,11 +376,11 @@ class ServiceIntegration {
       });
     }
 
-    // Register folder matching service (depends on ChromaDB)
+    // Register folder matching service (depends on vector DB)
     if (!container.has(ServiceIds.FOLDER_MATCHING)) {
       container.registerSingleton(ServiceIds.FOLDER_MATCHING, (c) => {
-        const chromaDb = c.resolve(ServiceIds.CHROMA_DB);
-        return new FolderMatchingService(chromaDb);
+        const vectorDb = c.resolve(ServiceIds.ORAMA_VECTOR);
+        return new FolderMatchingService(vectorDb);
       });
     }
 
@@ -417,43 +398,30 @@ class ServiceIntegration {
     if (!container.has(ServiceIds.CLUSTERING)) {
       container.registerSingleton(ServiceIds.CLUSTERING, (c) => {
         const { ClusteringService } = require('./ClusteringService');
-        const chromaDbService = c.resolve(ServiceIds.CHROMA_DB);
-
-        // FIX: Use lazy resolution for OllamaService to break potential circular dependency
-        // OllamaService is optional - clustering can work without it in degraded mode
-        let ollamaService = null;
-        try {
-          const { getInstance: getOllamaInstance } = require('./OllamaService');
-          ollamaService = getOllamaInstance();
-        } catch (error) {
-          logger.warn(
-            '[ServiceIntegration] OllamaService not available for clustering:',
-            error?.message || String(error)
-          );
-        }
+        const vectorDbService = c.resolve(ServiceIds.ORAMA_VECTOR);
+        const { getInstance: getLlamaInstance } = require('./LlamaService');
+        const llamaService = getLlamaInstance();
 
         return new ClusteringService({
-          chromaDbService,
-          ollamaService
+          vectorDbService,
+          llamaService
         });
       });
     }
 
-    // Register organization suggestion service (depends on ChromaDB, FolderMatching, Settings, Clustering)
+    // Register organization suggestion service (depends on vector DB, FolderMatching, Settings, Clustering)
     if (!container.has(ServiceIds.ORGANIZATION_SUGGESTION)) {
       container.registerSingleton(ServiceIds.ORGANIZATION_SUGGESTION, (c) => {
         const settingsService = c.resolve(ServiceIds.SETTINGS);
-        const settings = settingsService?.getAll?.() || {};
         return new OrganizationSuggestionService({
-          chromaDbService: c.resolve(ServiceIds.CHROMA_DB),
+          vectorDbService: c.resolve(ServiceIds.ORAMA_VECTOR),
           folderMatchingService: c.resolve(ServiceIds.FOLDER_MATCHING),
           settingsService: settingsService,
           // FIX: Use lazy resolution with getter to break potential circular dependency
           // This allows ClusteringService to be resolved when first needed, not during registration
           getClusteringService: () => c.resolve(ServiceIds.CLUSTERING),
           config: {
-            enableChromaLearningSync: settings.enableChromaLearningSync === true,
-            enableChromaLearningDryRun: settings.enableChromaLearningDryRun === true
+            enableLearningSync: false
           }
         });
       });
@@ -483,15 +451,16 @@ class ServiceIntegration {
       });
     }
 
-    // Register AI/Embedding services - using registerWithContainer pattern
-    if (!container.has(ServiceIds.OLLAMA_CLIENT)) {
-      const { registerWithContainer: registerOllamaClient } = require('./OllamaClient');
-      registerOllamaClient(container, ServiceIds.OLLAMA_CLIENT);
+    // Register AI/Embedding services
+    // New in-process LlamaService (node-llama-cpp)
+    if (!container.has(ServiceIds.VISION_SERVICE)) {
+      const { registerWithContainer: registerVisionService } = require('./VisionService');
+      registerVisionService(container, ServiceIds.VISION_SERVICE);
     }
 
-    if (!container.has(ServiceIds.OLLAMA_SERVICE)) {
-      const { registerWithContainer: registerOllamaService } = require('./OllamaService');
-      registerOllamaService(container, ServiceIds.OLLAMA_SERVICE);
+    if (!container.has(ServiceIds.LLAMA_SERVICE)) {
+      const { registerWithContainer: registerLlamaService } = require('./LlamaService');
+      registerLlamaService(container, ServiceIds.LLAMA_SERVICE);
     }
 
     if (!container.has(ServiceIds.EMBEDDING_CACHE)) {
@@ -541,7 +510,7 @@ class ServiceIntegration {
 
         // Wire up services lazily to avoid circular dependencies
         // Services are set after initial construction
-        const chromaDb = c.tryResolve(ServiceIds.CHROMA_DB);
+        const vectorDb = c.tryResolve(ServiceIds.ORAMA_VECTOR);
         const analysisHistory = c.tryResolve(ServiceIds.ANALYSIS_HISTORY);
         const processingState = c.tryResolve(ServiceIds.PROCESSING_STATE);
         const cacheInvalidationBus = c.tryResolve(ServiceIds.CACHE_INVALIDATION_BUS);
@@ -556,7 +525,7 @@ class ServiceIntegration {
         }
 
         coordinator.setServices({
-          chromaDbService: chromaDb,
+          vectorDbService: vectorDb,
           analysisHistoryService: analysisHistory,
           embeddingQueue,
           processingStateService: processingState,
@@ -582,9 +551,9 @@ class ServiceIntegration {
         // Get required dependencies
         const analysisHistoryService = c.resolve(ServiceIds.ANALYSIS_HISTORY);
         const settingsService = c.resolve(ServiceIds.SETTINGS);
-        const chromaDbService = c.resolve(ServiceIds.CHROMA_DB);
+        const vectorDbService = c.resolve(ServiceIds.ORAMA_VECTOR);
         const filePathCoordinator = c.resolve(ServiceIds.FILE_PATH_COORDINATOR);
-        // FIX: Add folderMatcher for auto-embedding analyzed files into ChromaDB
+        // FIX: Add folderMatcher for auto-embedding analyzed files into vector DB
         const folderMatcher = c.resolve(ServiceIds.FOLDER_MATCHING);
         const notificationService = c.resolve(ServiceIds.NOTIFICATION_SERVICE);
 
@@ -596,20 +565,12 @@ class ServiceIntegration {
           analyzeDocumentFile: null, // Will be set during app init
           analyzeImageFile: null, // Will be set during app init
           settingsService,
-          chromaDbService,
+          vectorDbService,
           filePathCoordinator,
           folderMatcher, // FIX: Pass folderMatcher for immediate auto-embedding
           notificationService // For user feedback on file analysis
         });
       });
-    }
-
-    // Register DependencyManagerService
-    if (!container.has(ServiceIds.DEPENDENCY_MANAGER)) {
-      const {
-        registerWithContainer: registerDependencyManager
-      } = require('./DependencyManagerService');
-      registerDependencyManager(container, ServiceIds.DEPENDENCY_MANAGER);
     }
 
     // FIX: Register SearchService with container for proper DI and lifecycle management
@@ -618,11 +579,9 @@ class ServiceIntegration {
       container.registerSingleton(ServiceIds.SEARCH_SERVICE, (c) => {
         const { SearchService } = require('./SearchService');
         return new SearchService({
-          chromaDbService: c.resolve(ServiceIds.CHROMA_DB),
+          vectorDbService: c.resolve(ServiceIds.ORAMA_VECTOR),
           analysisHistoryService: c.resolve(ServiceIds.ANALYSIS_HISTORY),
           parallelEmbeddingService: c.resolve(ServiceIds.PARALLEL_EMBEDDING),
-          // Optional services - use tryResolve to avoid errors if not available
-          ollamaService: c.tryResolve(ServiceIds.OLLAMA_SERVICE),
           relationshipIndexService: c.tryResolve(ServiceIds.RELATIONSHIP_INDEX)
         });
       });
@@ -641,7 +600,7 @@ class ServiceIntegration {
           settingsService: c.resolve(ServiceIds.SETTINGS),
           notificationService: c.resolve(ServiceIds.NOTIFICATION_SERVICE),
           analysisHistoryService: c.resolve(ServiceIds.ANALYSIS_HISTORY),
-          chromaDbService: c.resolve(ServiceIds.CHROMA_DB),
+          vectorDbService: c.resolve(ServiceIds.ORAMA_VECTOR),
           folderMatcher: c.resolve(ServiceIds.FOLDER_MATCHING)
         });
       });
@@ -678,8 +637,8 @@ class ServiceIntegration {
     try {
       logger.info('[ServiceIntegration] Starting coordinated shutdown...');
 
-      // FIX M2: Clear orphan marking callback before nulling services
-      // This callback holds closures to chromaDbService, preventing garbage collection
+      // Clear orphan marking callback before nulling services
+      // This callback holds closures to vectorService, preventing garbage collection
       if (this.analysisHistory?.setOnEntriesRemovedCallback) {
         this.analysisHistory.setOnEntriesRemovedCallback(null);
       }
@@ -692,11 +651,11 @@ class ServiceIntegration {
       this.analysisHistory = null;
       this.undoRedo = null;
       this.processingState = null;
-      this.chromaDbService = null;
+      this.vectorService = null;
       this.folderMatchingService = null;
       this.suggestionService = null;
       this.autoOrganizeService = null;
-      // FIX: Also clear SmartFolderWatcher reference to prevent memory leaks
+      // Also clear SmartFolderWatcher reference to prevent memory leaks
       this.smartFolderWatcher = null;
       this.relationshipIndex = null;
       this.initialized = false;
