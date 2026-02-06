@@ -2,7 +2,7 @@
  * File Type Test Fixtures
  *
  * Reusable utilities for testing file type processing.
- * Uses real test files from test/StratoSortOfTestFiles/ directory.
+ * Uses real test files from test/test-files/ directory.
  *
  * @module test/utils/fileTypeFixtures
  */
@@ -11,7 +11,7 @@ const path = require('path');
 const fs = require('fs').promises;
 
 // Path to test fixture files
-const FIXTURE_DIR = path.resolve(__dirname, '../StratoSortOfTestFiles');
+const FIXTURE_DIR = path.resolve(__dirname, '../test-files');
 
 /**
  * Test fixture file definitions with expected outcomes
@@ -698,11 +698,11 @@ function createMockAnalysisResult(fixture, overrides = {}) {
 }
 
 /**
- * Create mock Ollama response for document analysis
+ * Create mock Llama response for document analysis
  * @param {Object} fixture - Fixture object
- * @returns {Object} Mock Ollama response
+ * @returns {Object} Mock Llama response
  */
-function createMockOllamaDocumentResponse(fixture) {
+function createMockLlamaDocumentResponse(fixture) {
   return {
     response: JSON.stringify({
       purpose: fixture.description,
@@ -717,11 +717,11 @@ function createMockOllamaDocumentResponse(fixture) {
 }
 
 /**
- * Create mock Ollama response for image analysis
+ * Create mock Llama response for image analysis
  * @param {Object} fixture - Fixture object
- * @returns {Object} Mock Ollama response
+ * @returns {Object} Mock Llama response
  */
-function createMockOllamaImageResponse(fixture) {
+function createMockLlamaImageResponse(fixture) {
   return {
     response: JSON.stringify({
       purpose: fixture.description,
@@ -851,10 +851,10 @@ function getFixturesGroupedByProcessingPath() {
 }
 
 /**
- * Get fixtures that support the full Ollama pipeline
- * @returns {Object[]} Fixtures that use Ollama for analysis
+ * Get fixtures that support the full AI pipeline
+ * @returns {Object[]} Fixtures that use Llama for analysis
  */
-function getOllamaPipelineFixtures() {
+function getLlamaPipelineFixtures() {
   return Object.values(TEST_FIXTURE_FILES).filter(
     (f) => f.processingPath === 'document_extraction' || f.processingPath === 'image_analysis'
   );
@@ -874,7 +874,7 @@ function getExpectedPipelineOrder(fixture) {
     return ['extractText', 'analyzeText', 'embedText', 'matchVectorToFolders', 'enqueue'];
   }
 
-  // Extension fallback - no Ollama analysis
+  // Extension fallback - no AI analysis
   return ['getIntelligentCategory', 'getIntelligentKeywords'];
 }
 
@@ -894,7 +894,7 @@ module.exports = {
   getFixturesByProcessingPath,
   getFixtureStats,
   getFixturesGroupedByProcessingPath,
-  getOllamaPipelineFixtures,
+  getLlamaPipelineFixtures,
   getExpectedPipelineOrder,
 
   // File object creation
@@ -905,8 +905,8 @@ module.exports = {
   // Mock data
   getMockSmartFolders,
   createMockAnalysisResult,
-  createMockOllamaDocumentResponse,
-  createMockOllamaImageResponse,
+  createMockLlamaDocumentResponse,
+  createMockLlamaImageResponse,
 
   // Pipeline testing helpers
   createMockEmbeddingVector,

@@ -3,9 +3,7 @@
  *
  * Verifies first-run automation:
  * - Removes installer marker
- * - Installs Ollama + ChromaDB when missing
- * - Starts services best-effort
- * - Pulls configured models
+ * - Installs Tesseract when missing (best-effort)
  * - Writes dependency setup marker
  */
 
@@ -40,73 +38,7 @@ jest.mock('electron', () => ({
   }
 }));
 
-// Mock dependency manager
-const mockInstallOllamaSpy = jest.fn().mockResolvedValue({ success: true });
-const mockInstallChromaSpy = jest.fn().mockResolvedValue({ success: true });
-const mockGetStatusSpy = jest.fn().mockResolvedValue({
-  platform: 'win32',
-  python: { installed: true, version: 'Python 3.12.0' },
-  chromadb: { pythonModuleInstalled: false, running: false },
-  ollama: { installed: false, version: null, running: false }
-});
-const mockDependencyManagerInstance = {
-  getStatus: mockGetStatusSpy,
-  installOllama: mockInstallOllamaSpy,
-  installChromaDb: mockInstallChromaSpy,
-  updateOllama: jest.fn().mockResolvedValue({ success: true }),
-  updateChromaDb: jest.fn().mockResolvedValue({ success: true }),
-  _onProgress: jest.fn()
-};
-jest.mock('../src/main/services/DependencyManagerService', () => ({
-  DependencyManagerService: jest.fn().mockImplementation(() => mockDependencyManagerInstance),
-  // getInstance returns singleton - used by backgroundSetup
-  getInstance: jest.fn().mockImplementation((options) => {
-    if (options?.onProgress) {
-      mockDependencyManagerInstance._onProgress = options.onProgress;
-    }
-    return mockDependencyManagerInstance;
-  }),
-  resetInstance: jest.fn()
-}));
-
-// Mock StartupManager
-const mockStartOllamaSpy = jest.fn().mockResolvedValue({ success: true });
-const mockStartChromaSpy = jest.fn().mockResolvedValue({ success: true });
-const mockSetChromadbDependencyMissingSpy = jest.fn();
-const mockStartupManagerInstance = {
-  startOllama: mockStartOllamaSpy,
-  startChromaDB: mockStartChromaSpy,
-  chromadbDependencyMissing: false,
-  setChromadbDependencyMissing: mockSetChromadbDependencyMissingSpy
-};
-jest.mock('../src/main/services/startup', () => ({
-  getStartupManager: () => mockStartupManagerInstance
-}));
-
-// Mock SettingsService getInstance()
-jest.mock('../src/main/services/SettingsService', () => ({
-  getInstance: () => ({
-    load: jest.fn().mockResolvedValue({
-      textModel: 'llama3.2:latest',
-      visionModel: 'llava:latest',
-      embeddingModel: 'mxbai-embed-large',
-      autoUpdateOllama: false,
-      autoUpdateChromaDb: false
-    })
-  })
-}));
-
-// Mock ollama client
-const mockPullSpy = jest.fn().mockImplementation(async ({ stream }) => {
-  if (typeof stream === 'function') {
-    stream({ completed: 1, total: 2 });
-  }
-});
-jest.mock('../src/main/ollamaUtils', () => ({
-  getOllama: () => ({
-    pull: mockPullSpy
-  })
-}));
+// Legacy dependency automation removed (in-process AI stack).
 
 // Import after mocks so module under test uses our fakes
 const { runBackgroundSetup } = require('../src/main/core/backgroundSetup');
@@ -148,21 +80,6 @@ describe('backgroundSetup automated dependencies', () => {
       fs.readFile('/test/userData/dependency-setup-complete.marker', 'utf8')
     ).resolves.toBeDefined();
 
-    // Install paths hit
-    expect(mockGetStatusSpy).toHaveBeenCalled();
-    expect(mockInstallOllamaSpy).toHaveBeenCalled();
-    expect(mockInstallChromaSpy).toHaveBeenCalled();
-
-    // Services started best-effort
-    expect(mockStartOllamaSpy).toHaveBeenCalled();
-    expect(mockStartChromaSpy).toHaveBeenCalled();
-
-    // Models pulled (embedding model normalized to latest)
-    const modelsPulled = mockPullSpy.mock.calls.map((c) => c[0]?.model);
-    expect(modelsPulled).toEqual(
-      expect.arrayContaining(['llama3.2:latest', 'llava:latest', 'mxbai-embed-large:latest'])
-    );
-
     // Emits progress at least once
     expect(mockSendSpy).toHaveBeenCalled();
   });
@@ -173,8 +90,78 @@ describe('backgroundSetup automated dependencies', () => {
 
     await runBackgroundSetup();
 
-    expect(mockInstallOllamaSpy).not.toHaveBeenCalled();
-    expect(mockInstallChromaSpy).not.toHaveBeenCalled();
-    expect(mockPullSpy).not.toHaveBeenCalled();
+    // Still should not emit progress if no automation runs.
+    expect(mockSendSpy).not.toHaveBeenCalled();
+  });
+
+  describe('Migration: no Ollama/ChromaDB dependency setup', () => {
+    test('runBackgroundSetup does NOT reference Ollama', async () => {
+      await runBackgroundSetup();
+
+      // Check all sent messages for Ollama references
+      const allCalls = mockSendSpy.mock.calls;
+      for (const call of allCalls) {
+        const serialized = JSON.stringify(call).toLowerCase();
+        expect(serialized).not.toContain('ollama');
+      }
+    });
+
+    test('runBackgroundSetup does NOT reference ChromaDB', async () => {
+      await runBackgroundSetup();
+
+      // Check all sent messages for ChromaDB references
+      const allCalls = mockSendSpy.mock.calls;
+      for (const call of allCalls) {
+        const serialized = JSON.stringify(call).toLowerCase();
+        expect(serialized).not.toContain('chromadb');
+        expect(serialized).not.toContain('chroma');
+      }
+    });
+
+    test('getBackgroundSetupStatus returns complete status', async () => {
+      const { getBackgroundSetupStatus } = require('../src/main/core/backgroundSetup');
+
+      await runBackgroundSetup();
+
+      const status = getBackgroundSetupStatus();
+      expect(status.complete).toBe(true);
+      expect(status.error).toBeNull();
+      expect(status.startedAt).toBeDefined();
+      expect(status.completedAt).toBeDefined();
+    });
+
+    test('checkFirstRun returns true when marker absent', async () => {
+      const { checkFirstRun } = require('../src/main/core/backgroundSetup');
+
+      // No marker file exists
+      const isFirst = await checkFirstRun();
+      expect(isFirst).toBe(true);
+    });
+
+    test('checkFirstRun returns false when marker exists', async () => {
+      const { checkFirstRun } = require('../src/main/core/backgroundSetup');
+
+      await fs.writeFile('/test/userData/dependency-setup-complete.marker', 'done');
+
+      const isFirst = await checkFirstRun();
+      expect(isFirst).toBe(false);
+    });
+
+    test('only Tesseract is installed on first run (no Ollama/ChromaDB)', async () => {
+      // On first run, the only dependency that gets checked is Tesseract
+      // Ollama/ChromaDB setup scripts were deleted in the migration
+      await runBackgroundSetup();
+
+      // The progress messages should only mention tesseract or generic setup
+      const allCalls = mockSendSpy.mock.calls;
+      for (const call of allCalls) {
+        const serialized = JSON.stringify(call).toLowerCase();
+        if (serialized.includes('dependency')) {
+          // If dependency-related, should not mention ollama or chromadb
+          expect(serialized).not.toContain('ollama');
+          expect(serialized).not.toContain('chromadb');
+        }
+      }
+    });
   });
 });

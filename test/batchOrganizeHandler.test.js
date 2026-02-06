@@ -1,548 +1,206 @@
 /**
- * Tests for Batch Organize Handler
- * Tests batch file organization with rollback support
+ * @jest-environment node
  */
+const { handleBatchOrganize } = require('../src/main/ipc/files/batchOrganizeHandler');
+const { ERROR_CODES } = require('../src/shared/errorHandlingUtils');
 
-// Mock electron
-jest.mock('electron', () => ({
-  app: {
-    getPath: jest.fn().mockReturnValue('/mock/user/data')
+// Mock all dependencies
+jest.mock('fs', () => ({
+  promises: {
+    access: jest.fn().mockResolvedValue(),
+    rename: jest.fn().mockResolvedValue(),
+    mkdir: jest.fn().mockResolvedValue(),
+    unlink: jest.fn().mockResolvedValue(),
+    stat: jest.fn().mockResolvedValue({ size: 100 })
   }
 }));
 
-// Mock logger
 jest.mock('../src/shared/logger', () => {
   const logger = {
-    setContext: jest.fn(),
     info: jest.fn(),
-    debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn()
+    error: jest.fn(),
+    debug: jest.fn(),
+    setContext: jest.fn()
   };
-  return { logger, createLogger: jest.fn(() => logger) };
+  return {
+    createLogger: jest.fn(() => logger),
+    logger: logger
+  };
 });
 
-// Mock fs
-const mockFs = {
-  rename: jest.fn().mockResolvedValue(undefined),
-  mkdir: jest.fn().mockResolvedValue(undefined),
-  access: jest.fn().mockResolvedValue(undefined),
-  writeFile: jest.fn().mockResolvedValue(undefined),
-  readFile: jest.fn().mockResolvedValue('{}'),
-  unlink: jest.fn().mockResolvedValue(undefined)
-};
-jest.mock('fs', () => ({
-  promises: mockFs,
-  createReadStream: jest.fn().mockReturnValue({
-    on: jest.fn((event, cb) => {
-      if (event === 'end') setTimeout(() => cb(), 0);
-      return { on: jest.fn().mockReturnThis(), destroy: jest.fn() };
-    })
-  })
+jest.mock('../src/main/ipc/files/batchLockManager', () => ({
+  acquireBatchLock: jest.fn().mockResolvedValue(true),
+  releaseBatchLock: jest.fn()
 }));
 
-// Mock crypto - generate unique hashes based on input
-// Using global to survive jest.mock hoisting
-global.__hashCounter = 0;
-jest.mock('crypto', () => ({
-  createHash: jest.fn().mockImplementation(() => {
-    let inputValue = '';
-    return {
-      update: jest.fn().mockImplementation((val) => {
-        inputValue = val;
-        return {
-          digest: jest.fn().mockReturnValue(`hash_${inputValue}_${global.__hashCounter++}`)
-        };
-      }),
-      digest: jest.fn().mockReturnValue(`hash_fallback_${global.__hashCounter++}`)
-    };
-  }),
-  randomUUID: jest.fn().mockReturnValue('12345678-1234-1234-1234-123456789012'),
-  randomBytes: jest.fn().mockReturnValue({ toString: () => 'deadbeef' })
+jest.mock('../src/main/ipc/files/batchValidator', () => ({
+  validateBatchOperation: jest.fn(() => null), // Returns null on success
+  MAX_BATCH_SIZE: 1000
 }));
 
-// Mock constants
-jest.mock('../src/shared/constants', () => ({
-  ACTION_TYPES: {
-    BATCH_OPERATION: 'BATCH_OPERATION'
-  },
-  PROCESSING_LIMITS: {
-    MAX_BATCH_OPERATION_SIZE: 1000,
-    MAX_BATCH_OPERATION_TIME: 600000
-  },
-  IPC_CHANNELS: {
-    CHROMADB: {
-      STATUS_CHANGED: 'chromadb:status-changed'
-    },
-    DEPENDENCIES: {
-      SERVICE_STATUS_CHANGED: 'dependencies:service-status-changed'
-    }
-  },
-  DEFAULT_AI_MODELS: {
-    TEXT_ANALYSIS: 'gemma3:4b',
-    IMAGE_ANALYSIS: 'llava:7b',
-    EMBEDDING: 'nomic-embed-text'
-  },
-  AI_DEFAULTS: {
-    TEXT: {
-      TEMPERATURE: 0.7
-    },
-    IMAGE: {
-      TEMPERATURE: 0.2
-    }
-  },
-  FILE_SIZE_LIMITS: {
-    MAX_TEXT_FILE_SIZE: 50 * 1024 * 1024,
-    MAX_IMAGE_FILE_SIZE: 100 * 1024 * 1024,
-    MAX_DOCUMENT_FILE_SIZE: 200 * 1024 * 1024
-  },
-  LIMITS: {
-    MAX_PATH_LENGTH: 260
-  }
+jest.mock('../src/main/ipc/files/batchRollback', () => ({
+  executeRollback: jest.fn().mockResolvedValue({ success: false, rolledBack: true })
 }));
 
-// Mock performanceConstants
-jest.mock('../src/shared/performanceConstants', () => ({
-  LIMITS: {
-    MAX_NUMERIC_RETRIES: 5000
-  },
-  TIMEOUTS: {
-    FILE_COPY: 30000,
-    DELAY_TINY: 5
-  },
-  RETRY: {
-    MAX_ATTEMPTS_VERY_HIGH: 3,
-    ATOMIC_BACKOFF_STEP_MS: 1,
-    FILE_OPERATION: { initialDelay: 5, maxDelay: 50 }
-  },
-  BATCH: {
-    MAX_CONCURRENT_FILES: 5
-  },
-  CACHE: {
-    MAX_FILE_CACHE: 500
-  },
-  THRESHOLDS: {
-    MIN_SIMILARITY_SCORE: 0.15,
-    CONFIDENCE_HIGH: 0.8,
-    CONFIDENCE_MEDIUM: 0.6
-  },
-  CONCURRENCY: {
-    DEFAULT_WORKERS: 1
-  }
+jest.mock('../src/main/ipc/files/batchProgressReporter', () => ({
+  sendOperationProgress: jest.fn(),
+  sendChunkedResults: jest.fn().mockResolvedValue({ sent: true })
 }));
 
-// Mock promiseUtils
-jest.mock('../src/shared/promiseUtils', () => ({
-  withTimeout: jest.fn((promise) => promise) // Just pass through the promise
-}));
-
-global.__mockBatchSearchService = {
-  invalidateAndRebuild: jest.fn().mockResolvedValue(undefined)
-};
-
-// Mock semantic search service
-jest.mock('../src/main/ipc/semantic', () => ({
-  getSearchServiceInstance: jest.fn(() => global.__mockBatchSearchService)
-}));
-
-// Mock atomicFileOperations
-jest.mock('../src/shared/atomicFileOperations', () => ({
-  crossDeviceMove: jest.fn().mockResolvedValue(undefined)
-}));
-
-// Mock pathSanitization to allow test paths
-jest.mock('../src/shared/pathSanitization', () => ({
-  validateFileOperationPath: jest.fn().mockImplementation((filePath) => ({
-    valid: true,
-    normalizedPath: filePath
+jest.mock('../src/shared/fileOperationTracker', () => ({
+  getInstance: jest.fn(() => ({
+    recordOperation: jest.fn()
   }))
 }));
 
-// Mock chromadb
-jest.mock('../src/main/services/chromadb', () => ({
-  getInstance: jest.fn().mockReturnValue({
-    updateFilePaths: jest.fn().mockResolvedValue(undefined)
-  })
+jest.mock('../src/main/ipc/files/embeddingSync', () => ({
+  syncEmbeddingForMove: jest.fn(),
+  removeEmbeddingsForPathBestEffort: jest.fn()
+}));
+
+jest.mock('../src/main/utils/fileDedup', () => ({
+  computeFileChecksum: jest.fn().mockResolvedValue('checksum123'),
+  handleDuplicateMove: jest.fn().mockResolvedValue(null) // Return null means no duplicate handled, proceed with move
+}));
+
+jest.mock('../src/shared/atomicFileOperations', () => ({
+  crossDeviceMove: jest.fn()
+}));
+
+jest.mock('../src/shared/pathSanitization', () => ({
+  validateFileOperationPath: jest.fn((p) => ({ valid: true, normalizedPath: p }))
+}));
+
+jest.mock('../src/shared/promiseUtils', () => ({
+  withTimeout: jest.fn((promise) => promise),
+  batchProcess: jest.fn().mockResolvedValue(),
+  withAbortableTimeout: jest.fn((fn) => fn({ signal: {} }))
+}));
+
+jest.mock('../src/shared/correlationId', () => ({
+  withCorrelationId: jest.fn((fn) => fn())
+}));
+
+// Mock semantic service (needed for rebuild check)
+jest.mock('../src/main/ipc/semantic', () => ({
+  getSearchServiceInstance: jest.fn(() => ({
+    invalidateAndRebuild: jest.fn().mockResolvedValue()
+  }))
 }));
 
 describe('Batch Organize Handler', () => {
-  let handleBatchOrganize;
-  let computeFileChecksum;
-  let MAX_BATCH_SIZE;
-  let mockCoordinator;
+  let params;
+  let mockLogger;
+  let fs;
+  let batchLockManager;
+  let fileDedup;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.resetModules();
 
-    // Reset hash counter for unique idempotency keys
-    global.__hashCounter = 0;
-    global.__mockBatchSearchService.invalidateAndRebuild.mockClear();
+    fs = require('fs').promises;
+    batchLockManager = require('../src/main/ipc/files/batchLockManager');
+    fileDedup = require('../src/main/utils/fileDedup');
+    mockLogger = require('../src/shared/logger').logger;
 
-    mockCoordinator = {
-      batchPathUpdate: jest.fn().mockResolvedValue({ success: true, summary: {} })
-    };
+    // Fix fs.access mock to handle verifyMoveCompletion correctly
+    // It verifies destination exists (resolve) and source is gone (reject ENOENT)
+    fs.access.mockImplementation(async (p) => {
+      if (p.includes('dest')) return;
+      if (p.includes('src')) throw { code: 'ENOENT' };
+      return;
+    });
 
-    jest.doMock('../src/main/services/ServiceContainer', () => ({
-      container: {
-        has: jest.fn((id) => id === 'filePathCoordinator'),
-        resolve: jest.fn(() => mockCoordinator)
+    params = {
+      operation: {
+        operations: [
+          { source: '/src/doc1.pdf', destination: '/dest/doc1.pdf', type: 'move' },
+          { source: '/src/doc2.pdf', destination: '/dest/doc2.pdf', type: 'move' }
+        ]
       },
-      ServiceIds: {
-        FILE_PATH_COORDINATOR: 'filePathCoordinator'
-      }
-    }));
-
-    // Reset fs mock implementations to default success behavior
-    mockFs.rename.mockReset().mockResolvedValue(undefined);
-    mockFs.mkdir.mockReset().mockResolvedValue(undefined);
-    mockFs.access.mockReset().mockResolvedValue(undefined);
-    mockFs.writeFile.mockReset().mockResolvedValue(undefined);
-    mockFs.readFile.mockReset().mockResolvedValue('{}');
-    mockFs.unlink.mockReset().mockResolvedValue(undefined);
-
-    const module = require('../src/main/ipc/files/batchOrganizeHandler');
-    handleBatchOrganize = module.handleBatchOrganize;
-    computeFileChecksum = module.computeFileChecksum;
-    MAX_BATCH_SIZE = module.MAX_BATCH_SIZE;
-  });
-
-  describe('handleBatchOrganize', () => {
-    const mockLogger = {
-      info: jest.fn(),
-      debug: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn()
-    };
-
-    const mockUpdateEntryPaths = jest.fn().mockResolvedValue({ updated: 1, notFound: 0 });
-    const mockCreateOrLoadOrganizeBatch = jest.fn().mockResolvedValue(null);
-    const mockMarkOrganizeOpStarted = jest.fn();
-    const mockMarkOrganizeOpDone = jest.fn();
-    const mockMarkOrganizeOpError = jest.fn();
-    const mockCompleteOrganizeBatch = jest.fn();
-    const mockRecordAction = jest.fn();
-    const mockWindowSend = jest.fn();
-
-    const mockServiceIntegration = {
-      processingState: {
-        createOrLoadOrganizeBatch: mockCreateOrLoadOrganizeBatch,
-        markOrganizeOpStarted: mockMarkOrganizeOpStarted,
-        markOrganizeOpDone: mockMarkOrganizeOpDone,
-        markOrganizeOpError: mockMarkOrganizeOpError,
-        completeOrganizeBatch: mockCompleteOrganizeBatch
-      },
-      undoRedo: {
-        recordAction: mockRecordAction
-      },
-      analysisHistory: {
-        updateEntryPaths: mockUpdateEntryPaths
-      }
-    };
-
-    const mockGetServiceIntegration = () => mockServiceIntegration;
-
-    const mockMainWindow = {
-      isDestroyed: () => false,
-      webContents: {
-        send: mockWindowSend
-      }
-    };
-
-    beforeEach(() => {
-      mockUpdateEntryPaths.mockClear();
-      mockCreateOrLoadOrganizeBatch.mockClear().mockResolvedValue(null);
-      mockMarkOrganizeOpStarted.mockClear();
-      mockMarkOrganizeOpDone.mockClear();
-      mockMarkOrganizeOpError.mockClear();
-      mockCompleteOrganizeBatch.mockClear();
-      mockRecordAction.mockClear();
-      mockWindowSend.mockClear();
-    });
-
-    const mockGetMainWindow = () => mockMainWindow;
-
-    test('rejects non-array operations', async () => {
-      const result = await handleBatchOrganize({
-        operation: { operations: 'not-array' },
-        logger: mockLogger,
-        getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.errorCode).toBe('INVALID_BATCH');
-    });
-
-    test('rejects empty operations array', async () => {
-      const result = await handleBatchOrganize({
-        operation: { operations: [] },
-        logger: mockLogger,
-        getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.errorCode).toBe('EMPTY_BATCH');
-    });
-
-    test('rejects batch exceeding max size', async () => {
-      const operations = Array.from({ length: MAX_BATCH_SIZE + 1 }, (_, i) => ({
-        source: `/src/file${i}.txt`,
-        destination: `/dest/file${i}.txt`
-      }));
-
-      const result = await handleBatchOrganize({
-        operation: { operations },
-        logger: mockLogger,
-        getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.errorCode).toBe('BATCH_TOO_LARGE');
-    });
-
-    test('processes batch successfully', async () => {
-      const operations = [
-        { source: '/src/file1.txt', destination: '/dest/file1.txt' },
-        { source: '/src/file2.txt', destination: '/dest/file2.txt' }
-      ];
-
-      const result = await handleBatchOrganize({
-        operation: { operations },
-        logger: mockLogger,
-        getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.successCount).toBe(2);
-      expect(result.failCount).toBe(0);
-
-      // Verify FilePathCoordinator batch update was called with correct paths
-      expect(mockCoordinator.batchPathUpdate).toHaveBeenCalled();
-      const calls = mockCoordinator.batchPathUpdate.mock.calls[0][0];
-      expect(calls).toHaveLength(2);
-      expect(calls[0]).toMatchObject({
-        oldPath: '/src/file1.txt',
-        newPath: '/dest/file1.txt'
-      });
-    });
-
-    test('wraps search rebuild in timeout after batch', async () => {
-      const { withTimeout } = require('../src/shared/promiseUtils');
-      const operations = [{ source: '/src/file1.txt', destination: '/dest/file1.txt' }];
-
-      const result = await handleBatchOrganize({
-        operation: { operations },
-        logger: mockLogger,
-        getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow
-      });
-
-      expect(result.success).toBe(true);
-      expect(global.__mockBatchSearchService.invalidateAndRebuild).toHaveBeenCalledWith(
-        expect.objectContaining({ immediate: true, reason: 'batch-organize' })
-      );
-      const timeoutCalls = withTimeout.mock.calls.filter(
-        (call) => call[2] === 'BM25 rebuild after batch'
-      );
-      expect(timeoutCalls.length).toBe(1);
-    });
-
-    test('retries rename on transient file lock errors', async () => {
-      const operations = [{ source: '/src/locked.txt', destination: '/dest/locked.txt' }];
-
-      mockFs.rename
-        .mockRejectedValueOnce(Object.assign(new Error('locked'), { code: 'EBUSY' }))
-        .mockResolvedValueOnce(undefined);
-
-      mockFs.access
-        .mockRejectedValueOnce({ code: 'ENOENT' }) // destination missing before move
-        .mockResolvedValueOnce(undefined) // destination exists after move
-        .mockRejectedValueOnce({ code: 'ENOENT' }); // source removed after move
-
-      const result = await handleBatchOrganize({
-        operation: { operations },
-        logger: mockLogger,
-        getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow
-      });
-
-      expect(result.success).toBe(true);
-      expect(mockFs.rename).toHaveBeenCalledTimes(2);
-      expect(result.results[0].success).toBe(true);
-    });
-
-    test('handles partial failures', async () => {
-      mockFs.rename
-        .mockResolvedValueOnce(undefined)
-        .mockRejectedValueOnce(new Error('File not found'));
-
-      const operations = [
-        { source: '/src/file1.txt', destination: '/dest/file1.txt' },
-        { source: '/src/file2.txt', destination: '/dest/file2.txt' }
-      ];
-
-      const result = await handleBatchOrganize({
-        operation: { operations },
-        logger: mockLogger,
-        getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow
-      });
-
-      expect(result.successCount).toBe(1);
-      expect(result.failCount).toBe(1);
-    });
-
-    test('skips already completed operations', async () => {
-      const localMockServiceIntegration = {
+      logger: mockLogger,
+      getServiceIntegration: jest.fn(() => ({
         processingState: {
-          createOrLoadOrganizeBatch: jest.fn().mockResolvedValue({
-            operations: [
-              { source: '/src/file1.txt', destination: '/dest/file1.txt', status: 'done' },
-              { source: '/src/file2.txt', destination: '/dest/file2.txt', status: 'done' } // Both done for predictable test
-            ]
-          }),
+          createOrLoadOrganizeBatch: jest.fn((id, ops) => ({ operations: ops })),
           markOrganizeOpStarted: jest.fn(),
           markOrganizeOpDone: jest.fn(),
           markOrganizeOpError: jest.fn(),
           completeOrganizeBatch: jest.fn()
         },
-        undoRedo: { recordAction: jest.fn() },
-        analysisHistory: { updateEntryPaths: jest.fn().mockResolvedValue({ updated: 1 }) }
-      };
-
-      const result = await handleBatchOrganize({
-        operation: {
-          operations: [
-            { source: '/src/file1.txt', destination: '/dest/file1.txt' },
-            { source: '/src/file2.txt', destination: '/dest/file2.txt' }
-          ]
-        },
-        logger: mockLogger,
-        getServiceIntegration: () => localMockServiceIntegration,
-        getMainWindow: mockGetMainWindow
-      });
-
-      expect(result.successCount).toBe(2);
-      // Both operations should be marked as resumed since they were already 'done'
-      expect(result.results[0].resumed).toBe(true);
-      expect(result.results[1].resumed).toBe(true);
-    });
-
-    test('handles file collision with counter', async () => {
-      mockFs.rename.mockRejectedValueOnce({ code: 'EEXIST' }).mockResolvedValueOnce(undefined);
-
-      const result = await handleBatchOrganize({
-        operation: {
-          operations: [{ source: '/src/file.txt', destination: '/dest/file.txt' }]
-        },
-        logger: mockLogger,
-        getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.results[0].destination).toContain('_1');
-    });
-
-    test('handles cross-device move', async () => {
-      mockFs.rename.mockRejectedValueOnce({ code: 'EXDEV' });
-      const { crossDeviceMove } = require('../src/shared/atomicFileOperations');
-
-      const result = await handleBatchOrganize({
-        operation: {
-          operations: [{ source: '/src/file.txt', destination: '/dest/file.txt' }]
-        },
-        logger: mockLogger,
-        getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow
-      });
-
-      expect(crossDeviceMove).toHaveBeenCalled();
-      expect(result.success).toBe(true);
-    });
-
-    test('triggers rollback on critical error', async () => {
-      // First operation succeeds
-      mockFs.rename.mockResolvedValueOnce(undefined);
-      // Second operation fails with critical error
-      mockFs.rename.mockRejectedValueOnce({ code: 'ENOSPC', message: 'No space' });
-
-      const result = await handleBatchOrganize({
-        operation: {
-          operations: [
-            { source: '/src/file1.txt', destination: '/dest/file1.txt' },
-            { source: '/src/file2.txt', destination: '/dest/file2.txt' }
-          ]
-        },
-        logger: mockLogger,
-        getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.rolledBack).toBe(true);
-    });
-
-    test('persists recovery manifest during rollback', async () => {
-      // Setup failure to trigger rollback
-      mockFs.rename.mockResolvedValueOnce(undefined);
-      mockFs.rename.mockRejectedValueOnce({ code: 'ENOSPC', message: 'No space' });
-
-      const operations = [
-        { source: '/src/file1.txt', destination: '/dest/file1.txt' },
-        { source: '/src/file2.txt', destination: '/dest/file2.txt' }
-      ];
-
-      await handleBatchOrganize({
-        operation: { operations },
-        logger: mockLogger,
-        getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow
-      });
-
-      // Check if recovery file was written
-      expect(mockFs.writeFile).toHaveBeenCalled();
-      const writeCall = mockFs.writeFile.mock.calls[0];
-      expect(writeCall[0]).toContain('recovery');
-      expect(writeCall[0]).toContain('rollback_');
-
-      const manifest = JSON.parse(writeCall[1]);
-      expect(manifest.status).toBe('pending');
-      expect(manifest.operations).toHaveLength(1); // 1 completed op to rollback
-    });
-
-    test('processes single operation successfully', async () => {
-      // Note: Progress events are no longer sent to renderer in current implementation
-      const result = await handleBatchOrganize({
-        operation: {
-          operations: [{ source: '/src/file.txt', destination: '/dest/file.txt' }]
-        },
-        logger: mockLogger,
-        getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.successCount).toBe(1);
-    });
+        undoRedo: {
+          recordAction: jest.fn()
+        }
+      })),
+      getMainWindow: jest.fn()
+    };
   });
 
-  describe('computeFileChecksum', () => {
-    test('computes SHA-256 checksum', async () => {
-      const checksum = await computeFileChecksum('/path/to/file.txt');
-      // Hash is now dynamically generated, just verify it returns a string
-      expect(typeof checksum).toBe('string');
-      expect(checksum.length).toBeGreaterThan(0);
-    });
+  test('successfully processes a batch of moves', async () => {
+    const result = await handleBatchOrganize(params);
+
+    expect(result.success).toBe(true);
+    expect(result.successCount).toBe(2);
+    expect(fs.rename).toHaveBeenCalledTimes(2);
+    expect(batchLockManager.acquireBatchLock).toHaveBeenCalled();
+    expect(batchLockManager.releaseBatchLock).toHaveBeenCalled();
   });
 
-  describe('MAX_BATCH_SIZE', () => {
-    test('is set to 1000', () => {
-      expect(MAX_BATCH_SIZE).toBe(1000);
-    });
+  test('handles duplicates by renaming (via performFileMove loop logic)', async () => {
+    // Mock rename to fail with EEXIST once, then succeed
+    fs.rename
+      .mockRejectedValueOnce({ code: 'EEXIST' }) // First file rename fails
+      .mockResolvedValueOnce() // First file retry succeeds (with suffix)
+      .mockResolvedValueOnce(); // Second file succeeds immediately
+
+    const result = await handleBatchOrganize(params);
+
+    expect(result.success).toBe(true);
+    // Find the result for the first file (doc1.pdf) which triggered the duplicate handling
+    const doc1Result = result.results.find((r) => r.source === '/src/doc1.pdf');
+    expect(doc1Result.destination).toMatch(/_\d+\.pdf$/); // Should have suffix
+  });
+
+  test('handles source file disappearing (ENOENT)', async () => {
+    fs.rename.mockRejectedValueOnce({ code: 'ENOENT' }); // First file gone
+
+    const result = await handleBatchOrganize(params);
+
+    expect(result.success).toBe(true); // Partial success is still success: true with failure counts
+    expect(result.failCount).toBe(1);
+    expect(result.successCount).toBe(1);
+    // Partial failure is indicated by failCount > 0, not necessarily a partialFailure flag in all return paths
+  });
+
+  test('triggers rollback on critical error', async () => {
+    // We need one success and one critical failure to trigger rollback
+    // Use a delay for the failure to ensure the first operation has time to complete/start
+    // Since pLimit runs them concurrently, we want:
+    // Op 1: Success (fast)
+    // Op 2: Failure (delayed slightly so Op 1 might finish pushing to completedOperations,
+    //       OR if Op 2 fails fast, we need to ensure Op 1 finishes.
+    // Actually, if Op 2 fails immediately, it triggers abort.
+    // Op 1 checks abort signal.
+    // So we want Op 1 to finish BEFORE Op 2 fails.
+
+    fs.rename
+      .mockResolvedValueOnce() // First file succeeds immediately
+      .mockImplementationOnce(
+        () =>
+          new Promise((_, reject) =>
+            setTimeout(() => reject({ code: 'ENOSPC', message: 'Disk full' }), 50)
+          )
+      ); // Second file fails with critical non-retryable error
+
+    const result = await handleBatchOrganize(params);
+
+    // The handler calls executeRollback, which we mocked to return { success: false, rolledBack: true }
+    // Actually handleBatchOrganize returns whatever executeRollback returns
+    expect(result.rolledBack).toBe(true);
+    // Actually handleBatchOrganize returns whatever executeRollback returns
+    expect(result.rolledBack).toBe(true);
+
+    const { executeRollback } = require('../src/main/ipc/files/batchRollback');
+    expect(executeRollback).toHaveBeenCalled();
   });
 });

@@ -390,7 +390,7 @@ describe('Path Sanitization', () => {
 
         const result = sanitizeMetadata(input);
 
-        // Arrays are normalized into strings for ChromaDB compatibility
+        // Arrays are normalized into strings for vector DB compatibility
         expect(result.tags).toBe('tag1,tag2');
         expect(result.name).toBe('file.txt');
       });

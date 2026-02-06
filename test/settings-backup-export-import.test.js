@@ -87,6 +87,7 @@ describe('Settings Backup, Export, and Import', () => {
   });
 
   afterEach(() => {
+    settingsService._stopFileWatcher?.();
     jest.restoreAllMocks();
   });
 

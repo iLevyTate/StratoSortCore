@@ -66,13 +66,13 @@ jest.mock('../src/shared/atomicFileOperations', () => ({
   }
 }));
 
-// Mock OllamaService - settings.js now routes all model changes through OllamaService.updateConfig()
-const mockOllamaServiceUpdateConfig = jest
+// Mock LlamaService - settings.js now routes all model changes through LlamaService.updateConfig()
+const mockLlamaServiceUpdateConfig = jest
   .fn()
   .mockResolvedValue({ success: true, modelDowngraded: false });
-jest.mock('../src/main/services/OllamaService', () => ({
+jest.mock('../src/main/services/LlamaService', () => ({
   getInstance: () => ({
-    updateConfig: mockOllamaServiceUpdateConfig,
+    updateConfig: mockLlamaServiceUpdateConfig,
     initialize: jest.fn().mockResolvedValue(undefined)
   })
 }));
@@ -88,7 +88,6 @@ jest.mock('../src/shared/settingsValidation', () => ({
 jest.mock('../src/shared/securityConfig', () => ({
   SETTINGS_VALIDATION: {
     allowedKeys: new Set([
-      'ollamaHost',
       'textModel',
       'visionModel',
       'embeddingModel',
@@ -114,9 +113,6 @@ jest.mock('../src/shared/securityConfig', () => ({
       'maxConcurrentAnalysis',
       'defaultSmartFolderLocation',
       'lastBrowsedPath',
-      'autoUpdateOllama',
-      'autoUpdateChromaDb',
-      'dependencyWizardShown',
       'graphExpansionEnabled',
       'graphExpansionWeight',
       'graphExpansionMaxNeighbors',
@@ -213,10 +209,6 @@ const registerSettingsIpc = require('../src/main/ipc/settings');
 describe('Settings IPC Handlers', () => {
   let handlers;
   let mockSettingsService;
-  let mockSetOllamaHost;
-  let mockSetOllamaModel;
-  let mockSetOllamaVisionModel;
-  let mockSetOllamaEmbeddingModel;
   let mockOnSettingsChanged;
 
   const IPC_CHANNELS = {
@@ -244,9 +236,9 @@ describe('Settings IPC Handlers', () => {
 
     // Mock settings service
     mockSettingsService = {
-      load: jest.fn().mockResolvedValue({ language: 'en', ollamaHost: 'http://localhost:11434' }),
+      load: jest.fn().mockResolvedValue({ language: 'en' }),
       save: jest.fn().mockResolvedValue({
-        settings: { language: 'en', ollamaHost: 'http://localhost:11434' },
+        settings: { language: 'en' },
         validationWarnings: []
       }),
       // SECURITY: backupDir is needed for IPC-layer path traversal validation
@@ -272,10 +264,6 @@ describe('Settings IPC Handlers', () => {
       deleteBackup: jest.fn().mockResolvedValue({ success: true })
     };
 
-    mockSetOllamaHost = jest.fn().mockResolvedValue(undefined);
-    mockSetOllamaModel = jest.fn().mockResolvedValue(undefined);
-    mockSetOllamaVisionModel = jest.fn().mockResolvedValue(undefined);
-    mockSetOllamaEmbeddingModel = jest.fn().mockResolvedValue(undefined);
     mockOnSettingsChanged = jest.fn().mockResolvedValue(undefined);
 
     // Register handlers
@@ -284,10 +272,6 @@ describe('Settings IPC Handlers', () => {
       IPC_CHANNELS,
       logger,
       settingsService: mockSettingsService,
-      setOllamaHost: mockSetOllamaHost,
-      setOllamaModel: mockSetOllamaModel,
-      setOllamaVisionModel: mockSetOllamaVisionModel,
-      setOllamaEmbeddingModel: mockSetOllamaEmbeddingModel,
       onSettingsChanged: mockOnSettingsChanged
     });
   });
@@ -366,7 +350,7 @@ describe('Settings IPC Handlers', () => {
       const importPath = '/tmp/import-settings.json';
       const importData = {
         version: '1.0.0',
-        settings: { language: 'en', ollamaHost: 'http://localhost:11434' }
+        settings: { language: 'en' }
       };
       mockShowOpenDialog.mockResolvedValueOnce({
         canceled: false,
@@ -464,7 +448,6 @@ describe('Settings IPC Handlers', () => {
       const importData = {
         version: '1.0.0',
         settings: {
-          ollamaHost: 'http://custom:11434',
           textModel: 'llama3',
           visionModel: 'llava'
         }
@@ -483,15 +466,11 @@ describe('Settings IPC Handlers', () => {
       const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
       await handler({});
 
-      // Settings are now applied via OllamaService.updateConfig() to ensure proper model change notifications
-      expect(mockOllamaServiceUpdateConfig).toHaveBeenCalledWith(
-        {
-          host: 'http://custom:11434',
-          textModel: 'llama3',
-          visionModel: 'llava'
-        },
-        { skipSave: true }
-      );
+      // Settings are now applied via LlamaService.updateConfig() to ensure proper model change notifications
+      expect(mockLlamaServiceUpdateConfig).toHaveBeenCalledWith({
+        textModel: 'llama3',
+        visionModel: 'llava'
+      });
     });
   });
 
@@ -558,7 +537,6 @@ describe('Settings IPC Handlers', () => {
       mockSettingsService.restoreFromBackup.mockResolvedValueOnce({
         success: true,
         settings: {
-          ollamaHost: 'http://restored:11434',
           textModel: 'restored-model'
         }
       });
@@ -566,14 +544,10 @@ describe('Settings IPC Handlers', () => {
       const handler = handlers[IPC_CHANNELS.SETTINGS.RESTORE_BACKUP];
       await handler({}, backupPath);
 
-      // Settings are now applied via OllamaService.updateConfig() to ensure proper model change notifications
-      expect(mockOllamaServiceUpdateConfig).toHaveBeenCalledWith(
-        {
-          host: 'http://restored:11434',
-          textModel: 'restored-model'
-        },
-        { skipSave: true }
-      );
+      // Settings are now applied via LlamaService.updateConfig() to ensure proper model change notifications
+      expect(mockLlamaServiceUpdateConfig).toHaveBeenCalledWith({
+        textModel: 'restored-model'
+      });
     });
 
     test('notifies settings changed on restore', async () => {
@@ -651,44 +625,6 @@ describe('Settings IPC Handlers', () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain('Prototype pollution');
       expect(mockSettingsService.save).not.toHaveBeenCalled();
-    });
-
-    test('rejects unsafe URL patterns in ollamaHost', async () => {
-      mockImportDialog('/tmp/unsafe-settings.json');
-      const importData = {
-        version: '1.0.0',
-        settings: {
-          ollamaHost: 'http://0.0.0.0:11434'
-        }
-      };
-      mockFs.stat.mockResolvedValueOnce({ size: 500 });
-      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
-
-      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
-      const result = await handler({});
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('unsafe');
-    });
-
-    test('rejects URLs with credentials', async () => {
-      mockImportDialog('/tmp/cred-settings.json');
-      const importData = {
-        version: '1.0.0',
-        settings: {
-          ollamaHost: 'http://user:pass@localhost:11434'
-        }
-      };
-      mockFs.stat.mockResolvedValueOnce({ size: 500 });
-      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
-
-      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
-      const result = await handler({});
-
-      // The URL regex may fail before the credentials check (depending on regex pattern)
-      // Either way, it should fail validation
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Invalid ollamaHost');
     });
 
     test('rejects invalid model names', async () => {
@@ -972,7 +908,7 @@ describe('Settings IPC Handlers', () => {
       const handler = handlers[IPC_CHANNELS.SETTINGS.GET];
       const result = await handler({});
 
-      expect(result).toEqual({ language: 'en', ollamaHost: 'http://localhost:11434' });
+      expect(result).toEqual({ language: 'en' });
       expect(mockSettingsService.load).toHaveBeenCalled();
     });
 
@@ -1020,7 +956,6 @@ describe('Settings IPC Handlers', () => {
     test('applies settings to services', async () => {
       mockSettingsService.save.mockResolvedValueOnce({
         settings: {
-          ollamaHost: 'http://newhost:11434',
           textModel: 'newmodel',
           visionModel: 'newvision',
           embeddingModel: 'newembedding'
@@ -1032,25 +967,20 @@ describe('Settings IPC Handlers', () => {
       await handler(
         {},
         {
-          ollamaHost: 'http://newhost:11434',
           textModel: 'newmodel',
           visionModel: 'newvision',
           embeddingModel: 'newembedding'
         }
       );
 
-      // Settings are now applied via OllamaService.updateConfig() to ensure proper model change notifications
+      // Settings are now applied via LlamaService.updateConfig() to ensure proper model change notifications
       // This is critical for embedding model changes - FolderMatchingService needs to be notified
-      // to clear its cache and reset ChromaDB when the embedding model changes
-      expect(mockOllamaServiceUpdateConfig).toHaveBeenCalledWith(
-        {
-          host: 'http://newhost:11434',
-          textModel: 'newmodel',
-          visionModel: 'newvision',
-          embeddingModel: 'newembedding'
-        },
-        { skipSave: true }
-      );
+      // to clear its cache and reset the vector DB when the embedding model changes
+      expect(mockLlamaServiceUpdateConfig).toHaveBeenCalledWith({
+        textModel: 'newmodel',
+        visionModel: 'newvision',
+        embeddingModel: 'newembedding'
+      });
     });
 
     test('notifies settings changed', async () => {
@@ -1110,10 +1040,6 @@ describe('Settings IPC Handlers', () => {
         IPC_CHANNELS,
         logger,
         settingsService: mockSettingsService,
-        setOllamaHost: mockSetOllamaHost,
-        setOllamaModel: mockSetOllamaModel,
-        setOllamaVisionModel: mockSetOllamaVisionModel,
-        setOllamaEmbeddingModel: mockSetOllamaEmbeddingModel,
         onSettingsChanged: 'not a function'
       });
 
@@ -1136,10 +1062,6 @@ describe('Settings IPC Handlers', () => {
         IPC_CHANNELS,
         logger,
         settingsService: mockSettingsService,
-        setOllamaHost: mockSetOllamaHost,
-        setOllamaModel: mockSetOllamaModel,
-        setOllamaVisionModel: mockSetOllamaVisionModel,
-        setOllamaEmbeddingModel: mockSetOllamaEmbeddingModel,
         onSettingsChanged: jest.fn().mockRejectedValue(new Error('Notification failed'))
       });
 
@@ -1173,10 +1095,6 @@ describe('Settings IPC Handlers', () => {
             validationWarnings: []
           })
         },
-        setOllamaHost: mockSetOllamaHost,
-        setOllamaModel: mockSetOllamaModel,
-        setOllamaVisionModel: mockSetOllamaVisionModel,
-        setOllamaEmbeddingModel: mockSetOllamaEmbeddingModel,
         onSettingsChanged: mockOnSettingsChanged
       });
 

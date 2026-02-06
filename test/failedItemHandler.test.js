@@ -25,7 +25,11 @@ jest.mock('../src/shared/performanceConstants', () => ({
 // Mock persistence functions
 jest.mock('../src/main/analysis/embeddingQueue/persistence', () => ({
   persistFailedItems: jest.fn().mockResolvedValue(undefined),
-  persistDeadLetterQueue: jest.fn().mockResolvedValue(undefined)
+  persistDeadLetterQueue: jest.fn().mockResolvedValue(undefined),
+  SQLITE_KEYS: {
+    failedItems: 'failedItems',
+    deadLetter: 'deadLetter'
+  }
 }));
 
 const {
@@ -33,7 +37,8 @@ const {
 } = require('../src/main/analysis/embeddingQueue/failedItemHandler');
 const {
   persistFailedItems,
-  persistDeadLetterQueue
+  persistDeadLetterQueue,
+  SQLITE_KEYS
 } = require('../src/main/analysis/embeddingQueue/persistence');
 
 describe('failedItemHandler', () => {
@@ -95,7 +100,9 @@ describe('failedItemHandler', () => {
 
       handler.trackFailedItem(item, 'Test error');
 
-      expect(persistFailedItems).toHaveBeenCalledWith('/tmp/failed.json', handler.failedItems);
+      expect(persistFailedItems).toHaveBeenCalledWith('/tmp/failed.json', handler.failedItems, {
+        key: SQLITE_KEYS.failedItems
+      });
     });
 
     test('evicts oldest item when at capacity (LRU)', () => {
@@ -162,7 +169,8 @@ describe('failedItemHandler', () => {
 
       expect(persistDeadLetterQueue).toHaveBeenCalledWith(
         '/tmp/deadletter.json',
-        handler.deadLetterQueue
+        handler.deadLetterQueue,
+        { key: SQLITE_KEYS.deadLetter }
       );
     });
   });

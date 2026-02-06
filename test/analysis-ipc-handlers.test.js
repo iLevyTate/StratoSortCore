@@ -6,6 +6,8 @@ jest.mock('perf_hooks', () => ({
   performance: mockPerformance
 }));
 
+const mockRecognizeIfAvailable = jest.fn();
+
 // Mock IPC wrappers
 const mockIpcWrappers = {
   withErrorLogging: jest.fn((logger, handler) => handler),
@@ -42,10 +44,9 @@ const mockAnalysisUtils = {
 };
 jest.mock('../src/main/ipc/analysisUtils', () => mockAnalysisUtils);
 
-// Mock Tesseract
-const mockTesseract = {
-  recognize: jest.fn()
-};
+jest.mock('../src/main/utils/tesseractUtils', () => ({
+  recognizeIfAvailable: (...args) => mockRecognizeIfAvailable(...args)
+}));
 
 // Mock System Analytics
 const mockSystemAnalytics = {
@@ -75,6 +76,7 @@ describe('Analysis IPC Handlers', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     registeredHandlers = {};
+    mockRecognizeIfAvailable.mockReset();
 
     mockIpcMain = {
       handle: jest.fn((channel, handler) => {
@@ -108,7 +110,6 @@ describe('Analysis IPC Handlers', () => {
       ipcMain: mockIpcMain,
       IPC_CHANNELS,
       logger: mockLogger,
-      tesseract: mockTesseract,
       systemAnalytics: mockSystemAnalytics,
       analyzeDocumentFile: mockAnalyzeDocumentFile,
       analyzeImageFile: mockAnalyzeImageFile,
@@ -213,11 +214,19 @@ describe('Analysis IPC Handlers', () => {
       const handler = registeredHandlers[IPC_CHANNELS.ANALYSIS.EXTRACT_IMAGE_TEXT];
       expect(handler).toBeDefined();
 
-      mockTesseract.recognize.mockResolvedValue('extracted text');
+      mockRecognizeIfAvailable.mockResolvedValue({ success: true, text: 'extracted text' });
 
       const result = await handler({}, '/path/to/img.png');
 
-      expect(mockTesseract.recognize).toHaveBeenCalled();
+      expect(mockRecognizeIfAvailable).toHaveBeenCalledWith(
+        null,
+        '/path/to/img.png',
+        expect.objectContaining({
+          lang: 'eng',
+          oem: 1,
+          psm: 3
+        })
+      );
       expect(mockSystemAnalytics.recordProcessingTime).toHaveBeenCalled();
       expect(result).toEqual({ success: true, text: 'extracted text' });
     });
@@ -225,7 +234,11 @@ describe('Analysis IPC Handlers', () => {
     test('handles OCR errors', async () => {
       const handler = registeredHandlers[IPC_CHANNELS.ANALYSIS.EXTRACT_IMAGE_TEXT];
       const error = new Error('OCR failed');
-      mockTesseract.recognize.mockRejectedValue(error);
+      mockRecognizeIfAvailable.mockResolvedValue({
+        success: false,
+        error: 'OCR failed',
+        cause: error
+      });
 
       const result = await handler({}, '/path/to/img.png');
 

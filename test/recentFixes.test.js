@@ -426,7 +426,7 @@ describe('Recent Fixes Regression Tests', () => {
   describe('M-5: Embeddings status messages', () => {
     describe('statsLabel logic', () => {
       function getStatsLabel(stats) {
-        if (!stats) return 'Embeddings status unavailable - check Ollama connection';
+        if (!stats) return 'Embeddings status unavailable - check AI engine connection';
 
         if (stats.needsFileEmbeddingRebuild) {
           return `${stats.folders} folder embeddings • ${stats.files} file embeddings (${stats.analysisHistory?.totalFiles || 0} files analyzed - click Rebuild to index)`;
@@ -442,7 +442,7 @@ describe('Recent Fixes Regression Tests', () => {
       test('shows connection error when stats is null', () => {
         const label = getStatsLabel(null);
         expect(label).toContain('unavailable');
-        expect(label).toContain('Ollama');
+        expect(label).toContain('AI');
       });
 
       test('shows helpful message when embeddings are zero', () => {

@@ -28,7 +28,6 @@ module.exports = {
   // Module resolution
   moduleNameMapper: {
     '^electron$': '<rootDir>/../mocks/electron.js',
-    '^ollama$': '<rootDir>/../mocks/ollama.js',
     '^chokidar$': '<rootDir>/../mocks/chokidar.js'
   },
 

@@ -39,8 +39,9 @@ jest.mock('mammoth', () => ({
   extractRawText: jest.fn()
 }));
 
-jest.mock('node-tesseract-ocr', () => ({
-  recognize: jest.fn()
+jest.mock('../src/main/utils/tesseractUtils', () => ({
+  isTesseractAvailable: jest.fn().mockResolvedValue(true),
+  recognizeIfAvailable: jest.fn().mockResolvedValue({ success: true, text: 'OCR text from image' })
 }));
 
 jest.mock('sharp', () => {
@@ -100,12 +101,12 @@ describe('Document Extractors Extended', () => {
     test('extracts text from embedded images when text is empty', async () => {
       const mammoth = require('mammoth');
       const officeParser = require('officeparser');
-      const tesseract = require('node-tesseract-ocr');
+      const { recognizeIfAvailable } = require('../src/main/utils/tesseractUtils');
       const AdmZip = require('adm-zip');
 
       mammoth.extractRawText.mockResolvedValue({ value: '' });
       officeParser.parseOfficeAsync.mockResolvedValue('');
-      tesseract.recognize.mockResolvedValue('OCR text from image');
+      recognizeIfAvailable.mockResolvedValue({ success: true, text: 'OCR text from image' });
       await mockSignature();
 
       AdmZip.mockImplementation(() => ({
@@ -116,18 +117,18 @@ describe('Document Extractors Extended', () => {
 
       const result = await documentExtractors.extractTextFromDocx('doc.docx');
       expect(result).toContain('OCR text from image');
-      expect(tesseract.recognize).toHaveBeenCalled();
+      expect(recognizeIfAvailable).toHaveBeenCalled();
     });
   });
 
   describe('extractTextFromPptx - OCR fallback', () => {
     test('extracts text from embedded images when slides are empty', async () => {
       const officeParser = require('officeparser');
-      const tesseract = require('node-tesseract-ocr');
+      const { recognizeIfAvailable } = require('../src/main/utils/tesseractUtils');
       const AdmZip = require('adm-zip');
 
       officeParser.parseOfficeAsync.mockResolvedValue('');
-      tesseract.recognize.mockResolvedValue('Slide OCR text');
+      recognizeIfAvailable.mockResolvedValue({ success: true, text: 'Slide OCR text' });
 
       AdmZip.mockImplementation(() => ({
         getEntries: () => [
@@ -137,7 +138,7 @@ describe('Document Extractors Extended', () => {
 
       const result = await documentExtractors.extractTextFromPptx('slides.pptx');
       expect(result).toContain('Slide OCR text');
-      expect(tesseract.recognize).toHaveBeenCalled();
+      expect(recognizeIfAvailable).toHaveBeenCalled();
     });
   });
 

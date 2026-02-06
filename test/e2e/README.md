@@ -9,14 +9,15 @@ This test suite covers full user flows through the application UI, including:
 - **App Launch** (`app-launch.spec.js`): Verifies the application starts correctly
 - **Navigation** (`navigation.spec.js`): Tests phase transitions and navigation
 - **File Import** (`file-import.spec.js`): Tests file selection and import flows
-- **Analysis Flow** (`analysis-flow.spec.js`): Tests document analysis with Ollama
+- **Analysis Flow** (`analysis-flow.spec.js`): Tests document analysis with the in-process AI engine
 - **Error Handling** (`error-handling.spec.js`): Verifies graceful error handling
 
 ## Prerequisites
 
 1. **Node.js 18+** - Required for Playwright and Electron
 2. **Build the renderer** - Run `npm run build:dev` before testing
-3. **Ollama (optional)** - Required for AI analysis tests, but tests handle missing Ollama gracefully
+3. **Models downloaded (optional)** - Required for AI analysis tests, but tests handle missing
+   models gracefully
 
 ## Running Tests
 
@@ -154,7 +155,10 @@ test('test with files', async () => {
 
   try {
     // Use files in test
-    console.log('Test files:', files.map(f => f.name));
+    console.log(
+      'Test files:',
+      files.map((f) => f.name)
+    );
   } finally {
     // Clean up
     await cleanupTempDir(tempDir);
@@ -184,7 +188,7 @@ Test artifacts are saved to:
 
 The tests are designed to run in CI environments:
 
-1. Tests handle missing Ollama gracefully
+1. Tests handle missing models gracefully
 2. Headless mode is default
 3. Screenshots/videos captured on failure
 4. HTML report generated for review
@@ -203,6 +207,7 @@ The tests are designed to run in CI environments:
 ### Tests failing with "No window found"
 
 Ensure the build is complete:
+
 ```bash
 npm run build:dev
 ```
@@ -213,13 +218,14 @@ npm run build:dev
 - Check if Electron app is starting correctly
 - Run with `--debug` to see what's happening
 
-### Ollama-related test failures
+### AI model-related test failures
 
-These are expected if Ollama is not running. Tests should pass with warnings.
-To run with Ollama:
+These are expected if models are not available. Tests should pass with warnings. To run with local
+models:
+
 ```bash
-# Start Ollama
-ollama serve
+# Ensure models are downloaded
+npm run setup:models
 
 # Then run tests
 npm run test:e2e
@@ -238,5 +244,5 @@ When adding new tests:
 1. Follow the existing file naming convention (`*.spec.js`)
 2. Use page objects for UI interactions
 3. Add appropriate test descriptions
-4. Handle Ollama unavailability gracefully
+4. Handle model unavailability gracefully
 5. Clean up any created resources in `afterEach`

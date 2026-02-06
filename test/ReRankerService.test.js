@@ -27,7 +27,7 @@ describe('ReRankerService', () => {
   let ReRankerService;
   let resetInstance;
   let service;
-  let mockOllamaService;
+  let mockLlamaService;
 
   // Sample search results for testing
   const sampleResults = [
@@ -78,9 +78,9 @@ describe('ReRankerService', () => {
     jest.resetModules();
     jest.useFakeTimers();
 
-    // Create mock Ollama service with analyzeText method
-    mockOllamaService = {
-      analyzeText: jest.fn().mockResolvedValue({
+    // Create mock Llama service with generateText method
+    mockLlamaService = {
+      generateText: jest.fn().mockResolvedValue({
         success: true,
         response: '8'
       })
@@ -94,7 +94,7 @@ describe('ReRankerService', () => {
     resetInstance();
 
     service = new ReRankerService({
-      ollamaService: mockOllamaService,
+      llamaService: mockLlamaService,
       textModel: 'llama3.2'
     });
   });
@@ -106,25 +106,25 @@ describe('ReRankerService', () => {
 
   describe('constructor', () => {
     test('initializes with valid dependencies', () => {
-      expect(service.ollamaService).toBe(mockOllamaService);
+      expect(service.llamaService).toBe(mockLlamaService);
       expect(service.textModel).toBe('llama3.2');
       // FIX: scoreCache is now an LRUCache, not a Map
       expect(service.scoreCache).toBeDefined();
     });
 
-    test('works without ollamaService', () => {
-      const serviceNoOllama = new ReRankerService({});
+    test('works without llamaService', () => {
+      const serviceNoLlama = new ReRankerService({});
 
-      expect(serviceNoOllama.ollamaService).toBeUndefined();
-      expect(serviceNoOllama.isAvailable()).toBe(false);
+      expect(serviceNoLlama.llamaService).toBeUndefined();
+      expect(serviceNoLlama.isAvailable()).toBe(false);
     });
 
     test('uses default model when not specified', () => {
       const defaultService = new ReRankerService({
-        ollamaService: mockOllamaService
+        llamaService: mockLlamaService
       });
 
-      expect(defaultService.textModel).toBeNull(); // Uses OllamaService default
+      expect(defaultService.textModel).toBeNull(); // Uses LlamaService default
     });
 
     test('initializes statistics', () => {
@@ -135,13 +135,13 @@ describe('ReRankerService', () => {
   });
 
   describe('isAvailable', () => {
-    test('returns true when ollamaService is provided', () => {
+    test('returns true when llamaService is provided', () => {
       expect(service.isAvailable()).toBe(true);
     });
 
-    test('returns false when ollamaService is missing', () => {
-      const noOllamaService = new ReRankerService({});
-      expect(noOllamaService.isAvailable()).toBe(false);
+    test('returns false when llamaService is missing', () => {
+      const noLlamaService = new ReRankerService({});
+      expect(noLlamaService.isAvailable()).toBe(false);
     });
   });
 
@@ -158,16 +158,16 @@ describe('ReRankerService', () => {
       expect(result).toBeNull();
     });
 
-    test('returns original candidates when no ollamaService', async () => {
-      const noOllamaService = new ReRankerService({});
-      const result = await noOllamaService.rerank('vacation', sampleResults);
+    test('returns original candidates when no llamaService', async () => {
+      const noLlamaService = new ReRankerService({});
+      const result = await noLlamaService.rerank('vacation', sampleResults);
 
       expect(result).toEqual(sampleResults);
     });
 
     test('re-ranks candidates by LLM score', async () => {
       // Make doc3 score highest
-      mockOllamaService.analyzeText
+      mockLlamaService.generateText
         .mockResolvedValueOnce({ response: '5' }) // doc1: 0.5
         .mockResolvedValueOnce({ response: '3' }) // doc2: 0.3
         .mockResolvedValueOnce({ response: '9' }) // doc3: 0.9
@@ -188,7 +188,7 @@ describe('ReRankerService', () => {
       await service.rerank('vacation', manyResults, { topN: 3 });
 
       // Should only call LLM 3 times (topN = 3)
-      expect(mockOllamaService.analyzeText).toHaveBeenCalledTimes(3);
+      expect(mockLlamaService.generateText).toHaveBeenCalledTimes(3);
     });
 
     test('preserves non-reranked results', async () => {
@@ -200,7 +200,7 @@ describe('ReRankerService', () => {
         { id: 'r5', score: 0.5, metadata: { name: 'r5.txt' } }
       ];
 
-      mockOllamaService.analyzeText
+      mockLlamaService.generateText
         .mockResolvedValueOnce({ response: '5' })
         .mockResolvedValueOnce({ response: '8' });
 
@@ -228,7 +228,7 @@ describe('ReRankerService', () => {
       await service.rerank('test', manyResults);
 
       // Should call LLM 10 times (default topN)
-      expect(mockOllamaService.analyzeText).toHaveBeenCalledTimes(10);
+      expect(mockLlamaService.generateText).toHaveBeenCalledTimes(10);
     });
 
     test('updates statistics after reranking', async () => {
@@ -239,7 +239,7 @@ describe('ReRankerService', () => {
     });
 
     test('handles LLM errors with fallback score', async () => {
-      mockOllamaService.analyzeText
+      mockLlamaService.generateText
         .mockResolvedValueOnce({ response: '8' })
         .mockRejectedValueOnce(new Error('LLM unavailable'));
 
@@ -283,18 +283,18 @@ describe('ReRankerService', () => {
 
       // First call
       await service.rerank('vacation', [result], { topN: 1 });
-      expect(mockOllamaService.analyzeText).toHaveBeenCalledTimes(1);
+      expect(mockLlamaService.generateText).toHaveBeenCalledTimes(1);
 
       // Second call - should use cache
       await service.rerank('vacation', [result], { topN: 1 });
-      expect(mockOllamaService.analyzeText).toHaveBeenCalledTimes(1); // No new call
+      expect(mockLlamaService.generateText).toHaveBeenCalledTimes(1); // No new call
       expect(service.stats.cacheHits).toBe(1);
     });
 
     test('cache expires after TTL', async () => {
       // FIX: Create a new service with short TTL (LRUCache TTL is set at construction)
       const shortTtlService = new ReRankerService({
-        ollamaService: mockOllamaService,
+        llamaService: mockLlamaService,
         textModel: 'llama3.2',
         cacheTTLMs: 1000 // 1 second TTL
       });
@@ -303,14 +303,14 @@ describe('ReRankerService', () => {
 
       // First call
       await shortTtlService.rerank('vacation', [result], { topN: 1 });
-      expect(mockOllamaService.analyzeText).toHaveBeenCalledTimes(1);
+      expect(mockLlamaService.generateText).toHaveBeenCalledTimes(1);
 
       // Advance time past cache TTL
       jest.advanceTimersByTime(2000);
 
       // Second call - cache expired
       await shortTtlService.rerank('vacation', [result], { topN: 1 });
-      expect(mockOllamaService.analyzeText).toHaveBeenCalledTimes(2);
+      expect(mockLlamaService.generateText).toHaveBeenCalledTimes(2);
 
       // Cleanup
       await shortTtlService.cleanup();
@@ -349,7 +349,7 @@ describe('ReRankerService', () => {
       await service.cleanup();
 
       expect(service.scoreCache.size).toBe(0);
-      expect(service.ollamaService).toBeNull();
+      expect(service.llamaService).toBeNull();
     });
   });
 
@@ -378,7 +378,7 @@ describe('ReRankerService', () => {
       ];
 
       // LLM correctly identifies vacation photos as most relevant
-      mockOllamaService.analyzeText
+      mockLlamaService.generateText
         .mockResolvedValueOnce({ response: '2' }) // budget: low
         .mockResolvedValueOnce({ response: '10' }) // vacation: perfect match
         .mockResolvedValueOnce({ response: '1' }); // meeting: low

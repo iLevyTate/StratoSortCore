@@ -72,44 +72,14 @@ jest.mock('os', () => ({
   tmpdir: () => MOCK_TMP_DIR
 }));
 
-function shouldSuppressKnownNetworkNoise(args) {
-  // Jest/jsdom VirtualConsole sometimes emits noisy XHR errors when optional services
-  // (e.g., local ChromaDB) are not running. These are not actionable for unit tests.
-  const joined = args
-    .map((a) => {
-      if (!a) return '';
-      if (typeof a === 'string') return a;
-      if (a instanceof Error) return a.message || '';
-      try {
-        return JSON.stringify(a);
-      } catch {
-        return String(a);
-      }
-    })
-    .join(' ');
-
-  return (
-    joined.includes('ECONNREFUSED 127.0.0.1:8000') ||
-    joined.includes('ECONNREFUSED ::1:8000') ||
-    joined.includes('connect ECONNREFUSED 127.0.0.1:8000') ||
-    joined.includes('connect ECONNREFUSED ::1:8000')
-  );
-}
-
 // Global test utilities (keep logs quiet, but don't hide real errors)
 global.console = {
   ...global.console,
   log: jest.fn(),
   info: jest.fn(),
   debug: jest.fn(),
-  warn: jest.fn((...args) => {
-    // Suppress known noisy network warnings (e.g., optional local services not running)
-    if (shouldSuppressKnownNetworkNoise(args)) return;
-  }),
-  error: jest.fn((...args) => {
-    // Suppress known noisy network errors (e.g., optional local services not running)
-    if (shouldSuppressKnownNetworkNoise(args)) return;
-  })
+  warn: jest.fn(),
+  error: jest.fn()
 };
 
 // Mock DOM environment for Electron
@@ -258,10 +228,10 @@ global.testDataGenerators = {
 };
 
 // Import and setup mock services
-const { mockOllamaService } = require('./mocks/ollama');
+const { mockLlamaService } = require('./mocks/llama');
 
 // Make mock services globally available
-global.mockOllamaService = mockOllamaService;
+global.mockLlamaService = mockLlamaService;
 
 // Cleanup between tests
 beforeEach(() => {
@@ -274,7 +244,7 @@ beforeEach(() => {
   global.progressListeners = [];
 
   // Reset mock services to default behavior
-  mockOllamaService.analyze.mockResolvedValue({
+  mockLlamaService.analyze.mockResolvedValue({
     status: 'success',
     analysis: {
       category: 'Financial',
@@ -286,7 +256,7 @@ beforeEach(() => {
     }
   });
 
-  mockOllamaService.isConnected.mockReturnValue(true);
+  mockLlamaService.isConnected.mockReturnValue(true);
 });
 
 afterEach(() => {
@@ -314,23 +284,8 @@ beforeAll(() => {
 });
 
 afterAll(async () => {
-  // FIX: Clean up HTTP agents from ollamaUtils to prevent open handles
-  // The ollamaUtils module creates keep-alive HTTP agents that hold Jest open
-  // Only attempt cleanup if the module was actually loaded during tests
-  const ollamaUtilsPath = require.resolve('../src/main/ollamaUtils');
-  if (require.cache[ollamaUtilsPath]) {
-    try {
-      const { cleanupOllamaAgent } = require('../src/main/ollamaUtils');
-      if (typeof cleanupOllamaAgent === 'function') {
-        cleanupOllamaAgent();
-      }
-    } catch {
-      // Safe to ignore cleanup errors
-    }
-  }
-
   // FIX: Shutdown ServiceContainer to clean up all registered services
-  // Services like SmartFolderWatcher, ChromaDB, etc. have intervals/connections
+  // Services like SmartFolderWatcher and vector DB have intervals/connections
   const containerPath = require.resolve('../src/main/services/ServiceContainer');
   if (require.cache[containerPath]) {
     try {
@@ -341,20 +296,6 @@ afterAll(async () => {
     } catch {
       // Safe to ignore cleanup errors
     }
-  }
-
-  // FIX: Clean up any OllamaClient instances that might have health check timers
-  try {
-    const ollamaClientPath = require.resolve('../src/main/services/OllamaClient');
-    if (require.cache[ollamaClientPath]) {
-      const OllamaClient = require('../src/main/services/OllamaClient');
-      // Check for singleton instance
-      if (OllamaClient._instance && typeof OllamaClient._instance.shutdown === 'function') {
-        await OllamaClient._instance.shutdown();
-      }
-    }
-  } catch {
-    // Safe to ignore
   }
 
   console.log('✅ All Stratosort tests completed');

@@ -2,7 +2,7 @@
  * Shared Mock Factories for Full Pipeline Testing
  *
  * Provides reusable mock factories for testing the complete
- * Ollama analysis and embedding pipeline.
+ * AI analysis and embedding pipeline.
  *
  * @module test/integration/pipeline/pipelineMocks
  */
@@ -21,11 +21,11 @@ function createMockEmbeddingVector(dimension = EMBEDDING_DIMENSION, seed = 0.1) 
 }
 
 /**
- * Create mock OllamaService for text analysis
+ * Create mock LlamaService for text analysis
  * @param {Object} fixture - Fixture definition from fileTypeFixtures
- * @returns {Object} Mock OllamaService
+ * @returns {Object} Mock LlamaService
  */
-function createMockOllamaService(fixture) {
+function createMockLlamaService(fixture) {
   const mockResponse = {
     purpose: fixture.description || `Analysis of ${fixture.name}`,
     project: 'Test Project',
@@ -76,8 +76,7 @@ function createMockOllamaService(fixture) {
       ]
     }),
     getHealthStatus: jest.fn().mockResolvedValue({
-      connected: true,
-      modelsAvailable: true
+      initialized: true
     })
   };
 }
@@ -232,10 +231,10 @@ function createMockEmbeddingQueue() {
 }
 
 /**
- * Create mock ChromaDB service
- * @returns {Object} Mock ChromaDB service
+ * Create mock vector DB service
+ * @returns {Object} Mock vector DB service
  */
-function createMockChromaDBService() {
+function createMockVectorDbService() {
   return {
     initialize: jest.fn().mockResolvedValue(undefined),
     isOnline: true,
@@ -249,46 +248,28 @@ function createMockChromaDBService() {
     getStats: jest.fn().mockResolvedValue({
       folders: 10,
       files: 50,
-      isOnline: true
+      fileChunks: 0,
+      feedback: 0,
+      learningPatterns: 0
     }),
-    fileCollection: {
-      get: jest.fn().mockResolvedValue({
-        ids: [],
-        embeddings: [],
-        metadatas: []
-      }),
-      query: jest.fn().mockResolvedValue({
-        ids: [[]],
-        distances: [[]],
-        metadatas: [[]]
-      })
-    },
-    folderCollection: {
-      get: jest.fn().mockResolvedValue({
-        ids: [],
-        embeddings: [],
-        metadatas: []
-      }),
-      query: jest.fn().mockResolvedValue({
-        ids: [[]],
-        distances: [[]],
-        metadatas: [[]]
-      })
-    }
+    peekFiles: jest.fn().mockResolvedValue({ ids: [], embeddings: [], metadatas: [] }),
+    getFile: jest.fn().mockResolvedValue(null),
+    getFolder: jest.fn().mockResolvedValue(null),
+    getChunksForFile: jest.fn().mockResolvedValue([])
   };
 }
 
 /**
  * Create mock ModelVerifier
- * @param {boolean} connected - Whether Ollama is connected
+ * @param {boolean} connected - Whether the AI engine is connected
  * @returns {Object} Mock ModelVerifier
  */
 function createMockModelVerifier(connected = true) {
   return {
-    checkOllamaConnection: jest.fn().mockResolvedValue({
+    checkLlamaConnection: jest.fn().mockResolvedValue({
       connected,
-      error: connected ? null : 'Ollama offline',
-      suggestion: connected ? null : 'Start Ollama with: ollama serve'
+      error: connected ? null : 'AI engine offline',
+      suggestion: connected ? null : 'Ensure models are downloaded in Settings'
     }),
     getInstalledModels: jest
       .fn()
@@ -343,8 +324,8 @@ function createMockServiceContainer(mocks = {}) {
   const services = new Map();
 
   // Register default services
-  if (mocks.chromaDb) services.set('chromadb', mocks.chromaDb);
-  if (mocks.ollamaService) services.set('ollama', mocks.ollamaService);
+  if (mocks.vectorDb) services.set('vectorDb', mocks.vectorDb);
+  if (mocks.llamaService) services.set('llama', mocks.llamaService);
   if (mocks.folderMatching) services.set('folderMatching', mocks.folderMatching);
   if (mocks.embeddingQueue) services.set('embeddingQueue', mocks.embeddingQueue);
 
@@ -362,27 +343,27 @@ function createMockServiceContainer(mocks = {}) {
  * @returns {Object} All mocks needed for pipeline testing
  */
 function createPipelineMocks(fixture) {
-  const ollamaService = createMockOllamaService(fixture);
+  const llamaService = createMockLlamaService(fixture);
   const parallelEmbedding = createMockParallelEmbeddingService();
   const folderMatching = createMockFolderMatchingService(fixture);
   const embeddingQueue = createMockEmbeddingQueue();
-  const chromaDb = createMockChromaDBService();
+  const vectorDb = createMockVectorDbService();
   const modelVerifier = createMockModelVerifier(true);
   const documentExtractors = createMockDocumentExtractors(fixture);
 
   const container = createMockServiceContainer({
-    chromaDb,
-    ollamaService,
+    vectorDb,
+    llamaService,
     folderMatching,
     embeddingQueue
   });
 
   return {
-    ollamaService,
+    llamaService,
     parallelEmbedding,
     folderMatching,
     embeddingQueue,
-    chromaDb,
+    vectorDb,
     modelVerifier,
     documentExtractors,
     container,
@@ -393,20 +374,20 @@ function createPipelineMocks(fixture) {
     },
 
     // Configure offline scenarios
-    setOllamaOffline() {
-      ollamaService.analyzeText.mockRejectedValue(new Error('Ollama offline'));
-      ollamaService.analyzeImage.mockRejectedValue(new Error('Ollama offline'));
-      ollamaService.generateEmbedding.mockRejectedValue(new Error('Ollama offline'));
-      modelVerifier.checkOllamaConnection.mockResolvedValue({
+    setLlamaOffline() {
+      llamaService.analyzeText.mockRejectedValue(new Error('AI engine offline'));
+      llamaService.analyzeImage.mockRejectedValue(new Error('AI engine offline'));
+      llamaService.generateEmbedding.mockRejectedValue(new Error('AI engine offline'));
+      modelVerifier.checkLlamaConnection.mockResolvedValue({
         connected: false,
-        error: 'Ollama offline'
+        error: 'AI engine offline'
       });
     },
 
-    setChromaDBOffline() {
-      chromaDb.isOnline = false;
-      chromaDb.upsertFile.mockRejectedValue(new Error('ChromaDB offline'));
-      chromaDb.queryFoldersByEmbedding.mockRejectedValue(new Error('ChromaDB offline'));
+    setVectorDbOffline() {
+      vectorDb.isOnline = false;
+      vectorDb.upsertFile.mockRejectedValue(new Error('Vector DB offline'));
+      vectorDb.queryFoldersByEmbedding.mockRejectedValue(new Error('Vector DB offline'));
     },
 
     setEmbeddingFailure() {
@@ -477,11 +458,11 @@ function createMockSmartFolders() {
 module.exports = {
   EMBEDDING_DIMENSION,
   createMockEmbeddingVector,
-  createMockOllamaService,
+  createMockLlamaService,
   createMockParallelEmbeddingService,
   createMockFolderMatchingService,
   createMockEmbeddingQueue,
-  createMockChromaDBService,
+  createMockVectorDbService,
   createMockModelVerifier,
   createMockDocumentExtractors,
   createMockServiceContainer,

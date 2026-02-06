@@ -18,7 +18,11 @@ jest.mock('../src/shared/logger', () => {
 // Mock persistence
 jest.mock('../src/main/analysis/embeddingQueue/persistence', () => ({
   persistFailedItems: jest.fn().mockResolvedValue(undefined),
-  persistDeadLetterQueue: jest.fn().mockResolvedValue(undefined)
+  persistDeadLetterQueue: jest.fn().mockResolvedValue(undefined),
+  SQLITE_KEYS: {
+    failedItems: 'failedItems',
+    deadLetter: 'deadLetter'
+  }
 }));
 
 // Mock performance constants
@@ -131,7 +135,8 @@ describe('Embedding Queue Failed Item Handler', () => {
 
       expect(persistence.persistFailedItems).toHaveBeenCalledWith(
         '/path/failed.json',
-        handler.failedItems
+        handler.failedItems,
+        { key: persistence.SQLITE_KEYS.failedItems }
       );
     });
   });

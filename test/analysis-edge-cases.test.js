@@ -2,21 +2,13 @@ const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
 
-const { analyzeImageFile } = require('../src/main/analysis/ollamaImageAnalysis');
-const { analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis');
-
-// Mock ollamaDetection to simulate online state
-jest.mock('../src/main/utils/ollamaDetection', () => ({
-  isOllamaRunning: jest.fn().mockResolvedValue(true),
-  isOllamaRunningWithRetry: jest.fn().mockResolvedValue(true),
-  isOllamaInstalled: jest.fn().mockResolvedValue(true)
-}));
+const { analyzeImageFile } = require('../src/main/analysis/imageAnalysis');
+const { analyzeDocumentFile } = require('../src/main/analysis/documentAnalysis');
 
 /**
  * These tests focus on negative/edge-case inputs to ensure the analysers fail
  * gracefully and return structured error objects instead of throwing.
- * NOTE:  Ollama calls are mocked implicitly by the existing jest mock in
- * ../mocks/ollama.js so tests run fast and offline.
+ * NOTE: LlamaService calls are mocked by test setup so tests run fast and offline.
  */
 
 describe('Analysis edge cases', () => {

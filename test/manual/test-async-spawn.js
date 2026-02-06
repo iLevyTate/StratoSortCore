@@ -3,12 +3,7 @@
  * Verifies that the async replacements work correctly
  */
 
-const {
-  asyncSpawn,
-  hasPythonModuleAsync,
-  findPythonLauncherAsync,
-  checkChromaExecutableAsync
-} = require('../../src/main/utils/asyncSpawnUtils');
+const { asyncSpawn } = require('../../src/main/utils/asyncSpawnUtils');
 
 async function runTests() {
   console.log('Testing Async Spawn Utilities');
@@ -71,52 +66,6 @@ async function runTests() {
     }
   } catch (error) {
     console.log('  ✗ Unexpected error:', error.message);
-  }
-
-  // Test 4: Find Python launcher
-  console.log('\nTest 4: Finding Python launcher (async)');
-  try {
-    const pythonLauncher = await findPythonLauncherAsync();
-    if (pythonLauncher) {
-      console.log('  ✓ Found Python:', pythonLauncher.command, pythonLauncher.args);
-    } else {
-      console.log('  ⚠ Python not found (may not be installed)');
-    }
-  } catch (error) {
-    console.log('  ✗ Error:', error.message);
-  }
-
-  // Test 5: Check Python module
-  console.log('\nTest 5: Checking Python module (async)');
-  try {
-    const hasJson = await hasPythonModuleAsync('json');
-    if (hasJson) {
-      console.log('  ✓ Found built-in json module');
-    } else {
-      console.log('  ⚠ Could not find json module (Python might not be installed)');
-    }
-
-    const hasNonExistent = await hasPythonModuleAsync('this_module_does_not_exist_12345');
-    if (!hasNonExistent) {
-      console.log('  ✓ Correctly reported non-existent module as missing');
-    } else {
-      console.log('  ✗ Incorrectly found non-existent module');
-    }
-  } catch (error) {
-    console.log('  ✗ Error:', error.message);
-  }
-
-  // Test 6: Check chroma executable
-  console.log('\nTest 6: Checking chroma executable (async)');
-  try {
-    const hasChroma = await checkChromaExecutableAsync();
-    if (hasChroma) {
-      console.log('  ✓ Found chroma executable');
-    } else {
-      console.log('  ⚠ Chroma executable not found (may not be installed)');
-    }
-  } catch (error) {
-    console.log('  ✗ Error:', error.message);
   }
 
   console.log('\n==============================');

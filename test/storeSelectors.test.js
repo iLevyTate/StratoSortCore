@@ -9,8 +9,8 @@ import {
   selectFailedFiles,
   selectPendingFiles,
   selectFileStats,
-  selectChromaDBStatus,
-  selectChromaDBAvailable,
+  selectVectorDbStatus,
+  selectVectorDbAvailable,
   selectSelectedFiles,
   selectAnalysisResults,
   selectFileStates,
@@ -259,15 +259,15 @@ describe('Redux Selectors', () => {
     });
   });
 
-  describe('selectChromaDBStatus', () => {
-    test('returns chromadb status', () => {
+  describe('selectVectorDbStatus', () => {
+    test('returns vector DB status', () => {
       const state = {
         system: {
-          health: { chromadb: 'online' }
+          health: { vectorDb: 'online' }
         }
       };
 
-      const result = selectChromaDBStatus(state);
+      const result = selectVectorDbStatus(state);
 
       expect(result).toBe('online');
     });
@@ -275,39 +275,39 @@ describe('Redux Selectors', () => {
     test('returns unknown for missing status', () => {
       const state = { system: {} };
 
-      const result = selectChromaDBStatus(state);
+      const result = selectVectorDbStatus(state);
 
       expect(result).toBe('unknown');
     });
   });
 
-  describe('selectChromaDBAvailable', () => {
+  describe('selectVectorDbAvailable', () => {
     test('returns true for online status', () => {
       const state = {
-        system: { health: { chromadb: 'online' } }
+        system: { health: { vectorDb: 'online' } }
       };
 
-      const result = selectChromaDBAvailable(state);
+      const result = selectVectorDbAvailable(state);
 
       expect(result).toBe(true);
     });
 
     test('returns true for connecting status', () => {
       const state = {
-        system: { health: { chromadb: 'connecting' } }
+        system: { health: { vectorDb: 'connecting' } }
       };
 
-      const result = selectChromaDBAvailable(state);
+      const result = selectVectorDbAvailable(state);
 
       expect(result).toBe(true);
     });
 
     test('returns false for offline status', () => {
       const state = {
-        system: { health: { chromadb: 'offline' } }
+        system: { health: { vectorDb: 'offline' } }
       };
 
-      const result = selectChromaDBAvailable(state);
+      const result = selectVectorDbAvailable(state);
 
       expect(result).toBe(false);
     });

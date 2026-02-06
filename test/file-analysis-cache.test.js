@@ -9,15 +9,6 @@ jest.mock('fast-xml-parser', () => ({
 }));
 
 describe('per-file analysis cache (document)', () => {
-  beforeEach(() => {
-    // Mock ollamaDetection to ensure analysis proceeds
-    jest.mock('../src/main/utils/ollamaDetection', () => ({
-      isOllamaRunning: jest.fn().mockResolvedValue(true),
-      isOllamaRunningWithRetry: jest.fn().mockResolvedValue(true),
-      isOllamaInstalled: jest.fn().mockResolvedValue(true)
-    }));
-  });
-
   afterEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
@@ -25,7 +16,7 @@ describe('per-file analysis cache (document)', () => {
 
   test('second analyzeDocumentFile call hits cache and avoids LLM', async () => {
     expect.assertions(4);
-    // Spy on analyzeTextWithOllama to ensure it is not called twice
+    // Spy on analyzeTextWithLlama to ensure it is not called twice
     const analyzeSpy = jest.fn(async () => ({
       project: 'Spy',
       purpose: 'Spy purpose',
@@ -38,7 +29,7 @@ describe('per-file analysis cache (document)', () => {
     jest.doMock(
       '../src/main/analysis/documentLlm',
       () => ({
-        analyzeTextWithOllama: analyzeSpy,
+        analyzeTextWithLlama: analyzeSpy,
         AppConfig: {
           ai: {
             textAnalysis: {
@@ -50,7 +41,7 @@ describe('per-file analysis cache (document)', () => {
       { virtual: false }
     );
 
-    const { analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis');
+    const { analyzeDocumentFile } = require('../src/main/analysis/documentAnalysis');
 
     const tmp = path.join(os.tmpdir(), `doc-cache-${Date.now()}.txt`);
     await fs.writeFile(tmp, 'Sample document contents');

@@ -4,8 +4,7 @@ Integration tests verify component interactions with real or semi-real dependenc
 
 ## Prerequisites
 
-- Ollama running: `ollama serve`
-- ChromaDB running (optional)
+- Local models downloaded (`npm run setup:models`)
 
 ## Running Integration Tests
 
@@ -21,7 +20,7 @@ Tests automatically skip if required services aren't running.
 
 - Test interactions between multiple components
 - May use real filesystem (in temp directories)
-- May connect to local services (Ollama, ChromaDB)
+- May initialize in-process AI and vector services
 - Longer running than unit tests
 
 ## Guidelines
@@ -39,9 +38,9 @@ describe('ServiceIntegration', () => {
 
   beforeAll(async () => {
     // Check if required services are available
-    const ollamaAvailable = await checkOllamaConnection();
-    if (!ollamaAvailable) {
-      console.log('Skipping: Ollama not available');
+    const llamaAvailable = await checkLlamaHealth();
+    if (!llamaAvailable) {
+      console.log('Skipping: AI service not available');
       return;
     }
 
@@ -65,5 +64,3 @@ describe('ServiceIntegration', () => {
 ## Environment Variables
 
 - `SKIP_INTEGRATION_TESTS=1` - Skip all integration tests
-- `OLLAMA_HOST` - Override default Ollama host (default: http://localhost:11434)
-- `CHROMADB_HOST` - Override default ChromaDB host (default: http://localhost:8000)

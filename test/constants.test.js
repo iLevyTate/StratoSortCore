@@ -220,13 +220,13 @@ describe('constants', () => {
   describe('AI_DEFAULTS', () => {
     test('defines TEXT AI defaults', () => {
       expect(constants.AI_DEFAULTS.TEXT.MODEL).toBeDefined();
-      expect(constants.AI_DEFAULTS.TEXT.HOST).toBeDefined();
       expect(constants.AI_DEFAULTS.TEXT.MAX_CONTENT_LENGTH).toBeDefined();
+      expect(constants.AI_DEFAULTS.TEXT.GPU_LAYERS).toBeDefined();
     });
 
     test('defines IMAGE AI defaults', () => {
       expect(constants.AI_DEFAULTS.IMAGE.MODEL).toBeDefined();
-      expect(constants.AI_DEFAULTS.IMAGE.HOST).toBeDefined();
+      expect(constants.AI_DEFAULTS.IMAGE.MAX_TOKENS).toBeDefined();
     });
   });
 

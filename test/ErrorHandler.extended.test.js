@@ -99,8 +99,7 @@ jest.mock('../src/shared/constants', () => ({
     UNKNOWN: 'UNKNOWN'
   },
   IPC_CHANNELS: {
-    CHROMADB: { STATUS_CHANGED: 'chromadb:status-changed' },
-    DEPENDENCIES: { SERVICE_STATUS_CHANGED: 'dependencies:service-status-changed' }
+    VECTOR_DB: { STATUS_CHANGED: 'vectordb:status-changed' }
   }
 }));
 
@@ -116,21 +115,20 @@ describe('ErrorHandler - extended coverage', () => {
   });
 
   describe('parseError - AI-specific messages', () => {
-    test('detects Ollama ECONNREFUSED and provides connection guidance', () => {
-      const error = new Error('Ollama ECONNREFUSED localhost:11434');
+    test('detects AI engine ECONNREFUSED and provides connection guidance', () => {
+      const error = new Error('Llama ECONNREFUSED localhost');
       const result = errorHandler.parseError(error);
 
       expect(result.type).toBe('AI_UNAVAILABLE');
-      expect(result.message).toContain('Ollama');
-      expect(result.message).toContain('running');
+      expect(result.message).toContain('AI engine unavailable');
     });
 
-    test('detects Ollama connection error and provides connection guidance', () => {
-      const error = new Error('Ollama connection refused');
+    test('detects AI engine connection error and provides connection guidance', () => {
+      const error = new Error('Llama connection refused');
       const result = errorHandler.parseError(error);
 
       expect(result.type).toBe('AI_UNAVAILABLE');
-      expect(result.message).toContain('Ollama');
+      expect(result.message).toContain('AI');
     });
 
     test('detects AI model error and provides model guidance', () => {
@@ -147,7 +145,7 @@ describe('ErrorHandler - extended coverage', () => {
       const result = errorHandler.parseError(error);
 
       expect(result.type).toBe('AI_UNAVAILABLE');
-      expect(result.message).toContain('AI service unavailable');
+      expect(result.message).toContain('AI engine unavailable');
     });
 
     test('detects network timeout and provides timeout message', () => {
@@ -160,12 +158,12 @@ describe('ErrorHandler - extended coverage', () => {
     });
 
     test('detects generic network error', () => {
-      const error = new Error('ECONNREFUSED 127.0.0.1:8000');
+      const error = new Error('ECONNREFUSED 127.0.0.1:9999');
       error.code = 'ECONNREFUSED';
       const result = errorHandler.parseError(error);
 
       expect(result.type).toBe('NETWORK_ERROR');
-      expect(result.message).toContain('Connection issue');
+      expect(result.message).toContain('network-related error');
     });
 
     test('preserves short user-friendly error messages', () => {

@@ -70,20 +70,16 @@ describe('defaultSettings', () => {
   });
 
   describe('AI settings', () => {
-    test('has ollamaHost', () => {
-      expect(DEFAULT_SETTINGS.ollamaHost).toBe('http://127.0.0.1:11434');
-    });
-
     test('has textModel', () => {
-      expect(DEFAULT_SETTINGS.textModel).toBe('llama3.2:latest');
+      expect(DEFAULT_SETTINGS.textModel).toBe('Mistral-7B-Instruct-v0.3-Q4_K_M.gguf');
     });
 
     test('has visionModel', () => {
-      expect(DEFAULT_SETTINGS.visionModel).toBe('llava:latest');
+      expect(DEFAULT_SETTINGS.visionModel).toBe('llava-v1.6-mistral-7b-Q4_K_M.gguf');
     });
 
     test('has embeddingModel', () => {
-      expect(DEFAULT_SETTINGS.embeddingModel).toBe('mxbai-embed-large');
+      expect(DEFAULT_SETTINGS.embeddingModel).toBe('nomic-embed-text-v1.5-Q8_0.gguf');
     });
   });
 
@@ -161,10 +157,6 @@ describe('defaultSettings', () => {
     test('confidenceThreshold is between 0 and 1', () => {
       expect(DEFAULT_SETTINGS.confidenceThreshold).toBeGreaterThanOrEqual(0);
       expect(DEFAULT_SETTINGS.confidenceThreshold).toBeLessThanOrEqual(1);
-    });
-
-    test('ollamaHost is a valid URL format', () => {
-      expect(DEFAULT_SETTINGS.ollamaHost).toMatch(/^https?:\/\//);
     });
   });
 });

@@ -1,6 +1,41 @@
+describe('platform utils', () => {
+  function loadPlatform(platform) {
+    jest.resetModules();
+    document.body.className = '';
+    if (platform) {
+      Object.defineProperty(global, 'navigator', {
+        value: { userAgentData: { platform }, platform },
+        configurable: true
+      });
+    } else {
+      delete global.navigator;
+    }
+    return require('../src/renderer/utils/platform');
+  }
+
+  test('joinPath and normalizePath on Windows preserve separators', () => {
+    const { joinPath, normalizePath, applyPlatformClass } = loadPlatform('Windows');
+
+    expect(joinPath('C:\\\\Users', 'Alice/Docs')).toBe('C:\\Users\\Alice\\Docs');
+    const normalized = normalizePath('\\\\\\\\server//share\\\\folder');
+    expect(normalized.startsWith('\\\\')).toBe(true);
+    expect(normalized.replace(/^\\\\+/, '\\\\')).toBe('\\\\server\\share\\folder');
+    expect(applyPlatformClass()).toBe('platform-win32');
+    expect(document.body.classList.contains('platform-win32')).toBe(true);
+  });
+
+  test('joinPath and normalizePath on Linux use forward slashes', () => {
+    const { joinPath, normalizePath, applyPlatformClass } = loadPlatform('Linux');
+
+    expect(joinPath('/usr', 'local/bin')).toBe('/usr/local/bin');
+    expect(normalizePath('/usr//local///bin')).toBe('/usr/local/bin');
+    expect(applyPlatformClass()).toBe('platform-linux');
+    expect(document.body.classList.contains('platform-linux')).toBe(true);
+  });
+});
 /**
  * Tests for Platform Utilities
- * Tests legacy-compatible APIs and cross-platform utilities
+ * Tests cross-platform utilities
  */
 
 const path = require('path');
@@ -40,13 +75,6 @@ describe('platformUtils', () => {
     test('returns correct npm command for current platform', () => {
       const expected = platformUtils.isWindows ? 'npm.cmd' : 'npm';
       expect(platformUtils.getNpmCommand()).toBe(expected);
-    });
-  });
-
-  describe('getChromaDbBinName', () => {
-    test('returns correct chroma binary name for current platform', () => {
-      const expected = platformUtils.isWindows ? 'chroma.cmd' : 'chroma';
-      expect(platformUtils.getChromaDbBinName()).toBe(expected);
     });
   });
 

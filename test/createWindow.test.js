@@ -69,11 +69,7 @@ jest.mock('../src/shared/logger', () => {
 
 jest.mock('../src/shared/configDefaults', () => ({
   isDevelopment: jest.fn().mockReturnValue(false),
-  getEnvBool: jest.fn().mockReturnValue(false),
-  SERVICE_URLS: {
-    OLLAMA_HOST: 'http://127.0.0.1:11434',
-    CHROMA_SERVER_URL: 'http://127.0.0.1:8000'
-  }
+  getEnvBool: jest.fn().mockReturnValue(false)
 }));
 
 describe('createWindow', () => {

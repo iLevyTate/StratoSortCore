@@ -11,7 +11,8 @@ const os = require('os');
 
 // Test data directory (using existing test files)
 const TEST_FILES_DIR = path.resolve(__dirname, '../../test-files');
-const STRATO_TEST_FILES_DIR = path.resolve(__dirname, '../../StratoSortOfTestFiles');
+// Legacy alias: comprehensive fixtures are now also stored under test/test-files
+const STRATO_TEST_FILES_DIR = TEST_FILES_DIR;
 const APP_ROOT = path.resolve(__dirname, '../../..');
 
 /**
@@ -51,7 +52,7 @@ const TEST_FILES = {
 };
 
 /**
- * StratoSort test files - comprehensive set from test/StratoSortOfTestFiles
+ * StratoSort test files - comprehensive set from test/test-files
  */
 const STRATO_TEST_FILES = {
   // Documents

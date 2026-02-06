@@ -35,12 +35,12 @@ jest.mock('../src/main/utils/llmOptimization', () => ({
 }));
 
 // Mock analysis modules
-jest.mock('../src/main/analysis/ollamaDocumentAnalysis', () => ({
+jest.mock('../src/main/analysis/documentAnalysis', () => ({
   analyzeDocumentFile: jest.fn(),
   flushAllEmbeddings: jest.fn().mockResolvedValue(undefined)
 }));
 
-jest.mock('../src/main/analysis/ollamaImageAnalysis', () => ({
+jest.mock('../src/main/analysis/imageAnalysis', () => ({
   analyzeImageFile: jest.fn(),
   flushAllEmbeddings: jest.fn().mockResolvedValue(undefined)
 }));
@@ -85,9 +85,8 @@ describe('BatchAnalysisService', () => {
     jest.clearAllMocks();
     jest.resetModules();
 
-    analyzeDocumentFile =
-      require('../src/main/analysis/ollamaDocumentAnalysis').analyzeDocumentFile;
-    analyzeImageFile = require('../src/main/analysis/ollamaImageAnalysis').analyzeImageFile;
+    analyzeDocumentFile = require('../src/main/analysis/documentAnalysis').analyzeDocumentFile;
+    analyzeImageFile = require('../src/main/analysis/imageAnalysis').analyzeImageFile;
     BatchAnalysisService = require('../src/main/services/BatchAnalysisService');
 
     // Reset mock implementations
@@ -282,12 +281,8 @@ describe('BatchAnalysisService', () => {
     });
 
     test('flushes embeddings after analysis', async () => {
-      const {
-        flushAllEmbeddings: flushDoc
-      } = require('../src/main/analysis/ollamaDocumentAnalysis');
-      const {
-        flushAllEmbeddings: flushImage
-      } = require('../src/main/analysis/ollamaImageAnalysis');
+      const { flushAllEmbeddings: flushDoc } = require('../src/main/analysis/documentAnalysis');
+      const { flushAllEmbeddings: flushImage } = require('../src/main/analysis/imageAnalysis');
 
       const files = ['/path/to/doc.pdf'];
 

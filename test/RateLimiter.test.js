@@ -11,7 +11,7 @@ jest.mock('../src/shared/performanceConstants', () => ({
 const {
   SlidingWindowRateLimiter,
   Semaphore,
-  createOllamaRateLimiter
+  createLlamaRateLimiter
 } = require('../src/shared/RateLimiter');
 
 describe('SlidingWindowRateLimiter', () => {
@@ -196,9 +196,9 @@ describe('Semaphore', () => {
   });
 });
 
-describe('createOllamaRateLimiter', () => {
+describe('createLlamaRateLimiter', () => {
   test('creates limiter with defaults', () => {
-    const limiter = createOllamaRateLimiter();
+    const limiter = createLlamaRateLimiter();
     const stats = limiter.getStats();
 
     expect(stats.maxCalls).toBe(5);
@@ -206,7 +206,7 @@ describe('createOllamaRateLimiter', () => {
   });
 
   test('accepts custom options', () => {
-    const limiter = createOllamaRateLimiter({ maxCalls: 10, windowMs: 2000 });
+    const limiter = createLlamaRateLimiter({ maxCalls: 10, windowMs: 2000 });
     const stats = limiter.getStats();
 
     expect(stats.maxCalls).toBe(10);

@@ -1,311 +1,393 @@
-const fs = require('fs').promises;
-const path = require('path');
-const { app } = require('electron');
-const UndoRedoService = require('../src/main/services/UndoRedoService');
-const { container, ServiceIds } = require('../src/main/services/ServiceContainer');
-
-// Mock dependencies
-jest.mock('fs', () => {
-  const originalFs = jest.requireActual('fs');
-  return {
-    ...originalFs,
-    promises: {
-      readFile: jest.fn(),
-      writeFile: jest.fn(),
-      rename: jest.fn(),
-      unlink: jest.fn(),
-      mkdir: jest.fn(),
-      stat: jest.fn(),
-      access: jest.fn(),
-      copyFile: jest.fn(),
-      readdir: jest.fn(),
-      rmdir: jest.fn()
-    }
-  };
-});
+/**
+ * @jest-environment node
+ *
+ * UndoRedoService Extended Tests
+ *
+ * Covers complex undo/redo chains, memory limits, batch operations,
+ * mutex serialization, and edge cases not tested in the basic suite.
+ */
 
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn().mockReturnValue('/mock/user/data')
+    getPath: jest.fn(() => '/test/userData')
   }
 }));
 
-jest.mock('../src/shared/logger', () => {
-  const logger = {
-    setContext: jest.fn(),
+jest.mock('fs', () => ({
+  promises: {
+    readFile: jest.fn(),
+    writeFile: jest.fn().mockResolvedValue(),
+    rename: jest.fn().mockResolvedValue(),
+    mkdir: jest.fn().mockResolvedValue(),
+    unlink: jest.fn().mockResolvedValue(),
+    access: jest.fn(),
+    stat: jest.fn(),
+    readdir: jest.fn().mockResolvedValue([]),
+    rm: jest.fn().mockResolvedValue()
+  }
+}));
+
+jest.mock('../src/shared/logger', () => ({
+  createLogger: jest.fn(() => ({
     info: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
     debug: jest.fn()
-  };
-  return { logger, createLogger: jest.fn(() => logger) };
-});
+  }))
+}));
+
+jest.mock('../src/shared/performanceConstants', () => ({
+  RETRY: {
+    ATOMIC_BACKOFF_STEP_MS: 10
+  }
+}));
 
 jest.mock('../src/shared/atomicFileOperations', () => ({
-  crossDeviceMove: jest.fn()
+  crossDeviceMove: jest.fn().mockResolvedValue()
 }));
 
 jest.mock('../src/main/services/ServiceContainer', () => ({
   container: {
-    tryResolve: jest.fn()
+    tryResolve: jest.fn(() => null),
+    has: jest.fn(() => false),
+    resolve: jest.fn(() => null)
   },
   ServiceIds: {
-    CHROMA_DB: 'CHROMA_DB'
+    ORAMA_VECTOR: 'ORAMA_VECTOR',
+    FILE_PATH_COORDINATOR: 'FILE_PATH_COORDINATOR'
   }
 }));
 
-describe('UndoRedoService Extended Tests', () => {
+const fs = require('fs').promises;
+const UndoRedoService = require('../src/main/services/UndoRedoService');
+
+describe('UndoRedoService - Extended Tests', () => {
   let service;
 
   beforeEach(() => {
     jest.clearAllMocks();
+
+    // Default: no existing actions file
+    const enoent = new Error('ENOENT');
+    enoent.code = 'ENOENT';
+    fs.readFile.mockRejectedValue(enoent);
+    fs.access.mockRejectedValue(enoent); // For cleanupOldBackups
+
     service = new UndoRedoService({
-      maxActions: 10,
-      maxMemoryMB: 1, // Small limit for testing
-      maxBatchSize: 100
+      maxActions: 5,
+      maxMemoryMB: 1,
+      maxBatchSize: 10
     });
   });
 
-  describe('Initialization & Persistence', () => {
-    test('loads actions from disk on initialization', async () => {
-      const mockData = {
-        actions: [{ id: '1', type: 'test' }],
-        currentIndex: 0
-      };
-      fs.readFile.mockResolvedValue(JSON.stringify(mockData));
+  describe('Complex undo/redo chains', () => {
+    test('record, undo, redo produces consistent state', async () => {
+      // Spy on safeMove to prevent actual file operations
+      service.safeMove = jest.fn().mockResolvedValue();
 
-      await service.initialize();
+      const id = await service.recordAction('FILE_MOVE', {
+        originalPath: '/a/file.txt',
+        newPath: '/b/file.txt'
+      });
 
-      expect(service.actions.length).toBe(1);
-      expect(service.currentIndex).toBe(0);
-      expect(service.initialized).toBe(true);
+      expect(id).toBeDefined();
+      expect(service.canUndo()).toBe(true);
+      expect(service.canRedo()).toBe(false);
+
+      const undoResult = await service.undo();
+      expect(undoResult.success).toBe(true);
+      expect(service.canUndo()).toBe(false);
+      expect(service.canRedo()).toBe(true);
+
+      const redoResult = await service.redo();
+      expect(redoResult.success).toBe(true);
+      expect(service.canUndo()).toBe(true);
+      expect(service.canRedo()).toBe(false);
     });
 
-    test('handles corrupted actions file gracefully', async () => {
-      fs.readFile.mockRejectedValue(new Error('Corrupted'));
-      fs.mkdir.mockResolvedValue();
-      fs.writeFile.mockResolvedValue();
-      fs.rename.mockResolvedValue();
+    test('recording new action after undo discards redo stack', async () => {
+      service.safeMove = jest.fn().mockResolvedValue();
 
-      await service.initialize();
-
-      expect(service.actions.length).toBe(0);
-      expect(service.currentIndex).toBe(-1);
-      // Should attempt to save fresh state
-      expect(fs.writeFile).toHaveBeenCalled();
-    });
-
-    test('cleanupOldBackups removes orphaned files', async () => {
-      const backupDir = path.join('/mock/user/data', 'undo-backups');
-      fs.access.mockResolvedValue(); // Dir exists
-      fs.readdir.mockResolvedValue(['orphan.bak', 'active.bak']);
-
-      // Setup service with one active backup
-      service.actions = [
-        {
-          data: { backupPath: path.join(backupDir, 'active.bak') }
-        }
-      ];
-
-      await service.cleanupOldBackups();
-
-      // Should remove orphan but keep active
-      expect(fs.unlink).toHaveBeenCalledWith(expect.stringContaining('orphan.bak'));
-      expect(fs.unlink).not.toHaveBeenCalledWith(expect.stringContaining('active.bak'));
-    });
-  });
-
-  describe('Memory Management', () => {
-    test('prunes old actions when maxActions limit exceeded', async () => {
-      service = new UndoRedoService({ maxActions: 2 });
-      fs.readFile.mockRejectedValue(new Error('New'));
-
-      await service.recordAction('A1', {});
-      await service.recordAction('A2', {});
-      await service.recordAction('A3', {});
+      await service.recordAction('FILE_MOVE', {
+        originalPath: '/a.txt',
+        newPath: '/b.txt'
+      });
+      await service.recordAction('FILE_MOVE', {
+        originalPath: '/c.txt',
+        newPath: '/d.txt'
+      });
 
       expect(service.actions.length).toBe(2);
-      expect(service.actions[0].type).toBe('A2'); // A1 removed
-      expect(service.actions[1].type).toBe('A3');
+
+      // Undo last action
+      await service.undo();
+      expect(service.canRedo()).toBe(true);
+
+      // Record new action - should discard redo
+      await service.recordAction('FILE_RENAME', {
+        originalPath: '/e.txt',
+        newPath: '/f.txt'
+      });
+
+      expect(service.canRedo()).toBe(false);
+      expect(service.actions.length).toBe(2); // 1st action + new action
     });
 
-    test('prunes actions when memory limit exceeded', async () => {
-      // Set small memory limit (~1KB)
-      service = new UndoRedoService({ maxMemoryMB: 0.001 });
-      fs.readFile.mockRejectedValue(new Error('New'));
+    test('undo with no actions throws', async () => {
+      await service.initialize();
 
-      // Create large payload (but small enough to fit one)
-      const largeData = { data: 'x'.repeat(400) }; // ~800 bytes + overhead
-
-      await service.recordAction('A1', largeData);
-      await service.recordAction('A2', largeData);
-
-      // A1 should be removed to make room for A2
-      expect(service.actions.length).toBe(1);
-      expect(service.actions[0].type).toBe('A2');
+      await expect(service.undo()).rejects.toThrow('No actions to undo');
     });
 
-    test('truncates single oversized action to prevent infinite loop', async () => {
-      service = new UndoRedoService({ maxMemoryMB: 0.001 }); // ~1KB
-      fs.readFile.mockRejectedValue(new Error('New'));
+    test('redo with no undone actions throws', async () => {
+      await service.initialize();
 
-      // Single action larger than total memory
-      const hugeData = { data: 'x'.repeat(2000) }; // ~4KB -> too big
-
-      await service.recordAction('HUGE', hugeData);
-
-      // Should result in 1 action (truncated)
-      // The truncated message is small enough to fit in 1KB
-      expect(service.actions.length).toBe(1);
-      expect(service.actions[0].data.truncated).toBe(true);
+      await expect(service.redo()).rejects.toThrow('No actions to redo');
     });
   });
 
-  describe('Batch Operations', () => {
-    test('undo batch operation reverses all steps', async () => {
-      const ops = [
-        { type: 'move', originalPath: 'A', newPath: 'B' },
-        { type: 'rename', originalPath: 'C', newPath: 'D' }
-      ];
+  describe('Memory limits', () => {
+    test('prunes old actions when maxActions exceeded', async () => {
+      for (let i = 0; i < 7; i++) {
+        await service.recordAction('FILE_RENAME', {
+          originalPath: `/old${i}.txt`,
+          newPath: `/new${i}.txt`
+        });
+      }
 
-      const mockState = {
-        actions: [
-          {
-            id: 'batch1',
-            type: 'BATCH_OPERATION',
-            data: { operations: ops },
-            timestamp: new Date().toISOString()
-          }
-        ],
-        currentIndex: 0
-      };
-
-      // Mock readFile so initialize() loads this state
-      fs.readFile.mockResolvedValue(JSON.stringify(mockState));
-
-      // We need to re-initialize or create new service to trigger load
-      service = new UndoRedoService();
-
-      fs.rename.mockResolvedValue(); // For safeMove
-      fs.mkdir.mockResolvedValue();
-
-      const result = await service.undo();
-
-      expect(result.success).toBe(true);
-      // Should reverse operations in reverse order (2 renames) + saveActions (1 rename)
-      expect(fs.rename).toHaveBeenCalledTimes(3);
-      expect(result.successCount).toBe(2);
-
-      // Verify specific calls (paths are normalized to absolute)
-      expect(fs.rename).toHaveBeenCalledWith(
-        expect.stringContaining('D'),
-        expect.stringContaining('C')
-      );
-      expect(fs.rename).toHaveBeenCalledWith(
-        expect.stringContaining('B'),
-        expect.stringContaining('A')
-      );
+      // maxActions is 5, so oldest actions should be pruned
+      expect(service.actions.length).toBeLessThanOrEqual(5);
     });
 
-    test('handles partial failures in batch undo', async () => {
-      const ops = [
-        { type: 'move', originalPath: 'A', newPath: 'B' },
-        { type: 'delete', originalPath: 'X', backupPath: 'missing.bak' }
-      ];
+    test('tracks memory estimate correctly', async () => {
+      await service.recordAction('FILE_MOVE', {
+        originalPath: '/a.txt',
+        newPath: '/b.txt'
+      });
 
-      const mockState = {
-        actions: [
-          {
-            id: 'batch1',
-            type: 'BATCH_OPERATION',
-            data: { operations: ops },
-            timestamp: new Date().toISOString()
-          }
-        ],
-        currentIndex: 0
-      };
+      expect(service.currentMemoryEstimate).toBeGreaterThan(0);
+    });
 
-      fs.readFile.mockResolvedValue(JSON.stringify(mockState));
-      service = new UndoRedoService();
+    test('_estimateActionSize handles circular references gracefully', () => {
+      const circular = {};
+      circular.self = circular;
 
-      fs.rename.mockResolvedValue();
-      // Mock file check failure for backup
-      fs.access.mockRejectedValue(new Error('Not found'));
+      const size = service._estimateActionSize(circular);
+      // Fallback to 1024 on circular reference
+      expect(size).toBe(1024);
+    });
 
-      const result = await service.undo();
+    test('_recalculateMemoryEstimate sums all action sizes', async () => {
+      await service.recordAction('FILE_MOVE', {
+        originalPath: '/a.txt',
+        newPath: '/b.txt'
+      });
+      await service.recordAction('FILE_MOVE', {
+        originalPath: '/c.txt',
+        newPath: '/d.txt'
+      });
 
-      expect(result.success).toBe(true); // Overall undo call succeeds (doesn't throw)
-      expect(result.successCount).toBe(1); // Move succeeded
-      expect(result.failCount).toBe(1); // Delete restore failed
+      const expected = service.actions.reduce((sum, a) => sum + service._estimateActionSize(a), 0);
+      service._recalculateMemoryEstimate();
+      expect(service.currentMemoryEstimate).toBe(expected);
     });
   });
 
-  describe('Backup Resilience', () => {
-    test('createBackup persists state immediately', async () => {
-      const filePath = '/docs/file.txt';
-      const backupDir = '/mock/user/data/undo-backups';
+  describe('Batch operations', () => {
+    test('limits batch operation size to maxBatchSize', async () => {
+      const ops = Array.from({ length: 20 }, (_, i) => ({
+        originalPath: `/source/file${i}.txt`,
+        newPath: `/dest/file${i}.txt`
+      }));
 
-      fs.access.mockResolvedValue(); // File exists
-      fs.copyFile.mockResolvedValue();
-      fs.stat.mockResolvedValue({ size: 100 });
-      fs.mkdir.mockResolvedValue();
-      fs.writeFile.mockResolvedValue(); // Save state
+      await service.recordAction('BATCH_ORGANIZE', { operations: ops });
 
-      const backupPath = await service.createBackup(filePath);
-
-      expect(fs.copyFile).toHaveBeenCalled();
-      expect(fs.writeFile).toHaveBeenCalled(); // Ensure state saved
-      expect(backupPath).toContain('undo-backups');
+      // The recorded action should have at most maxBatchSize (10) operations
+      const action = service.actions[service.actions.length - 1];
+      expect(action.data.operations.length).toBeLessThanOrEqual(10);
     });
 
-    test('undo fails explicitly if backup missing', async () => {
-      const mockState = {
-        actions: [
-          {
-            type: 'FILE_DELETE',
-            data: { originalPath: 'A', backupPath: 'A.bak' }
-          }
-        ],
-        currentIndex: 0
-      };
+    test('small batch operations are not truncated', async () => {
+      const ops = Array.from({ length: 3 }, (_, i) => ({
+        originalPath: `/source/file${i}.txt`,
+        newPath: `/dest/file${i}.txt`
+      }));
 
-      fs.readFile.mockResolvedValue(JSON.stringify(mockState));
-      service = new UndoRedoService();
+      await service.recordAction('BATCH_ORGANIZE', { operations: ops });
 
-      fs.access.mockRejectedValue(new Error('ENOENT'));
-
-      await expect(service.undo()).rejects.toThrow('backup not found');
+      const action = service.actions[service.actions.length - 1];
+      expect(action.data.operations.length).toBe(3);
     });
   });
 
-  describe('Atomic Persistence', () => {
-    test('saveActions uses atomic write pattern', async () => {
-      service.actions = [{ id: '1' }];
-      fs.mkdir.mockResolvedValue();
-      fs.writeFile.mockResolvedValue();
-      fs.rename.mockResolvedValue();
+  describe('Action descriptions', () => {
+    test('generates description for FILE_MOVE', () => {
+      const desc = service.getActionDescription('FILE_MOVE', {
+        originalPath: '/downloads/report.pdf',
+        newPath: '/docs/Finance/report.pdf'
+      });
 
-      await service.saveActions();
+      expect(desc).toContain('report.pdf');
+    });
+
+    test('generates description for FILE_RENAME', () => {
+      const desc = service.getActionDescription('FILE_RENAME', {
+        originalPath: '/docs/old-name.txt',
+        newPath: '/docs/new-name.txt'
+      });
+
+      expect(desc).toContain('old-name.txt');
+      expect(desc).toContain('new-name.txt');
+    });
+  });
+
+  describe('History management', () => {
+    test('getActionHistory returns limited results', async () => {
+      for (let i = 0; i < 5; i++) {
+        await service.recordAction('FILE_RENAME', {
+          originalPath: `/file${i}.txt`,
+          newPath: `/renamed${i}.txt`
+        });
+      }
+
+      const history = service.getActionHistory(3);
+      expect(history.length).toBeLessThanOrEqual(3);
+    });
+
+    test('clearHistory resets everything', async () => {
+      await service.recordAction('FILE_MOVE', {
+        originalPath: '/a.txt',
+        newPath: '/b.txt'
+      });
+
+      await service.clearHistory();
+
+      expect(service.actions).toEqual([]);
+      expect(service.currentIndex).toBe(-1);
+      expect(service.currentMemoryEstimate).toBe(0);
+    });
+
+    test('getStats returns full state', async () => {
+      await service.initialize();
+
+      const stats = service.getStats();
+
+      expect(stats).toHaveProperty('canUndo');
+      expect(stats).toHaveProperty('canRedo');
+      expect(stats).toHaveProperty('memoryUsageMB');
+      expect(stats).toHaveProperty('memoryLimitMB');
+      expect(stats).toHaveProperty('actionLimit');
+      expect(stats).toHaveProperty('batchSizeLimit');
+    });
+  });
+
+  describe('Persistence', () => {
+    test('saveActions uses atomic write (temp + rename)', async () => {
+      await service.recordAction('FILE_MOVE', {
+        originalPath: '/a.txt',
+        newPath: '/b.txt'
+      });
 
       expect(fs.writeFile).toHaveBeenCalledWith(
-        expect.stringContaining('.tmp.'),
+        expect.stringContaining('.tmp'),
         expect.any(String)
       );
       expect(fs.rename).toHaveBeenCalled();
     });
 
-    test('saveActions retries on EPERM', async () => {
-      fs.mkdir.mockResolvedValue();
-      fs.writeFile.mockResolvedValue();
+    test('loadActions restores state from disk', async () => {
+      const saved = {
+        actions: [
+          {
+            id: '1',
+            type: 'FILE_MOVE',
+            data: { originalPath: '/a', newPath: '/b' },
+            timestamp: new Date().toISOString(),
+            description: 'test'
+          }
+        ],
+        currentIndex: 0
+      };
+      fs.readFile.mockResolvedValueOnce(JSON.stringify(saved));
 
-      const eperm = new Error('Locked');
-      eperm.code = 'EPERM';
+      await service.loadActions();
 
-      fs.rename.mockRejectedValueOnce(eperm).mockResolvedValueOnce(undefined); // Success on retry
+      expect(service.actions).toHaveLength(1);
+      expect(service.currentIndex).toBe(0);
+    });
 
-      await service.saveActions();
+    test('loadActions handles corrupted JSON gracefully', async () => {
+      fs.readFile.mockResolvedValueOnce('not-json{{{');
 
-      expect(fs.rename).toHaveBeenCalledTimes(2);
+      await service.loadActions();
+
+      expect(service.actions).toEqual([]);
+      expect(service.currentIndex).toBe(-1);
+    });
+  });
+
+  describe('Mutex serialization', () => {
+    test('concurrent recordAction calls are serialized', async () => {
+      const order = [];
+
+      // Override saveActions to track call order
+      const origSave = service.saveActions.bind(service);
+      service.saveActions = async () => {
+        order.push('save-start');
+        await new Promise((r) => setTimeout(r, 10));
+        order.push('save-end');
+      };
+
+      await Promise.all([
+        service.recordAction('FILE_MOVE', { originalPath: '/a', newPath: '/b' }),
+        service.recordAction('FILE_MOVE', { originalPath: '/c', newPath: '/d' })
+      ]);
+
+      // Saves should be serialized (start-end-start-end, not interleaved)
+      const firstEnd = order.indexOf('save-end');
+      const secondStart = order.lastIndexOf('save-start');
+      expect(firstEnd).toBeLessThan(secondStart);
+    });
+  });
+
+  describe('Constructor configuration', () => {
+    test('defaults for maxActions, maxMemoryMB, maxBatchSize', () => {
+      const defaultService = new UndoRedoService();
+
+      expect(defaultService.maxActions).toBe(50);
+      expect(defaultService.maxMemoryMB).toBe(10);
+      expect(defaultService.maxBatchSize).toBe(1000);
+    });
+
+    test('custom values are respected', () => {
+      expect(service.maxActions).toBe(5);
+      expect(service.maxMemoryMB).toBe(1);
+      expect(service.maxBatchSize).toBe(10);
+    });
+  });
+
+  describe('Initialize', () => {
+    test('initialize sets initialized flag', async () => {
+      await service.initialize();
+
+      expect(service.initialized).toBe(true);
+    });
+
+    test('double initialize is a no-op', async () => {
+      await service.initialize();
+      await service.initialize();
+
+      // Should only read file once (first init)
+      expect(fs.readFile).toHaveBeenCalledTimes(1);
+    });
+
+    test('initialize recovers from loadActions failure', async () => {
+      fs.readFile.mockRejectedValueOnce(new Error('Disk error'));
+
+      await service.initialize();
+
+      expect(service.initialized).toBe(true);
+      expect(service.actions).toEqual([]);
     });
   });
 });

@@ -15,7 +15,7 @@
  *   npm run test:soak
  *
  * Notes:
- * - This is intentionally tolerant of missing Ollama/ChromaDB. It’s focused on stability,
+ * - This is intentionally tolerant of missing models/vector DB. It’s focused on stability,
  *   responsiveness, and detecting obvious leak-shaped growth trends.
  */
 

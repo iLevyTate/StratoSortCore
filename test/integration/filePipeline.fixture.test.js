@@ -6,7 +6,7 @@
  *
  * This test validates the entire processing chain works together.
  *
- * Uses real test files from test/StratoSortOfTestFiles/
+ * Uses real test files from test/test-files/
  */
 
 const {

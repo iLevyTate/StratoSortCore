@@ -599,4 +599,76 @@ describe('DownloadWatcher', () => {
       expect(watcher.watcher).toBeNull();
     });
   });
+
+  describe('Migration: vectorDbService + folderMatcher DI', () => {
+    test('accepts vectorDbService in constructor', () => {
+      const mockVectorDb = { upsertFileEmbedding: jest.fn(), isInitialized: jest.fn() };
+      const w = new DownloadWatcher({
+        ...mockDependencies,
+        vectorDbService: mockVectorDb
+      });
+
+      expect(w.vectorDbService).toBe(mockVectorDb);
+    });
+
+    test('accepts folderMatcher in constructor', () => {
+      const mockMatcher = { embedText: jest.fn(), findMatchingFolders: jest.fn() };
+      const w = new DownloadWatcher({
+        ...mockDependencies,
+        folderMatcher: mockMatcher
+      });
+
+      expect(w.folderMatcher).toBe(mockMatcher);
+    });
+
+    test('vectorDbService and folderMatcher default to undefined when not provided', () => {
+      // Original mockDependencies does not include these
+      const w = new DownloadWatcher(mockDependencies);
+
+      expect(w.vectorDbService).toBeUndefined();
+      expect(w.folderMatcher).toBeUndefined();
+    });
+
+    test('accepts analysisHistoryService in constructor', () => {
+      const mockHistory = { addEntry: jest.fn() };
+      const w = new DownloadWatcher({
+        ...mockDependencies,
+        analysisHistoryService: mockHistory
+      });
+
+      expect(w.analysisHistoryService).toBe(mockHistory);
+    });
+
+    test('accepts notificationService in constructor', () => {
+      const mockNotify = { notify: jest.fn() };
+      const w = new DownloadWatcher({
+        ...mockDependencies,
+        notificationService: mockNotify
+      });
+
+      expect(w.notificationService).toBe(mockNotify);
+    });
+
+    test('full dependency set constructs without error', () => {
+      const fullDeps = {
+        ...mockDependencies,
+        notificationService: { notify: jest.fn() },
+        analysisHistoryService: { addEntry: jest.fn() },
+        vectorDbService: { upsertFileEmbedding: jest.fn() },
+        folderMatcher: { embedText: jest.fn() }
+      };
+
+      const w = new DownloadWatcher(fullDeps);
+
+      expect(w.vectorDbService).toBe(fullDeps.vectorDbService);
+      expect(w.folderMatcher).toBe(fullDeps.folderMatcher);
+      expect(w.notificationService).toBe(fullDeps.notificationService);
+      expect(w.analysisHistoryService).toBe(fullDeps.analysisHistoryService);
+    });
+
+    test('_stopped flag initializes to false', () => {
+      const w = new DownloadWatcher(mockDependencies);
+      expect(w._stopped).toBe(false);
+    });
+  });
 });

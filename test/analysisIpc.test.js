@@ -3,6 +3,8 @@
  * Tests document and image analysis IPC registration
  */
 
+const mockRecognizeIfAvailable = jest.fn();
+
 // Mock logger
 jest.mock('../src/shared/logger', () => {
   const logger = {
@@ -38,12 +40,15 @@ jest.mock('perf_hooks', () => ({
   }
 }));
 
+jest.mock('../src/main/utils/tesseractUtils', () => ({
+  recognizeIfAvailable: (...args) => mockRecognizeIfAvailable(...args)
+}));
+
 describe('registerAnalysisIpc', () => {
   let registerAnalysisIpc;
   let mockIpcMain;
   let mockAnalyzeDocumentFile;
   let mockAnalyzeImageFile;
-  let mockTesseract;
   let mockSystemAnalytics;
   let mockGetServiceIntegration;
   let mockGetCustomFolders;
@@ -80,9 +85,7 @@ describe('registerAnalysisIpc', () => {
       confidence: 0.85
     });
 
-    mockTesseract = {
-      recognize: jest.fn().mockResolvedValue('Extracted text')
-    };
+    mockRecognizeIfAvailable.mockReset();
 
     mockSystemAnalytics = {
       recordProcessingTime: jest.fn(),
@@ -127,7 +130,6 @@ describe('registerAnalysisIpc', () => {
       ipcMain: mockIpcMain,
       IPC_CHANNELS,
       logger: mockLogger,
-      tesseract: mockTesseract,
       systemAnalytics: mockSystemAnalytics,
       analyzeDocumentFile: mockAnalyzeDocumentFile,
       analyzeImageFile: mockAnalyzeImageFile,
@@ -147,7 +149,6 @@ describe('registerAnalysisIpc', () => {
         ipcMain: mockIpcMain,
         IPC_CHANNELS,
         logger: mockLogger,
-        tesseract: mockTesseract,
         systemAnalytics: mockSystemAnalytics,
         analyzeDocumentFile: mockAnalyzeDocumentFile,
         analyzeImageFile: mockAnalyzeImageFile,
@@ -207,7 +208,6 @@ describe('registerAnalysisIpc', () => {
         ipcMain: mockIpcMain,
         IPC_CHANNELS,
         logger: mockLogger,
-        tesseract: mockTesseract,
         systemAnalytics: mockSystemAnalytics,
         analyzeDocumentFile: mockAnalyzeDocumentFile,
         analyzeImageFile: mockAnalyzeImageFile,
@@ -238,7 +238,6 @@ describe('registerAnalysisIpc', () => {
         ipcMain: mockIpcMain,
         IPC_CHANNELS,
         logger: mockLogger,
-        tesseract: mockTesseract,
         systemAnalytics: mockSystemAnalytics,
         analyzeDocumentFile: mockAnalyzeDocumentFile,
         analyzeImageFile: mockAnalyzeImageFile,
@@ -271,7 +270,6 @@ describe('registerAnalysisIpc', () => {
         ipcMain: mockIpcMain,
         IPC_CHANNELS,
         logger: mockLogger,
-        tesseract: mockTesseract,
         systemAnalytics: mockSystemAnalytics,
         analyzeDocumentFile: mockAnalyzeDocumentFile,
         analyzeImageFile: mockAnalyzeImageFile,
@@ -281,9 +279,12 @@ describe('registerAnalysisIpc', () => {
     });
 
     test('extracts text from image', async () => {
+      mockRecognizeIfAvailable.mockResolvedValue({ success: true, text: 'Extracted text' });
+
       const result = await handlers[ANALYSIS_CHANNELS.EXTRACT_IMAGE_TEXT]({}, '/test/scan.png');
 
-      expect(mockTesseract.recognize).toHaveBeenCalledWith(
+      expect(mockRecognizeIfAvailable).toHaveBeenCalledWith(
+        null,
         '/test/scan.png',
         expect.objectContaining({
           lang: 'eng',
@@ -296,7 +297,11 @@ describe('registerAnalysisIpc', () => {
     });
 
     test('handles OCR error', async () => {
-      mockTesseract.recognize.mockRejectedValueOnce(new Error('OCR failed'));
+      mockRecognizeIfAvailable.mockResolvedValue({
+        success: false,
+        error: 'OCR failed',
+        cause: new Error('OCR failed')
+      });
 
       const result = await handlers[ANALYSIS_CHANNELS.EXTRACT_IMAGE_TEXT]({}, '/test/scan.png');
 

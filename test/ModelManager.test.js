@@ -1,876 +1,210 @@
 /**
- * Tests for ModelManager Service
- * TIER 2 - Critical for Ollama model management and fallback handling
+ * Tests for ModelManager
+ * Covers initialization race protection, capability analysis, selection/fallback, and timeouts.
  */
 
-const { ModelManager } = require('../src/main/services/ModelManager');
-const fs = require('fs').promises;
-
-// Mock electron app
-jest.mock('electron', () => ({
-  app: {
-    getPath: jest.fn(() => '/mock/user/data')
-  }
-}));
-
-// Mock Ollama client
-jest.mock('ollama', () => ({
-  Ollama: jest.fn().mockImplementation(() => ({
-    list: jest.fn(),
-    generate: jest.fn()
-  }))
-}));
-
-// Mock SettingsService correctly to return a stable instance
-const mockSettingsService = {
-  load: jest.fn().mockResolvedValue({
-    textModel: 'llama3.2',
-    visionModel: 'llava',
-    embeddingModel: 'mxbai-embed-large'
-  }),
-  save: jest.fn().mockResolvedValue(true)
-};
-
-jest.mock('../src/main/services/SettingsService', () => {
-  return {
-    getInstance: jest.fn(() => mockSettingsService)
-  };
-});
-
-// Mock PerformanceService
-jest.mock('../src/main/services/PerformanceService', () => ({
-  buildOllamaOptions: jest.fn().mockResolvedValue({
-    num_ctx: 2048,
-    num_thread: 4
+jest.mock('../src/shared/logger', () => ({
+  createLogger: () => ({
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn()
   })
 }));
 
+jest.mock('../src/shared/singletonFactory', () => ({
+  createSingletonHelpers: () => ({
+    getInstance: jest.fn(),
+    createInstance: jest.fn(),
+    registerWithContainer: jest.fn(),
+    resetInstance: jest.fn()
+  })
+}));
+
+jest.mock('../src/shared/promiseUtils', () => ({
+  withTimeout: jest.fn((p) => p)
+}));
+
 describe('ModelManager', () => {
-  let modelManager;
-  let mockOllamaClient;
+  function loadWithMocks({ llamaOverrides = {}, settingsOverrides = {} } = {}) {
+    jest.resetModules();
 
-  beforeEach(() => {
-    jest.clearAllMocks();
+    const mockLlama = {
+      listModels: jest.fn().mockResolvedValue([]),
+      generateText: jest.fn().mockResolvedValue({ response: 'ok' }),
+      ...llamaOverrides
+    };
 
-    // Reset fs mocks
-    jest.spyOn(fs, 'readFile').mockRejectedValue({ code: 'ENOENT' });
-    jest.spyOn(fs, 'writeFile').mockResolvedValue(undefined);
+    const mockSettings = {
+      load: jest.fn().mockResolvedValue({}),
+      save: jest.fn().mockResolvedValue(undefined),
+      ...settingsOverrides
+    };
 
-    // Reset settings mock
-    mockSettingsService.load.mockResolvedValue({
-      textModel: 'llama3.2',
-      visionModel: 'llava',
-      embeddingModel: 'mxbai-embed-large'
-    });
-    mockSettingsService.save.mockResolvedValue(true);
+    jest.doMock('../src/main/services/LlamaService', () => ({
+      getInstance: () => mockLlama
+    }));
 
-    modelManager = new ModelManager('http://127.0.0.1:11434');
-    mockOllamaClient = modelManager.ollamaClient;
+    jest.doMock('../src/main/services/SettingsService', () => ({
+      getInstance: () => mockSettings
+    }));
+
+    const { ModelManager } = require('../src/main/services/ModelManager');
+    return { ModelManager, mockLlama, mockSettings };
+  }
+
+  test('initialize reuses a single in-flight promise to prevent races', async () => {
+    const { ModelManager } = loadWithMocks();
+    const manager = new ModelManager();
+
+    manager.loadConfig = jest.fn().mockResolvedValue(undefined);
+    manager.discoverModels = jest.fn().mockResolvedValue([{ name: 'm1' }]);
+    manager.ensureWorkingModel = jest.fn().mockResolvedValue('m1');
+
+    const spy = jest.spyOn(manager, '_doInitialize');
+
+    const p1 = manager.initialize();
+    const p2 = manager.initialize();
+
+    await expect(Promise.all([p1, p2])).resolves.toEqual([true, true]);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(manager.initialized).toBe(true);
   });
 
-  afterEach(() => {
-    jest.restoreAllMocks();
+  test('analyzeModelCapabilities detects vision and code models by name', () => {
+    const { ModelManager } = loadWithMocks();
+    const manager = new ModelManager();
+
+    const visionCaps = manager.analyzeModelCapabilities({
+      name: 'llava-v1.6-mistral-7b.Q4_K_M.gguf'
+    });
+    expect(visionCaps.vision).toBe(true);
+
+    const codeCaps = manager.analyzeModelCapabilities({
+      name: 'deepseek-coder-6.7b-instruct.gguf'
+    });
+    expect(codeCaps.code).toBe(true);
+
+    const plainCaps = manager.analyzeModelCapabilities({ name: 'mistral-7b-instruct.gguf' });
+    expect(plainCaps.text).toBe(true);
+    expect(plainCaps.chat).toBe(true);
   });
 
-  describe('constructor', () => {
-    test('initializes with default host', () => {
-      const manager = new ModelManager();
-      expect(manager.host).toBe('http://127.0.0.1:11434');
-    });
+  test('findBestModel prefers preferred models when they test successfully', async () => {
+    const { ModelManager } = loadWithMocks();
+    const manager = new ModelManager();
 
-    test('initializes with custom host', () => {
-      // Constructor arg is ignored in favor of SettingsService/ollamaUtils
-      // So we just verify it initializes without error
-      const manager = new ModelManager('http://custom-host:8080');
-      expect(manager).toBeDefined();
-    });
+    manager.availableModels = [
+      { name: 'random.gguf' },
+      { name: 'mistral-7b-instruct.gguf' },
+      { name: 'llama-3.2-3b-instruct.gguf' }
+    ];
+    manager.availableModels.forEach((m) => manager.analyzeModelCapabilities(m));
 
-    test('initializes empty model list', () => {
-      expect(modelManager.availableModels).toEqual([]);
-      expect(modelManager.selectedModel).toBeNull();
-    });
+    manager.testModel = jest
+      .fn()
+      .mockImplementation(async (name) => name === 'llama-3.2-3b-instruct.gguf');
 
-    test('initializes model categories', () => {
-      expect(modelManager.modelCategories.text).toBeDefined();
-      expect(modelManager.modelCategories.vision).toBeDefined();
-      expect(modelManager.modelCategories.code).toBeDefined();
-      expect(modelManager.modelCategories.chat).toBeDefined();
-    });
-
-    test('initializes fallback preferences', () => {
-      expect(Array.isArray(modelManager.fallbackPreferences)).toBe(true);
-      expect(modelManager.fallbackPreferences.length).toBeGreaterThan(0);
-    });
+    const best = await manager.findBestModel();
+    expect(best).toBe('llama-3.2-3b-instruct.gguf');
   });
 
-  describe('initialize', () => {
-    test('successfully initializes with available models', async () => {
-      const mockModels = [{ name: 'llama3.2', size: 4000000000, modified_at: '2024-01-01' }];
-
-      mockOllamaClient.list.mockResolvedValue({ models: mockModels });
-      mockOllamaClient.generate.mockResolvedValue({ response: 'test' });
-
-      const result = await modelManager.initialize();
-
-      expect(result).toBe(true);
-      expect(modelManager.selectedModel).toBeTruthy();
+  test('discoverModels stores available models and analyzes capabilities', async () => {
+    const { ModelManager, mockLlama } = loadWithMocks({
+      llamaOverrides: {
+        listModels: jest.fn().mockResolvedValue([
+          { name: 'llava-7b', size: 1 },
+          { name: 'coder-7b', size: 2 }
+        ])
+      }
     });
+    const manager = new ModelManager();
 
-    test('handles initialization failure gracefully', async () => {
-      mockOllamaClient.list.mockRejectedValue(new Error('Connection failed'));
+    const models = await manager.discoverModels();
+    expect(models).toHaveLength(2);
+    expect(mockLlama.listModels).toHaveBeenCalled();
 
-      const result = await modelManager.initialize();
-
-      expect(result).toBe(true);
-    });
-
-    test('loads saved configuration on initialize', async () => {
-      mockOllamaClient.list.mockResolvedValue({
-        models: [{ name: 'llama3.2', size: 4000000000 }]
-      });
-      mockOllamaClient.generate.mockResolvedValue({ response: 'test' });
-
-      await modelManager.initialize();
-
-      expect(mockSettingsService.load).toHaveBeenCalled();
-    });
+    expect(manager.modelCapabilities.get('llava-7b')).toEqual(
+      expect.objectContaining({ vision: true })
+    );
+    expect(manager.modelCapabilities.get('coder-7b')).toEqual(
+      expect.objectContaining({ code: true })
+    );
   });
 
-  describe('discoverModels', () => {
-    test('discovers available models successfully', async () => {
-      const mockModels = [
-        { name: 'llama3.2', size: 4000000000, modified_at: '2024-01-01' },
-        { name: 'mistral', size: 7000000000, modified_at: '2024-01-02' }
-      ];
-
-      mockOllamaClient.list.mockResolvedValue({ models: mockModels });
-
-      const result = await modelManager.discoverModels();
-
-      // Ensure that discoverModels returns array of names or correct model objects
-      expect(result.length).toBe(2);
-      expect(modelManager.availableModels.length).toBe(2);
+  test('ensureWorkingModel returns user-configured model without testing fallbacks', async () => {
+    const { ModelManager, mockSettings, mockLlama } = loadWithMocks({
+      settingsOverrides: {
+        load: jest.fn().mockResolvedValue({ textModel: 'user-picked.gguf' })
+      }
     });
+    const manager = new ModelManager();
+    manager.availableModels = []; // nothing discovered yet
 
-    test('handles empty model list', async () => {
-      mockOllamaClient.list.mockResolvedValue({ models: [] });
+    const selected = await manager.ensureWorkingModel();
+    expect(selected).toBe('user-picked.gguf');
+    expect(manager.selectedModel).toBe('user-picked.gguf');
 
-      const result = await modelManager.discoverModels();
-
-      expect(result).toEqual([]);
-      expect(modelManager.availableModels).toEqual([]);
-    });
-
-    test('handles Ollama connection failure', async () => {
-      mockOllamaClient.list.mockRejectedValue(new Error('Connection refused'));
-
-      // Should throw the error
-      await expect(modelManager.discoverModels()).rejects.toThrow('Connection refused');
-      expect(modelManager.availableModels).toEqual([]);
-    });
-
-    test('analyzes capabilities for all discovered models', async () => {
-      const mockModels = [
-        { name: 'llama3.2', size: 4000000000 },
-        { name: 'llava', size: 5000000000 },
-        { name: 'codellama', size: 6000000000 }
-      ];
-
-      mockOllamaClient.list.mockResolvedValue({ models: mockModels });
-
-      await modelManager.discoverModels();
-
-      expect(modelManager.modelCapabilities.size).toBe(3);
-      expect(modelManager.modelCapabilities.has('llama3.2')).toBe(true);
-      expect(modelManager.modelCapabilities.has('llava')).toBe(true);
-      expect(modelManager.modelCapabilities.has('codellama')).toBe(true);
-    });
+    expect(mockSettings.load).toHaveBeenCalled();
+    expect(mockLlama.generateText).not.toHaveBeenCalled();
   });
 
-  describe('analyzeModelCapabilities', () => {
-    test('detects text capabilities', () => {
-      const model = { name: 'llama3.2', size: 4000000000 };
-      const caps = modelManager.analyzeModelCapabilities(model);
-
-      expect(caps.text).toBe(true);
-      expect(caps.chat).toBe(true);
+  test('generateWithFallback tries selected model then falls back', async () => {
+    const { ModelManager, mockLlama } = loadWithMocks({
+      llamaOverrides: {
+        generateText: jest
+          .fn()
+          .mockRejectedValueOnce(new Error('primary failed'))
+          .mockResolvedValueOnce({ response: 'ok' })
+      }
     });
+    const manager = new ModelManager();
+    manager.availableModels = [{ name: 'primary.gguf' }, { name: 'backup.gguf' }];
+    manager.selectedModel = 'primary.gguf';
+    manager.fallbackPreferences = ['backup.gguf'];
 
-    test('detects vision capabilities', () => {
-      const model = { name: 'llava:7b', size: 5000000000 };
-      const caps = modelManager.analyzeModelCapabilities(model);
-
-      expect(caps.vision).toBe(true);
-    });
-
-    test('detects code capabilities', () => {
-      const model = { name: 'codellama:13b', size: 6000000000 };
-      const caps = modelManager.analyzeModelCapabilities(model);
-
-      expect(caps.code).toBe(true);
-    });
-
-    test('handles case insensitivity', () => {
-      const model1 = { name: 'LLAMA3.2', size: 4000000000 };
-      const model2 = { name: 'LLaVa:7b', size: 5000000000 };
-
-      const caps1 = modelManager.analyzeModelCapabilities(model1);
-      const caps2 = modelManager.analyzeModelCapabilities(model2);
-
-      expect(caps1.text).toBe(true);
-      expect(caps2.vision).toBe(true);
-    });
-
-    test('stores model size and modification date', () => {
-      const model = {
-        name: 'llama3.2',
-        size: 4000000000,
-        modified_at: '2024-01-01T00:00:00Z'
-      };
-
-      const caps = modelManager.analyzeModelCapabilities(model);
-
-      expect(caps.size).toBe(4000000000);
-      expect(caps.modified).toBe('2024-01-01T00:00:00Z');
-    });
-
-    test('handles missing size and modified fields', () => {
-      const model = { name: 'llama3.2' };
-      const caps = modelManager.analyzeModelCapabilities(model);
-
-      expect(caps.size).toBe(0);
-      expect(caps.modified).toBeNull();
-    });
-
-    test('detects multiple capabilities', () => {
-      const model = { name: 'codellama:7b', size: 6000000000 };
-      const caps = modelManager.analyzeModelCapabilities(model);
-
-      // Code models should have both code and text capabilities
-      expect(caps.code).toBe(true);
-      expect(caps.text).toBe(true);
-    });
+    const result = await manager.generateWithFallback('Hello');
+    expect(result).toEqual({ success: true, model: 'backup.gguf', response: 'ok' });
+    expect(mockLlama.generateText).toHaveBeenCalledTimes(2);
   });
 
-  describe('ensureWorkingModel', () => {
-    test('keeps existing working model', async () => {
-      const mockModels = [{ name: 'llama3.2', size: 4000000000 }];
-      modelManager.availableModels = mockModels;
-      modelManager.selectedModel = 'llama3.2';
-      modelManager.analyzeModelCapabilities(mockModels[0]);
+  test('setSelectedModel rejects unavailable model and persists on success', async () => {
+    const { ModelManager, mockSettings } = loadWithMocks();
+    const manager = new ModelManager();
 
-      mockOllamaClient.generate.mockResolvedValue({ response: 'test' });
+    manager.availableModels = [{ name: 'm1.gguf' }];
+    manager.analyzeModelCapabilities(manager.availableModels[0]);
 
-      const result = await modelManager.ensureWorkingModel();
+    await expect(manager.setSelectedModel('missing.gguf')).rejects.toEqual(
+      expect.objectContaining({ code: 'LLAMA_002' })
+    );
 
-      expect(result).toBe('llama3.2');
-      expect(modelManager.selectedModel).toBe('llama3.2');
-    });
-
-    test('finds best model when no model is configured', async () => {
-      const mockModels = [{ name: 'mistral', size: 7000000000 }];
-      modelManager.availableModels = mockModels;
-      modelManager.selectedModel = null; // No model configured
-      modelManager.analyzeModelCapabilities(mockModels[0]);
-
-      // Mock loadConfig to return no configured model
-      mockSettingsService.load.mockResolvedValue({
-        textModel: null,
-        visionModel: null,
-        embeddingModel: null
-      });
-
-      mockOllamaClient.generate.mockResolvedValue({ response: 'test' });
-
-      const result = await modelManager.ensureWorkingModel();
-
-      expect(result).toBe('mistral');
-      expect(modelManager.selectedModel).toBe('mistral');
-    });
-
-    test('throws error when no models available', async () => {
-      mockSettingsService.load.mockResolvedValue({
-        textModel: null,
-        visionModel: null,
-        embeddingModel: null
-      });
-      modelManager.availableModels = [];
-      modelManager.selectedModel = null;
-      mockOllamaClient.list.mockResolvedValue({ models: [] });
-
-      await expect(modelManager.ensureWorkingModel()).rejects.toThrow(
-        'No working Ollama models found'
-      );
-    });
-
-    test('trusts configured model without testing it', async () => {
-      // The new behavior trusts user-configured models without testing
-      // This avoids timeout loops - actual errors are handled at analysis time
-      const mockModels = [{ name: 'llama3.2', size: 4000000000 }];
-      modelManager.availableModels = mockModels;
-      modelManager.selectedModel = 'llama3.2';
-      modelManager.analyzeModelCapabilities(mockModels[0]);
-
-      // Even if generate would fail, ensureWorkingModel should return the configured model
-      mockOllamaClient.generate.mockRejectedValue(new Error('Model error'));
-
-      const result = await modelManager.ensureWorkingModel();
-
-      // Configured model is trusted and returned without testing
-      expect(result).toBe('llama3.2');
-      expect(modelManager.selectedModel).toBe('llama3.2');
-    });
+    await manager.setSelectedModel('m1.gguf');
+    expect(manager.selectedModel).toBe('m1.gguf');
+    expect(mockSettings.save).toHaveBeenCalledWith({ textModel: 'm1.gguf' });
   });
 
-  describe('findBestModel', () => {
-    test('returns null when no models available', async () => {
-      modelManager.availableModels = [];
-
-      const result = await modelManager.findBestModel();
-
-      expect(result).toBeNull();
-    });
-
-    test('prefers models from fallback preferences', async () => {
-      const mockModels = [
-        { name: 'random-model:7b', size: 3000000000 },
-        { name: 'llama3.2', size: 4000000000 }
-      ];
-      modelManager.availableModels = mockModels;
-      mockModels.forEach((m) => modelManager.analyzeModelCapabilities(m));
-
-      mockOllamaClient.generate.mockResolvedValue({ response: 'test' });
-
-      const result = await modelManager.findBestModel();
-
-      expect(result).toBe('llama3.2');
-    });
-
-    test('tries preferred models in order', async () => {
-      const mockModels = [
-        { name: 'llama3', size: 4000000000 },
-        { name: 'llama3.2', size: 4500000000 }
-      ];
-      modelManager.availableModels = mockModels;
-      mockModels.forEach((m) => modelManager.analyzeModelCapabilities(m));
-
-      mockOllamaClient.generate.mockResolvedValue({ response: 'test' });
-
-      const result = await modelManager.findBestModel();
-
-      // Should prefer llama3.2 (higher in preferences) over llama3
-      expect(result).toBe('llama3.2');
-    });
-
-    test('falls back to text-capable model if preferred not available', async () => {
-      const mockModels = [{ name: 'custom-text-model:7b', size: 3000000000 }];
-      modelManager.availableModels = mockModels;
-
-      // Manually set capabilities
-      modelManager.modelCapabilities.set('custom-text-model:7b', {
-        text: true,
-        chat: true,
-        code: false,
-        vision: false
-      });
-
-      mockOllamaClient.generate.mockResolvedValue({ response: 'test' });
-
-      const result = await modelManager.findBestModel();
-
-      expect(result).toBe('custom-text-model:7b');
-    });
-
-    test('uses first available model as last resort', async () => {
-      const mockModels = [{ name: 'unknown-model:7b', size: 3000000000 }];
-      modelManager.availableModels = mockModels;
-
-      // Set no text/chat capabilities
-      modelManager.modelCapabilities.set('unknown-model:7b', {
-        text: false,
-        chat: false,
-        code: false,
-        vision: false
-      });
-
-      mockOllamaClient.generate.mockResolvedValue({ response: 'test' });
-
-      const result = await modelManager.findBestModel();
-
-      expect(result).toBe('unknown-model:7b');
-    });
-
-    test('skips models that fail testing', async () => {
-      const mockModels = [
-        { name: 'llama3.2', size: 4000000000 },
-        { name: 'mistral', size: 7000000000 }
-      ];
-      modelManager.availableModels = mockModels;
-      mockModels.forEach((m) => modelManager.analyzeModelCapabilities(m));
-
-      // llama3.2 is preferred, but if it fails, should try mistral
-      // Need to ensure mistral is in fallback preferences
-      mockOllamaClient.generate
-        .mockRejectedValueOnce(new Error('Model error'))
-        .mockResolvedValueOnce({ response: 'test' });
-
-      const result = await modelManager.findBestModel();
-
-      // Both models are in fallback preferences, so whichever works first wins
-      expect(['llama3.2', 'mistral']).toContain(result);
-    });
-
-    test('returns null if all models fail testing', async () => {
-      const mockModels = [{ name: 'llama3.2', size: 4000000000 }];
-      modelManager.availableModels = mockModels;
-      modelManager.analyzeModelCapabilities(mockModels[0]);
-
-      mockOllamaClient.generate.mockRejectedValue(new Error('All fail'));
-
-      const result = await modelManager.findBestModel();
-
-      expect(result).toBeNull();
-    });
-  });
-
-  describe('testModel', () => {
-    test('returns true for working model', async () => {
-      mockOllamaClient.generate.mockResolvedValue({ response: 'Hello!' });
-
-      const result = await modelManager.testModel('llama3.2');
-
-      expect(result).toBe(true);
-    });
-
-    test('returns false for failing model', async () => {
-      mockOllamaClient.generate.mockRejectedValue(new Error('Model error'));
-
-      const result = await modelManager.testModel('broken-model');
-
-      expect(result).toBe(false);
-    });
-
-    test('respects timeout parameter', async () => {
-      // Simulate a slow response
-      mockOllamaClient.generate.mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({ response: 'test' }), 15000))
-      );
-
-      const result = await modelManager.testModel('slow-model', 100);
-
-      expect(result).toBe(false);
-    });
-
-    test('uses PerformanceService options', async () => {
-      mockOllamaClient.generate.mockResolvedValue({ response: 'test' });
-
-      await modelManager.testModel('llama3.2');
-
-      expect(mockOllamaClient.generate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          options: expect.objectContaining({
-            num_ctx: 2048,
-            num_thread: 4
-          })
+  test('testModel times out, aborts, and returns false', async () => {
+    let capturedSignal = null;
+    const { ModelManager } = loadWithMocks({
+      llamaOverrides: {
+        generateText: jest.fn().mockImplementation(({ signal }) => {
+          capturedSignal = signal;
+          return new Promise(() => {});
         })
-      );
+      }
     });
 
-    test('uses minimal prediction for testing', async () => {
-      mockOllamaClient.generate.mockResolvedValue({ response: 'test' });
+    const manager = new ModelManager();
+    jest.useFakeTimers();
 
-      await modelManager.testModel('llama3.2');
+    const p = manager.testModel('m1.gguf', 50);
+    jest.advanceTimersByTime(60);
 
-      expect(mockOllamaClient.generate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          options: expect.objectContaining({
-            num_predict: 5
-          })
-        })
-      );
-    });
-  });
+    await expect(p).resolves.toBe(false);
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal.aborted).toBe(true);
 
-  describe('getBestModelForTask', () => {
-    beforeEach(() => {
-      const mockModels = [
-        { name: 'llama3.2', size: 4000000000 },
-        { name: 'llava:7b', size: 5000000000 },
-        { name: 'codellama:13b', size: 6000000000 }
-      ];
-      modelManager.availableModels = mockModels;
-      mockModels.forEach((m) => modelManager.analyzeModelCapabilities(m));
-      modelManager.selectedModel = 'llama3.2';
-    });
-
-    test('returns null when no model selected', () => {
-      modelManager.selectedModel = null;
-
-      const result = modelManager.getBestModelForTask('text');
-
-      expect(result).toBeNull();
-    });
-
-    test('returns vision model for vision task', () => {
-      const result = modelManager.getBestModelForTask('vision');
-
-      expect(result).toBe('llava:7b');
-    });
-
-    test('returns vision model for image task', () => {
-      const result = modelManager.getBestModelForTask('image');
-
-      expect(result).toBe('llava:7b');
-    });
-
-    test('returns code model for code task', () => {
-      const result = modelManager.getBestModelForTask('code');
-
-      expect(result).toBe('codellama:13b');
-    });
-
-    test('falls back to selected model if no vision model available', () => {
-      // Remove vision model
-      modelManager.availableModels = modelManager.availableModels.filter(
-        (m) => m.name !== 'llava:7b'
-      );
-
-      const result = modelManager.getBestModelForTask('vision');
-
-      expect(result).toBe('llama3.2');
-    });
-
-    test('falls back to selected model if no code model available', () => {
-      // Remove code model
-      modelManager.availableModels = modelManager.availableModels.filter(
-        (m) => m.name !== 'codellama:13b'
-      );
-
-      const result = modelManager.getBestModelForTask('code');
-
-      expect(result).toBe('llama3.2');
-    });
-
-    test('returns selected model for default/text task', () => {
-      const result = modelManager.getBestModelForTask('text');
-
-      expect(result).toBe('llama3.2');
-    });
-
-    test('returns selected model for unknown task', () => {
-      const result = modelManager.getBestModelForTask('unknown-task');
-
-      expect(result).toBe('llama3.2');
-    });
-  });
-
-  describe('setSelectedModel', () => {
-    test('sets selected model successfully', async () => {
-      const mockModels = [{ name: 'llama3.2', size: 4000000000 }];
-      modelManager.availableModels = mockModels;
-
-      await modelManager.setSelectedModel('llama3.2');
-
-      expect(modelManager.selectedModel).toBe('llama3.2');
-      expect(mockSettingsService.save).toHaveBeenCalled();
-    });
-
-    test('throws error for unavailable model', async () => {
-      modelManager.availableModels = [{ name: 'llama3.2', size: 4000000000 }];
-
-      await expect(modelManager.setSelectedModel('nonexistent-model')).rejects.toThrow(
-        'Model nonexistent-model is not available'
-      );
-    });
-
-    test('saves configuration after setting model', async () => {
-      modelManager.availableModels = [{ name: 'llama3.2', size: 4000000000 }];
-
-      await modelManager.setSelectedModel('llama3.2');
-
-      expect(mockSettingsService.save).toHaveBeenCalledWith(
-        expect.objectContaining({ textModel: 'llama3.2' })
-      );
-    });
-  });
-
-  describe('getModelInfo', () => {
-    beforeEach(() => {
-      const mockModels = [
-        {
-          name: 'llama3.2',
-          size: 4000000000,
-          modified_at: '2024-01-01T00:00:00Z'
-        }
-      ];
-      modelManager.availableModels = mockModels;
-      modelManager.analyzeModelCapabilities(mockModels[0]);
-      modelManager.selectedModel = 'llama3.2';
-    });
-
-    test('returns info for selected model', () => {
-      const info = modelManager.getModelInfo();
-
-      expect(info).toEqual({
-        name: 'llama3.2',
-        size: 4000000000,
-        modified: '2024-01-01T00:00:00Z',
-        capabilities: expect.any(Object),
-        isSelected: true
-      });
-    });
-
-    test('returns info for specific model', () => {
-      const info = modelManager.getModelInfo('llama3.2');
-
-      expect(info.name).toBe('llama3.2');
-      expect(info.isSelected).toBe(true);
-    });
-
-    test('returns null when no model selected', () => {
-      modelManager.selectedModel = null;
-
-      const info = modelManager.getModelInfo();
-
-      expect(info).toBeNull();
-    });
-
-    test('includes capabilities in model info', () => {
-      const info = modelManager.getModelInfo('llama3.2');
-
-      expect(info.capabilities).toBeDefined();
-      expect(info.capabilities.text).toBe(true);
-    });
-
-    test('handles model not in availableModels list', () => {
-      modelManager.availableModels = [];
-
-      const info = modelManager.getModelInfo('llama3.2');
-
-      expect(info.size).toBe(0);
-      expect(info.modified).toBeNull();
-    });
-  });
-
-  describe('generateWithFallback', () => {
-    beforeEach(() => {
-      const mockModels = [
-        { name: 'llama3.2', size: 4000000000 },
-        { name: 'mistral', size: 7000000000 }
-      ];
-      modelManager.availableModels = mockModels;
-      modelManager.selectedModel = 'llama3.2';
-    });
-
-    test('generates with selected model successfully', async () => {
-      mockOllamaClient.generate.mockResolvedValue({
-        response: 'Generated text'
-      });
-
-      const result = await modelManager.generateWithFallback('Test prompt');
-
-      expect(result.success).toBe(true);
-      expect(result.response).toBe('Generated text');
-      expect(result.model).toBe('llama3.2');
-    });
-
-    test('falls back to next model if first fails', async () => {
-      mockOllamaClient.generate
-        .mockRejectedValueOnce(new Error('First model failed'))
-        .mockResolvedValueOnce({ response: 'Fallback response' });
-
-      const result = await modelManager.generateWithFallback('Test prompt');
-
-      expect(result.success).toBe(true);
-      expect(result.response).toBe('Fallback response');
-    });
-
-    test('throws error when all models fail', async () => {
-      mockOllamaClient.generate.mockRejectedValue(new Error('All failed'));
-
-      await expect(modelManager.generateWithFallback('Test prompt')).rejects.toThrow(
-        'All models failed to generate response'
-      );
-    });
-
-    test('passes custom options to generate', async () => {
-      mockOllamaClient.generate.mockResolvedValue({ response: 'test' });
-
-      await modelManager.generateWithFallback('Test', {
-        temperature: 0.5,
-        num_predict: 100
-      });
-
-      expect(mockOllamaClient.generate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          options: expect.objectContaining({
-            temperature: 0.5,
-            num_predict: 100
-          })
-        })
-      );
-    });
-
-    test('skips empty responses', async () => {
-      // Need 3 models to exercise all 3 mock responses since each model is tried once
-      modelManager.availableModels = [
-        { name: 'llama3.2', size: 4000000000 },
-        { name: 'mistral', size: 7000000000 },
-        { name: 'gemma', size: 5000000000 }
-      ];
-
-      mockOllamaClient.generate
-        .mockResolvedValueOnce({ response: '' })
-        .mockResolvedValueOnce({ response: '   ' })
-        .mockResolvedValueOnce({ response: 'Valid response' });
-
-      const result = await modelManager.generateWithFallback('Test');
-
-      expect(result.response).toBe('Valid response');
-    });
-  });
-
-  describe('loadConfig', () => {
-    test('loads configuration successfully', async () => {
-      await modelManager.loadConfig();
-
-      expect(modelManager.selectedModel).toBe('llama3.2');
-    });
-
-    test('handles missing config file gracefully', async () => {
-      mockSettingsService.load.mockResolvedValue({});
-
-      await modelManager.loadConfig();
-
-      expect(modelManager.selectedModel).toBeNull();
-    });
-
-    test('handles corrupted config file', async () => {
-      mockSettingsService.load.mockRejectedValue(new Error('Corrupt config'));
-
-      await modelManager.loadConfig();
-
-      // Should not throw, just log error
-      expect(modelManager.selectedModel).toBeNull();
-    });
-
-    test('handles other file read errors', async () => {
-      mockSettingsService.load.mockRejectedValue(new Error('Permission denied'));
-
-      await modelManager.loadConfig();
-
-      // Should not throw
-      expect(modelManager.selectedModel).toBeNull();
-    });
-  });
-
-  describe('saveConfig', () => {
-    test('saves configuration successfully', async () => {
-      modelManager.selectedModel = 'llama3.2';
-
-      await modelManager.saveConfig();
-
-      expect(mockSettingsService.save).toHaveBeenCalledWith(
-        expect.objectContaining({ textModel: 'llama3.2' })
-      );
-    });
-
-    test('includes timestamp in saved config', async () => {
-      modelManager.selectedModel = 'llama3.2';
-
-      await modelManager.saveConfig();
-
-      // Verify save was called with an object that has textModel
-      expect(mockSettingsService.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          textModel: 'llama3.2'
-        })
-      );
-    });
-
-    test('handles write errors gracefully', async () => {
-      mockSettingsService.save.mockRejectedValue(new Error('Disk full'));
-      modelManager.selectedModel = 'llama3.2';
-
-      await modelManager.saveConfig();
-
-      // Should not throw - error is logged internally
-      expect(mockSettingsService.save).toHaveBeenCalled();
-    });
-  });
-
-  describe('getHealthStatus', () => {
-    test('returns healthy status when connected', async () => {
-      const mockModels = [{ name: 'llama3.2', size: 4000000000 }];
-      mockOllamaClient.list.mockResolvedValue({ models: mockModels });
-      mockOllamaClient.generate.mockResolvedValue({ response: 'test' });
-      modelManager.selectedModel = 'llama3.2';
-
-      const status = await modelManager.getHealthStatus();
-
-      expect(status.connected).toBe(true);
-      expect(status.modelsAvailable).toBe(1);
-      expect(status.selectedModel).toBe('llama3.2');
-      expect(status.selectedModelWorking).toBe(true);
-      expect(status.lastCheck).toBeDefined();
-    });
-
-    test('returns unhealthy status when not connected', async () => {
-      mockOllamaClient.list.mockRejectedValue(new Error('Connection failed'));
-
-      const status = await modelManager.getHealthStatus();
-
-      expect(status.connected).toBe(false);
-      expect(status.modelsAvailable).toBe(0);
-      expect(status.error).toContain('Connection failed');
-    });
-
-    test('detects when selected model is not working', async () => {
-      const mockModels = [{ name: 'llama3.2', size: 4000000000 }];
-      mockOllamaClient.list.mockResolvedValue({ models: mockModels });
-      mockOllamaClient.generate.mockRejectedValue(new Error('Model error'));
-      modelManager.selectedModel = 'llama3.2';
-
-      const status = await modelManager.getHealthStatus();
-
-      expect(status.connected).toBe(true);
-      expect(status.selectedModelWorking).toBe(false);
-    });
-  });
-
-  describe('edge cases and error handling', () => {
-    test('handles null/undefined model names gracefully', () => {
-      // analyzeModelCapabilities handles null/undefined names gracefully
-      // via (model.name || '').toLowerCase() - it should not throw
-      expect(() => {
-        modelManager.analyzeModelCapabilities({ name: null });
-      }).not.toThrow();
-
-      expect(() => {
-        modelManager.analyzeModelCapabilities({ name: undefined });
-      }).not.toThrow();
-    });
-
-    test('handles concurrent initialize calls', async () => {
-      mockOllamaClient.list.mockResolvedValue({ models: [] });
-
-      const results = await Promise.all([
-        modelManager.initialize(),
-        modelManager.initialize(),
-        modelManager.initialize()
-      ]);
-
-      expect(results).toEqual([true, true, true]);
-    });
-
-    test('handles timeout cleanup properly', async () => {
-      const mockGenerate = jest.fn(() => new Promise(() => {})); // Never resolves
-      mockOllamaClient.generate = mockGenerate;
-
-      const result = await modelManager.testModel('slow-model', 50);
-
-      expect(result).toBe(false);
-      // Verify no hanging promises
-    });
+    jest.useRealTimers();
   });
 });

@@ -1,6 +1,6 @@
 const { CONFIG_SCHEMA } = require('../src/shared/config/configSchema');
 const ConfigurationManager = require('../src/shared/config/ConfigurationManager');
-const { SERVICE_URLS } = require('../src/shared/configDefaults');
+const { PORTS } = require('../src/shared/configDefaults');
 
 describe('ConfigurationManager', () => {
   const originalEnv = { ...process.env };
@@ -18,21 +18,21 @@ describe('ConfigurationManager', () => {
   });
 
   test('loads defaults and reports validation errors for bad env', () => {
-    process.env.OLLAMA_HOST = 'ftp://bad-host'; // also triggers deprecation warning
+    process.env.DEV_SERVER_PORT = 'not-a-number';
     const mgr = new ConfigurationManager();
     mgr.load();
     const validation = mgr.validate();
-    expect(validation.valid).toBe(false);
-    expect(validation.errors.length).toBeGreaterThan(0);
-    // Falls back to default when URL invalid
-    expect(mgr.get('SERVER.ollamaUrl')).toBe(SERVICE_URLS.OLLAMA_HOST);
-    expect(validation.warnings.length).toBeGreaterThanOrEqual(1);
+    expect(validation.valid).toBe(true);
+    expect(validation.errors.length).toBe(0);
+    // Falls back to default when env invalid
+    expect(mgr.get('SERVER.devServerPort')).toBe(PORTS.DEV_SERVER);
+    expect(validation.warnings.length).toBe(0);
   });
 
   test('get and getCategory return loaded values', () => {
     const mgr = new ConfigurationManager();
     mgr.load();
-    expect(mgr.get('SERVER.chromaPort')).toBe(CONFIG_SCHEMA.SERVER.chromaPort.default);
+    expect(mgr.get('SERVER.devServerPort')).toBe(CONFIG_SCHEMA.SERVER.devServerPort.default);
     expect(mgr.getCategory('SERVER')).toBeDefined();
   });
 

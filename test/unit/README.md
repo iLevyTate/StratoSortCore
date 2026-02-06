@@ -10,7 +10,7 @@ npm test -- --testPathPattern="test/unit"
 
 ## Test Structure
 
-- Mock ALL external services (Ollama, ChromaDB, filesystem)
+- Mock ALL external services (LLM, vector DB, filesystem)
 - Test single functions/methods
 - No network calls
 - No file I/O

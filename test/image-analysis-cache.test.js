@@ -3,21 +3,12 @@ const os = require('os');
 const path = require('path');
 
 describe('per-file analysis cache (image)', () => {
-  beforeEach(() => {
-    // Mock ollamaDetection to ensure analysis proceeds
-    jest.mock('../src/main/utils/ollamaDetection', () => ({
-      isOllamaRunning: jest.fn().mockResolvedValue(true),
-      isOllamaRunningWithRetry: jest.fn().mockResolvedValue(true),
-      isOllamaInstalled: jest.fn().mockResolvedValue(true)
-    }));
-  });
-
   afterEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
   });
 
-  test('second analyzeImageFile call hits cache and avoids generate', async () => {
+  test('second analyzeImageFile call hits cache and avoids AI call', async () => {
     expect.assertions(3);
     // 1x1 px transparent PNG
     const pngBase64 =
@@ -26,7 +17,7 @@ describe('per-file analysis cache (image)', () => {
     const tmp = path.join(os.tmpdir(), `img-cache-${Date.now()}.png`);
     await fs.writeFile(tmp, buffer);
 
-    const generateMock = jest.fn(async () => ({
+    const analyzeImageMock = jest.fn(async () => ({
       response: JSON.stringify({
         project: 'Img',
         purpose: 'Img purpose',
@@ -37,27 +28,23 @@ describe('per-file analysis cache (image)', () => {
       })
     }));
 
-    const mockClient = { generate: generateMock };
-    jest.doMock(
-      '../src/main/ollamaUtils',
-      () => ({
-        getOllama: () => mockClient,
-        getOllamaVisionModel: () => 'mock-vision',
-        getOllamaEmbeddingModel: () => 'mock-embed',
-        getOllamaHost: () => 'http://127.0.0.1:11434',
-        loadOllamaConfig: async () => ({ selectedVisionModel: 'mock-vision' })
-      }),
-      { virtual: false }
-    );
+    jest.doMock('../src/main/services/LlamaService', () => ({
+      getInstance: () => ({
+        getConfig: async () => ({ visionModel: 'mock-vision' }),
+        testConnection: async () => ({ success: true, status: 'healthy' }),
+        listModels: async () => [{ name: 'mock-vision' }],
+        analyzeImage: analyzeImageMock
+      })
+    }));
 
-    const { analyzeImageFile } = require('../src/main/analysis/ollamaImageAnalysis');
+    const { analyzeImageFile } = require('../src/main/analysis/imageAnalysis');
 
     const r1 = await analyzeImageFile(tmp, []);
     const r2 = await analyzeImageFile(tmp, []);
 
     expect(r1).toBeDefined();
     expect(r2).toBeDefined();
-    expect(generateMock).toHaveBeenCalledTimes(1);
+    expect(analyzeImageMock).toHaveBeenCalledTimes(1);
 
     await fs.unlink(tmp);
   });

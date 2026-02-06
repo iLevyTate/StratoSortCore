@@ -76,11 +76,6 @@ describe('performanceConstants', () => {
       expect(constants.CACHE.TTL_LONG).toBe(2 * 60 * 60 * 1000);
       expect(constants.CACHE.TTL_DAY).toBe(24 * 60 * 60 * 1000);
     });
-
-    test('defines ChromaDB cache settings', () => {
-      expect(constants.CACHE.CHROMADB_QUERY_CACHE_SIZE).toBe(200);
-      expect(constants.CACHE.CHROMADB_QUERY_TTL_MS).toBe(120000);
-    });
   });
 
   describe('BATCH', () => {
@@ -166,8 +161,6 @@ describe('performanceConstants', () => {
 
   describe('NETWORK', () => {
     test('defines port constants', () => {
-      expect(constants.NETWORK.OLLAMA_PORT).toBe(11434);
-      expect(constants.NETWORK.CHROMADB_PORT).toBe(8000);
       expect(constants.NETWORK.DEV_SERVER_PORT).toBe(3000);
     });
 

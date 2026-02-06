@@ -15,24 +15,15 @@ jest.mock('../src/shared/logger', () => {
   return { logger, createLogger: jest.fn(() => logger) };
 });
 
-// Mock ollama utils
-const mockOllama = {
-  generate: jest.fn()
+const mockLlamaService = {
+  getConfig: jest.fn().mockReturnValue({ textModel: 'test-model.gguf' }),
+  initialize: jest.fn().mockResolvedValue(undefined),
+  generateText: jest.fn()
 };
-const mockModel = 'llama2';
 const { AI_DEFAULTS } = require('../src/shared/constants');
 
-jest.mock('../src/main/ollamaUtils', () => ({
-  getOllama: jest.fn(() => mockOllama),
-  getOllamaModel: jest.fn(() => mockModel)
-}));
-
-// Mock performance service
-jest.mock('../src/main/services/PerformanceService', () => ({
-  buildOllamaOptions: jest.fn().mockResolvedValue({
-    num_ctx: 4096,
-    num_thread: 4
-  })
+jest.mock('../src/main/services/LlamaService', () => ({
+  getInstance: () => mockLlamaService
 }));
 
 // Mock deduplicator
@@ -72,6 +63,7 @@ describe('llmSuggester', () => {
   ];
 
   beforeEach(() => {
+    jest.resetModules();
     jest.clearAllMocks();
 
     extractAndParseJSON = require('../src/main/utils/jsonRepair').extractAndParseJSON;
@@ -79,7 +71,7 @@ describe('llmSuggester', () => {
     // Default mock responses
     mockDeduplicator.deduplicate.mockImplementation((key, fn) => fn());
 
-    mockOllama.generate.mockResolvedValue({
+    mockLlamaService.generateText.mockResolvedValue({
       response: JSON.stringify({
         suggestions: [
           {
@@ -129,7 +121,7 @@ describe('llmSuggester', () => {
     expect(mockDeduplicator.deduplicate).toHaveBeenCalled();
   });
 
-  test('passes config values to ollama', async () => {
+  test('passes config values to llama', async () => {
     await getLLMAlternativeSuggestions(testFile, testSmartFolders, {
       llmTemperature: 0.5,
       llmMaxTokens: 1000
@@ -139,33 +131,23 @@ describe('llmSuggester', () => {
     expect(mockDeduplicator.deduplicate).toHaveBeenCalled();
   });
 
-  test('returns empty array when ollama is not available', async () => {
-    const { getOllama } = require('../src/main/ollamaUtils');
-    getOllama.mockReturnValueOnce(null);
-
-    jest.resetModules();
-    const {
-      getLLMAlternativeSuggestions: getSuggestions
-    } = require('../src/main/services/organization/llmSuggester');
-
-    const suggestions = await getSuggestions(testFile, testSmartFolders);
-
+  test('returns empty array when llama is not available', async () => {
+    mockLlamaService.initialize.mockRejectedValueOnce(new Error('Llama not available'));
+    const suggestions = await getLLMAlternativeSuggestions(testFile, testSmartFolders);
     expect(suggestions).toEqual([]);
   });
 
-  test('falls back to default model when model is not available', async () => {
-    const { getOllamaModel } = require('../src/main/ollamaUtils');
-    getOllamaModel.mockReturnValueOnce(null);
+  test('uses default model', async () => {
     const suggestions = await getLLMAlternativeSuggestions(testFile, testSmartFolders);
     expect(suggestions).toHaveLength(1);
-    expect(mockOllama.generate).toHaveBeenCalledWith(
+    expect(mockLlamaService.generateText).toHaveBeenCalledWith(
       expect.objectContaining({ model: AI_DEFAULTS.TEXT.MODEL })
     );
   });
 
   test('returns empty array when response exceeds size limit', async () => {
     const largeResponse = 'x'.repeat(MAX_RESPONSE_SIZE + 1);
-    mockOllama.generate.mockResolvedValueOnce({
+    mockLlamaService.generateText.mockResolvedValueOnce({
       response: largeResponse
     });
 

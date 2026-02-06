@@ -4,7 +4,7 @@
  * Tests file type processing for 3D models, design files, and other
  * specialized formats that use extension-based fallback categorization.
  *
- * Uses real test files from test/StratoSortOfTestFiles/
+ * Uses real test files from test/test-files/
  */
 
 const {

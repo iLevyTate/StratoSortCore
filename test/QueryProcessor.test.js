@@ -16,16 +16,17 @@ jest.mock('../src/shared/logger', () => {
   return { logger, createLogger: jest.fn(() => logger) };
 });
 
-// Mock wordpos with proper interface
-const mockLookup = jest
-  .fn()
-  .mockResolvedValue([{ synonyms: ['holiday', 'trip', 'journey', 'excursion'] }]);
+const mockReadDoc = jest.fn();
+let mockLemma = 'vacation';
+let mockPos = 'NOUN';
 
-jest.mock('wordpos', () => {
-  return jest.fn().mockImplementation(() => ({
-    lookup: mockLookup
+jest.mock('wink-nlp', () => {
+  return jest.fn(() => ({
+    readDoc: mockReadDoc
   }));
 });
+jest.mock('wink-eng-lite-web-model', () => ({}));
+jest.mock('wink-nlp/src/its.js', () => ({ lemma: 'lemma', pos: 'pos' }));
 
 describe('QueryProcessor', () => {
   let QueryProcessor;
@@ -35,6 +36,14 @@ describe('QueryProcessor', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.resetModules();
+
+    mockLemma = null;
+    mockPos = 'NOUN';
+    mockReadDoc.mockImplementation((text = '') => ({
+      tokens: () => ({
+        out: (type) => (type === 'lemma' ? [mockLemma ?? text] : [mockPos])
+      })
+    }));
 
     const module = require('../src/main/services/QueryProcessor');
     QueryProcessor = module.QueryProcessor;
@@ -227,40 +236,46 @@ describe('QueryProcessor', () => {
   });
 
   describe('_getSynonyms', () => {
-    test('returns synonyms from WordNet', async () => {
-      mockLookup.mockResolvedValueOnce([{ synonyms: ['holiday', 'trip'] }]);
+    test('returns lemma variants for content words', async () => {
+      mockLemma = 'vacation';
+      mockPos = 'NOUN';
 
-      const synonyms = await processor._getSynonyms('vacation');
+      const synonyms = await processor._getSynonyms('vacations');
 
-      expect(Array.isArray(synonyms)).toBe(true);
+      expect(synonyms).toEqual(['vacation']);
     });
 
     test('caches synonym lookups', async () => {
-      mockLookup.mockResolvedValueOnce([{ synonyms: ['holiday'] }]);
+      mockLemma = 'vacation';
+      mockPos = 'NOUN';
 
       // First lookup
-      await processor._getSynonyms('vacation');
+      await processor._getSynonyms('vacations');
 
       // Should be cached
-      expect(processor.synonymCache.has('vacation')).toBe(true);
+      expect(processor.synonymCache.has('vacations')).toBe(true);
 
       // Second lookup should use cache
-      const synonyms = await processor._getSynonyms('vacation');
+      const synonyms = await processor._getSynonyms('vacations');
       expect(Array.isArray(synonyms)).toBe(true);
+      expect(mockReadDoc).toHaveBeenCalledTimes(1);
     });
 
     test('handles lookup errors gracefully', async () => {
-      mockLookup.mockRejectedValueOnce(new Error('Lookup failed'));
+      mockReadDoc.mockImplementationOnce(() => {
+        throw new Error('Lookup failed');
+      });
 
       const synonyms = await processor._getSynonyms('test');
 
       expect(synonyms).toEqual([]);
     });
 
-    test('returns empty array for invalid results', async () => {
-      mockLookup.mockResolvedValueOnce([]);
+    test('returns empty array for non-content words', async () => {
+      mockLemma = 'the';
+      mockPos = 'DET';
 
-      const synonyms = await processor._getSynonyms('unknownword');
+      const synonyms = await processor._getSynonyms('the');
 
       expect(synonyms).toEqual([]);
     });
@@ -283,11 +298,13 @@ describe('QueryProcessor', () => {
     });
 
     test('expands query with synonyms when enabled', async () => {
-      mockLookup.mockResolvedValue([{ synonyms: ['holiday'] }]);
+      mockLemma = 'vacation';
+      mockPos = 'NOUN';
 
-      const result = await processor.processQuery('vacation', { expandSynonyms: true });
+      const result = await processor.processQuery('vacations', { expandSynonyms: true });
 
       // Expanded should contain at least the original term
+      expect(result.expanded).toContain('vacations');
       expect(result.expanded).toContain('vacation');
       expect(result.synonymsAdded).toBeDefined();
     });
@@ -322,7 +339,8 @@ describe('QueryProcessor', () => {
     });
 
     test('removes duplicate terms in expanded query', async () => {
-      mockLookup.mockResolvedValue([{ synonyms: [] }]);
+      mockLemma = 'photo';
+      mockPos = 'NOUN';
 
       const result = await processor.processQuery('photo photo');
 
@@ -376,17 +394,16 @@ describe('QueryProcessor', () => {
     });
 
     test('respects maxSynonymsPerWord option', async () => {
-      mockLookup.mockResolvedValue([
-        { synonyms: ['holiday', 'trip', 'journey', 'excursion', 'voyage'] }
-      ]);
+      mockLemma = 'vacation';
+      mockPos = 'NOUN';
 
-      const result = await processor.processQuery('vacation', {
+      const result = await processor.processQuery('vacations', {
         expandSynonyms: true,
         maxSynonymsPerWord: 2
       });
 
-      // Should have at most 2 synonyms added per word
-      expect(result.synonymsAdded.length).toBeLessThanOrEqual(2);
+      // Only lemma is added, so should have at most 1 synonym
+      expect(result.synonymsAdded.length).toBeLessThanOrEqual(1);
     });
   });
 
@@ -497,8 +514,9 @@ describe('QueryProcessor', () => {
 
   describe('clearCache', () => {
     test('clears synonym cache', async () => {
-      mockLookup.mockResolvedValueOnce([{ synonyms: ['holiday'] }]);
-      await processor._getSynonyms('vacation');
+      mockLemma = 'vacation';
+      mockPos = 'NOUN';
+      await processor._getSynonyms('vacations');
 
       expect(processor.synonymCache.size).toBeGreaterThan(0);
 
@@ -513,7 +531,7 @@ describe('QueryProcessor', () => {
       processor.cleanup();
 
       expect(processor.synonymCache.size).toBe(0);
-      expect(processor.wordpos).toBeNull();
+      expect(processor._nlp).toBeNull();
     });
   });
 

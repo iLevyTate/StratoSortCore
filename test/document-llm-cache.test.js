@@ -7,7 +7,7 @@ describe('documentLlm cache', () => {
   });
 
   test('returns cached result on repeated input', async () => {
-    // Mock ollamaUtils.getOllama to count generate calls
+    // Mock LlamaService to count generate calls
     const generateMock = jest.fn(async () => ({
       response: JSON.stringify({
         project: 'Test',
@@ -19,23 +19,21 @@ describe('documentLlm cache', () => {
       })
     }));
 
-    jest.doMock(
-      path.join('..', 'src', 'main', 'ollamaUtils'),
-      () => ({
-        getOllama: async () => ({ generate: generateMock }),
-        getOllamaModel: () => 'mock-model',
-        loadOllamaConfig: async () => ({ selectedTextModel: 'mock-model' })
-      }),
-      { virtual: false }
-    );
+    jest.doMock(path.join('..', 'src', 'main', 'services', 'LlamaService'), () => ({
+      getInstance: () => ({
+        initialize: jest.fn().mockResolvedValue(undefined),
+        getConfig: jest.fn().mockReturnValue({ textModel: 'test-model.gguf' }),
+        generateText: generateMock
+      })
+    }));
 
-    const { analyzeTextWithOllama } = require('../src/main/analysis/documentLlm');
+    const { analyzeTextWithLlama } = require('../src/main/analysis/documentLlm');
 
     const text = 'Hello world. This is a test document.';
     const folders = [{ name: 'General', description: 'General docs' }];
 
-    const first = await analyzeTextWithOllama(text, 'file.txt', folders);
-    const second = await analyzeTextWithOllama(text, 'file.txt', folders);
+    const first = await analyzeTextWithLlama(text, 'file.txt', folders);
+    const second = await analyzeTextWithLlama(text, 'file.txt', folders);
 
     expect(first).toBeDefined();
     expect(second).toBeDefined();

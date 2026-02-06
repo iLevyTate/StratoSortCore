@@ -162,8 +162,8 @@ describe('errorClassifier', () => {
       expect(isNetworkError({ message: 'Network error occurred' })).toBe(true);
     });
 
-    test('returns true for connection message', () => {
-      expect(isNetworkError({ message: 'Connection failed' })).toBe(true);
+    test('returns true for ECONNREFUSED message', () => {
+      expect(isNetworkError({ message: 'ECONNREFUSED 127.0.0.1:9999' })).toBe(true);
     });
 
     test('returns false for ENOENT', () => {

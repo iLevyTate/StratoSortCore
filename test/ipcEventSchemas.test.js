@@ -113,17 +113,6 @@ describe('IPC Event Schemas', () => {
       expect(result.valid).toBe(true);
     });
 
-    test('validates ollama-pull progress', () => {
-      const result = validateEventPayload('operation-progress', {
-        type: 'ollama-pull',
-        model: 'llama2',
-        status: 'downloading',
-        completed: 50,
-        digest: 'sha256:abc123'
-      });
-      expect(result.valid).toBe(true);
-    });
-
     test('validates hint type', () => {
       const result = validateEventPayload('operation-progress', {
         type: 'hint',
@@ -300,9 +289,9 @@ describe('IPC Event Schemas', () => {
     });
   });
 
-  describe('chromadbStatusChangedSchema', () => {
+  describe('vectorDbStatusChangedSchema', () => {
     test('validates connected status', () => {
-      const result = validateEventPayload(IPC_CHANNELS.CHROMADB.STATUS_CHANGED, {
+      const result = validateEventPayload(IPC_CHANNELS.VECTOR_DB.STATUS_CHANGED, {
         status: 'connected',
         timestamp: Date.now()
       });
@@ -310,7 +299,7 @@ describe('IPC Event Schemas', () => {
     });
 
     test('validates error status with message', () => {
-      const result = validateEventPayload(IPC_CHANNELS.CHROMADB.STATUS_CHANGED, {
+      const result = validateEventPayload(IPC_CHANNELS.VECTOR_DB.STATUS_CHANGED, {
         status: 'error',
         error: 'Connection refused'
       });
@@ -318,7 +307,7 @@ describe('IPC Event Schemas', () => {
     });
 
     test('rejects invalid status', () => {
-      const result = validateEventPayload(IPC_CHANNELS.CHROMADB.STATUS_CHANGED, {
+      const result = validateEventPayload(IPC_CHANNELS.VECTOR_DB.STATUS_CHANGED, {
         status: 'invalid_status'
       });
       expect(result.valid).toBe(false);

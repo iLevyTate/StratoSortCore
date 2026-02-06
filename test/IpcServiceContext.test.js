@@ -1,173 +1,78 @@
 /**
- * Tests for IpcServiceContext
- * Tests IPC service context dependency grouping and management
+ * @jest-environment node
+ *
+ * IpcServiceContext Tests
+ *
+ * Validates context creation, service resolution via get/getService/getRequiredService,
+ * validation, legacy parameter conversion, and error scenarios.
  */
 
-// Mock logger
-jest.mock('../src/shared/logger', () => {
-  const logger = {
-    setContext: jest.fn(),
-    info: jest.fn(),
-    debug: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn()
-  };
-  return { logger, createLogger: jest.fn(() => logger) };
-});
+const { IpcServiceContext, createFromLegacyParams } = require('../src/main/ipc/IpcServiceContext');
 
 describe('IpcServiceContext', () => {
-  let IpcServiceContext;
-  let createFromLegacyParams;
   let context;
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    jest.resetModules();
-
-    const module = require('../src/main/ipc/IpcServiceContext');
-    IpcServiceContext = module.IpcServiceContext;
-    createFromLegacyParams = module.createFromLegacyParams;
-
     context = new IpcServiceContext();
   });
 
-  describe('constructor', () => {
-    test('initializes with null service groups', () => {
+  describe('Constructor', () => {
+    test('initializes with all groups null', () => {
       expect(context.core).toBeNull();
       expect(context.electron).toBeNull();
       expect(context.folders).toBeNull();
       expect(context.analysis).toBeNull();
-      expect(context.ollama).toBeNull();
       expect(context.settings).toBeNull();
       expect(context.systemAnalytics).toBeNull();
       expect(context.getServiceIntegration).toBeNull();
     });
   });
 
-  describe('setCore', () => {
-    test('sets core services', () => {
-      const coreServices = {
-        ipcMain: { handle: jest.fn() },
-        IPC_CHANNELS: { TEST: 'test' },
-        logger: { info: jest.fn() }
-      };
-
-      const result = context.setCore(coreServices);
-
-      expect(context.core).toBe(coreServices);
-      expect(result).toBe(context); // Supports chaining
-    });
-  });
-
-  describe('setElectron', () => {
-    test('sets Electron services', () => {
-      const electronServices = {
-        dialog: { showOpenDialog: jest.fn() },
-        shell: { openPath: jest.fn() },
-        getMainWindow: jest.fn()
-      };
-
-      const result = context.setElectron(electronServices);
-
-      expect(context.electron).toBe(electronServices);
+  describe('Setters (fluent API)', () => {
+    test('setCore returns this for chaining', () => {
+      const result = context.setCore({ ipcMain: {}, IPC_CHANNELS: {}, logger: {} });
       expect(result).toBe(context);
     });
-  });
 
-  describe('setFolders', () => {
-    test('sets folder services', () => {
-      const folderServices = {
-        getCustomFolders: jest.fn(),
-        setCustomFolders: jest.fn(),
-        saveCustomFolders: jest.fn(),
-        scanDirectory: jest.fn()
-      };
-
-      const result = context.setFolders(folderServices);
-
-      expect(context.folders).toBe(folderServices);
+    test('setElectron returns this for chaining', () => {
+      const result = context.setElectron({ dialog: {}, shell: {}, getMainWindow: jest.fn() });
       expect(result).toBe(context);
     });
-  });
 
-  describe('setAnalysis', () => {
-    test('sets analysis services', () => {
-      const analysisServices = {
-        analyzeDocumentFile: jest.fn(),
-        analyzeImageFile: jest.fn(),
-        tesseract: {}
-      };
-
-      const result = context.setAnalysis(analysisServices);
-
-      expect(context.analysis).toBe(analysisServices);
+    test('setFolders returns this for chaining', () => {
+      const result = context.setFolders({ getCustomFolders: jest.fn() });
       expect(result).toBe(context);
     });
-  });
 
-  describe('setOllama', () => {
-    test('sets Ollama configuration', () => {
-      const ollamaConfig = {
-        getOllama: jest.fn(),
-        getOllamaHost: jest.fn(),
-        setOllamaHost: jest.fn(),
-        getOllamaModel: jest.fn()
-      };
-
-      const result = context.setOllama(ollamaConfig);
-
-      expect(context.ollama).toBe(ollamaConfig);
+    test('setAnalysis returns this for chaining', () => {
+      const result = context.setAnalysis({ analyzeDocumentFile: jest.fn() });
       expect(result).toBe(context);
     });
-  });
 
-  describe('setSettings', () => {
-    test('sets settings services', () => {
-      const settingsServices = {
-        settingsService: { get: jest.fn() },
-        onSettingsChanged: jest.fn()
-      };
-
-      const result = context.setSettings(settingsServices);
-
-      expect(context.settings).toBe(settingsServices);
+    test('setSettings returns this for chaining', () => {
+      const result = context.setSettings({ settingsService: {} });
       expect(result).toBe(context);
     });
-  });
 
-  describe('setSystemAnalytics', () => {
-    test('sets system analytics instance', () => {
-      const analytics = { trackEvent: jest.fn() };
-
-      const result = context.setSystemAnalytics(analytics);
-
-      expect(context.systemAnalytics).toBe(analytics);
+    test('setSystemAnalytics returns this for chaining', () => {
+      const result = context.setSystemAnalytics({ track: jest.fn() });
       expect(result).toBe(context);
     });
-  });
 
-  describe('setServiceIntegration', () => {
-    test('sets service integration getter', () => {
-      const getter = jest.fn(() => ({ initialized: true }));
-
-      const result = context.setServiceIntegration(getter);
-
-      expect(context.getServiceIntegration).toBe(getter);
+    test('setServiceIntegration returns this for chaining', () => {
+      const result = context.setServiceIntegration(jest.fn());
       expect(result).toBe(context);
     });
-  });
 
-  describe('chaining', () => {
-    test('supports fluent API chaining', () => {
+    test('full chaining works', () => {
       const result = context
         .setCore({ ipcMain: {}, IPC_CHANNELS: {}, logger: {} })
-        .setElectron({ dialog: {}, shell: {}, getMainWindow: () => {} })
-        .setFolders({ getCustomFolders: () => [], setCustomFolders: () => {} })
-        .setAnalysis({ analyzeDocumentFile: () => {} })
-        .setOllama({ getOllama: () => {} })
+        .setElectron({ getMainWindow: jest.fn() })
+        .setFolders({ getCustomFolders: jest.fn() })
+        .setAnalysis({ analyzeDocumentFile: jest.fn() })
         .setSettings({ settingsService: {} })
         .setSystemAnalytics({})
-        .setServiceIntegration(() => {});
+        .setServiceIntegration(jest.fn());
 
       expect(result).toBe(context);
       expect(context.core).not.toBeNull();
@@ -175,166 +80,199 @@ describe('IpcServiceContext', () => {
     });
   });
 
-  describe('get', () => {
+  describe('Getters', () => {
+    test('core getter returns set value', () => {
+      const core = { ipcMain: {}, IPC_CHANNELS: {}, logger: {} };
+      context.setCore(core);
+      expect(context.core).toBe(core);
+    });
+
+    test('electron getter returns set value', () => {
+      const electron = { dialog: {}, shell: {} };
+      context.setElectron(electron);
+      expect(context.electron).toBe(electron);
+    });
+
+    test('folders getter returns set value', () => {
+      const folders = { getCustomFolders: jest.fn() };
+      context.setFolders(folders);
+      expect(context.folders).toBe(folders);
+    });
+
+    test('analysis getter returns set value', () => {
+      const analysis = { analyzeDocumentFile: jest.fn() };
+      context.setAnalysis(analysis);
+      expect(context.analysis).toBe(analysis);
+    });
+
+    test('settings getter returns set value', () => {
+      const settings = { settingsService: {} };
+      context.setSettings(settings);
+      expect(context.settings).toBe(settings);
+    });
+
+    test('systemAnalytics getter returns set value', () => {
+      const analytics = { track: jest.fn() };
+      context.setSystemAnalytics(analytics);
+      expect(context.systemAnalytics).toBe(analytics);
+    });
+
+    test('getServiceIntegration getter returns set value', () => {
+      const getter = jest.fn();
+      context.setServiceIntegration(getter);
+      expect(context.getServiceIntegration).toBe(getter);
+    });
+  });
+
+  describe('get() - service resolution by name', () => {
+    const mockIpcMain = { handle: jest.fn() };
+    const mockChannels = { FILES: {} };
+    const mockLogger = { info: jest.fn() };
+    const mockDialog = { showOpenDialog: jest.fn() };
+    const mockShell = { openPath: jest.fn() };
+    const mockGetMainWindow = jest.fn();
+    const mockGetCustomFolders = jest.fn();
+    const mockSetCustomFolders = jest.fn();
+    const mockSaveCustomFolders = jest.fn();
+    const mockScanDirectory = jest.fn();
+    const mockAnalyzeDoc = jest.fn();
+    const mockAnalyzeImg = jest.fn();
+    const mockSettingsService = { get: jest.fn() };
+    const mockOnSettingsChanged = jest.fn();
+    const mockAnalytics = { track: jest.fn() };
+    const mockIntegrationGetter = jest.fn();
+
     beforeEach(() => {
       context
-        .setCore({
-          ipcMain: { handle: 'ipcMainHandle' },
-          IPC_CHANNELS: { TEST: 'test-channel' },
-          logger: { info: 'loggerInfo' }
-        })
-        .setElectron({
-          dialog: { open: 'dialogOpen' },
-          shell: { exec: 'shellExec' },
-          getMainWindow: 'windowGetter'
-        })
+        .setCore({ ipcMain: mockIpcMain, IPC_CHANNELS: mockChannels, logger: mockLogger })
+        .setElectron({ dialog: mockDialog, shell: mockShell, getMainWindow: mockGetMainWindow })
         .setFolders({
-          getCustomFolders: 'customFoldersGetter',
-          setCustomFolders: 'customFoldersSetter',
-          saveCustomFolders: 'customFoldersSaver',
-          scanDirectory: 'dirScanner'
+          getCustomFolders: mockGetCustomFolders,
+          setCustomFolders: mockSetCustomFolders,
+          saveCustomFolders: mockSaveCustomFolders,
+          scanDirectory: mockScanDirectory
         })
-        .setAnalysis({
-          analyzeDocumentFile: 'docAnalyzer',
-          analyzeImageFile: 'imgAnalyzer',
-          tesseract: 'tesseractLib'
-        })
-        .setOllama({
-          getOllama: 'ollamaGetter',
-          getOllamaHost: 'hostGetter',
-          setOllamaHost: 'hostSetter'
-        })
+        .setAnalysis({ analyzeDocumentFile: mockAnalyzeDoc, analyzeImageFile: mockAnalyzeImg })
         .setSettings({
-          settingsService: 'settingsSvc',
-          onSettingsChanged: 'settingsCallback'
+          settingsService: mockSettingsService,
+          onSettingsChanged: mockOnSettingsChanged
         })
-        .setSystemAnalytics('analyticsInstance')
-        .setServiceIntegration('integrationGetter');
+        .setSystemAnalytics(mockAnalytics)
+        .setServiceIntegration(mockIntegrationGetter);
     });
 
-    test('retrieves core services by name', () => {
-      // get('ipcMain') returns the whole ipcMain object
-      expect(context.get('ipcMain')).toEqual({ handle: 'ipcMainHandle' });
-      expect(context.get('IPC_CHANNELS')).toEqual({ TEST: 'test-channel' });
-      expect(context.get('logger')).toEqual({ info: 'loggerInfo' });
+    test('resolves ipcMain', () => {
+      expect(context.get('ipcMain')).toBe(mockIpcMain);
     });
 
-    test('retrieves Electron services by name', () => {
-      expect(context.get('dialog')).toEqual({ open: 'dialogOpen' });
-      expect(context.get('shell')).toEqual({ exec: 'shellExec' });
-      expect(context.get('getMainWindow')).toBe('windowGetter');
+    test('resolves IPC_CHANNELS', () => {
+      expect(context.get('IPC_CHANNELS')).toBe(mockChannels);
     });
 
-    test('retrieves folder services by name', () => {
-      expect(context.get('getCustomFolders')).toBe('customFoldersGetter');
-      expect(context.get('setCustomFolders')).toBe('customFoldersSetter');
-      expect(context.get('saveCustomFolders')).toBe('customFoldersSaver');
-      expect(context.get('scanDirectory')).toBe('dirScanner');
+    test('resolves logger', () => {
+      expect(context.get('logger')).toBe(mockLogger);
     });
 
-    test('retrieves analysis services by name', () => {
-      expect(context.get('analyzeDocumentFile')).toBe('docAnalyzer');
-      expect(context.get('analyzeImageFile')).toBe('imgAnalyzer');
-      expect(context.get('tesseract')).toBe('tesseractLib');
+    test('resolves dialog', () => {
+      expect(context.get('dialog')).toBe(mockDialog);
     });
 
-    test('retrieves Ollama config by name', () => {
-      expect(context.get('getOllama')).toBe('ollamaGetter');
-      expect(context.get('getOllamaHost')).toBe('hostGetter');
-      expect(context.get('setOllamaHost')).toBe('hostSetter');
+    test('resolves shell', () => {
+      expect(context.get('shell')).toBe(mockShell);
     });
 
-    test('retrieves settings services by name', () => {
-      expect(context.get('settingsService')).toBe('settingsSvc');
-      expect(context.get('onSettingsChanged')).toBe('settingsCallback');
+    test('resolves getMainWindow', () => {
+      expect(context.get('getMainWindow')).toBe(mockGetMainWindow);
     });
 
-    test('retrieves system analytics by name', () => {
-      expect(context.get('systemAnalytics')).toBe('analyticsInstance');
+    test('resolves getCustomFolders', () => {
+      expect(context.get('getCustomFolders')).toBe(mockGetCustomFolders);
     });
 
-    test('retrieves service integration by name', () => {
-      expect(context.get('getServiceIntegration')).toBe('integrationGetter');
+    test('resolves setCustomFolders', () => {
+      expect(context.get('setCustomFolders')).toBe(mockSetCustomFolders);
     });
 
-    test('returns null for unknown service names', () => {
-      expect(context.get('unknownService')).toBeNull();
-      expect(context.get('')).toBeNull();
+    test('resolves saveCustomFolders', () => {
+      expect(context.get('saveCustomFolders')).toBe(mockSaveCustomFolders);
     });
 
-    test('handles missing service groups gracefully', () => {
-      const emptyContext = new IpcServiceContext();
+    test('resolves scanDirectory', () => {
+      expect(context.get('scanDirectory')).toBe(mockScanDirectory);
+    });
 
-      expect(emptyContext.get('ipcMain')).toBeUndefined();
-      expect(emptyContext.get('dialog')).toBeUndefined();
+    test('resolves analyzeDocumentFile', () => {
+      expect(context.get('analyzeDocumentFile')).toBe(mockAnalyzeDoc);
+    });
+
+    test('resolves analyzeImageFile', () => {
+      expect(context.get('analyzeImageFile')).toBe(mockAnalyzeImg);
+    });
+
+    test('resolves settingsService', () => {
+      expect(context.get('settingsService')).toBe(mockSettingsService);
+    });
+
+    test('resolves onSettingsChanged', () => {
+      expect(context.get('onSettingsChanged')).toBe(mockOnSettingsChanged);
+    });
+
+    test('resolves systemAnalytics', () => {
+      expect(context.get('systemAnalytics')).toBe(mockAnalytics);
+    });
+
+    test('resolves getServiceIntegration', () => {
+      expect(context.get('getServiceIntegration')).toBe(mockIntegrationGetter);
+    });
+
+    test('returns null for unknown service', () => {
+      expect(context.get('nonExistent')).toBeNull();
+    });
+
+    test('returns undefined via optional chaining when group not set', () => {
+      const emptyCtx = new IpcServiceContext();
+      expect(emptyCtx.get('ipcMain')).toBeUndefined();
+      expect(emptyCtx.get('dialog')).toBeUndefined();
     });
   });
 
-  describe('getService', () => {
-    test('is an alias for get()', () => {
-      context.setCore({
-        ipcMain: { handle: 'testHandle' },
-        IPC_CHANNELS: {},
-        logger: {}
-      });
-
-      expect(context.getService('ipcMain')).toEqual(context.get('ipcMain'));
-      expect(context.getService('unknownService')).toBeNull();
+  describe('getService() - backward compatibility', () => {
+    test('delegates to get()', () => {
+      context.setCore({ ipcMain: 'test', IPC_CHANNELS: {}, logger: {} });
+      expect(context.getService('ipcMain')).toBe('test');
     });
   });
 
-  describe('getRequiredService', () => {
-    beforeEach(() => {
-      context.setCore({
-        ipcMain: { handle: 'ipcMainHandle' },
-        IPC_CHANNELS: { TEST: 'test-channel' },
-        logger: { info: 'loggerInfo' }
-      });
-    });
-
+  describe('getRequiredService()', () => {
     test('returns service when available', () => {
-      const ipcMain = context.getRequiredService('ipcMain');
-      expect(ipcMain).toEqual({ handle: 'ipcMainHandle' });
+      context.setCore({ ipcMain: 'mock', IPC_CHANNELS: {}, logger: {} });
+      expect(context.getRequiredService('ipcMain')).toBe('mock');
     });
 
-    test('throws error for null service', () => {
-      expect(() => context.getRequiredService('unknownService')).toThrow(
-        "[IpcServiceContext] Required service 'unknownService' is not available"
+    test('throws for null service', () => {
+      expect(() => context.getRequiredService('ipcMain')).toThrow(
+        "Required service 'ipcMain' is not available"
       );
     });
 
-    test('throws error for undefined service (missing group)', () => {
-      const emptyContext = new IpcServiceContext();
-
-      expect(() => emptyContext.getRequiredService('ipcMain')).toThrow(
-        "[IpcServiceContext] Required service 'ipcMain' is not available"
+    test('throws for unknown service', () => {
+      expect(() => context.getRequiredService('nonexistent')).toThrow(
+        "Required service 'nonexistent' is not available"
       );
-    });
-
-    test('error message includes service name for debugging', () => {
-      try {
-        context.getRequiredService('settingsService');
-        fail('Should have thrown');
-      } catch (error) {
-        expect(error.message).toContain('settingsService');
-        expect(error.message).toContain('not available');
-        expect(error.message).toContain('properly initialized');
-      }
-    });
-
-    test('works with Ollama config services', () => {
-      context.setOllama({
-        getOllama: 'ollamaGetter',
-        getOllamaHost: 'hostGetter'
-      });
-
-      expect(context.getRequiredService('getOllama')).toBe('ollamaGetter');
-      expect(context.getRequiredService('getOllamaHost')).toBe('hostGetter');
     });
   });
 
-  describe('validate', () => {
-    test('returns valid when core services are present', () => {
+  describe('validate()', () => {
+    test('reports missing core services', () => {
+      const result = context.validate();
+
+      expect(result.valid).toBe(false);
+      expect(result.missing).toContain('ipcMain');
+      expect(result.missing).toContain('IPC_CHANNELS');
+      expect(result.missing).toContain('logger');
+    });
+
+    test('valid when core services are set', () => {
       context.setCore({
         ipcMain: { handle: jest.fn() },
         IPC_CHANNELS: {},
@@ -347,161 +285,90 @@ describe('IpcServiceContext', () => {
       expect(result.missing).toHaveLength(0);
     });
 
-    test('returns invalid when ipcMain is missing', () => {
-      context.setCore({
-        IPC_CHANNELS: {},
-        logger: {}
-      });
-
-      const result = context.validate();
-
-      expect(result.valid).toBe(false);
-      expect(result.missing).toContain('ipcMain');
-    });
-
-    test('returns invalid when IPC_CHANNELS is missing', () => {
-      context.setCore({
-        ipcMain: {},
-        logger: {}
-      });
-
-      const result = context.validate();
-
-      expect(result.valid).toBe(false);
-      expect(result.missing).toContain('IPC_CHANNELS');
-    });
-
-    test('returns invalid when logger is missing', () => {
-      context.setCore({
-        ipcMain: {},
-        IPC_CHANNELS: {}
-      });
-
-      const result = context.validate();
-
-      expect(result.valid).toBe(false);
-      expect(result.missing).toContain('logger');
-    });
-
-    test('adds warnings for missing optional services', () => {
-      context.setCore({
-        ipcMain: {},
-        IPC_CHANNELS: {},
-        logger: {}
-      });
+    test('warns about missing getMainWindow', () => {
+      context.setCore({ ipcMain: {}, IPC_CHANNELS: {}, logger: {} });
 
       const result = context.validate();
 
       expect(result.warnings).toContain('getMainWindow');
+    });
+
+    test('warns about missing getServiceIntegration', () => {
+      context.setCore({ ipcMain: {}, IPC_CHANNELS: {}, logger: {} });
+
+      const result = context.validate();
+
       expect(result.warnings).toContain('getServiceIntegration');
     });
 
-    test('no warnings when optional services are present', () => {
+    test('no warnings when all services set', () => {
       context
-        .setCore({
-          ipcMain: {},
-          IPC_CHANNELS: {},
-          logger: {}
-        })
-        .setElectron({
-          getMainWindow: jest.fn()
-        })
+        .setCore({ ipcMain: {}, IPC_CHANNELS: {}, logger: {} })
+        .setElectron({ getMainWindow: jest.fn() })
         .setServiceIntegration(jest.fn());
 
       const result = context.validate();
 
-      expect(result.warnings).not.toContain('getMainWindow');
-      expect(result.warnings).not.toContain('getServiceIntegration');
-    });
-
-    test('returns all missing services', () => {
-      const emptyContext = new IpcServiceContext();
-
-      const result = emptyContext.validate();
-
-      expect(result.valid).toBe(false);
-      expect(result.missing).toContain('ipcMain');
-      expect(result.missing).toContain('IPC_CHANNELS');
-      expect(result.missing).toContain('logger');
+      expect(result.valid).toBe(true);
+      expect(result.warnings).toHaveLength(0);
     });
   });
 
-  describe('toLegacyParams', () => {
-    test('converts context to legacy parameter object', () => {
+  describe('toLegacyParams()', () => {
+    test('returns flat object with all service references', () => {
+      const mockIpcMain = {};
+      const mockChannels = {};
+      const mockLogger = {};
+      const mockDialog = {};
+      const mockShell = {};
+      const mockGetMainWindow = jest.fn();
+      const mockAnalytics = {};
+      const mockIntGetter = jest.fn();
+      const mockGetFolders = jest.fn();
+      const mockSetFolders = jest.fn();
+      const mockSaveFolders = jest.fn();
+      const mockScanDir = jest.fn();
+      const mockAnalyzeDoc = jest.fn();
+      const mockAnalyzeImg = jest.fn();
+      const mockSettings = {};
+      const mockOnChanged = jest.fn();
+
       context
-        .setCore({
-          ipcMain: 'ipc',
-          IPC_CHANNELS: 'channels',
-          logger: 'log'
-        })
-        .setElectron({
-          dialog: 'dlg',
-          shell: 'sh',
-          getMainWindow: 'getWin'
-        })
+        .setCore({ ipcMain: mockIpcMain, IPC_CHANNELS: mockChannels, logger: mockLogger })
+        .setElectron({ dialog: mockDialog, shell: mockShell, getMainWindow: mockGetMainWindow })
         .setFolders({
-          getCustomFolders: 'getFolders',
-          setCustomFolders: 'setFolders',
-          saveCustomFolders: 'saveFolders',
-          scanDirectory: 'scan'
+          getCustomFolders: mockGetFolders,
+          setCustomFolders: mockSetFolders,
+          saveCustomFolders: mockSaveFolders,
+          scanDirectory: mockScanDir
         })
-        .setAnalysis({
-          analyzeDocumentFile: 'analyzeDoc',
-          analyzeImageFile: 'analyzeImg',
-          tesseract: 'tess'
-        })
-        .setOllama({
-          getOllama: 'ollama',
-          getOllamaHost: 'host',
-          setOllamaHost: 'setHost',
-          getOllamaModel: 'model',
-          setOllamaModel: 'setModel',
-          getOllamaVisionModel: 'vision',
-          setOllamaVisionModel: 'setVision',
-          getOllamaEmbeddingModel: 'embed',
-          setOllamaEmbeddingModel: 'setEmbed',
-          buildOllamaOptions: 'buildOpts'
-        })
-        .setSettings({
-          settingsService: 'settings',
-          onSettingsChanged: 'onChange'
-        })
-        .setSystemAnalytics('analytics')
-        .setServiceIntegration('integration');
+        .setAnalysis({ analyzeDocumentFile: mockAnalyzeDoc, analyzeImageFile: mockAnalyzeImg })
+        .setSettings({ settingsService: mockSettings, onSettingsChanged: mockOnChanged })
+        .setSystemAnalytics(mockAnalytics)
+        .setServiceIntegration(mockIntGetter);
 
       const params = context.toLegacyParams();
 
-      expect(params.ipcMain).toBe('ipc');
-      expect(params.IPC_CHANNELS).toBe('channels');
-      expect(params.logger).toBe('log');
-      expect(params.dialog).toBe('dlg');
-      expect(params.shell).toBe('sh');
-      expect(params.getMainWindow).toBe('getWin');
-      expect(params.getCustomFolders).toBe('getFolders');
-      expect(params.setCustomFolders).toBe('setFolders');
-      expect(params.saveCustomFolders).toBe('saveFolders');
-      expect(params.scanDirectory).toBe('scan');
-      expect(params.analyzeDocumentFile).toBe('analyzeDoc');
-      expect(params.analyzeImageFile).toBe('analyzeImg');
-      expect(params.tesseract).toBe('tess');
-      expect(params.getOllama).toBe('ollama');
-      expect(params.getOllamaHost).toBe('host');
-      expect(params.setOllamaHost).toBe('setHost');
-      expect(params.getOllamaModel).toBe('model');
-      expect(params.setOllamaModel).toBe('setModel');
-      expect(params.getOllamaVisionModel).toBe('vision');
-      expect(params.setOllamaVisionModel).toBe('setVision');
-      expect(params.getOllamaEmbeddingModel).toBe('embed');
-      expect(params.setOllamaEmbeddingModel).toBe('setEmbed');
-      expect(params.buildOllamaOptions).toBe('buildOpts');
-      expect(params.settingsService).toBe('settings');
-      expect(params.onSettingsChanged).toBe('onChange');
-      expect(params.systemAnalytics).toBe('analytics');
-      expect(params.getServiceIntegration).toBe('integration');
+      expect(params.ipcMain).toBe(mockIpcMain);
+      expect(params.IPC_CHANNELS).toBe(mockChannels);
+      expect(params.logger).toBe(mockLogger);
+      expect(params.dialog).toBe(mockDialog);
+      expect(params.shell).toBe(mockShell);
+      expect(params.getMainWindow).toBe(mockGetMainWindow);
+      expect(params.systemAnalytics).toBe(mockAnalytics);
+      expect(params.getServiceIntegration).toBe(mockIntGetter);
+      expect(params.getCustomFolders).toBe(mockGetFolders);
+      expect(params.setCustomFolders).toBe(mockSetFolders);
+      expect(params.saveCustomFolders).toBe(mockSaveFolders);
+      expect(params.scanDirectory).toBe(mockScanDir);
+      expect(params.analyzeDocumentFile).toBe(mockAnalyzeDoc);
+      expect(params.analyzeImageFile).toBe(mockAnalyzeImg);
+      expect(params.settingsService).toBe(mockSettings);
+      expect(params.onSettingsChanged).toBe(mockOnChanged);
     });
 
-    test('handles undefined service groups', () => {
-      const params = new IpcServiceContext().toLegacyParams();
+    test('returns undefined properties when groups not set', () => {
+      const params = context.toLegacyParams();
 
       expect(params.ipcMain).toBeUndefined();
       expect(params.dialog).toBeUndefined();
@@ -509,87 +376,61 @@ describe('IpcServiceContext', () => {
     });
   });
 
-  describe('createFromLegacyParams', () => {
-    test('creates context from legacy parameters', () => {
-      const legacyParams = {
-        ipcMain: 'ipc',
-        IPC_CHANNELS: 'channels',
-        logger: 'log',
-        dialog: 'dlg',
-        shell: 'sh',
-        getMainWindow: 'getWin',
-        getCustomFolders: 'getFolders',
-        setCustomFolders: 'setFolders',
-        saveCustomFolders: 'saveFolders',
-        scanDirectory: 'scan',
-        analyzeDocumentFile: 'analyzeDoc',
-        analyzeImageFile: 'analyzeImg',
-        tesseract: 'tess',
-        getOllama: 'ollama',
-        getOllamaHost: 'host',
-        setOllamaHost: 'setHost',
-        getOllamaModel: 'model',
-        setOllamaModel: 'setModel',
-        getOllamaVisionModel: 'vision',
-        setOllamaVisionModel: 'setVision',
-        getOllamaEmbeddingModel: 'embed',
-        setOllamaEmbeddingModel: 'setEmbed',
-        buildOllamaOptions: 'buildOpts',
-        settingsService: 'settings',
-        onSettingsChanged: 'onChange',
-        systemAnalytics: 'analytics',
-        getServiceIntegration: 'integration'
-      };
+  describe('createFromLegacyParams()', () => {
+    test('creates context from flat params object', () => {
+      const mockIpcMain = { handle: jest.fn() };
+      const mockChannels = { FILES: {} };
+      const mockLogger = { info: jest.fn() };
+      const mockDialog = {};
+      const mockShell = {};
+      const mockGetMainWindow = jest.fn();
+      const mockAnalytics = {};
+      const mockIntGetter = jest.fn();
+      const mockGetFolders = jest.fn();
+      const mockAnalyzeDoc = jest.fn();
+      const mockAnalyzeImg = jest.fn();
+      const mockSettings = {};
 
-      const ctx = createFromLegacyParams(legacyParams);
+      const ctx = createFromLegacyParams({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS: mockChannels,
+        logger: mockLogger,
+        dialog: mockDialog,
+        shell: mockShell,
+        getMainWindow: mockGetMainWindow,
+        systemAnalytics: mockAnalytics,
+        getServiceIntegration: mockIntGetter,
+        getCustomFolders: mockGetFolders,
+        analyzeDocumentFile: mockAnalyzeDoc,
+        analyzeImageFile: mockAnalyzeImg,
+        settingsService: mockSettings
+      });
 
       expect(ctx).toBeInstanceOf(IpcServiceContext);
-      expect(ctx.core.ipcMain).toBe('ipc');
-      expect(ctx.core.IPC_CHANNELS).toBe('channels');
-      expect(ctx.core.logger).toBe('log');
-      expect(ctx.electron.dialog).toBe('dlg');
-      expect(ctx.electron.shell).toBe('sh');
-      expect(ctx.electron.getMainWindow).toBe('getWin');
-      expect(ctx.folders.getCustomFolders).toBe('getFolders');
-      expect(ctx.analysis.analyzeDocumentFile).toBe('analyzeDoc');
-      expect(ctx.ollama.getOllama).toBe('ollama');
-      expect(ctx.settings.settingsService).toBe('settings');
-      expect(ctx.systemAnalytics).toBe('analytics');
-      expect(ctx.getServiceIntegration).toBe('integration');
+      expect(ctx.core.ipcMain).toBe(mockIpcMain);
+      expect(ctx.electron.dialog).toBe(mockDialog);
+      expect(ctx.get('ipcMain')).toBe(mockIpcMain);
+      expect(ctx.get('dialog')).toBe(mockDialog);
+      expect(ctx.get('analyzeDocumentFile')).toBe(mockAnalyzeDoc);
+      expect(ctx.getServiceIntegration).toBe(mockIntGetter);
     });
 
-    test('round-trips through toLegacyParams', () => {
-      const originalParams = {
-        ipcMain: 'ipc',
-        IPC_CHANNELS: 'channels',
-        logger: 'log',
-        dialog: 'dlg',
-        shell: 'sh',
-        getMainWindow: 'getWin',
-        systemAnalytics: 'analytics',
-        getServiceIntegration: 'integration'
-      };
+    test('round-trip: toLegacyParams -> createFromLegacyParams preserves references', () => {
+      const mockIpcMain = {};
+      const mockChannels = {};
+      const mockLogger = {};
+      const mockIntGetter = jest.fn();
 
-      const ctx = createFromLegacyParams(originalParams);
-      const resultParams = ctx.toLegacyParams();
+      context
+        .setCore({ ipcMain: mockIpcMain, IPC_CHANNELS: mockChannels, logger: mockLogger })
+        .setServiceIntegration(mockIntGetter);
 
-      expect(resultParams.ipcMain).toBe(originalParams.ipcMain);
-      expect(resultParams.IPC_CHANNELS).toBe(originalParams.IPC_CHANNELS);
-      expect(resultParams.logger).toBe(originalParams.logger);
-      expect(resultParams.dialog).toBe(originalParams.dialog);
-      expect(resultParams.shell).toBe(originalParams.shell);
-      expect(resultParams.getMainWindow).toBe(originalParams.getMainWindow);
-    });
-  });
+      const params = context.toLegacyParams();
+      const restored = createFromLegacyParams(params);
 
-  describe('exports', () => {
-    test('does not export ServiceContainer alias (removed to avoid confusion with main DI container)', () => {
-      const module = require('../src/main/ipc/IpcServiceContext');
-
-      // ServiceContainer alias was intentionally removed to avoid confusion
-      // with src/main/services/ServiceContainer.js (the main DI container)
-      expect(module.ServiceContainer).toBeUndefined();
-      expect(module.IpcServiceContext).toBeDefined();
+      expect(restored.get('ipcMain')).toBe(mockIpcMain);
+      expect(restored.get('IPC_CHANNELS')).toBe(mockChannels);
+      expect(restored.getServiceIntegration).toBe(mockIntGetter);
     });
   });
 });

@@ -7,9 +7,17 @@
 const fs = require('fs').promises;
 
 // Mock dependencies BEFORE requiring the module
-jest.mock('pdf-parse', () => jest.fn());
+jest.mock('unpdf', () => ({
+  extractText: jest.fn(),
+  definePDFJSModule: jest.fn().mockResolvedValue(),
+  renderPageAsImage: jest.fn()
+}));
 jest.mock('sharp');
-jest.mock('node-tesseract-ocr');
+jest.mock('@napi-rs/canvas', () => ({}));
+jest.mock('../src/main/utils/tesseractUtils', () => ({
+  isTesseractAvailable: jest.fn().mockResolvedValue(true),
+  recognizeIfAvailable: jest.fn().mockResolvedValue({ success: true, text: 'OCR extracted text' })
+}));
 jest.mock('mammoth');
 // jest.mock('officeparser');
 jest.mock('xlsx-populate');
@@ -58,24 +66,24 @@ describe('documentExtractors', () => {
 
   describe('extractTextFromPdf', () => {
     test('should extract text from valid PDF', async () => {
-      const pdfParse = require('pdf-parse');
+      const { extractText } = require('unpdf');
       const mockPdfData = {
         text: 'This is extracted PDF text content'
       };
 
-      pdfParse.mockResolvedValue(mockPdfData);
+      extractText.mockResolvedValue(mockPdfData);
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('pdf data'));
       jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
 
       const result = await extractTextFromPdf(mockFilePath, mockFileName);
 
       expect(result).toBe('This is extracted PDF text content');
-      expect(pdfParse).toHaveBeenCalled();
+      expect(extractText).toHaveBeenCalled();
     });
 
     test('should throw error for empty PDF', async () => {
-      const pdfParse = require('pdf-parse');
-      pdfParse.mockResolvedValue({ text: '' });
+      const { extractText } = require('unpdf');
+      extractText.mockResolvedValue({ text: '' });
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('pdf data'));
       jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
 
@@ -96,9 +104,9 @@ describe('documentExtractors', () => {
     });
 
     test('should truncate very long text', async () => {
-      const pdfParse = require('pdf-parse');
+      const { extractText } = require('unpdf');
       const longText = 'word '.repeat(200000); // Creates text > 500k chars
-      pdfParse.mockResolvedValue({ text: longText });
+      extractText.mockResolvedValue({ text: longText });
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('pdf data'));
       jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
 
@@ -107,12 +115,25 @@ describe('documentExtractors', () => {
       expect(result.length).toBeLessThanOrEqual(500000 + 100);
       expect(result).toContain('[Text truncated due to length]');
     });
+
+    test('should handle array return from unpdf', async () => {
+      const { extractText } = require('unpdf');
+      const textArray = ['Page 1 content', 'Page 2 content'];
+      extractText.mockResolvedValue({ text: textArray });
+      jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('pdf data'));
+      jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
+
+      const result = await extractTextFromPdf(mockFilePath, mockFileName);
+
+      expect(result).toContain('Page 1 content');
+      expect(result).toContain('Page 2 content');
+    });
   });
 
   describe('ocrPdfIfNeeded', () => {
     test('should perform OCR on image-based PDF', async () => {
       const sharp = require('sharp');
-      const tesseract = require('node-tesseract-ocr');
+      const { recognizeIfAvailable } = require('../src/main/utils/tesseractUtils');
 
       jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('pdf data'));
@@ -125,12 +146,44 @@ describe('documentExtractors', () => {
       };
       sharp.mockReturnValue(mockSharp);
 
-      tesseract.recognize.mockResolvedValue('OCR extracted text');
+      recognizeIfAvailable.mockResolvedValue({ success: true, text: 'OCR extracted text' });
 
       const result = await ocrPdfIfNeeded(mockFilePath);
 
       expect(result).toBe('OCR extracted text');
-      expect(tesseract.recognize).toHaveBeenCalled();
+      expect(recognizeIfAvailable).toHaveBeenCalled();
+    });
+
+    test('should fallback to PDF page renderer if sharp fails', async () => {
+      const sharp = require('sharp');
+      const { recognizeIfAvailable } = require('../src/main/utils/tesseractUtils');
+      const unpdf = require('unpdf');
+
+      jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
+      jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('pdf data'));
+
+      // 1. Mock sharp failure
+      const mockSharp = {
+        metadata: jest
+          .fn()
+          .mockRejectedValue(new Error('Input buffer contains unsupported image format')),
+        resize: jest.fn().mockReturnThis(),
+        png: jest.fn().mockReturnThis(),
+        toBuffer: jest.fn().mockResolvedValue(Buffer.from('png data'))
+      };
+      sharp.mockReturnValue(mockSharp);
+
+      // 2. Mock unpdf page renderer
+      unpdf.renderPageAsImage.mockResolvedValue(Buffer.from('png data'));
+
+      // 3. Mock OCR success
+      recognizeIfAvailable.mockResolvedValue({ success: true, text: 'Fallback extracted text' });
+
+      const result = await ocrPdfIfNeeded(mockFilePath);
+
+      expect(result).toContain('Fallback extracted text');
+      // Should have called unpdf.renderPageAsImage
+      expect(unpdf.renderPageAsImage).toHaveBeenCalled();
     });
 
     test('should return empty string for oversized files', async () => {
@@ -151,6 +204,32 @@ describe('documentExtractors', () => {
       sharp.mockImplementation(() => {
         throw new Error('Sharp error');
       });
+
+      const result = await ocrPdfIfNeeded(mockFilePath);
+
+      expect(result).toBe('');
+    });
+
+    test('should handle sharp metadata error gracefully (unsupported format)', async () => {
+      const sharp = require('sharp');
+      const unpdf = require('unpdf');
+
+      jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
+      jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('pdf data'));
+
+      // Mock sharp failure
+      const mockSharp = {
+        metadata: jest
+          .fn()
+          .mockRejectedValue(new Error('Input buffer contains unsupported image format')),
+        resize: jest.fn().mockReturnThis(),
+        png: jest.fn().mockReturnThis(),
+        toBuffer: jest.fn().mockResolvedValue(Buffer.from('png data'))
+      };
+      sharp.mockReturnValue(mockSharp);
+
+      // Mock unpdf renderer failure (so fallback fails too)
+      unpdf.renderPageAsImage.mockRejectedValue(new Error('Renderer unavailable'));
 
       const result = await ocrPdfIfNeeded(mockFilePath);
 
@@ -780,8 +859,8 @@ Body content only.`;
 
   describe('Memory Management', () => {
     test('should handle null/undefined in truncateText', async () => {
-      const pdfParse = require('pdf-parse');
-      pdfParse.mockResolvedValue({ text: null });
+      const { extractText } = require('unpdf');
+      extractText.mockResolvedValue({ text: null });
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('pdf'));
       jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
 
@@ -789,15 +868,15 @@ Body content only.`;
     });
 
     test('should cleanup buffers after PDF processing', async () => {
-      const pdfParse = require('pdf-parse');
-      pdfParse.mockResolvedValue({ text: 'Content' });
+      const { extractText } = require('unpdf');
+      extractText.mockResolvedValue({ text: 'Content' });
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('pdf data'));
       jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
 
       await extractTextFromPdf(mockFilePath, mockFileName);
 
       // Verify no memory leaks by checking function completes
-      expect(pdfParse).toHaveBeenCalled();
+      expect(extractText).toHaveBeenCalled();
     });
   });
 

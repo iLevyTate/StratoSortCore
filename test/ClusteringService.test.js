@@ -16,16 +16,16 @@ jest.mock('../src/shared/logger', () => {
   return { logger, createLogger: jest.fn(() => logger) };
 });
 
-// Mock ollamaUtils
-jest.mock('../src/main/ollamaUtils', () => ({
-  getOllamaModel: jest.fn(() => 'qwen3:0.6b')
+// Mock llama utils
+jest.mock('../src/main/llamaUtils', () => ({
+  getTextModel: jest.fn(() => 'qwen3:0.6b')
 }));
 
 describe('ClusteringService', () => {
   let ClusteringService;
   let service;
-  let mockChromaDb;
-  let mockOllama;
+  let mockVectorDb;
+  let mockLlama;
 
   // Generate mock embeddings for testing
   const createMockEmbedding = (seed) => {
@@ -36,33 +36,33 @@ describe('ClusteringService', () => {
     jest.clearAllMocks();
     jest.resetModules();
 
-    // Create mock ChromaDB service
-    mockChromaDb = {
+    // Create mock vector DB service (OramaVectorService API)
+    mockVectorDb = {
       initialize: jest.fn().mockResolvedValue(undefined),
-      fileCollection: {
-        get: jest.fn().mockResolvedValue({
-          ids: ['file1', 'file2', 'file3', 'file4', 'file5'],
-          embeddings: [
-            createMockEmbedding(1),
-            createMockEmbedding(2),
-            createMockEmbedding(3),
-            createMockEmbedding(4),
-            createMockEmbedding(5)
-          ],
-          metadatas: [
-            { name: 'document1.pdf', type: 'pdf' },
-            { name: 'document2.pdf', type: 'pdf' },
-            { name: 'image1.jpg', type: 'image' },
-            { name: 'image2.jpg', type: 'image' },
-            { name: 'spreadsheet.xlsx', type: 'spreadsheet' }
-          ]
-        })
-      }
+      peekFiles: jest.fn().mockResolvedValue({
+        ids: ['file1', 'file2', 'file3', 'file4', 'file5'],
+        embeddings: [
+          createMockEmbedding(1),
+          createMockEmbedding(2),
+          createMockEmbedding(3),
+          createMockEmbedding(4),
+          createMockEmbedding(5)
+        ],
+        metadatas: [
+          { name: 'document1.pdf', type: 'pdf' },
+          { name: 'document2.pdf', type: 'pdf' },
+          { name: 'image1.jpg', type: 'image' },
+          { name: 'image2.jpg', type: 'image' },
+          { name: 'spreadsheet.xlsx', type: 'spreadsheet' }
+        ]
+      }),
+      getStats: jest.fn().mockResolvedValue({ files: 5, fileChunks: 0, folders: 0 }),
+      getFile: jest.fn().mockResolvedValue(null)
     };
 
-    // Create mock Ollama service
-    mockOllama = {
-      analyzeText: jest.fn().mockResolvedValue({ response: 'Test Documents' })
+    // Create mock AI service
+    mockLlama = {
+      generateText: jest.fn().mockResolvedValue({ response: 'Test Documents' })
     };
 
     // Load the service
@@ -71,33 +71,33 @@ describe('ClusteringService', () => {
 
     // Create service instance
     service = new ClusteringService({
-      chromaDbService: mockChromaDb,
-      ollamaService: mockOllama
+      vectorDbService: mockVectorDb,
+      llamaService: mockLlama
     });
   });
 
   describe('constructor', () => {
     test('initializes with valid dependencies', () => {
-      expect(service.chromaDb).toBe(mockChromaDb);
-      expect(service.ollama).toBe(mockOllama);
+      expect(service.vectorDb).toBe(mockVectorDb);
+      expect(service.llama).toBe(mockLlama);
       expect(service.clusters).toEqual([]);
       expect(service.centroids).toEqual([]);
       expect(service.clusterLabels).toBeInstanceOf(Map);
       expect(service.lastComputedAt).toBeNull();
     });
 
-    test('throws if chromaDbService is missing', () => {
+    test('throws if vectorDbService is missing', () => {
       expect(() => {
-        new ClusteringService({ chromaDbService: null, ollamaService: mockOllama });
-      }).toThrow('ClusteringService requires chromaDbService dependency');
+        new ClusteringService({ vectorDbService: null, llamaService: mockLlama });
+      }).toThrow('ClusteringService requires vectorDbService dependency');
     });
 
-    test('accepts null ollamaService (optional)', () => {
-      const serviceWithoutOllama = new ClusteringService({
-        chromaDbService: mockChromaDb,
-        ollamaService: null
+    test('accepts null llamaService (optional)', () => {
+      const serviceWithoutLlama = new ClusteringService({
+        vectorDbService: mockVectorDb,
+        llamaService: null
       });
-      expect(serviceWithoutOllama.ollama).toBeNull();
+      expect(serviceWithoutLlama.llama).toBeNull();
     });
   });
 
@@ -126,14 +126,11 @@ describe('ClusteringService', () => {
   });
 
   describe('getAllFileEmbeddings', () => {
-    test('returns file embeddings from ChromaDB', async () => {
+    test('returns file embeddings from vector DB', async () => {
       const files = await service.getAllFileEmbeddings();
 
-      expect(mockChromaDb.initialize).toHaveBeenCalled();
-      expect(mockChromaDb.fileCollection.get).toHaveBeenCalledWith({
-        include: ['embeddings', 'metadatas'],
-        limit: 10000
-      });
+      expect(mockVectorDb.initialize).toHaveBeenCalled();
+      expect(mockVectorDb.peekFiles).toHaveBeenCalledWith(10000);
       expect(files).toHaveLength(5);
       expect(files[0]).toHaveProperty('id', 'file1');
       expect(files[0]).toHaveProperty('embedding');
@@ -141,7 +138,7 @@ describe('ClusteringService', () => {
     });
 
     test('returns empty array on error', async () => {
-      mockChromaDb.fileCollection.get.mockRejectedValueOnce(new Error('DB error'));
+      mockVectorDb.peekFiles.mockRejectedValueOnce(new Error('DB error'));
 
       const files = await service.getAllFileEmbeddings();
 
@@ -149,7 +146,7 @@ describe('ClusteringService', () => {
     });
 
     test('filters out files without embeddings', async () => {
-      mockChromaDb.fileCollection.get.mockResolvedValueOnce({
+      mockVectorDb.peekFiles.mockResolvedValueOnce({
         ids: ['file1', 'file2'],
         embeddings: [createMockEmbedding(1), null],
         metadatas: [{}, {}]
@@ -310,7 +307,7 @@ describe('ClusteringService', () => {
     });
 
     test('fails with insufficient files', async () => {
-      mockChromaDb.fileCollection.get.mockResolvedValueOnce({
+      mockVectorDb.peekFiles.mockResolvedValueOnce({
         ids: ['file1'],
         embeddings: [createMockEmbedding(1)],
         metadatas: [{}]
@@ -330,8 +327,8 @@ describe('ClusteringService', () => {
       expect(Array.isArray(result.clusters)).toBe(true);
     });
 
-    test('handles ChromaDB errors gracefully', async () => {
-      mockChromaDb.fileCollection.get.mockRejectedValueOnce(new Error('Connection failed'));
+    test('handles vector DB errors gracefully', async () => {
+      mockVectorDb.peekFiles.mockRejectedValueOnce(new Error('Connection failed'));
 
       const result = await service.computeClusters(2);
 
@@ -361,19 +358,19 @@ describe('ClusteringService', () => {
     });
 
     test('generates labels using LLM', async () => {
-      mockOllama.analyzeText.mockResolvedValueOnce({ response: 'PDF Documents' });
-      mockOllama.analyzeText.mockResolvedValueOnce({ response: 'Image Files' });
+      mockLlama.generateText.mockResolvedValueOnce({ response: 'PDF Documents' });
+      mockLlama.generateText.mockResolvedValueOnce({ response: 'Image Files' });
 
       const result = await service.generateClusterLabels();
 
       expect(result.success).toBe(true);
-      expect(mockOllama.analyzeText).toHaveBeenCalledTimes(2);
+      expect(mockLlama.generateText).toHaveBeenCalledTimes(2);
       expect(service.clusterLabels.get(0)).toBe('PDF Documents');
       expect(service.clusterLabels.get(1)).toBe('Image Files');
     });
 
     test('uses fallback labels when LLM fails', async () => {
-      mockOllama.analyzeText.mockRejectedValue(new Error('LLM error'));
+      mockLlama.generateText.mockRejectedValue(new Error('LLM error'));
 
       const result = await service.generateClusterLabels();
 
@@ -383,12 +380,12 @@ describe('ClusteringService', () => {
       expect(service.clusterLabels.get(1)).toBe('Cluster 2');
     });
 
-    test('uses fallback labels when ollama is null', async () => {
-      service.ollama = null;
+    test('uses fallback labels when llama is null', async () => {
+      service.llama = null;
 
       const result = await service.generateClusterLabels();
 
-      // Should still succeed with fallback labels when ollama is not available
+      // Should still succeed with fallback labels when llama is not available
       expect(result.success).toBe(true);
       expect(service.clusterLabels.get(0)).toBe('Cluster 1');
       expect(service.clusterLabels.get(1)).toBe('Cluster 2');
@@ -479,9 +476,8 @@ describe('ClusteringService', () => {
       // Create mock with high similarity embeddings
       const nearDuplicateEmbedding = createMockEmbedding(1);
 
-      // Add count method required by findNearDuplicates
-      mockChromaDb.fileCollection.count = jest.fn().mockResolvedValue(2);
-      mockChromaDb.fileCollection.get.mockResolvedValue({
+      mockVectorDb.getStats.mockResolvedValue({ files: 2, fileChunks: 0, folders: 0 });
+      mockVectorDb.peekFiles.mockResolvedValue({
         ids: ['file1', 'file2'],
         embeddings: [nearDuplicateEmbedding, nearDuplicateEmbedding],
         metadatas: [
@@ -512,9 +508,8 @@ describe('ClusteringService', () => {
         manyMetadatas.push({ name: `doc${i}.pdf`, type: 'pdf' });
       }
 
-      // Add count method required by findNearDuplicates
-      mockChromaDb.fileCollection.count = jest.fn().mockResolvedValue(200);
-      mockChromaDb.fileCollection.get.mockResolvedValue({
+      mockVectorDb.getStats.mockResolvedValue({ files: 200, fileChunks: 0, folders: 0 });
+      mockVectorDb.peekFiles.mockResolvedValue({
         ids: manyFiles,
         embeddings: manyEmbeddings,
         metadatas: manyMetadatas

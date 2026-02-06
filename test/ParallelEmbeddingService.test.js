@@ -15,42 +15,20 @@ jest.mock('../src/shared/logger', () => {
   return { logger, createLogger: jest.fn(() => logger) };
 });
 
-// Mock ollamaUtils
-const mockOllama = {
-  embeddings: jest.fn(), // Legacy API (deprecated)
-  embed: jest.fn(), // New API
-  list: jest.fn()
-};
-
-jest.mock('../src/main/ollamaUtils', () => ({
-  getOllama: jest.fn(() => mockOllama),
-  getOllamaEmbeddingModel: jest.fn(() => 'mxbai-embed-large')
-}));
-
-// Mock ollamaApiRetry
-jest.mock('../src/main/utils/ollamaApiRetry', () => ({
-  withOllamaRetry: jest.fn((fn) => fn()),
-  isRetryableError: jest.fn(() => false)
-}));
-
 // Mock config
 jest.mock('../src/shared/config/index', () => ({
   get: jest.fn((key, defaultValue) => defaultValue)
 }));
 
-jest.mock('../src/main/services/PerformanceService', () => ({
-  buildOllamaOptions: jest.fn().mockResolvedValue({ num_gpu: -1, main_gpu: 0 })
-}));
-
-// Mock OllamaService - define inside factory to survive jest.resetModules()
-jest.mock('../src/main/services/OllamaService', () => {
+// Mock LlamaService - define inside factory to survive jest.resetModules()
+jest.mock('../src/main/services/LlamaService', () => {
   const mockInstance = {
     generateEmbedding: jest.fn().mockResolvedValue({
-      success: true,
-      vector: [0.1, 0.2, 0.3],
-      model: 'mxbai-embed-large'
+      embedding: [0.1, 0.2, 0.3]
     }),
-    getClient: jest.fn().mockReturnValue({ isHealthy: true })
+    getHealthStatus: jest.fn(() => ({ initialized: true })),
+    testConnection: jest.fn().mockResolvedValue({ success: true }),
+    getConfig: jest.fn().mockReturnValue({ embeddingModel: 'mxbai-embed-large' })
   };
   return {
     getInstance: jest.fn(() => mockInstance),
@@ -59,30 +37,24 @@ jest.mock('../src/main/services/OllamaService', () => {
 });
 
 // Get reference to mock instance after module load
-const getMockOllamaServiceInstance = () =>
-  require('../src/main/services/OllamaService').__mockInstance;
+const getMockLlamaServiceInstance = () =>
+  require('../src/main/services/LlamaService').__mockInstance;
 
 describe('ParallelEmbeddingService', () => {
   let ParallelEmbeddingService;
   let getInstance;
   let resetInstance;
-  let mockOllamaServiceInstance;
+  let mockLlamaServiceInstance;
 
   beforeEach(() => {
     jest.clearAllMocks();
     jest.resetModules();
 
-    // New API uses embed() with embeddings array response
-    mockOllama.embed.mockResolvedValue({ embeddings: [[0.1, 0.2, 0.3]] });
-    mockOllama.list.mockResolvedValue({ models: [] });
-
     // Get fresh mock instance after resetModules
-    mockOllamaServiceInstance = getMockOllamaServiceInstance();
-    // Reset OllamaService mock to success
-    mockOllamaServiceInstance.generateEmbedding.mockResolvedValue({
-      success: true,
-      vector: [0.1, 0.2, 0.3],
-      model: 'mxbai-embed-large'
+    mockLlamaServiceInstance = getMockLlamaServiceInstance();
+    // Reset LlamaService mock to success
+    mockLlamaServiceInstance.generateEmbedding.mockResolvedValue({
+      embedding: [0.1, 0.2, 0.3]
     });
 
     const module = require('../src/main/services/ParallelEmbeddingService');
@@ -208,6 +180,8 @@ describe('ParallelEmbeddingService', () => {
       const result = await service.embedText('hello world');
 
       expect(result.vector).toEqual([0.1, 0.2, 0.3]);
+      // Model comes from getConfig().embeddingModel since LlamaService.generateEmbedding
+      // returns {embedding: [...]} without a model field
       expect(result.model).toBe('mxbai-embed-large');
     });
 
@@ -222,16 +196,13 @@ describe('ParallelEmbeddingService', () => {
     });
 
     test('throws error on embedding failure', async () => {
-      mockOllamaServiceInstance.generateEmbedding.mockResolvedValueOnce({
-        success: false,
-        error: 'Ollama error'
-      });
+      mockLlamaServiceInstance.generateEmbedding.mockRejectedValueOnce(new Error('AI error'));
 
       const service = new ParallelEmbeddingService();
 
       // FIX: Now throws error instead of returning fallback zero vector
       // Zero vectors are useless for semantic search and pollute the database
-      await expect(service.embedText('test')).rejects.toThrow('Embedding failed: Ollama error');
+      await expect(service.embedText('test')).rejects.toThrow('Embedding failed: AI error');
     });
 
     test('releases slot after completion', async () => {
@@ -287,8 +258,8 @@ describe('ParallelEmbeddingService', () => {
     });
 
     test('collects errors for failed items', async () => {
-      mockOllamaServiceInstance.generateEmbedding
-        .mockResolvedValueOnce({ success: true, vector: [0.1], model: 'mxbai-embed-large' })
+      mockLlamaServiceInstance.generateEmbedding
+        .mockResolvedValueOnce({ embedding: [0.1] })
         .mockRejectedValueOnce(new Error('Failed'));
 
       const service = new ParallelEmbeddingService();
@@ -312,7 +283,7 @@ describe('ParallelEmbeddingService', () => {
     });
 
     test('respects stopOnError option', async () => {
-      mockOllamaServiceInstance.generateEmbedding.mockRejectedValue(new Error('Failed'));
+      mockLlamaServiceInstance.generateEmbedding.mockRejectedValue(new Error('Failed'));
 
       const service = new ParallelEmbeddingService();
 
@@ -332,7 +303,7 @@ describe('ParallelEmbeddingService', () => {
     });
 
     test('stopOnError=true rejects and stops further processing', async () => {
-      mockOllamaServiceInstance.generateEmbedding.mockRejectedValueOnce(new Error('Failed'));
+      mockLlamaServiceInstance.generateEmbedding.mockRejectedValueOnce(new Error('Failed'));
 
       const service = new ParallelEmbeddingService();
 
@@ -342,7 +313,7 @@ describe('ParallelEmbeddingService', () => {
       ];
 
       await expect(service.batchEmbedTexts(items, { stopOnError: true })).rejects.toThrow('Failed');
-      expect(mockOllamaServiceInstance.generateEmbedding).toHaveBeenCalledTimes(1);
+      expect(mockLlamaServiceInstance.generateEmbedding).toHaveBeenCalledTimes(1);
       expect(service.stats.totalRequests).toBe(1);
     });
 
@@ -486,7 +457,7 @@ describe('ParallelEmbeddingService', () => {
   });
 
   describe('isServiceHealthy', () => {
-    test('returns true when ollama responds', async () => {
+    test('returns true when llama responds', async () => {
       const service = new ParallelEmbeddingService();
 
       const healthy = await service.isServiceHealthy();
@@ -494,8 +465,8 @@ describe('ParallelEmbeddingService', () => {
       expect(healthy).toBe(true);
     });
 
-    test('returns false when ollama fails', async () => {
-      mockOllama.list.mockRejectedValueOnce(new Error('Connection failed'));
+    test('returns false when llama fails', async () => {
+      mockLlamaServiceInstance.testConnection.mockRejectedValueOnce(new Error('Connection failed'));
 
       const service = new ParallelEmbeddingService();
 
@@ -518,7 +489,7 @@ describe('ParallelEmbeddingService', () => {
     });
 
     test('returns false on timeout', async () => {
-      mockOllama.list.mockRejectedValue(new Error('Connection failed'));
+      mockLlamaServiceInstance.testConnection.mockRejectedValue(new Error('Connection failed'));
 
       const service = new ParallelEmbeddingService();
 

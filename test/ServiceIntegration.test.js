@@ -1,449 +1,313 @@
-/**
- * Tests for ServiceIntegration
- * Tests service orchestration and lifecycle management
- */
-
-// Mock all dependencies before importing
-jest.mock('../src/main/services/analysisHistory', () => {
-  const mockInstance = {
-    initialize: jest.fn().mockResolvedValue()
-  };
-  return jest.fn().mockImplementation(() => mockInstance);
-});
-
-jest.mock('../src/main/services/UndoRedoService', () => {
-  return jest.fn().mockImplementation(() => ({
-    initialize: jest.fn().mockResolvedValue()
-  }));
-});
-
-jest.mock('../src/main/services/ProcessingStateService', () => {
-  return jest.fn().mockImplementation(() => ({
-    initialize: jest.fn().mockResolvedValue()
-  }));
-});
-
-jest.mock('../src/main/services/chromadb', () => ({
-  getInstance: jest.fn().mockReturnValue({
-    initialize: jest.fn().mockResolvedValue(),
-    isServerAvailable: jest.fn().mockResolvedValue(true)
-  }),
-  registerWithContainer: jest.fn((container, serviceId) => {
-    container.registerSingleton(serviceId, () => ({
-      initialize: jest.fn().mockResolvedValue(),
-      isServerAvailable: jest.fn().mockResolvedValue(true)
-    }));
+jest.mock('../src/shared/logger', () => ({
+  createLogger: () => ({
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn()
   })
-}));
-
-jest.mock('../src/main/services/FolderMatchingService', () => {
-  return jest.fn().mockImplementation(() => ({
-    initialize: jest.fn()
-  }));
-});
-
-jest.mock('../src/main/services/organization', () => {
-  return jest.fn().mockImplementation(() => ({}));
-});
-
-jest.mock('../src/main/services/autoOrganize', () => {
-  return jest.fn().mockImplementation(() => ({}));
-});
-
-jest.mock('../src/main/services/OllamaService', () => ({
-  getInstance: jest.fn().mockReturnValue({}),
-  registerWithContainer: jest.fn((container, serviceId) => {
-    container.registerSingleton(serviceId, () => ({}));
-  })
-}));
-
-jest.mock('../src/main/services/OllamaClient', () => ({
-  getInstance: jest.fn().mockReturnValue({}),
-  registerWithContainer: jest.fn((container, serviceId) => {
-    container.registerSingleton(serviceId, () => ({}));
-  })
-}));
-
-jest.mock('../src/main/services/ParallelEmbeddingService', () => ({
-  getInstance: jest.fn().mockReturnValue({}),
-  registerWithContainer: jest.fn((container, serviceId) => {
-    container.registerSingleton(serviceId, () => ({}));
-  })
-}));
-
-jest.mock('../src/main/services/EmbeddingCache', () => {
-  return jest.fn().mockImplementation(() => ({}));
-});
-
-jest.mock('../src/main/services/SettingsService', () => ({
-  getInstance: jest.fn().mockReturnValue({ getAll: jest.fn().mockReturnValue({}) })
 }));
 
 jest.mock('../src/main/services/SmartFolderWatcher', () => {
-  return jest.fn().mockImplementation(() => ({
-    configure: jest.fn(),
-    start: jest.fn().mockResolvedValue(true),
-    stop: jest.fn(),
-    getStatus: jest.fn().mockReturnValue({ isRunning: false }),
-    isRunning: false
-  }));
+  return function MockSmartFolderWatcher() {};
 });
 
-jest.mock('../src/main/services/NotificationService', () => {
-  return jest.fn().mockImplementation(() => ({}));
-});
+const mockContainer = {
+  resolve: jest.fn(),
+  tryResolve: jest.fn(),
+  has: jest.fn(),
+  registerSingleton: jest.fn(),
+  shutdown: jest.fn()
+};
 
-jest.mock('../src/main/services/ModelManager', () => ({
-  registerWithContainer: jest.fn((container, serviceId) => {
-    container.registerSingleton(serviceId, () => ({}));
-  })
+const mockServiceIds = {
+  ANALYSIS_HISTORY: 'ANALYSIS_HISTORY',
+  UNDO_REDO: 'UNDO_REDO',
+  PROCESSING_STATE: 'PROCESSING_STATE',
+  RELATIONSHIP_INDEX: 'RELATIONSHIP_INDEX',
+  ORAMA_VECTOR: 'ORAMA_VECTOR',
+  FOLDER_MATCHING: 'FOLDER_MATCHING',
+  SETTINGS: 'SETTINGS',
+  ORGANIZATION_SUGGESTION: 'ORGANIZATION_SUGGESTION',
+  AUTO_ORGANIZE: 'AUTO_ORGANIZE',
+  SMART_FOLDER_WATCHER: 'SMART_FOLDER_WATCHER',
+  DOWNLOAD_WATCHER: 'DOWNLOAD_WATCHER',
+  LEARNING_FEEDBACK: 'LEARNING_FEEDBACK'
+};
+
+const mockShutdownOrder = ['AUTO_ORGANIZE', 'ORAMA_VECTOR', 'ANALYSIS_HISTORY'];
+
+jest.mock('../src/main/services/ServiceContainer', () => ({
+  container: mockContainer,
+  ServiceIds: mockServiceIds,
+  SHUTDOWN_ORDER: mockShutdownOrder
 }));
 
-jest.mock('../src/main/services/AnalysisCacheService', () => ({
-  registerWithContainer: jest.fn((container, serviceId) => {
-    container.registerSingleton(serviceId, () => ({}));
-  })
-}));
-
-jest.mock('../src/main/services/FileAccessPolicy', () => ({
-  registerWithContainer: jest.fn((container, serviceId) => {
-    container.registerSingleton(serviceId, () => ({}));
-  })
-}));
-
-jest.mock('../src/main/services/DependencyManagerService', () => ({
-  registerWithContainer: jest.fn((container, serviceId) => {
-    container.registerSingleton(serviceId, () => ({}));
-  })
-}));
-
-jest.mock('../src/main/services/SearchService', () => ({
-  SearchService: jest.fn().mockImplementation(() => ({}))
-}));
-
-jest.mock('../src/main/services/DownloadWatcher', () => {
-  return jest.fn().mockImplementation(() => ({}));
-});
-
-jest.mock('../src/main/services/RelationshipIndexService', () => {
-  return jest.fn().mockImplementation(() => ({}));
-});
-
-jest.mock('../src/main/services/ClusteringService', () => ({
-  ClusteringService: jest.fn().mockImplementation(() => ({}))
-}));
-
-jest.mock('../src/main/services/FilePathCoordinator', () => ({
-  FilePathCoordinator: jest.fn().mockImplementation(() => ({
-    setServices: jest.fn()
-  }))
-}));
-
-jest.mock('../src/main/services/organization/learningFeedback', () => ({
-  LearningFeedbackService: jest.fn().mockImplementation(() => ({}))
-}));
-
-jest.mock('../src/shared/cacheInvalidation', () => ({
-  getInstance: jest.fn().mockReturnValue({})
-}));
-
-jest.mock('../src/main/analysis/embeddingQueue', () => ({}));
-
-jest.mock('../src/shared/pathSanitization', () => ({
-  getCanonicalFileId: jest.fn((p) => p)
-}));
-
-// Store mockServices outside so we can reset it
-let mockServices = new Map();
-
-jest.mock('../src/main/services/ServiceContainer', () => {
-  // Create a recursive resolver that properly resolves dependencies
-  const createResolver = () => ({
-    resolve: (depId) => {
-      const factory = mockServices.get(depId);
-      if (factory) {
-        return factory(createResolver());
-      }
-      return { initialize: jest.fn().mockResolvedValue() };
-    },
-    tryResolve: (depId) => {
-      const factory = mockServices.get(depId);
-      if (factory) {
-        return factory(createResolver());
-      }
-      return null;
-    }
-  });
-  return {
-    container: {
-      registerSingleton: jest.fn((id, factory) => {
-        mockServices.set(id, factory);
-      }),
-      resolve: jest.fn((id) => {
-        const factory = mockServices.get(id);
-        if (factory) {
-          return factory(createResolver());
-        }
-        return { initialize: jest.fn().mockResolvedValue() };
-      }),
-      has: jest.fn((id) => mockServices.has(id)),
-      shutdown: jest.fn().mockResolvedValue()
-    },
-    // Expose reset function for tests
-    _resetMockServices: () => {
-      mockServices = new Map();
-    },
-    ServiceIds: {
-      SETTINGS: 'settings',
-      CHROMA_DB: 'chromaDb',
-      ANALYSIS_HISTORY: 'analysisHistory',
-      UNDO_REDO: 'undoRedo',
-      PROCESSING_STATE: 'processingState',
-      FOLDER_MATCHING: 'folderMatching',
-      ORGANIZATION_SUGGESTION: 'organizationSuggestion',
-      AUTO_ORGANIZE: 'autoOrganize',
-      OLLAMA_CLIENT: 'ollamaClient',
-      OLLAMA_SERVICE: 'ollamaService',
-      EMBEDDING_CACHE: 'embeddingCache',
-      PARALLEL_EMBEDDING: 'parallelEmbedding',
-      RELATIONSHIP_INDEX: 'relationshipIndex',
-      CLUSTERING: 'clustering',
-      LEARNING_FEEDBACK: 'learningFeedback',
-      NOTIFICATION_SERVICE: 'notificationService',
-      MODEL_MANAGER: 'modelManager',
-      ANALYSIS_CACHE: 'analysisCache',
-      FILE_ACCESS_POLICY: 'fileAccessPolicy',
-      CACHE_INVALIDATION_BUS: 'cacheInvalidationBus',
-      FILE_PATH_COORDINATOR: 'filePathCoordinator',
-      SMART_FOLDER_WATCHER: 'smartFolderWatcher',
-      DOWNLOAD_WATCHER: 'downloadWatcher',
-      DEPENDENCY_MANAGER: 'dependencyManager',
-      SEARCH_SERVICE: 'searchService'
-    },
-    SHUTDOWN_ORDER: [
-      'relationshipIndex',
-      'learningFeedback',
-      'folderMatching',
-      'clustering',
-      'autoOrganize',
-      'organizationSuggestion',
-      'notificationService',
-      'processingState',
-      'undoRedo',
-      'analysisHistory',
-      'parallelEmbedding',
-      'embeddingCache',
-      'chromaDb',
-      'ollamaService',
-      'ollamaClient',
-      'settings'
-    ]
-  };
-});
+const ServiceIntegration = require('../src/main/services/ServiceIntegration');
 
 describe('ServiceIntegration', () => {
-  let ServiceIntegration;
-  let container;
-  let ServiceIds;
+  let service;
+  let analysisHistory;
+  let undoRedo;
+  let processingState;
+  let vectorService;
+  let folderMatching;
 
   beforeEach(() => {
-    // jest.resetModules(); // Removed - breaks module imports
-    jest.clearAllMocks();
+    mockContainer.resolve.mockReset();
+    mockContainer.shutdown.mockReset();
 
-    // Reset the mock services map between tests
-    mockServices = new Map();
+    analysisHistory = {
+      initialize: jest.fn().mockResolvedValue(),
+      setOnEntriesRemovedCallback: jest.fn()
+    };
+    undoRedo = { initialize: jest.fn().mockResolvedValue() };
+    processingState = { initialize: jest.fn().mockResolvedValue() };
+    vectorService = { initialize: jest.fn().mockResolvedValue() };
+    folderMatching = { initialize: jest.fn().mockResolvedValue() };
 
-    const module = require('../src/main/services/ServiceIntegration');
-    ServiceIntegration = module.ServiceIntegration || module;
-    container = module.container;
-    ServiceIds = module.ServiceIds;
-
-    // Restore mock implementations after clearAllMocks resets them
-    const createResolver = () => ({
-      resolve: (depId) => {
-        const factory = mockServices.get(depId);
-        if (factory) return factory(createResolver());
-        return { initialize: jest.fn().mockResolvedValue() };
-      },
-      tryResolve: (depId) => {
-        const factory = mockServices.get(depId);
-        if (factory) return factory(createResolver());
-        return null;
+    mockContainer.resolve.mockImplementation((id) => {
+      switch (id) {
+        case mockServiceIds.ANALYSIS_HISTORY:
+          return analysisHistory;
+        case mockServiceIds.UNDO_REDO:
+          return undoRedo;
+        case mockServiceIds.PROCESSING_STATE:
+          return processingState;
+        case mockServiceIds.RELATIONSHIP_INDEX:
+          return {};
+        case mockServiceIds.ORAMA_VECTOR:
+          return vectorService;
+        case mockServiceIds.FOLDER_MATCHING:
+          return folderMatching;
+        case mockServiceIds.SETTINGS:
+          return { getAll: jest.fn(() => ({})) };
+        case mockServiceIds.ORGANIZATION_SUGGESTION:
+          return {};
+        case mockServiceIds.AUTO_ORGANIZE:
+          return {};
+        default:
+          return null;
       }
     });
-    container.registerSingleton.mockImplementation((id, factory) => {
-      mockServices.set(id, factory);
-    });
-    container.resolve.mockImplementation((id) => {
-      const factory = mockServices.get(id);
-      if (factory) return factory(createResolver());
-      return { initialize: jest.fn().mockResolvedValue() };
-    });
-    container.has.mockImplementation((id) => mockServices.has(id));
-    container.shutdown.mockResolvedValue();
+
+    service = new ServiceIntegration();
+    service._registerCoreServices = jest.fn();
   });
 
-  describe('constructor', () => {
-    test('initializes with null services', () => {
-      const integration = new ServiceIntegration();
-
-      expect(integration.analysisHistory).toBeNull();
-      expect(integration.undoRedo).toBeNull();
-      expect(integration.processingState).toBeNull();
-      expect(integration.chromaDbService).toBeNull();
-      expect(integration.initialized).toBe(false);
+  test('initialize reuses in-flight promise', async () => {
+    service._doInitialize = jest.fn().mockResolvedValue({
+      initialized: [],
+      errors: [],
+      skipped: [],
+      success: true
     });
 
-    test('has reference to container', () => {
-      const integration = new ServiceIntegration();
+    const first = service.initialize();
+    const second = service.initialize();
 
-      expect(integration.container).toBe(container);
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(firstResult).toEqual(secondResult);
+    expect(service._doInitialize).toHaveBeenCalledTimes(1);
+    expect(service._initPromise).toBeNull();
+  });
+
+  test('initialize returns success when tier0 services succeed', async () => {
+    const result = await service.initialize();
+
+    expect(result.success).toBe(true);
+    expect(result.initialized).toEqual(
+      expect.arrayContaining(['analysisHistory', 'undoRedo', 'processingState', 'vectorDb'])
+    );
+    expect(analysisHistory.setOnEntriesRemovedCallback).toHaveBeenCalled();
+  });
+
+  test('initialize reports vectorDb failure but stays successful', async () => {
+    vectorService.initialize.mockRejectedValueOnce(new Error('db fail'));
+
+    const result = await service.initialize();
+
+    expect(result.success).toBe(true);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ service: 'vectorDb' })])
+    );
+    expect(result.skipped).toEqual(expect.arrayContaining(['folderMatching']));
+  });
+
+  test('shutdown waits for init and clears references', async () => {
+    service.initialized = true;
+    service.analysisHistory = analysisHistory;
+    service.undoRedo = undoRedo;
+    service.processingState = processingState;
+    service.vectorService = vectorService;
+    service.folderMatchingService = folderMatching;
+    service.smartFolderWatcher = {};
+    service.relationshipIndex = {};
+
+    mockContainer.shutdown.mockResolvedValueOnce();
+
+    await service.shutdown();
+
+    expect(mockContainer.shutdown).toHaveBeenCalledWith(mockShutdownOrder);
+    expect(service.analysisHistory).toBeNull();
+    expect(service.initialized).toBe(false);
+  });
+
+  test('configureSmartFolderWatcher wires dependencies and triggers auto-start', () => {
+    const watcher = { start: jest.fn() };
+    mockContainer.resolve.mockImplementationOnce(() => watcher);
+    service._autoStartSmartFolderWatcher = jest.fn();
+
+    const getSmartFolders = jest.fn();
+    const analyzeDocumentFile = jest.fn();
+    const analyzeImageFile = jest.fn();
+
+    service.configureSmartFolderWatcher({ getSmartFolders, analyzeDocumentFile, analyzeImageFile });
+
+    expect(watcher.getSmartFolders).toBe(getSmartFolders);
+    expect(watcher.analyzeDocumentFile).toBe(analyzeDocumentFile);
+    expect(watcher.analyzeImageFile).toBe(analyzeImageFile);
+    expect(service._autoStartSmartFolderWatcher).toHaveBeenCalled();
+  });
+
+  test('runLearningStartupScan returns defaults when learning service missing', async () => {
+    mockContainer.resolve.mockImplementation((id) => {
+      if (id === mockServiceIds.LEARNING_FEEDBACK) return null;
+      if (id === mockServiceIds.ANALYSIS_HISTORY) return analysisHistory;
+      return null;
+    });
+
+    const result = await service.runLearningStartupScan();
+    expect(result).toEqual({ scanned: 0, learned: 0 });
+  });
+
+  test('runLearningStartupScan delegates to learning service', async () => {
+    const learningService = {
+      learnFromExistingFiles: jest.fn().mockResolvedValue({ scanned: 10, learned: 7 })
+    };
+    mockContainer.resolve.mockImplementation((id) => {
+      if (id === mockServiceIds.LEARNING_FEEDBACK) return learningService;
+      if (id === mockServiceIds.ANALYSIS_HISTORY) return analysisHistory;
+      return null;
+    });
+
+    const result = await service.runLearningStartupScan({ maxFilesPerFolder: 5 });
+    expect(result).toEqual({ scanned: 10, learned: 7 });
+    expect(learningService.learnFromExistingFiles).toHaveBeenCalledWith(analysisHistory, {
+      maxFilesPerFolder: 5,
+      onlyWithAnalysis: true
     });
   });
 
-  describe('initialize', () => {
-    test('sets initialized to true', async () => {
-      const integration = new ServiceIntegration();
+  describe('Migration: OramaVectorService + LlamaService wiring', () => {
+    test('vectorDbService backward-compatible alias returns vectorService', async () => {
+      await service.initialize();
 
-      await integration.initialize();
-
-      expect(integration.initialized).toBe(true);
+      expect(service.vectorService).toBe(vectorService);
+      expect(service.vectorDbService).toBe(service.vectorService);
     });
 
-    test('does not reinitialize', async () => {
-      const integration = new ServiceIntegration();
+    test('vectorDb alias also returns vectorService', async () => {
+      await service.initialize();
 
-      await integration.initialize();
-      await integration.initialize();
-
-      // registerSingleton should only be called once per service
-      expect(container.registerSingleton).toHaveBeenCalled();
+      expect(service.vectorDb).toBe(service.vectorService);
     });
 
-    test('resolves services from container', async () => {
-      const integration = new ServiceIntegration();
+    test('resolves OramaVectorService from container via ORAMA_VECTOR id', async () => {
+      await service.initialize();
 
-      await integration.initialize();
-
-      expect(container.resolve).toHaveBeenCalledWith(ServiceIds.ANALYSIS_HISTORY);
-      expect(container.resolve).toHaveBeenCalledWith(ServiceIds.UNDO_REDO);
-      expect(container.resolve).toHaveBeenCalledWith(ServiceIds.PROCESSING_STATE);
-      expect(container.resolve).toHaveBeenCalledWith(ServiceIds.CHROMA_DB);
+      expect(mockContainer.resolve).toHaveBeenCalledWith(mockServiceIds.ORAMA_VECTOR);
+      expect(service.vectorService).toBe(vectorService);
     });
 
-    test('handles ChromaDB unavailable gracefully', async () => {
-      const chromaDb = require('../src/main/services/chromadb');
-      chromaDb.getInstance.mockReturnValue({
-        initialize: jest.fn().mockResolvedValue(),
-        isServerAvailable: jest.fn().mockResolvedValue(false)
+    test('resolves FolderMatchingService from container', async () => {
+      await service.initialize();
+
+      expect(mockContainer.resolve).toHaveBeenCalledWith(mockServiceIds.FOLDER_MATCHING);
+      expect(service.folderMatchingService).toBe(folderMatching);
+    });
+
+    test('tiered initialization: vectorDb (tier 1) initializes before folderMatching (tier 2)', async () => {
+      const callOrder = [];
+      vectorService.initialize.mockImplementation(async () => {
+        callOrder.push('vectorDb');
+      });
+      folderMatching.initialize.mockImplementation(async () => {
+        callOrder.push('folderMatching');
       });
 
-      const integration = new ServiceIntegration();
+      await service.initialize();
 
-      await expect(integration.initialize()).resolves.not.toThrow();
-      expect(integration.initialized).toBe(true);
-    });
-  });
-
-  describe('shutdown', () => {
-    test('does nothing if not initialized', async () => {
-      const integration = new ServiceIntegration();
-
-      await integration.shutdown();
-
-      expect(container.shutdown).not.toHaveBeenCalled();
+      const vdbIdx = callOrder.indexOf('vectorDb');
+      const fmIdx = callOrder.indexOf('folderMatching');
+      expect(vdbIdx).toBeLessThan(fmIdx);
     });
 
-    test('calls container shutdown', async () => {
-      const integration = new ServiceIntegration();
-      await integration.initialize();
+    test('folderMatching is skipped when vectorDb initialization fails', async () => {
+      vectorService.initialize.mockRejectedValueOnce(new Error('Orama init failed'));
 
-      await integration.shutdown();
+      const result = await service.initialize();
 
-      expect(container.shutdown).toHaveBeenCalled();
+      expect(result.errors).toEqual(
+        expect.arrayContaining([expect.objectContaining({ service: 'vectorDb' })])
+      );
+      expect(result.skipped).toContain('folderMatching');
+      expect(folderMatching.initialize).not.toHaveBeenCalled();
     });
 
-    test('clears service references', async () => {
-      const integration = new ServiceIntegration();
-      await integration.initialize();
+    test('vectorDb null produces degraded mode (skipped)', async () => {
+      mockContainer.resolve.mockImplementation((id) => {
+        if (id === mockServiceIds.ORAMA_VECTOR) return null;
+        if (id === mockServiceIds.ANALYSIS_HISTORY) return analysisHistory;
+        if (id === mockServiceIds.UNDO_REDO) return undoRedo;
+        if (id === mockServiceIds.PROCESSING_STATE) return processingState;
+        if (id === mockServiceIds.RELATIONSHIP_INDEX) return {};
+        if (id === mockServiceIds.FOLDER_MATCHING) return folderMatching;
+        if (id === mockServiceIds.SETTINGS) return { getAll: jest.fn(() => ({})) };
+        if (id === mockServiceIds.ORGANIZATION_SUGGESTION) return {};
+        if (id === mockServiceIds.AUTO_ORGANIZE) return {};
+        return null;
+      });
 
-      await integration.shutdown();
+      const result = await service.initialize();
 
-      expect(integration.analysisHistory).toBeNull();
-      expect(integration.undoRedo).toBeNull();
-      expect(integration.initialized).toBe(false);
-    });
-  });
-
-  describe('getService', () => {
-    test('resolves service from container', () => {
-      const integration = new ServiceIntegration();
-      const mockService = { test: true };
-      container.resolve.mockReturnValueOnce(mockService);
-
-      const service = integration.getService(ServiceIds.SETTINGS);
-
-      expect(container.resolve).toHaveBeenCalledWith(ServiceIds.SETTINGS);
-      expect(service).toBe(mockService);
-    });
-  });
-
-  describe('hasService', () => {
-    test('checks if service is registered', () => {
-      const integration = new ServiceIntegration();
-      container.has.mockReturnValue(true);
-
-      const result = integration.hasService(ServiceIds.SETTINGS);
-
-      expect(container.has).toHaveBeenCalledWith(ServiceIds.SETTINGS);
-      expect(result).toBe(true);
-    });
-  });
-
-  describe('SERVICE_INITIALIZATION_ORDER', () => {
-    test('exports initialization order constant', () => {
-      const module = require('../src/main/services/ServiceIntegration');
-
-      expect(module.SERVICE_INITIALIZATION_ORDER).toBeDefined();
-      expect(typeof module.SERVICE_INITIALIZATION_ORDER).toBe('object');
+      // vectorDb skipped, but core services succeed = overall success
+      expect(result.success).toBe(true);
+      expect(result.skipped).toContain('vectorDb');
     });
 
-    test('initialization order includes all tiers', () => {
-      const module = require('../src/main/services/ServiceIntegration');
-      const order = module.SERVICE_INITIALIZATION_ORDER;
+    test('analysisHistory entriesRemoved callback cascades orphan marking to vectorService', async () => {
+      await service.initialize();
 
-      // Should have tier0, tier1, tier2 properties
-      expect(order).toHaveProperty('tier0');
-      expect(order).toHaveProperty('tier1');
-      expect(order).toHaveProperty('tier2');
-      expect(Array.isArray(order.tier0)).toBe(true);
-      expect(Array.isArray(order.tier1)).toBe(true);
-      expect(Array.isArray(order.tier2)).toBe(true);
+      // Get the callback that was registered
+      const callback = analysisHistory.setOnEntriesRemovedCallback.mock.calls[0][0];
+      expect(callback).toBeInstanceOf(Function);
+
+      // Simulate calling it
+      vectorService.markEmbeddingsOrphaned = jest.fn().mockResolvedValue({
+        file: { marked: 2 },
+        chunks: { marked: 5 }
+      });
+
+      await callback([{ actualPath: '/docs/report.pdf', originalPath: '/docs/report.pdf' }]);
+
+      expect(vectorService.markEmbeddingsOrphaned).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.stringContaining('report.pdf')])
+      );
     });
 
-    test('tier0 contains independent services', () => {
-      const module = require('../src/main/services/ServiceIntegration');
-      const order = module.SERVICE_INITIALIZATION_ORDER;
-
-      // Tier 0 should have services that can initialize in parallel
-      expect(order.tier0.length).toBeGreaterThan(0);
-      expect(order.tier0).toContain('analysisHistory');
+    test('container reference is exposed for DI', () => {
+      expect(service.container).toBe(mockContainer);
     });
 
-    test('tier1 contains ChromaDB', () => {
-      const module = require('../src/main/services/ServiceIntegration');
-      const order = module.SERVICE_INITIALIZATION_ORDER;
+    test('initialization is successful even if folderMatching fails (non-fatal)', async () => {
+      folderMatching.initialize.mockRejectedValueOnce(new Error('folder init fail'));
 
-      // Tier 1 should contain chromaDb
-      expect(order.tier1).toContain('chromaDb');
-    });
+      const result = await service.initialize();
 
-    test('tier2 contains services dependent on ChromaDB', () => {
-      const module = require('../src/main/services/ServiceIntegration');
-      const order = module.SERVICE_INITIALIZATION_ORDER;
-
-      // Tier 2 services depend on ChromaDB
-      expect(order.tier2.length).toBeGreaterThan(0);
+      expect(result.success).toBe(true);
+      expect(result.errors).toEqual(
+        expect.arrayContaining([expect.objectContaining({ service: 'folderMatching' })])
+      );
     });
   });
 });

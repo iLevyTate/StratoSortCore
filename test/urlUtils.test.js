@@ -2,7 +2,7 @@
  * @jest-environment node
  *
  * Tests for urlUtils.js
- * Covers URL normalization utilities for service URLs (Ollama, ChromaDB, etc.)
+ * Covers URL normalization utilities for service URLs
  */
 
 const {
@@ -19,32 +19,32 @@ const {
 describe('urlUtils', () => {
   describe('isHttps', () => {
     test('returns true for https URLs', () => {
-      expect(isHttps('https://localhost:11434')).toBe(true);
+      expect(isHttps('https://localhost:8080')).toBe(true);
       expect(isHttps('https://example.com/api')).toBe(true);
     });
 
     test('returns true for uppercase HTTPS', () => {
-      expect(isHttps('HTTPS://localhost:11434')).toBe(true);
-      expect(isHttps('Https://localhost:11434')).toBe(true);
+      expect(isHttps('HTTPS://localhost:8080')).toBe(true);
+      expect(isHttps('Https://localhost:8080')).toBe(true);
     });
 
     test('returns false for http URLs', () => {
-      expect(isHttps('http://localhost:11434')).toBe(false);
-      expect(isHttps('HTTP://localhost:11434')).toBe(false);
+      expect(isHttps('http://localhost:8080')).toBe(false);
+      expect(isHttps('HTTP://localhost:8080')).toBe(false);
     });
 
     test('returns false for URLs without protocol', () => {
-      expect(isHttps('localhost:11434')).toBe(false);
+      expect(isHttps('localhost:8080')).toBe(false);
     });
   });
 
   describe('hasProtocol', () => {
     test('returns true for http URLs', () => {
-      expect(hasProtocol('http://localhost:11434')).toBe(true);
+      expect(hasProtocol('http://localhost:8080')).toBe(true);
     });
 
     test('returns true for https URLs', () => {
-      expect(hasProtocol('https://localhost:11434')).toBe(true);
+      expect(hasProtocol('https://localhost:8080')).toBe(true);
     });
 
     test('returns true for uppercase protocols', () => {
@@ -53,8 +53,8 @@ describe('urlUtils', () => {
     });
 
     test('returns false for URLs without protocol', () => {
-      expect(hasProtocol('localhost:11434')).toBe(false);
-      expect(hasProtocol('127.0.0.1:11434')).toBe(false);
+      expect(hasProtocol('localhost:8080')).toBe(false);
+      expect(hasProtocol('127.0.0.1:8080')).toBe(false);
     });
 
     test('returns false for other protocols', () => {
@@ -88,7 +88,7 @@ describe('urlUtils', () => {
     });
 
     test('returns unchanged URL without protocol', () => {
-      expect(collapseDuplicateProtocols('localhost:11434')).toBe('localhost:11434');
+      expect(collapseDuplicateProtocols('localhost:8080')).toBe('localhost:8080');
     });
   });
 
@@ -112,7 +112,7 @@ describe('urlUtils', () => {
     });
 
     test('returns unchanged URL without protocol', () => {
-      expect(normalizeProtocolCase('localhost:11434')).toBe('localhost:11434');
+      expect(normalizeProtocolCase('localhost:8080')).toBe('localhost:8080');
     });
   });
 
@@ -138,7 +138,7 @@ describe('urlUtils', () => {
 
   describe('extractBaseUrl', () => {
     test('extracts base URL with port', () => {
-      expect(extractBaseUrl('http://localhost:11434/api/tags')).toBe('http://localhost:11434');
+      expect(extractBaseUrl('http://localhost:8080/api/endpoint')).toBe('http://localhost:8080');
     });
 
     test('extracts base URL without port', () => {
@@ -146,15 +146,15 @@ describe('urlUtils', () => {
     });
 
     test('strips query string', () => {
-      expect(extractBaseUrl('http://localhost:11434?query=value')).toBe('http://localhost:11434');
+      expect(extractBaseUrl('http://localhost:8080?query=value')).toBe('http://localhost:8080');
     });
 
     test('strips hash', () => {
-      expect(extractBaseUrl('http://localhost:11434#section')).toBe('http://localhost:11434');
+      expect(extractBaseUrl('http://localhost:8080#section')).toBe('http://localhost:8080');
     });
 
     test('handles URL without protocol by adding http', () => {
-      expect(extractBaseUrl('localhost:11434/api')).toBe('http://localhost:11434');
+      expect(extractBaseUrl('localhost:8080/api')).toBe('http://localhost:8080');
     });
 
     test('returns original on parse error', () => {
@@ -165,24 +165,24 @@ describe('urlUtils', () => {
 
   describe('ensureProtocol', () => {
     test('adds http:// to URL without protocol', () => {
-      expect(ensureProtocol('localhost:11434')).toBe('http://localhost:11434');
-      expect(ensureProtocol('127.0.0.1:11434')).toBe('http://127.0.0.1:11434');
+      expect(ensureProtocol('localhost:8080')).toBe('http://localhost:8080');
+      expect(ensureProtocol('127.0.0.1:8080')).toBe('http://127.0.0.1:8080');
     });
 
     test('adds https:// when specified', () => {
-      expect(ensureProtocol('localhost:11434', 'https')).toBe('https://localhost:11434');
+      expect(ensureProtocol('localhost:8080', 'https')).toBe('https://localhost:8080');
     });
 
     test('preserves existing http protocol', () => {
-      expect(ensureProtocol('http://localhost:11434')).toBe('http://localhost:11434');
+      expect(ensureProtocol('http://localhost:8080')).toBe('http://localhost:8080');
     });
 
     test('preserves existing https protocol', () => {
-      expect(ensureProtocol('https://localhost:11434')).toBe('https://localhost:11434');
+      expect(ensureProtocol('https://localhost:8080')).toBe('https://localhost:8080');
     });
 
     test('trims whitespace before processing', () => {
-      expect(ensureProtocol('  localhost:11434  ')).toBe('http://localhost:11434');
+      expect(ensureProtocol('  localhost:8080  ')).toBe('http://localhost:8080');
     });
 
     test('returns null/undefined as-is', () => {
@@ -199,58 +199,58 @@ describe('urlUtils', () => {
   describe('normalizeServiceUrl', () => {
     describe('basic normalization', () => {
       test('normalizes a simple URL', () => {
-        expect(normalizeServiceUrl('localhost:11434')).toBe('http://localhost:11434');
+        expect(normalizeServiceUrl('localhost:8080')).toBe('http://localhost:8080');
       });
 
       test('normalizes URL with uppercase protocol', () => {
-        expect(normalizeServiceUrl('HTTP://localhost:11434')).toBe('http://localhost:11434');
+        expect(normalizeServiceUrl('HTTP://localhost:8080')).toBe('http://localhost:8080');
       });
 
       test('normalizes URL with backslashes', () => {
-        expect(normalizeServiceUrl('http:\\\\localhost:11434')).toBe('http://localhost:11434');
+        expect(normalizeServiceUrl('http:\\\\localhost:8080')).toBe('http://localhost:8080');
       });
 
       test('normalizes URL with duplicate protocols', () => {
-        expect(normalizeServiceUrl('http://http://localhost:11434')).toBe('http://localhost:11434');
+        expect(normalizeServiceUrl('http://http://localhost:8080')).toBe('http://localhost:8080');
       });
     });
 
     describe('options.defaultUrl', () => {
       test('uses defaultUrl when input is empty', () => {
-        expect(normalizeServiceUrl('', { defaultUrl: 'http://localhost:11434' })).toBe(
-          'http://localhost:11434'
+        expect(normalizeServiceUrl('', { defaultUrl: 'http://localhost:8080' })).toBe(
+          'http://localhost:8080'
         );
       });
 
       test('uses defaultUrl when input is null', () => {
-        expect(normalizeServiceUrl(null, { defaultUrl: 'http://localhost:11434' })).toBe(
-          'http://localhost:11434'
+        expect(normalizeServiceUrl(null, { defaultUrl: 'http://localhost:8080' })).toBe(
+          'http://localhost:8080'
         );
       });
 
       test('prefers input over defaultUrl', () => {
         expect(
-          normalizeServiceUrl('http://custom:8080', { defaultUrl: 'http://localhost:11434' })
+          normalizeServiceUrl('http://custom:8080', { defaultUrl: 'http://localhost:8080' })
         ).toBe('http://custom:8080');
       });
     });
 
     describe('options.stripPath', () => {
       test('strips path when stripPath is true', () => {
-        expect(normalizeServiceUrl('http://localhost:11434/api/tags', { stripPath: true })).toBe(
-          'http://localhost:11434'
+        expect(normalizeServiceUrl('http://localhost:8080/api/endpoint', { stripPath: true })).toBe(
+          'http://localhost:8080'
         );
       });
 
       test('preserves path when stripPath is false', () => {
-        expect(normalizeServiceUrl('http://localhost:11434/api/tags', { stripPath: false })).toBe(
-          'http://localhost:11434/api/tags'
-        );
+        expect(
+          normalizeServiceUrl('http://localhost:8080/api/endpoint', { stripPath: false })
+        ).toBe('http://localhost:8080/api/endpoint');
       });
 
       test('preserves path by default', () => {
-        expect(normalizeServiceUrl('http://localhost:11434/api/tags')).toBe(
-          'http://localhost:11434/api/tags'
+        expect(normalizeServiceUrl('http://localhost:8080/api/endpoint')).toBe(
+          'http://localhost:8080/api/endpoint'
         );
       });
     });
@@ -266,15 +266,15 @@ describe('urlUtils', () => {
       });
 
       test('trims whitespace', () => {
-        expect(normalizeServiceUrl('  http://localhost:11434  ')).toBe('http://localhost:11434');
+        expect(normalizeServiceUrl('  http://localhost:8080  ')).toBe('http://localhost:8080');
       });
 
       test('handles complex malformed URL', () => {
         // Common user error: copy-paste from browser with extra path
-        const result = normalizeServiceUrl('HTTP:\\\\http://localhost:11434\\api\\tags', {
+        const result = normalizeServiceUrl('HTTP:\\\\http://localhost:8080\\api\\endpoint', {
           stripPath: true
         });
-        expect(result).toBe('http://localhost:11434');
+        expect(result).toBe('http://localhost:8080');
       });
     });
   });

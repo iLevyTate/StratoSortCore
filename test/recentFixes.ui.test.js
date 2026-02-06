@@ -398,7 +398,7 @@ describe('Recent UI Fixes', () => {
       let statusLabel;
 
       if (!stats) {
-        statusLabel = 'Embeddings status unavailable - check Ollama connection';
+        statusLabel = 'Embeddings status unavailable - check AI engine connection';
       } else if (stats.needsFileEmbeddingRebuild) {
         statusLabel = `${stats.folders} folder embeddings • ${stats.files} file embeddings (${stats.analysisHistory?.totalFiles || 0} files analyzed - click Rebuild to index)`;
       } else if (stats.files === 0 && stats.folders === 0) {

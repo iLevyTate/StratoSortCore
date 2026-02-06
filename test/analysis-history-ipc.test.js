@@ -4,27 +4,26 @@ describe('AnalysisHistory IPC', () => {
   beforeEach(() => {
     ipcMain._handlers.clear();
     ipcMain.handle.mockClear();
+    jest.resetModules();
   });
 
   test('GET/SEARCH/GET_STATISTICS/EXPORT are wired', async () => {
-    const registerAllIpc = require('../src/main/ipc').registerAllIpc;
+    const registerAnalysisHistoryIpc = require('../src/main/ipc/analysisHistory');
     const { IPC_CHANNELS } = require('../src/shared/constants');
     const logger = { error: jest.fn(), info: jest.fn(), warn: jest.fn() };
     const service = {
-      get: jest.fn(async () => []),
-      searchAnalysis: jest.fn(async () => []),
       getStatistics: jest.fn(async () => ({ total: 0 })),
-      getFileHistory: jest.fn(async () => []),
+      searchAnalysis: jest.fn(async () => []),
+      getAnalysisByPath: jest.fn(async () => []),
+      getRecentAnalysis: jest.fn(async () => []),
       clear: jest.fn(async () => ({})),
-      export: jest.fn(async () => ({ success: true, path: 'out.json' })),
-      getRecentAnalysis: jest.fn(async () => [])
+      createDefaultStructures: jest.fn(async () => ({}))
     };
 
-    registerAllIpc({
+    registerAnalysisHistoryIpc({
       ipcMain,
       IPC_CHANNELS,
       logger,
-      systemAnalytics: { collectMetrics: jest.fn(async () => ({})) },
       getServiceIntegration: () => ({ analysisHistory: service })
     });
 
@@ -47,6 +46,8 @@ describe('AnalysisHistory IPC', () => {
 
     const hExport = ipcMain._handlers.get(IPC_CHANNELS.ANALYSIS_HISTORY.EXPORT);
     // EXPORT expects (event, format)
-    expect((await hExport(mockEvent, 'json')).success).toBe(true);
+    const exportResult = await hExport(mockEvent, 'json');
+    expect(exportResult.success).toBe(true);
+    expect(exportResult.data).toBeDefined();
   });
 });

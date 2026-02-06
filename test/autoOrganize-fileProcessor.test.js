@@ -34,16 +34,16 @@ jest.mock('fs', () => ({
   promises: mockFs
 }));
 
-// Mock ollamaDocumentAnalysis
-jest.mock('../src/main/analysis/ollamaDocumentAnalysis', () => ({
+// Mock documentAnalysis
+jest.mock('../src/main/analysis/documentAnalysis', () => ({
   analyzeDocumentFile: jest.fn().mockResolvedValue({
     category: 'Reports',
     confidence: 0.9
   })
 }));
 
-// Mock ollamaImageAnalysis (analyzeImageFile was moved here)
-jest.mock('../src/main/analysis/ollamaImageAnalysis', () => ({
+// Mock imageAnalysis (analyzeImageFile was moved here)
+jest.mock('../src/main/analysis/imageAnalysis', () => ({
   analyzeImageFile: jest.fn().mockResolvedValue({
     category: 'Photos',
     confidence: 0.85
@@ -364,7 +364,7 @@ describe('AutoOrganize File Processor', () => {
     });
 
     test('returns null on analysis error', async () => {
-      const { analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis');
+      const { analyzeDocumentFile } = require('../src/main/analysis/documentAnalysis');
       analyzeDocumentFile.mockResolvedValueOnce({ error: 'Analysis failed' });
 
       const result = await processNewFile(
@@ -382,8 +382,8 @@ describe('AutoOrganize File Processor', () => {
     });
 
     test('handles image files', async () => {
-      // analyzeImageFile was moved to ollamaImageAnalysis
-      const { analyzeImageFile } = require('../src/main/analysis/ollamaImageAnalysis');
+      // analyzeImageFile is in imageAnalysis
+      const { analyzeImageFile } = require('../src/main/analysis/imageAnalysis');
       analyzeImageFile.mockResolvedValueOnce({
         category: 'Photos',
         confidence: 0.9

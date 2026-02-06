@@ -69,14 +69,14 @@ describe('validationConstants', () => {
 
   describe('isValidUrl', () => {
     test('validates strict URLs (requires protocol)', () => {
-      expect(isValidUrl('http://localhost:11434')).toBe(true);
-      expect(isValidUrl('https://127.0.0.1:11434/api/tags')).toBe(true);
-      expect(isValidUrl('localhost:11434')).toBe(false);
+      expect(isValidUrl('http://localhost:8080')).toBe(true);
+      expect(isValidUrl('https://127.0.0.1:8080/api/endpoint')).toBe(true);
+      expect(isValidUrl('localhost:8080')).toBe(false);
     });
 
     test('validates lenient URLs (protocol optional)', () => {
-      expect(isValidUrl('localhost:11434', true)).toBe(true);
-      expect(isValidUrl('http://localhost:11434', true)).toBe(true);
+      expect(isValidUrl('localhost:8080', true)).toBe(true);
+      expect(isValidUrl('http://localhost:8080', true)).toBe(true);
       expect(isValidUrl('', true)).toBe(false);
     });
   });

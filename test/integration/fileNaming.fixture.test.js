@@ -4,7 +4,7 @@
  * Tests file naming utilities using real test fixtures
  * to verify naming conventions, case transformations, and date formatting.
  *
- * Uses real test files from test/StratoSortOfTestFiles/
+ * Uses real test files from test/test-files/
  */
 
 const {

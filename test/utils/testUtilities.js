@@ -245,14 +245,14 @@ function createMockService(serviceName, methods = {}) {
 }
 
 /**
- * Mock ChromaDB service with failure simulation
- * @returns {Object} Mock ChromaDB service
+ * Mock vector DB service with failure simulation
+ * @returns {Object} Mock vector DB service
  */
-function createMockChromaDBService() {
+function createMockVectorDbService() {
   const files = new Map();
   const folders = new Map();
 
-  const service = createMockService('ChromaDB', {
+  const service = createMockService('VectorDB', {
     async initialize() {
       return true;
     },
@@ -495,7 +495,7 @@ module.exports = {
 
   // Mock services
   createMockService,
-  createMockChromaDBService,
+  createMockVectorDbService,
 
   // Memory utilities
   measureMemory,

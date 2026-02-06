@@ -1,5 +1,5 @@
 /**
- * Targeted coverage for pdf-parse 2.x/unknown API branches in extractTextFromPdf
+ * Targeted coverage for unpdf branches in extractTextFromPdf
  */
 
 jest.mock('../src/shared/logger', () => {
@@ -15,31 +15,27 @@ jest.mock('../src/shared/logger', () => {
 
 // Other deps used by documentExtractors; keep them mocked to avoid requiring native modules.
 jest.mock('sharp');
-jest.mock('node-tesseract-ocr');
+jest.mock('../src/main/utils/tesseractUtils', () => ({
+  isTesseractAvailable: jest.fn().mockResolvedValue(true),
+  recognizeIfAvailable: jest.fn().mockResolvedValue({ success: true, text: 'OCR text' })
+}));
 jest.mock('mammoth');
 jest.mock('officeparser');
 jest.mock('xlsx-populate');
 jest.mock('adm-zip');
+jest.mock('unpdf', () => ({
+  extractText: jest.fn()
+}));
 
-describe('documentExtractors extractTextFromPdf (pdf-parse variant coverage)', () => {
+describe('documentExtractors extractTextFromPdf (unpdf coverage)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.resetModules();
   });
 
-  test('uses pdf-parse 2.x PDFParse class API', async () => {
-    jest.doMock('pdf-parse', () => {
-      return {
-        PDFParse: class {
-          constructor() {}
-          async load() {}
-          async getText() {
-            return { text: 'hello from v2' };
-          }
-          destroy() {}
-        }
-      };
-    });
+  test('extracts text with unpdf', async () => {
+    const { extractText } = require('unpdf');
+    extractText.mockResolvedValue({ text: 'hello from unpdf' });
 
     const fs = require('fs').promises;
     jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('pdf'));
@@ -47,35 +43,12 @@ describe('documentExtractors extractTextFromPdf (pdf-parse variant coverage)', (
 
     const { extractTextFromPdf } = require('../src/main/analysis/documentExtractors');
     const res = await extractTextFromPdf('/tmp/a.pdf', 'a.pdf');
-    expect(res).toContain('hello from v2');
+    expect(res).toContain('hello from unpdf');
   });
 
-  test('throws helpful error when pdf-parse API is not recognizable', async () => {
-    jest.doMock('pdf-parse', () => ({}));
-
-    const fs = require('fs').promises;
-    jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('pdf'));
-    jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1024 });
-
-    const { extractTextFromPdf } = require('../src/main/analysis/documentExtractors');
-    await expect(extractTextFromPdf('/tmp/a.pdf', 'a.pdf')).rejects.toThrow(
-      'Unable to determine pdf-parse API version'
-    );
-  });
-
-  test('v2 API: throws PDF_NO_TEXT_CONTENT when getText returns empty text', async () => {
-    const destroySpy = jest.fn();
-    jest.doMock('pdf-parse', () => ({
-      PDFParse: class {
-        constructor() {
-          this.destroy = destroySpy;
-        }
-        async load() {}
-        async getText() {
-          return { text: '' };
-        }
-      }
-    }));
+  test('throws PDF_NO_TEXT_CONTENT when unpdf returns empty text', async () => {
+    const { extractText } = require('unpdf');
+    extractText.mockResolvedValue({ text: '' });
 
     const fs = require('fs').promises;
     jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('pdf'));
@@ -85,23 +58,11 @@ describe('documentExtractors extractTextFromPdf (pdf-parse variant coverage)', (
     await expect(extractTextFromPdf('/tmp/a.pdf', 'a.pdf')).rejects.toThrow(
       'PDF contains no extractable text'
     );
-    expect(destroySpy).toHaveBeenCalled();
   });
 
-  test('v2 API: logs warning and destroys parser when extraction throws', async () => {
-    const { logger } = require('../src/shared/logger');
-    const destroySpy = jest.fn();
-    jest.doMock('pdf-parse', () => ({
-      PDFParse: class {
-        constructor() {
-          this.destroy = destroySpy;
-        }
-        async load() {}
-        async getText() {
-          throw new Error('boom');
-        }
-      }
-    }));
+  test('propagates unpdf errors', async () => {
+    const { extractText } = require('unpdf');
+    extractText.mockRejectedValue(new Error('boom'));
 
     const fs = require('fs').promises;
     jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('pdf'));
@@ -109,10 +70,5 @@ describe('documentExtractors extractTextFromPdf (pdf-parse variant coverage)', (
 
     const { extractTextFromPdf } = require('../src/main/analysis/documentExtractors');
     await expect(extractTextFromPdf('/tmp/a.pdf', 'a.pdf')).rejects.toThrow('boom');
-    expect(logger.warn).toHaveBeenCalledWith(
-      '[PDF] pdf-parse 2.x extraction failed:',
-      expect.any(Object)
-    );
-    expect(destroySpy).toHaveBeenCalled();
   });
 });

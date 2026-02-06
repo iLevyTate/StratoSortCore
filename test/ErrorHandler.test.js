@@ -71,11 +71,8 @@ jest.mock('../src/shared/constants', () => ({
     UNKNOWN: 'UNKNOWN'
   },
   IPC_CHANNELS: {
-    CHROMADB: {
-      STATUS_CHANGED: 'chromadb:status-changed'
-    },
-    DEPENDENCIES: {
-      SERVICE_STATUS_CHANGED: 'dependencies:service-status-changed'
+    VECTOR_DB: {
+      STATUS_CHANGED: 'vectordb:status-changed'
     }
   }
 }));
@@ -169,8 +166,8 @@ describe('ErrorHandler', () => {
       expect(result.type).toBe('NETWORK_ERROR');
     });
 
-    test('parses Ollama error as AI_UNAVAILABLE', () => {
-      const error = new Error('Ollama connection failed');
+    test('parses AI engine error as AI_UNAVAILABLE', () => {
+      const error = new Error('Llama connection failed');
 
       const result = errorHandler.parseError(error);
 

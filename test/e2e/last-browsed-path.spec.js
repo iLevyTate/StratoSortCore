@@ -151,7 +151,7 @@ test.describe('Last Browsed Path - Settings Persistence', () => {
     expect(saveResult.success).toBe(true);
     // Path may or may not be exactly the same depending on normalization
     if (saveResult.savedPath) {
-      expect(saveResult.savedPath).toContain('StratoSortOfTestFiles');
+      expect(saveResult.savedPath).toContain('test-files');
     }
   });
 
@@ -183,7 +183,7 @@ test.describe('Last Browsed Path - Settings Persistence', () => {
     console.log('[Test] Reloaded path:', reloadedPath);
     // Path should contain our test folder name if saved correctly
     if (reloadedPath) {
-      expect(reloadedPath).toContain('StratoSortOfTestFiles');
+      expect(reloadedPath).toContain('test-files');
     }
   });
 
@@ -233,7 +233,7 @@ test.describe('Last Browsed Path - Integration with File Selection', () => {
   test('should have test files directory path available', async () => {
     // Verify the test files directory exists
     console.log('[Test] Test files directory:', STRATO_TEST_FILES_DIR);
-    expect(STRATO_TEST_FILES_DIR).toContain('StratoSortOfTestFiles');
+    expect(STRATO_TEST_FILES_DIR).toContain('test-files');
   });
 
   test('should expose file selection handlers in DiscoverPhase', async () => {

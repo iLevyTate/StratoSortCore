@@ -4,14 +4,18 @@ const {
   calculateBasicSimilarity
 } = require('../src/main/services/SmartFoldersLLMService');
 
+const mockLlamaService = {
+  initialize: jest.fn().mockResolvedValue(undefined),
+  generateText: jest.fn()
+};
+
+jest.mock('../src/main/services/LlamaService', () => ({
+  getInstance: () => mockLlamaService
+}));
+
 describe('SmartFoldersLLMService', () => {
-  let originalFetch;
   beforeEach(() => {
-    originalFetch = global.fetch;
-    global.fetch = jest.fn();
-  });
-  afterEach(() => {
-    global.fetch = originalFetch;
+    jest.clearAllMocks();
   });
 
   test('enhanceSmartFolderWithLLM returns parsed enhancement', async () => {
@@ -21,26 +25,22 @@ describe('SmartFoldersLLMService', () => {
       organizationTips: 'tips',
       confidence: 0.8
     };
-    global.fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ response: JSON.stringify(enhancement) })
+    mockLlamaService.generateText.mockResolvedValue({
+      response: JSON.stringify(enhancement)
     });
     const result = await enhanceSmartFolderWithLLM(
       { name: 'Invoices', path: '/tmp', description: 'old' },
       [{ name: 'Receipts', description: 'past' }],
       () => 'model'
     );
-    expect(global.fetch).toHaveBeenCalled();
+    expect(mockLlamaService.generateText).toHaveBeenCalled();
     expect(result).toEqual(enhancement);
   });
 
   test('calculateFolderSimilarities sorts and falls back on error', async () => {
     const basic = calculateBasicSimilarity('Invoices', 'Misc');
-    global.fetch
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ response: '0.9' })
-      })
+    mockLlamaService.generateText
+      .mockResolvedValueOnce({ response: '0.9' })
       .mockRejectedValueOnce(new Error('network'));
     const result = await calculateFolderSimilarities(
       'Invoices',

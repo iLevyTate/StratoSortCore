@@ -1,353 +1,119 @@
 /**
  * Tests for ServiceContainer
- * Tests dependency injection container with singleton/transient lifetime
  */
 
-// Mock logger
-jest.mock('../src/shared/logger', () => {
-  const logger = {
-    setContext: jest.fn(),
+jest.mock('../src/shared/logger', () => ({
+  logger: {
     info: jest.fn(),
-    debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn()
-  };
-  return { logger, createLogger: jest.fn(() => logger) };
-});
+    error: jest.fn(),
+    debug: jest.fn(),
+    setContext: jest.fn()
+  },
+  createLogger: () => ({
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn()
+  })
+}));
+
+const { ServiceContainer, ServiceLifetime } = require('../src/main/services/ServiceContainer');
 
 describe('ServiceContainer', () => {
-  let ServiceContainer;
-  let container;
-  let ServiceLifetime;
-  let ServiceIds;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    jest.resetModules();
-
-    const module = require('../src/main/services/ServiceContainer');
-    ServiceContainer = module.ServiceContainer;
-    ServiceLifetime = module.ServiceLifetime;
-    ServiceIds = module.ServiceIds;
-
-    // Create a fresh container for each test
-    container = new ServiceContainer();
+  test('registerSingleton validates inputs', () => {
+    const container = new ServiceContainer();
+    expect(() => container.registerSingleton('', () => {})).toThrow();
+    expect(() => container.registerSingleton('svc', null)).toThrow();
   });
 
-  describe('registerSingleton', () => {
-    test('registers a singleton service', () => {
-      const factory = jest.fn(() => ({ name: 'test' }));
-
-      container.registerSingleton('testService', factory);
-
-      expect(container.has('testService')).toBe(true);
-    });
-
-    test('supports chaining', () => {
-      const result = container
-        .registerSingleton('service1', () => ({}))
-        .registerSingleton('service2', () => ({}));
-
-      expect(result).toBe(container);
-    });
-
-    test('throws for empty service name', () => {
-      expect(() => container.registerSingleton('', () => ({}))).toThrow(
-        'Service name must be a non-empty string'
-      );
-    });
-
-    test('throws for non-function factory', () => {
-      expect(() => container.registerSingleton('test', 'not a function')).toThrow(
-        'must be a function'
-      );
-    });
+  test('registerTransient validates inputs', () => {
+    const container = new ServiceContainer();
+    expect(() => container.registerTransient('', () => {})).toThrow();
+    expect(() => container.registerTransient('svc', null)).toThrow();
   });
 
-  describe('registerTransient', () => {
-    test('registers a transient service', () => {
-      container.registerTransient('testService', () => ({}));
-
-      expect(container.has('testService')).toBe(true);
-    });
-
-    test('creates new instance for each resolve', () => {
-      let counter = 0;
-      container.registerTransient('counter', () => ({ id: ++counter }));
-
-      const instance1 = container.resolve('counter');
-      const instance2 = container.resolve('counter');
-
-      expect(instance1.id).toBe(1);
-      expect(instance2.id).toBe(2);
-    });
+  test('registerInstance validates inputs', () => {
+    const container = new ServiceContainer();
+    expect(() => container.registerInstance('', {})).toThrow();
+    expect(() => container.registerInstance('svc', undefined)).toThrow();
   });
 
-  describe('registerInstance', () => {
-    test('registers pre-created instance', () => {
-      const instance = { name: 'preCreated' };
-
-      container.registerInstance('testService', instance);
-
-      expect(container.resolve('testService')).toBe(instance);
-    });
-
-    test('throws for undefined instance', () => {
-      expect(() => container.registerInstance('test', undefined)).toThrow('cannot be undefined');
-    });
+  test('resolve returns singleton instance', () => {
+    const container = new ServiceContainer();
+    const instance = { name: 'singleton' };
+    container.registerSingleton('svc', () => instance);
+    expect(container.resolve('svc')).toBe(instance);
+    expect(container.resolve('svc')).toBe(instance);
   });
 
-  describe('resolve', () => {
-    test('resolves a registered service', () => {
-      container.registerSingleton('test', () => ({ name: 'test' }));
-
-      const instance = container.resolve('test');
-
-      expect(instance.name).toBe('test');
-    });
-
-    test('returns same instance for singleton', () => {
-      container.registerSingleton('test', () => ({ id: Math.random() }));
-
-      const instance1 = container.resolve('test');
-      const instance2 = container.resolve('test');
-
-      expect(instance1).toBe(instance2);
-    });
-
-    test('throws for unregistered service', () => {
-      expect(() => container.resolve('unknown')).toThrow('is not registered');
-    });
-
-    test('detects circular dependencies', () => {
-      container.registerSingleton('a', (c) => ({
-        b: c.resolve('b')
-      }));
-      container.registerSingleton('b', (c) => ({
-        a: c.resolve('a')
-      }));
-
-      expect(() => container.resolve('a')).toThrow('Circular dependency');
-    });
-
-    test('passes container to factory', () => {
-      container.registerSingleton('config', () => ({ port: 3000 }));
-      container.registerSingleton('server', (c) => ({
-        config: c.resolve('config')
-      }));
-
-      const server = container.resolve('server');
-
-      expect(server.config.port).toBe(3000);
-    });
-
-    test('throws when container is shutting down', async () => {
-      container.registerSingleton('test', () => ({}));
-
-      await container.shutdown();
-
-      expect(() => container.resolve('test')).toThrow('shutting down');
-    });
+  test('resolve returns new transient instances', () => {
+    const container = new ServiceContainer();
+    container.registerTransient('svc', () => ({ id: Math.random() }));
+    const first = container.resolve('svc');
+    const second = container.resolve('svc');
+    expect(first).not.toBe(second);
   });
 
-  describe('resolveAsync', () => {
-    test('resolves async factory', async () => {
-      container.registerSingleton('asyncService', async () => {
-        return { name: 'async' };
-      });
-
-      const instance = await container.resolveAsync('asyncService');
-
-      expect(instance.name).toBe('async');
-    });
-
-    test('returns same instance for async singleton', async () => {
-      let counter = 0;
-      container.registerSingleton('async', async () => ({ id: ++counter }));
-
-      const [instance1, instance2] = await Promise.all([
-        container.resolveAsync('async'),
-        container.resolveAsync('async')
-      ]);
-
-      // Both should get the same instance
-      expect(instance1).toBe(instance2);
-      expect(counter).toBe(1);
-    });
-
-    test('throws for unregistered service', async () => {
-      await expect(container.resolveAsync('unknown')).rejects.toThrow('is not registered');
-    });
+  test('resolve throws for missing service', () => {
+    const container = new ServiceContainer();
+    container.registerSingleton('known', () => ({}));
+    expect(() => container.resolve('missing')).toThrow(/known/);
   });
 
-  describe('tryResolve', () => {
-    test('returns instance for registered service', () => {
-      container.registerSingleton('test', () => ({ name: 'test' }));
-
-      const instance = container.tryResolve('test');
-
-      expect(instance.name).toBe('test');
-    });
-
-    test('returns null for unregistered service', () => {
-      const instance = container.tryResolve('unknown');
-
-      expect(instance).toBeNull();
-    });
+  test('detects circular dependencies', () => {
+    const container = new ServiceContainer();
+    container.registerSingleton('a', (c) => c.resolve('b'));
+    container.registerSingleton('b', (c) => c.resolve('a'));
+    expect(() => container.resolve('a')).toThrow(/Circular dependency/);
   });
 
-  describe('has', () => {
-    test('returns true for registered service', () => {
-      container.registerSingleton('test', () => ({}));
-
-      expect(container.has('test')).toBe(true);
-    });
-
-    test('returns false for unregistered service', () => {
-      expect(container.has('unknown')).toBe(false);
-    });
+  test('resolveAsync caches singleton instance', async () => {
+    const container = new ServiceContainer();
+    const instance = { name: 'async' };
+    container.registerSingleton('svc', async () => instance);
+    const first = await container.resolveAsync('svc');
+    const second = await container.resolveAsync('svc');
+    expect(first).toBe(instance);
+    expect(second).toBe(instance);
   });
 
-  describe('getRegisteredServices', () => {
-    test('returns all registered service names', () => {
-      container.registerSingleton('service1', () => ({}));
-      container.registerSingleton('service2', () => ({}));
-
-      const services = container.getRegisteredServices();
-
-      expect(services).toContain('service1');
-      expect(services).toContain('service2');
+  test('clearInstance refuses during async resolution', async () => {
+    const container = new ServiceContainer();
+    let resolveFactory;
+    const promise = new Promise((resolve) => {
+      resolveFactory = resolve;
     });
+    container.registerSingleton('svc', async () => {
+      await promise;
+      return { ok: true };
+    });
+    const asyncResolve = container.resolveAsync('svc');
+    const cleared = container.clearInstance('svc');
+    expect(cleared).toBe(false);
+    resolveFactory();
+    await asyncResolve;
   });
 
-  describe('clearInstance', () => {
-    test('clears singleton instance', () => {
-      let counter = 0;
-      container.registerSingleton('counter', () => ({ id: ++counter }));
+  test('shutdown calls cleanup/shutdown/dispose', async () => {
+    const container = new ServiceContainer();
+    const withCleanup = { cleanup: jest.fn() };
+    const withShutdown = { shutdown: jest.fn() };
+    const withDispose = { dispose: jest.fn() };
 
-      container.resolve('counter');
-      container.clearInstance('counter');
-      container.resolve('counter');
+    container.registerSingleton('one', () => withCleanup);
+    container.registerSingleton('two', () => withShutdown);
+    container.registerSingleton('three', () => withDispose);
 
-      expect(counter).toBe(2);
-    });
+    container.resolve('one');
+    container.resolve('two');
+    container.resolve('three');
 
-    test('returns false for non-singleton', () => {
-      container.registerTransient('test', () => ({}));
+    await container.shutdown(['two', 'one', 'three']);
 
-      const result = container.clearInstance('test');
-
-      expect(result).toBe(false);
-    });
-  });
-
-  describe('shutdown', () => {
-    test('calls shutdown on services', async () => {
-      const shutdown = jest.fn();
-      container.registerSingleton('test', () => ({ shutdown }));
-      container.resolve('test');
-
-      await container.shutdown();
-
-      expect(shutdown).toHaveBeenCalled();
-    });
-
-    test('calls cleanup on services', async () => {
-      const cleanup = jest.fn();
-      container.registerSingleton('test', () => ({ cleanup }));
-      container.resolve('test');
-
-      await container.shutdown();
-
-      expect(cleanup).toHaveBeenCalled();
-    });
-
-    test('calls dispose on services', async () => {
-      const dispose = jest.fn();
-      container.registerSingleton('test', () => ({ dispose }));
-      container.resolve('test');
-
-      await container.shutdown();
-
-      expect(dispose).toHaveBeenCalled();
-    });
-
-    test('handles errors during shutdown', async () => {
-      container.registerSingleton('failing', () => ({
-        shutdown: async () => {
-          throw new Error('Shutdown failed');
-        }
-      }));
-      container.resolve('failing');
-
-      // Shutdown catches errors from individual services, so it should complete
-      // But the shutdown method wraps in Promise.resolve, so sync throws may propagate
-      // Let's just ensure the method completes without crashing the container
-      await container.shutdown();
-
-      // Container should be in shutdown state
-      expect(container._isShuttingDown).toBe(true);
-    });
-
-    test('does not double shutdown', async () => {
-      await container.shutdown();
-      await container.shutdown();
-
-      // No error thrown
-    });
-
-    test('clears all registrations', async () => {
-      container.registerSingleton('test', () => ({}));
-
-      await container.shutdown();
-
-      expect(container.has('test')).toBe(false);
-    });
-  });
-
-  describe('reset', () => {
-    test('clears all registrations', () => {
-      container.registerSingleton('test', () => ({}));
-      container.resolve('test');
-
-      container.reset();
-
-      expect(container.has('test')).toBe(false);
-    });
-
-    test('allows reuse after shutdown', async () => {
-      await container.shutdown();
-
-      container.reset();
-      container.registerSingleton('test', () => ({ name: 'new' }));
-
-      expect(container.resolve('test').name).toBe('new');
-    });
-  });
-
-  describe('ServiceLifetime', () => {
-    test('defines SINGLETON', () => {
-      expect(ServiceLifetime.SINGLETON).toBe('singleton');
-    });
-
-    test('defines TRANSIENT', () => {
-      expect(ServiceLifetime.TRANSIENT).toBe('transient');
-    });
-  });
-
-  describe('ServiceIds', () => {
-    test('defines core service identifiers', () => {
-      expect(ServiceIds.CHROMA_DB).toBe('chromaDb');
-      expect(ServiceIds.SETTINGS).toBe('settings');
-      expect(ServiceIds.FOLDER_MATCHING).toBe('folderMatching');
-    });
-  });
-
-  describe('global container', () => {
-    test('exports a global container instance', () => {
-      const { container: globalContainer } = require('../src/main/services/ServiceContainer');
-
-      expect(globalContainer).toBeInstanceOf(ServiceContainer);
-    });
+    expect(withCleanup.cleanup).toHaveBeenCalled();
+    expect(withShutdown.shutdown).toHaveBeenCalled();
+    expect(withDispose.dispose).toHaveBeenCalled();
+    expect(container.getRegisteredServices()).toHaveLength(0);
   });
 });

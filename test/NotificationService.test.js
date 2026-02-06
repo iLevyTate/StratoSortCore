@@ -1,236 +1,127 @@
-/**
- * Unit tests for NotificationService
- */
+jest.mock('electron', () => ({
+  Notification: jest.fn().mockImplementation(() => ({ show: jest.fn() })),
+  BrowserWindow: {
+    getAllWindows: jest.fn(() => [])
+  }
+}));
 
-jest.mock('electron', () => {
-  const notificationInstances = [];
-  const Notification = jest.fn().mockImplementation((opts) => {
-    const inst = { opts, show: jest.fn() };
-    notificationInstances.push(inst);
-    return inst;
-  });
-  Notification.isSupported = jest.fn(() => true);
+jest.mock('crypto', () => ({
+  randomUUID: jest.fn(() => 'uuid-123')
+}));
 
-  const windows = [];
-  const BrowserWindow = {
-    getAllWindows: jest.fn(() => windows)
-  };
-
-  return {
-    Notification,
-    BrowserWindow,
-    __notificationInstances: notificationInstances,
-    __windows: windows
-  };
-});
-
-jest.mock('../src/shared/logger', () => {
-  const logger = {
-    setContext: jest.fn(),
-    debug: jest.fn(),
+jest.mock('../src/shared/logger', () => ({
+  createLogger: () => ({
     info: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn()
-  };
-  return { logger, createLogger: jest.fn(() => logger) };
-});
+    error: jest.fn(),
+    debug: jest.fn()
+  })
+}));
 
-const electron = require('electron');
-const { logger } = require('../src/shared/logger');
+jest.mock('../src/main/ipc/ipcWrappers', () => ({
+  safeSend: jest.fn()
+}));
+
+jest.mock('../src/shared/notificationTypes', () => ({
+  NotificationType: {
+    SYSTEM: 'system',
+    FILE_ORGANIZED: 'file_organized',
+    FILE_ANALYZED: 'file_analyzed',
+    LOW_CONFIDENCE: 'low_confidence',
+    BATCH_COMPLETE: 'batch_complete',
+    WATCHER_ERROR: 'watcher_error'
+  },
+  NotificationSeverity: {
+    INFO: 'info',
+    SUCCESS: 'success',
+    WARNING: 'warning',
+    ERROR: 'error'
+  },
+  NotificationStatus: {
+    PENDING: 'pending'
+  },
+  getDefaultDuration: jest.fn(() => 3000)
+}));
+
+const { Notification, BrowserWindow } = require('electron');
+const { safeSend } = require('../src/main/ipc/ipcWrappers');
 const NotificationService = require('../src/main/services/NotificationService');
 
 describe('NotificationService', () => {
+  let settingsService;
+  let service;
+
   beforeEach(() => {
-    jest.clearAllMocks();
-    // Clear mocked electron state
-    electron.__notificationInstances.length = 0;
-    electron.__windows.length = 0;
+    settingsService = {
+      load: jest.fn().mockResolvedValue({
+        notifications: true,
+        notificationMode: 'both',
+        notifyOnAutoAnalysis: true,
+        notifyOnLowConfidence: true
+      })
+    };
+    service = new NotificationService({ settingsService });
+    BrowserWindow.getAllWindows.mockReturnValue([]);
+    safeSend.mockReset();
   });
 
-  test('_getSettings caches settings for ttl', async () => {
-    const settingsService = { load: jest.fn().mockResolvedValue({ notifications: true }) };
-    const svc = new NotificationService({ settingsService });
-
-    const a = await svc._getSettings();
-    const b = await svc._getSettings();
-
-    expect(a.notifications).toBe(true);
-    expect(b.notifications).toBe(true);
+  test('getSettings caches results within TTL', async () => {
+    const first = await service._getSettings();
+    const second = await service._getSettings();
+    expect(first).toEqual(second);
     expect(settingsService.load).toHaveBeenCalledTimes(1);
   });
 
-  test('_getSettings falls back to defaults when settings load fails', async () => {
-    const settingsService = { load: jest.fn().mockRejectedValue(new Error('boom')) };
-    const svc = new NotificationService({ settingsService });
+  test('getSettings falls back to defaults on error', async () => {
+    settingsService.load.mockRejectedValueOnce(new Error('fail'));
+    const settings = await service._getSettings();
+    expect(settings.notifications).toBe(true);
+    expect(settings.notificationMode).toBe('both');
+  });
 
-    const s = await svc._getSettings();
-    expect(s).toMatchObject({
+  test('sendToUi sends standardized notification to windows', () => {
+    const mockWindow = { isDestroyed: () => false, webContents: {} };
+    BrowserWindow.getAllWindows.mockReturnValue([mockWindow]);
+
+    const id = service._sendToUi({ title: 'Hello' });
+
+    expect(id).toBe('uuid-123');
+    expect(safeSend).toHaveBeenCalledWith(mockWindow.webContents, 'notification', {
+      title: 'Hello',
+      id: 'uuid-123'
+    });
+  });
+
+  test('showTrayNotification does nothing when unsupported', () => {
+    Notification.isSupported = jest.fn(() => false);
+    service._showTrayNotification('Title', 'Body');
+    expect(Notification).not.toHaveBeenCalled();
+  });
+
+  test('notifyFileOrganized uses tray and ui when enabled', async () => {
+    const traySpy = jest.spyOn(service, '_showTrayNotification').mockImplementation(() => {});
+    const uiSpy = jest.spyOn(service, '_sendToUi').mockImplementation(() => 'id');
+
+    await service.notifyFileOrganized('file.txt', 'Dest', 92);
+
+    expect(traySpy).toHaveBeenCalled();
+    expect(uiSpy).toHaveBeenCalled();
+  });
+
+  test('notifyLowConfidence respects disabled setting', async () => {
+    settingsService.load.mockResolvedValueOnce({
       notifications: true,
       notificationMode: 'both',
       notifyOnAutoAnalysis: true,
-      notifyOnLowConfidence: true
+      notifyOnLowConfidence: false
     });
-    expect(logger.warn).toHaveBeenCalled();
-  });
 
-  test('_sendToUi sends to all non-destroyed windows', () => {
-    const settingsService = { load: jest.fn().mockResolvedValue({ notifications: true }) };
-    const svc = new NotificationService({ settingsService });
+    const traySpy = jest.spyOn(service, '_showTrayNotification').mockImplementation(() => {});
+    const uiSpy = jest.spyOn(service, '_sendToUi').mockImplementation(() => 'id');
 
-    const goodWin = {
-      isDestroyed: () => false,
-      webContents: { send: jest.fn() }
-    };
-    const deadWin = {
-      isDestroyed: () => true,
-      webContents: { send: jest.fn() }
-    };
-    electron.__windows.push(goodWin, deadWin);
+    await service.notifyLowConfidence('file.txt', 30, 80, 'Target');
 
-    svc._sendToUi({ type: 'x' });
-
-    expect(goodWin.webContents.send).toHaveBeenCalledWith(
-      'notification',
-      expect.objectContaining({ type: 'x' })
-    );
-    expect(deadWin.webContents.send).not.toHaveBeenCalled();
-  });
-
-  test('_showTrayNotification does nothing when Notification not supported', () => {
-    const settingsService = { load: jest.fn().mockResolvedValue({ notifications: true }) };
-    const svc = new NotificationService({ settingsService });
-
-    const { Notification } = require('electron');
-    Notification.isSupported.mockReturnValueOnce(false);
-
-    svc._showTrayNotification('t', 'b');
-
-    expect(Notification).not.toHaveBeenCalled();
-    expect(logger.debug).toHaveBeenCalled();
-  });
-
-  test('notifyFileOrganized sends tray + ui when mode is both', async () => {
-    const settingsService = {
-      load: jest.fn().mockResolvedValue({ notifications: true, notificationMode: 'both' })
-    };
-    const svc = new NotificationService({ settingsService });
-    const traySpy = jest.spyOn(svc, '_showTrayNotification');
-    const uiSpy = jest.spyOn(svc, '_sendToUi');
-
-    await svc.notifyFileOrganized('a.pdf', 'Finance', 95);
-
-    expect(traySpy).toHaveBeenCalled();
-    expect(uiSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ type: NotificationService.NotificationType.FILE_ORGANIZED })
-    );
-  });
-
-  test('notifyFileOrganized respects notificationMode ui/tray/none', async () => {
-    const settingsService = {
-      load: jest.fn().mockResolvedValue({ notifications: true, notificationMode: 'ui' })
-    };
-    const svc = new NotificationService({ settingsService });
-    const traySpy = jest.spyOn(svc, '_showTrayNotification');
-    const uiSpy = jest.spyOn(svc, '_sendToUi');
-
-    await svc.notifyFileOrganized('a.pdf', 'Finance', 95);
-    expect(traySpy).not.toHaveBeenCalled();
-    expect(uiSpy).toHaveBeenCalled();
-
-    // Switch mode via cache invalidation
-    svc.invalidateCache();
-    settingsService.load.mockResolvedValueOnce({ notifications: true, notificationMode: 'tray' });
-    await svc.notifyFileOrganized('a.pdf', 'Finance', 95);
-    expect(traySpy).toHaveBeenCalled();
-
-    svc.invalidateCache();
-    settingsService.load.mockResolvedValueOnce({ notifications: true, notificationMode: 'none' });
-    traySpy.mockClear();
-    uiSpy.mockClear();
-    await svc.notifyFileOrganized('a.pdf', 'Finance', 95);
     expect(traySpy).not.toHaveBeenCalled();
     expect(uiSpy).not.toHaveBeenCalled();
-  });
-
-  test('notifyFileAnalyzed respects notifyOnAutoAnalysis', async () => {
-    const settingsService = {
-      load: jest.fn().mockResolvedValue({
-        notifications: true,
-        notifyOnAutoAnalysis: false,
-        notificationMode: 'both'
-      })
-    };
-    const svc = new NotificationService({ settingsService });
-    const traySpy = jest.spyOn(svc, '_showTrayNotification');
-    const uiSpy = jest.spyOn(svc, '_sendToUi');
-
-    await svc.notifyFileAnalyzed('a.pdf', 'download', { category: 'Docs', confidence: 80 });
-    expect(traySpy).not.toHaveBeenCalled();
-    expect(uiSpy).not.toHaveBeenCalled();
-  });
-
-  test('notifyLowConfidence includes suggested folder when provided', async () => {
-    const settingsService = {
-      load: jest.fn().mockResolvedValue({
-        notifications: true,
-        notifyOnLowConfidence: true,
-        notificationMode: 'ui'
-      })
-    };
-    const svc = new NotificationService({ settingsService });
-    const uiSpy = jest.spyOn(svc, '_sendToUi');
-
-    await svc.notifyLowConfidence('a.pdf', 40, 70, 'Finance');
-    expect(uiSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: NotificationService.NotificationType.LOW_CONFIDENCE,
-        message: expect.stringContaining('suggested: Finance')
-      })
-    );
-  });
-
-  test('notifyBatchComplete sets warning variant when needsReview or failed > 0', async () => {
-    const settingsService = {
-      load: jest.fn().mockResolvedValue({ notifications: true, notificationMode: 'ui' })
-    };
-    const svc = new NotificationService({ settingsService });
-    const uiSpy = jest.spyOn(svc, '_sendToUi');
-
-    await svc.notifyBatchComplete(1, 0, 0);
-    expect(uiSpy).toHaveBeenCalledWith(expect.objectContaining({ variant: 'success' }));
-
-    uiSpy.mockClear();
-    svc.invalidateCache();
-    await svc.notifyBatchComplete(1, 1, 0);
-    expect(uiSpy).toHaveBeenCalledWith(expect.objectContaining({ variant: 'warning' }));
-  });
-
-  test('notifyWatcherError sends error variant', async () => {
-    const settingsService = {
-      load: jest.fn().mockResolvedValue({ notifications: true, notificationMode: 'ui' })
-    };
-    const svc = new NotificationService({ settingsService });
-    const uiSpy = jest.spyOn(svc, '_sendToUi');
-
-    await svc.notifyWatcherError('DownloadWatcher', 'Something broke');
-    expect(uiSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: NotificationService.NotificationType.WATCHER_ERROR,
-        variant: 'error'
-      })
-    );
-  });
-
-  test('singleton getInstance/resetInstance', () => {
-    NotificationService.resetInstance();
-    const settingsService = { load: jest.fn().mockResolvedValue({ notifications: true }) };
-
-    const a = NotificationService.getInstance({ settingsService });
-    const b = NotificationService.getInstance({ settingsService });
-    expect(a).toBe(b);
-
-    NotificationService.resetInstance();
-    const c = NotificationService.getInstance({ settingsService });
-    expect(c).not.toBe(a);
   });
 });

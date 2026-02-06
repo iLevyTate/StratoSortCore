@@ -328,7 +328,7 @@ describe('UnifiedSearchModal', () => {
       success: true,
       files: 10,
       folders: 5,
-      serverUrl: 'http://localhost:11434'
+      serverUrl: 'http://localhost:8080'
     });
   });
 
@@ -545,10 +545,10 @@ describe('UnifiedSearchModal', () => {
       });
     });
 
-    test('should handle ChromaDB not available error', async () => {
+    test('should handle vector DB not available error', async () => {
       mockElectronAPI.embeddings.search.mockResolvedValue({
         success: false,
-        error: 'ChromaDB not available yet'
+        error: 'Vector DB not available yet'
       });
 
       renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);

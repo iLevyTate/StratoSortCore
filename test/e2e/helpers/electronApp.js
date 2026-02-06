@@ -167,7 +167,7 @@ async function waitForAppReady(window, timeout = 30000) {
       });
   }
 
-  // Dismiss any modal dialogs that might be blocking (e.g., Dependency Wizard)
+  // Dismiss any modal dialogs that might be blocking (e.g., first-launch setup dialogs)
   await dismissModals(window);
 
   console.log('[E2E] App is ready');
@@ -175,7 +175,7 @@ async function waitForAppReady(window, timeout = 30000) {
 
 /**
  * Dismiss any modal dialogs that might be blocking the UI
- * This handles the Dependency Wizard and other modals that appear on first launch
+ * This handles first-launch setup dialogs and other modals that appear on startup
  *
  * @param {Page} window - The Playwright page object
  */

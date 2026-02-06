@@ -3,8 +3,6 @@ const {
   getEnvBool,
   getEnvInt,
   validateServiceUrl,
-  getValidatedChromaServerUrl,
-  getValidatedOllamaHost,
   validateEnvironment,
   SERVICE_URLS
 } = require('../src/shared/configDefaults');
@@ -86,48 +84,20 @@ describe('configDefaults', () => {
     });
   });
 
-  describe('validated URLs with defaults', () => {
-    test('getValidatedChromaServerUrl falls back on invalid env and logs warning', () => {
-      process.env.NODE_ENV = 'development';
-      process.env.CHROMA_SERVER_URL = 'ftp://bad-host';
-      const result = getValidatedChromaServerUrl();
-      expect(result.valid).toBe(false);
-      expect(result.isDefault).toBe(true);
-      expect(result.url).toBe(SERVICE_URLS.CHROMA_SERVER_URL);
-      expect(warnSpy).toHaveBeenCalled();
-    });
-
-    test('getValidatedOllamaHost accepts valid env and preserves port', () => {
-      process.env.OLLAMA_HOST = 'http://localhost:3200';
-      const result = getValidatedOllamaHost();
-      expect(result.valid).toBe(true);
-      expect(result.isDefault).toBe(false);
-      expect(result.port).toBe(3200);
-      expect(result.url).toContain('localhost:3200');
-    });
-  });
-
   describe('validateEnvironment', () => {
-    test('produces warnings for unusual NODE_ENV and invalid URLs', () => {
+    test('produces warnings for unusual NODE_ENV', () => {
       process.env.NODE_ENV = 'weird';
-      process.env.CHROMA_SERVER_URL = 'http://example.com:99999';
-      process.env.OLLAMA_HOST = 'notaurl';
       const report = validateEnvironment();
       expect(report.valid).toBe(true);
       expect(report.warnings.some((w) => w.includes('NODE_ENV'))).toBe(true);
-      expect(report.warnings.some((w) => w.toLowerCase().includes('chroma'))).toBe(true);
-      expect(report.warnings.some((w) => w.toLowerCase().includes('ollama'))).toBe(true);
-      expect(report.config.chromaServerUrl).toBeDefined();
-      expect(report.config.ollamaHost).toBeDefined();
+      expect(report.config.nodeEnv).toBeDefined();
     });
 
     test('returns defaults when env is unset', () => {
-      delete process.env.CHROMA_SERVER_URL;
-      delete process.env.OLLAMA_HOST;
       const report = validateEnvironment();
       expect(report.valid).toBe(true);
-      expect(report.config.chromaServerUrl).toBe(SERVICE_URLS.CHROMA_SERVER_URL);
-      expect(report.config.ollamaHost).toBe(SERVICE_URLS.OLLAMA_HOST);
+      expect(report.config.nodeEnv).toBeDefined();
+      expect(SERVICE_URLS.MODEL_DOWNLOAD_BASE).toBeDefined();
     });
   });
 });

@@ -42,8 +42,15 @@ describe('SettingsService atomic save', () => {
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'settings-test-'));
     app.getPath.mockReturnValue(tempDir);
-    service = new SettingsService();
     filePath = path.join(tempDir, 'settings.json');
+
+    // Write a placeholder settings file BEFORE creating the service.
+    // The constructor starts _startFileWatcher() async (fire-and-forget).
+    // If the file doesn't exist, the watcher writes defaults, which can
+    // race with the test's own writeFile and overwrite test data.
+    await fs.writeFile(filePath, JSON.stringify({}, null, 2));
+
+    service = new SettingsService();
 
     // Reset mocks
     jest.clearAllMocks();

@@ -136,7 +136,6 @@ describe('securityConfig', () => {
     });
 
     test('allowedKeys includes common settings', () => {
-      expect(securityConfig.SETTINGS_VALIDATION.allowedKeys.has('ollamaHost')).toBe(true);
       expect(securityConfig.SETTINGS_VALIDATION.allowedKeys.has('textModel')).toBe(true);
       // Theme switching is no longer supported.
       expect(securityConfig.SETTINGS_VALIDATION.allowedKeys.has('theme')).toBe(false);
@@ -156,7 +155,7 @@ describe('securityConfig', () => {
 
     test('patterns has url regex', () => {
       expect(securityConfig.SETTINGS_VALIDATION.patterns.url).toBeInstanceOf(RegExp);
-      expect('http://localhost:11434').toMatch(securityConfig.SETTINGS_VALIDATION.patterns.url);
+      expect('http://localhost:8080').toMatch(securityConfig.SETTINGS_VALIDATION.patterns.url);
     });
 
     test('patterns has modelName regex', () => {
@@ -191,7 +190,7 @@ describe('securityConfig', () => {
     test('includes common receive channels', () => {
       expect(securityConfig.ALLOWED_RECEIVE_CHANNELS).toContain('system-metrics');
       expect(securityConfig.ALLOWED_RECEIVE_CHANNELS).toContain('operation-progress');
-      expect(securityConfig.ALLOWED_RECEIVE_CHANNELS).toContain('chromadb:status-changed');
+      expect(securityConfig.ALLOWED_RECEIVE_CHANNELS).toContain('vectordb:status-changed');
     });
   });
 
