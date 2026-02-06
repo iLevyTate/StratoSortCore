@@ -7,7 +7,7 @@ import SettingRow from './SettingRow';
 import { Text } from '../ui/Typography';
 
 /**
- * Model management section for adding Ollama models
+ * Model management section for adding GGUF models
  */
 function ModelManagementSection({ newModel, setNewModel, isAddingModel, onAddModel }) {
   return (
@@ -17,14 +17,14 @@ function ModelManagementSection({ newModel, setNewModel, isAddingModel, onAddMod
           Model management
         </Text>
         <Text variant="small" className="text-system-gray-600">
-          Pull additional Ollama models by name.
+          Download additional GGUF models by name.
         </Text>
       </div>
 
       <SettingRow
         layout="col"
         label="Add Model"
-        description="Download new models from the Ollama library."
+        description="Download new models from the model registry."
       >
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
           <Input
@@ -39,7 +39,7 @@ function ModelManagementSection({ newModel, setNewModel, isAddingModel, onAddMod
             variant="secondary"
             type="button"
             disabled={isAddingModel}
-            title="Pull model"
+            title="Download model"
             size="md"
             className="w-full sm:w-auto justify-center"
           >

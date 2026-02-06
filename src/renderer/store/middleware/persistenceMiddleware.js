@@ -258,6 +258,7 @@ const persistenceMiddleware = (store) => {
           const freshState = store.getState();
 
           const stateToSave = {
+            _version: 1, // Schema version for migration support
             ui: {
               currentPhase: freshState.ui.currentPhase,
               sidebarOpen: freshState.ui.sidebarOpen

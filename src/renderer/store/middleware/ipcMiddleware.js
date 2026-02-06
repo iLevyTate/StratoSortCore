@@ -312,6 +312,7 @@ const ipcMiddleware = (store) => {
         // Show error notification
         const notification = mapErrorToNotification({
           error: validatedData.error,
+          errorCode: validatedData.code,
           errorType: validatedData.errorType,
           operationType: validatedData.operationType || 'Operation'
         });
@@ -471,82 +472,22 @@ const ipcMiddleware = (store) => {
       return 'unknown';
     };
 
-    // FIX: Subscribe to ChromaDB status changes
-    if (window.electronAPI?.chromadb?.onStatusChanged) {
-      const chromaStatusCleanup = window.electronAPI.chromadb.onStatusChanged((data) => {
+    // Subscribe to Vector DB status changes (Orama)
+    if (window.electronAPI?.vectorDb?.onStatusChanged) {
+      const vectorStatusCleanup = window.electronAPI.vectorDb.onStatusChanged((data) => {
         const { valid, data: validatedData } = validateIncomingEvent(
-          IPC_CHANNELS.CHROMADB.STATUS_CHANGED,
+          IPC_CHANNELS.VECTOR_DB.STATUS_CHANGED,
           data
         );
         if (!valid) return;
-        logger.debug('[IPC] ChromaDB status changed', { status: validatedData?.status });
+        logger.debug('[IPC] Vector DB status changed', { status: validatedData?.status });
 
-        // Update health state with new ChromaDB status
         if (validatedData?.status || validatedData?.health) {
           const mapped = normalizeServiceHealth(validatedData.status, validatedData.health);
-          safeDispatch(updateHealth, { chromadb: mapped });
+          safeDispatch(updateHealth, { vectorDb: mapped });
         }
       });
-      if (chromaStatusCleanup) cleanupFunctions.push(chromaStatusCleanup);
-    }
-
-    // FIX: Subscribe to dependency service status changes (Ollama/ChromaDB)
-    if (window.electronAPI?.dependencies?.onServiceStatusChanged) {
-      const depsStatusCleanup = window.electronAPI.dependencies.onServiceStatusChanged((data) => {
-        const { valid, data: validatedData } = validateIncomingEvent(
-          IPC_CHANNELS.DEPENDENCIES.SERVICE_STATUS_CHANGED,
-          data
-        );
-        if (!valid) return;
-        logger.debug('[IPC] Dependency service status changed', {
-          service: validatedData?.service,
-          status: validatedData?.status
-        });
-
-        // Update health state based on which service changed
-        if (validatedData?.service && (validatedData?.status || validatedData?.health)) {
-          const service = validatedData.service.toLowerCase();
-          if (service === 'chromadb' || service === 'ollama') {
-            const prevHealth = store.getState()?.system?.health?.[service];
-            const mapped = normalizeServiceHealth(validatedData.status, validatedData.health);
-            safeDispatch(updateHealth, { [service]: mapped });
-
-            // FIX HIGH-NOTIF-1: Notify user when critical services go offline
-            if (prevHealth === 'online' && mapped === 'offline') {
-              const serviceName = service === 'ollama' ? 'Ollama' : 'ChromaDB';
-              safeDispatch(addNotification, {
-                message: `${serviceName} went offline. Some features may be unavailable.`,
-                severity: 'warning',
-                duration: 8000
-              });
-            }
-          }
-        }
-      });
-      if (depsStatusCleanup) cleanupFunctions.push(depsStatusCleanup);
-    }
-
-    // Fetch initial dependency status once on startup (best-effort)
-    if (window.electronAPI?.dependencies?.getStatus) {
-      window.electronAPI.dependencies
-        .getStatus()
-        .then((result) => {
-          const status = result?.status || result;
-          const chromaStatus = normalizeServiceHealth(
-            status?.chromadb?.status || (status?.chromadb?.running ? 'running' : 'stopped'),
-            status?.chromadb?.health
-          );
-          const ollamaStatus = normalizeServiceHealth(
-            status?.ollama?.status || (status?.ollama?.running ? 'running' : 'stopped'),
-            status?.ollama?.health
-          );
-          safeDispatch(updateHealth, { chromadb: chromaStatus, ollama: ollamaStatus });
-        })
-        .catch((error) => {
-          logger.debug('[IPC] Failed to fetch dependency status', { error: error?.message });
-          // FIX: Set services to 'unknown' on fetch failure so UI can show appropriate state
-          safeDispatch(updateHealth, { chromadb: 'unknown', ollama: 'unknown' });
-        });
+      if (vectorStatusCleanup) cleanupFunctions.push(vectorStatusCleanup);
     }
 
     // Clean up listeners on window unload to prevent memory leaks

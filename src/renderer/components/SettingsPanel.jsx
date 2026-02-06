@@ -16,8 +16,9 @@ import {
 import { createLogger } from '../../shared/logger';
 import { sanitizeSettings } from '../../shared/settingsValidation';
 import { DEFAULT_SETTINGS } from '../../shared/defaultSettings';
+import { DEFAULT_AI_MODELS } from '../../shared/constants';
 import { useNotification } from '../contexts/NotificationContext';
-import { getElectronAPI, eventsIpc, ollamaIpc, settingsIpc } from '../services/ipc';
+import { getElectronAPI, eventsIpc, llamaIpc, settingsIpc } from '../services/ipc';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { toggleSettings, updateSettings } from '../store/slices/uiSlice';
 import { useDebouncedCallback } from '../hooks/usePerformance';
@@ -32,13 +33,12 @@ import { lockAppScroll, unlockAppScroll } from '../utils/scrollLock';
 import AutoOrganizeSection from './settings/AutoOrganizeSection';
 import BackgroundModeSection from './settings/BackgroundModeSection';
 import NotificationSettingsSection from './settings/NotificationSettingsSection';
-import OllamaConfigSection from './settings/OllamaConfigSection';
+import LlamaConfigSection from './settings/LlamaConfigSection';
 import ModelSelectionSection from './settings/ModelSelectionSection';
 import ChatPersonaSection from './settings/ChatPersonaSection';
 import ModelManagementSection from './settings/ModelManagementSection';
 import EmbeddingRebuildSection from './settings/EmbeddingRebuildSection';
 import EmbeddingBehaviorSection from './settings/EmbeddingBehaviorSection';
-import LearningSyncSection from './settings/LearningSyncSection';
 import DefaultLocationsSection from './settings/DefaultLocationsSection';
 import NamingSettingsSection from './settings/NamingSettingsSection';
 import GraphRetrievalSection from './settings/GraphRetrievalSection';
@@ -70,7 +70,7 @@ const ALLOWED_EMBED_MODELS = [
   'bge-large'
 ];
 // FIX: Must match DEFAULT_AI_MODELS.EMBEDDING in shared/constants.js to avoid
-// ChromaDB dimension mismatch (mxbai-embed-large=1024d, embeddinggemma=768d)
+// Vector DB dimension mismatch (mxbai-embed-large=1024d, embeddinggemma=768d)
 const DEFAULT_EMBED_MODEL = 'mxbai-embed-large';
 
 const stableStringify = (value) =>
@@ -101,13 +101,13 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   }, [dispatch]);
 
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
-  const [ollamaModelLists, setOllamaModelLists] = useState({
+  const [modelLists, setModelLists] = useState({
     text: [],
     vision: [],
     embedding: [],
     all: []
   });
-  const [ollamaHealth, setOllamaHealth] = useState(null);
+  const [llamaHealth, setLlamaHealth] = useState(null);
   const [isRefreshingModels, setIsRefreshingModels] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -169,26 +169,26 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   }, [settingsLoaded]);
 
   const textModelOptions = useMemo(
-    () => (ollamaModelLists.text.length ? ollamaModelLists.text : ollamaModelLists.all),
-    [ollamaModelLists.text, ollamaModelLists.all]
+    () => (modelLists.text.length ? modelLists.text : modelLists.all),
+    [modelLists.text, modelLists.all]
   );
 
-  const visionModelOptions = useMemo(() => ollamaModelLists.vision, [ollamaModelLists.vision]);
+  const visionModelOptions = useMemo(() => modelLists.vision, [modelLists.vision]);
 
   const embeddingModelOptions = useMemo(() => {
-    return ollamaModelLists.embedding.length > 0
-      ? ollamaModelLists.embedding
-      : ALLOWED_EMBED_MODELS;
-  }, [ollamaModelLists.embedding]);
+    return modelLists.embedding.length > 0 ? modelLists.embedding : ALLOWED_EMBED_MODELS;
+  }, [modelLists.embedding]);
 
-  const pullProgressText = useMemo(() => {
-    if (!pullProgress) return null;
-    const percentage =
-      typeof pullProgress?.completed === 'number' && typeof pullProgress?.total === 'number'
-        ? ` (${Math.floor((pullProgress.completed / Math.max(1, pullProgress.total)) * 100)}%)`
-        : '';
-    return `Pulling ${newModel.trim()}… ${pullProgress?.status || ''}${percentage}`;
-  }, [pullProgress, newModel]);
+  const modelList = useMemo(() => {
+    const typeLookup = new Map();
+    (modelLists.text || []).forEach((name) => typeLookup.set(name, 'text'));
+    (modelLists.vision || []).forEach((name) => typeLookup.set(name, 'vision'));
+    (modelLists.embedding || []).forEach((name) => typeLookup.set(name, 'embedding'));
+    return (modelLists.all || []).map((name) => ({
+      name,
+      type: typeLookup.get(name) || 'text'
+    }));
+  }, [modelLists.all, modelLists.embedding, modelLists.text, modelLists.vision]);
 
   const loadSettings = useCallback(async () => {
     try {
@@ -222,10 +222,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     }
   }, [applySettingsUpdate, dispatch, updateLastSavedSnapshot]);
 
-  const loadOllamaModels = useCallback(async () => {
+  const loadModels = useCallback(async () => {
     try {
       setIsRefreshingModels(true);
-      const response = await ollamaIpc.getModels();
+      const response = await llamaIpc.getModels();
       const categories = response?.categories || {
         text: [],
         vision: [],
@@ -242,13 +242,13 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         )
       );
 
-      setOllamaModelLists({
+      setModelLists({
         text: (categories.text || []).slice().sort(),
         vision: (categories.vision || []).slice().sort(),
         embedding: installedEmbeddingModels,
         all: installedModels.slice().sort()
       });
-      if (response?.ollamaHealth) setOllamaHealth(response.ollamaHealth);
+      if (response?.llamaHealth) setLlamaHealth(response.llamaHealth);
       if (response?.selected) {
         skipAutoSaveRef.current += 1;
         applySettingsUpdate((prev) => {
@@ -261,18 +261,17 @@ const SettingsPanel = React.memo(function SettingsPanel() {
             ...prev,
             textModel: response.selected.textModel || prev.textModel,
             visionModel: response.selected.visionModel || prev.visionModel,
-            embeddingModel: nextEmbeddingModel,
-            ollamaHost: response.host || prev.ollamaHost
+            embeddingModel: nextEmbeddingModel
           };
         });
       }
     } catch (error) {
-      logger.error('Failed to load Ollama models', {
+      logger.error('Failed to load AI models', {
         error: error.message,
         stack: error.stack
       });
-      setOllamaModelLists({ text: [], vision: [], embedding: [], all: [] });
-      addNotification('Failed to load Ollama models. Check if Ollama is running.', 'warning');
+      setModelLists({ text: [], vision: [], embedding: [], all: [] });
+      addNotification('Failed to load AI models. Check model downloads.', 'warning');
     } finally {
       setIsRefreshingModels(false);
     }
@@ -292,9 +291,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       }
     };
 
-    const loadOllamaModelsIfMounted = async () => {
+    const loadModelsIfMounted = async () => {
       if (mounted) {
-        await loadOllamaModels();
+        await loadModels();
       }
     };
 
@@ -309,7 +308,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     (async () => {
       try {
         await loadSettingsIfMounted();
-        await loadOllamaModelsIfMounted();
+        await loadModelsIfMounted();
       } catch (error) {
         logger.error('Settings hydration failed', { error: error.message });
       } finally {
@@ -324,7 +323,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       mounted = false;
       clearTimeout(timeoutId);
     };
-  }, [isApiAvailable, loadSettings, loadOllamaModels]);
+  }, [isApiAvailable, loadSettings, loadModels]);
 
   useEffect(() => {
     if (!settingsLoaded) return;
@@ -355,14 +354,14 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
     (async () => {
       try {
-        const res = await ollamaIpc.testConnection(settingsRef.current.ollamaHost);
+        const res = await llamaIpc.testConnection();
         if (!isMounted) return;
-        setOllamaHealth(res?.ollamaHealth || null);
+        setLlamaHealth(res?.llamaHealth || null);
         if (res?.success && isMounted) {
-          await loadOllamaModels();
+          await loadModels();
         }
       } catch (e) {
-        logger.error('Auto Ollama health check failed', {
+        logger.error('Auto AI health check failed', {
           error: e.message
         });
       }
@@ -371,7 +370,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     return () => {
       isMounted = false;
     };
-  }, [isApiAvailable, settingsLoaded, loadOllamaModels]);
+  }, [isApiAvailable, settingsLoaded, loadModels]);
 
   useEffect(() => {
     lockAppScroll('settings-panel');
@@ -482,55 +481,29 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     };
   }, [autoSaveSettings]);
 
-  const testOllamaConnection = useCallback(async () => {
-    if (!settings?.ollamaHost) return;
-    try {
-      const res = await ollamaIpc.testConnection(settings.ollamaHost);
-      setOllamaHealth(res?.ollamaHealth || null);
-      if (res?.success) {
-        const modelText = res.modelCount === 1 ? '1 model' : `${res.modelCount} models`;
-        addNotification(`Connected to Ollama (${modelText} available)`, 'success');
-        await loadOllamaModels();
-      } else {
-        const errorMsg = res?.error || '';
-        if (errorMsg.includes('ECONNREFUSED')) {
-          addNotification('Cannot reach Ollama. Make sure it is running.', 'error');
-        } else {
-          addNotification('Connection failed. Check Ollama is running.', 'error');
-        }
-      }
-    } catch (error) {
-      logger.error('Ollama connection test failed', {
-        error: error?.message || String(error)
-      });
-      addNotification('Connection test failed. Is Ollama running?', 'error');
-    }
-  }, [settings, addNotification, loadOllamaModels]);
-
-  const addOllamaModel = useCallback(async () => {
+  const addModel = useCallback(async () => {
     if (!newModel.trim()) return;
     try {
       setIsAddingModel(true);
       try {
         if (progressUnsubRef.current) progressUnsubRef.current();
         progressUnsubRef.current = eventsIpc.onOperationProgress((evt) => {
-          if (evt?.type === 'ollama-pull' && evt?.model?.includes(newModel.trim())) {
+          if (evt?.type === 'model-download' && evt?.model?.includes(newModel.trim())) {
             setPullProgress(evt.progress || {});
           }
         });
       } catch {
         // Non-fatal if progress subscription fails
       }
-      const res = await ollamaIpc.pullModels([newModel.trim()]);
-      const result = res?.results?.[0];
-      if (result?.success) {
+      const res = await llamaIpc.downloadModel(newModel.trim());
+      if (res?.success) {
         addNotification(`Model "${newModel.trim()}" installed`, 'success');
         setNewModel('');
-        await loadOllamaModels();
+        await loadModels();
       } else {
-        const errorMsg = result?.error || '';
+        const errorMsg = res?.error || '';
         if (errorMsg.includes('not found') || errorMsg.includes('404')) {
-          addNotification('Model not found. Check the model name on ollama.com/library', 'error');
+          addNotification('Model not found. Check the model name in the registry.', 'error');
         } else if (errorMsg.includes('timeout')) {
           addNotification('Download timed out. Try again or check your connection.', 'error');
         } else {
@@ -538,7 +511,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         }
       }
     } catch (error) {
-      logger.error('Ollama model installation failed', {
+      logger.error('Model installation failed', {
         error: error?.message || String(error)
       });
       addNotification('Model installation failed. Check your connection.', 'error');
@@ -553,7 +526,52 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         // Non-fatal if progress unsubscribe fails
       }
     }
-  }, [newModel, addNotification, loadOllamaModels]);
+  }, [newModel, addNotification, loadModels]);
+
+  const downloadRecommendedModels = useCallback(async () => {
+    const modelsToDownload = [
+      DEFAULT_AI_MODELS.TEXT_ANALYSIS,
+      DEFAULT_AI_MODELS.IMAGE_ANALYSIS,
+      DEFAULT_AI_MODELS.EMBEDDING
+    ].filter(Boolean);
+    if (modelsToDownload.length === 0) return;
+
+    try {
+      setIsAddingModel(true);
+      for (const modelName of modelsToDownload) {
+        const res = await llamaIpc.downloadModel(modelName);
+        if (!res?.success) {
+          throw new Error(res?.error || `Failed to download ${modelName}`);
+        }
+      }
+      addNotification('Recommended models downloaded', 'success');
+      await loadModels();
+    } catch (error) {
+      addNotification(
+        `Failed to download recommended models: ${error?.message || 'unknown error'}`,
+        'error'
+      );
+    } finally {
+      setIsAddingModel(false);
+    }
+  }, [addNotification, loadModels]);
+
+  const deleteModel = useCallback(
+    async (modelName) => {
+      if (!modelName) return;
+      try {
+        const res = await llamaIpc.deleteModel(modelName);
+        if (!res?.success) {
+          throw new Error(res?.error || 'Failed to delete model');
+        }
+        addNotification(`Model "${modelName}" deleted`, 'success');
+        await loadModels();
+      } catch (error) {
+        addNotification(`Failed to delete model: ${error?.message || 'unknown error'}`, 'error');
+      }
+    },
+    [addNotification, loadModels]
+  );
 
   const expandAll = useCallback(() => {
     try {
@@ -697,17 +715,16 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 persistKey="settings-ai"
               >
                 <Stack gap="spacious">
-                  <OllamaConfigSection
-                    settings={settings}
-                    setSettings={applySettingsUpdate}
-                    ollamaHealth={ollamaHealth}
+                  <LlamaConfigSection
+                    llamaHealth={llamaHealth}
                     isRefreshingModels={isRefreshingModels}
-                    pullProgressText={pullProgressText}
+                    downloadProgress={pullProgress}
+                    modelList={modelList}
                     showAllModels={showAllModels}
                     setShowAllModels={setShowAllModels}
-                    ollamaModelLists={ollamaModelLists}
-                    onTestConnection={testOllamaConnection}
-                    onRefreshModels={loadOllamaModels}
+                    onRefreshModels={loadModels}
+                    onDownloadModel={downloadRecommendedModels}
+                    onDeleteModel={deleteModel}
                   />
                   <ModelSelectionSection
                     settings={settings}
@@ -721,11 +738,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                     newModel={newModel}
                     setNewModel={setNewModel}
                     isAddingModel={isAddingModel}
-                    onAddModel={addOllamaModel}
+                    onAddModel={addModel}
                   />
                   <EmbeddingBehaviorSection settings={settings} setSettings={applySettingsUpdate} />
                   <EmbeddingRebuildSection addNotification={addNotification} />
-                  <LearningSyncSection settings={settings} setSettings={applySettingsUpdate} />
                 </Stack>
               </Collapsible>
 

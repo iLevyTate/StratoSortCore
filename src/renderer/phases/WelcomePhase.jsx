@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Rocket, FolderOpen, Settings, Search, Sparkles, FolderCheck } from 'lucide-react';
 import { PHASES } from '../../shared/constants';
 import { useAppDispatch } from '../store/hooks';
-import { setActiveModal, setPhase } from '../store/slices/uiSlice';
+import { toggleSettings, setPhase } from '../store/slices/uiSlice';
 import { useNotification } from '../contexts/NotificationContext';
 import { Button, Card } from '../components/ui';
 import { Heading, Text } from '../components/ui/Typography';
@@ -101,23 +101,23 @@ function WelcomePhase() {
 
             {/* Secondary Actions Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6">
-              {/* Tertiary Action - AI setup */}
+              {/* Tertiary Action - AI / Model settings */}
               <div className="flex flex-col gap-2">
                 <Button
-                  onClick={() => dispatch(setActiveModal('ai-deps'))}
+                  onClick={() => dispatch(toggleSettings())}
                   variant="secondary"
                   className="w-full justify-center h-full py-4 bg-white/50 hover:bg-white/80"
                   aria-describedby="ai-setup-help"
                 >
                   <Sparkles className="w-4 h-4 mr-2 text-stratosort-purple" />
-                  <span>Set up AI components</span>
+                  <span>AI &amp; model settings</span>
                 </Button>
                 <Text
                   variant="tiny"
                   className="text-center text-system-gray-400"
                   id="ai-setup-help"
                 >
-                  Optional (Ollama + ChromaDB)
+                  Configure models and preferences
                 </Text>
               </div>
 

@@ -103,13 +103,13 @@ function ModelSelectionSection({
             Default AI models
           </Text>
           <Text variant="small" className="text-system-gray-600">
-            Choose which Ollama models StratoSort uses for analysis, vision, and embeddings.
+            Choose which GGUF models StratoSort uses for analysis, vision, and embeddings.
           </Text>
         </div>
         <StatusBadge variant="info" className="whitespace-nowrap">
           <span className="flex items-center gap-2">
             <Database className="w-4 h-4" />
-            Pulled from Ollama
+            Loaded locally
           </span>
         </StatusBadge>
       </div>

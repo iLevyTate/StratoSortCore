@@ -2,7 +2,7 @@
  * useSettingsSubscription Hook
  *
  * Subscribes to external settings changes from the main process.
- * FIX: Phases weren't receiving runtime settings updates (e.g., Ollama host changes).
+ * FIX: Phases weren't receiving runtime settings updates (e.g., AI host changes).
  */
 
 import { useEffect, useCallback, useRef } from 'react';

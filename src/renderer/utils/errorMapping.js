@@ -1,3 +1,5 @@
+import { ERROR_CODES as AI_ERROR_CODES } from '../../shared/errorCodes';
+
 const DEFAULT_NOTIFICATION = {
   severity: 'error',
   duration: 5000
@@ -36,9 +38,9 @@ const ERROR_TYPE_MAP = {
     severity: 'error',
     message: 'Required model is missing. Install the model and retry.'
   },
-  OLLAMA_ERROR: {
+  AI_ENGINE_ERROR: {
     severity: 'error',
-    message: 'AI service error. Check Ollama status and try again.'
+    message: 'AI service error. Check model status and try again.'
   },
   OUT_OF_MEMORY: {
     severity: 'error',
@@ -58,6 +60,57 @@ const ERROR_TYPE_MAP = {
   }
 };
 
+const ERROR_CODE_MAP = {
+  [AI_ERROR_CODES.LLAMA_MODEL_LOAD_FAILED]: {
+    severity: 'error',
+    message: 'Failed to load AI model. Please re-download the model and try again.'
+  },
+  [AI_ERROR_CODES.LLAMA_MODEL_NOT_FOUND]: {
+    severity: 'error',
+    message: 'AI model not found. Install or select a model and retry.'
+  },
+  [AI_ERROR_CODES.LLAMA_INFERENCE_FAILED]: {
+    severity: 'error',
+    message: 'AI inference failed. Please try again.'
+  },
+  [AI_ERROR_CODES.LLAMA_GPU_ERROR]: {
+    severity: 'warning',
+    message: 'GPU error detected. The app will retry using CPU.'
+  },
+  [AI_ERROR_CODES.LLAMA_OOM]: {
+    severity: 'error',
+    message: 'Out of memory. Try a smaller file or reduce concurrency.'
+  },
+  [AI_ERROR_CODES.VECTOR_DB_INIT_FAILED]: {
+    severity: 'error',
+    message: 'Vector database failed to initialize. Please restart the app.'
+  },
+  [AI_ERROR_CODES.VECTOR_DB_PERSIST_FAILED]: {
+    severity: 'warning',
+    message: 'Failed to save embeddings. Recent changes may not persist.'
+  },
+  [AI_ERROR_CODES.VECTOR_DB_QUERY_FAILED]: {
+    severity: 'error',
+    message: 'Search failed. Please try again.'
+  },
+  [AI_ERROR_CODES.VECTOR_DB_DIMENSION_MISMATCH]: {
+    severity: 'warning',
+    message: 'Embedding model changed. Rebuild embeddings in Settings.'
+  },
+  [AI_ERROR_CODES.EMBEDDING_GENERATION_FAILED]: {
+    severity: 'error',
+    message: 'Failed to generate embeddings. Please try again.'
+  },
+  [AI_ERROR_CODES.ANALYSIS_FAILED]: {
+    severity: 'error',
+    message: 'Analysis failed. Please try again.'
+  },
+  [AI_ERROR_CODES.MIGRATION_FAILED]: {
+    severity: 'error',
+    message: 'Migration failed. Please restart the app or check logs.'
+  }
+};
+
 /**
  * Classify raw error strings into known error types.
  */
@@ -72,12 +125,23 @@ function classifyError(errorStr) {
   return null;
 }
 
-export function mapErrorToNotification({ error, errorType, operationType } = {}) {
+export function mapErrorToNotification({ error, errorType, errorCode, operationType } = {}) {
   const typeKey = typeof errorType === 'string' ? errorType.toUpperCase() : null;
+  const codeKey =
+    typeof errorCode === 'string'
+      ? errorCode
+      : typeof error?.code === 'string'
+        ? error.code
+        : typeof error?.errorCode === 'string'
+          ? error.errorCode
+          : null;
   const inferred = !typeKey
     ? classifyError(typeof error === 'string' ? error : error?.message)
     : null;
-  const mapped = ERROR_TYPE_MAP[typeKey] || (inferred ? ERROR_TYPE_MAP[inferred] : null);
+  const mapped =
+    (codeKey ? ERROR_CODE_MAP[codeKey] : null) ||
+    ERROR_TYPE_MAP[typeKey] ||
+    (inferred ? ERROR_TYPE_MAP[inferred] : null);
   const baseMessage =
     mapped?.message || (typeof error === 'string' && error.trim()) || 'Operation failed.';
   const severity = mapped?.severity || DEFAULT_NOTIFICATION.severity;

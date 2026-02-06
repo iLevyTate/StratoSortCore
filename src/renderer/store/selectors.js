@@ -256,21 +256,21 @@ export const selectFileStats = createStableSelector(
 );
 
 /**
- * Get ChromaDB service status from Redux store
+ * Get vector DB service status from Redux store
  * Returns: 'online', 'offline', 'connecting', or 'unknown'
  * PERF: Memoized to prevent unnecessary recalculations
  */
-export const selectChromaDBStatus = createSelector(
-  [(state) => state.system?.health?.chromadb],
-  (chromadb) => chromadb || 'unknown'
+export const selectVectorDbStatus = createSelector(
+  [(state) => state.system?.health?.vectorDb],
+  (vectorDb) => vectorDb || 'unknown'
 );
 
 /**
- * Check if ChromaDB/embeddings features should be available
- * PERF: Memoized and depends on memoized selectChromaDBStatus
+ * Check if vector DB/embeddings features should be available
+ * PERF: Memoized and depends on selectVectorDbStatus
  */
-export const selectChromaDBAvailable = createSelector(
-  [selectChromaDBStatus],
+export const selectVectorDbAvailable = createSelector(
+  [selectVectorDbStatus],
   (status) => status === 'online' || status === 'connecting'
 );
 

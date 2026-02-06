@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, crashReporter } = require('electron');
 const { Logger, LOG_LEVELS } = require('../shared/logger');
 const { IpcRateLimiter } = require('./ipcRateLimiter');
 const { createIpcSanitizer } = require('./ipcSanitizer');
@@ -15,204 +15,7 @@ const {
 // === START GENERATED IPC_CHANNELS ===
 // Auto-generated from src/shared/constants.js
 // Run 'npm run generate:channels' to update
-const IPC_CHANNELS = {
-  // FILES
-  FILES: {
-    SELECT: 'files:select',
-    SELECT_DIRECTORY: 'files:select-directory',
-    GET_DOCUMENTS_PATH: 'files:get-documents-path',
-    CREATE_FOLDER_DIRECT: 'files:create-folder-direct',
-    GET_FILE_STATS: 'files:get-stats',
-    GET_FILES_IN_DIRECTORY: 'files:get-in-directory',
-    PERFORM_OPERATION: 'files:perform-operation',
-    DELETE_FILE: 'files:delete',
-    OPEN_FILE: 'files:open',
-    REVEAL_FILE: 'files:reveal',
-    COPY_FILE: 'files:copy',
-    OPEN_FOLDER: 'files:open-folder',
-    DELETE_FOLDER: 'files:delete-folder',
-    CLEANUP_ANALYSIS: 'files:cleanup-analysis'
-  },
-
-  // SMART_FOLDERS
-  SMART_FOLDERS: {
-    GET: 'smart-folders:get',
-    SAVE: 'smart-folders:save',
-    UPDATE_CUSTOM: 'smart-folders:update-custom',
-    GET_CUSTOM: 'smart-folders:get-custom',
-    SCAN_STRUCTURE: 'smart-folders:scan-structure',
-    ADD: 'smart-folders:add',
-    EDIT: 'smart-folders:edit',
-    DELETE: 'smart-folders:delete',
-    MATCH: 'smart-folders:match',
-    RESET_TO_DEFAULTS: 'smart-folders:reset-defaults',
-    GENERATE_DESCRIPTION: 'smart-folders:generate-description',
-    WATCHER_START: 'smart-folders:watcher-start',
-    WATCHER_STOP: 'smart-folders:watcher-stop',
-    WATCHER_STATUS: 'smart-folders:watcher-status',
-    WATCHER_SCAN: 'smart-folders:watcher-scan'
-  },
-
-  // ANALYSIS
-  ANALYSIS: {
-    ANALYZE_DOCUMENT: 'analysis:analyze-document',
-    ANALYZE_IMAGE: 'analysis:analyze-image',
-    EXTRACT_IMAGE_TEXT: 'analysis:extract-image-text'
-  },
-
-  // SETTINGS
-  SETTINGS: {
-    GET: 'settings:get',
-    SAVE: 'settings:save',
-    GET_CONFIGURABLE_LIMITS: 'settings:get-limits',
-    GET_LOGS_INFO: 'settings:get-logs-info',
-    OPEN_LOGS_FOLDER: 'settings:open-logs-folder',
-    EXPORT: 'settings:export',
-    IMPORT: 'settings:import',
-    CREATE_BACKUP: 'settings:create-backup',
-    LIST_BACKUPS: 'settings:list-backups',
-    RESTORE_BACKUP: 'settings:restore-backup',
-    DELETE_BACKUP: 'settings:delete-backup'
-  },
-
-  // OLLAMA
-  OLLAMA: {
-    GET_MODELS: 'ollama:get-models',
-    TEST_CONNECTION: 'ollama:test-connection',
-    PULL_MODELS: 'ollama:pull-models',
-    DELETE_MODEL: 'ollama:delete-model'
-  },
-
-  // UNDO_REDO
-  UNDO_REDO: {
-    UNDO: 'undo-redo:undo',
-    REDO: 'undo-redo:redo',
-    GET_HISTORY: 'undo-redo:get-history',
-    GET_STATE: 'undo-redo:get-state',
-    CLEAR_HISTORY: 'undo-redo:clear',
-    CAN_UNDO: 'undo-redo:can-undo',
-    CAN_REDO: 'undo-redo:can-redo',
-    STATE_CHANGED: 'undo-redo:state-changed'
-  },
-
-  // ANALYSIS_HISTORY
-  ANALYSIS_HISTORY: {
-    GET: 'analysis-history:get',
-    SEARCH: 'analysis-history:search',
-    GET_STATISTICS: 'analysis-history:get-statistics',
-    GET_FILE_HISTORY: 'analysis-history:get-file-history',
-    SET_EMBEDDING_POLICY: 'analysis-history:set-embedding-policy',
-    CLEAR: 'analysis-history:clear',
-    EXPORT: 'analysis-history:export'
-  },
-
-  // EMBEDDINGS
-  EMBEDDINGS: {
-    REBUILD_FOLDERS: 'embeddings:rebuild-folders',
-    REBUILD_FILES: 'embeddings:rebuild-files',
-    FULL_REBUILD: 'embeddings:full-rebuild',
-    REANALYZE_ALL: 'embeddings:reanalyze-all',
-    REANALYZE_FILE: 'embeddings:reanalyze-file',
-    CLEAR_STORE: 'embeddings:clear-store',
-    GET_STATS: 'embeddings:get-stats',
-    SEARCH: 'embeddings:search',
-    SCORE_FILES: 'embeddings:score-files',
-    FIND_SIMILAR: 'embeddings:find-similar',
-    REBUILD_BM25_INDEX: 'embeddings:rebuild-bm25',
-    GET_SEARCH_STATUS: 'embeddings:get-search-status',
-    DIAGNOSE_SEARCH: 'embeddings:diagnose-search',
-    FIND_MULTI_HOP: 'embeddings:find-multi-hop',
-    COMPUTE_CLUSTERS: 'embeddings:compute-clusters',
-    GET_CLUSTERS: 'embeddings:get-clusters',
-    GET_CLUSTER_MEMBERS: 'embeddings:get-cluster-members',
-    GET_SIMILARITY_EDGES: 'embeddings:get-similarity-edges',
-    GET_FILE_METADATA: 'embeddings:get-file-metadata',
-    FIND_DUPLICATES: 'embeddings:find-duplicates',
-    CLEAR_CLUSTERS: 'embeddings:clear-clusters'
-  },
-
-  // SYSTEM
-  SYSTEM: {
-    GET_METRICS: 'system:get-metrics',
-    GET_APPLICATION_STATISTICS: 'system:get-app-stats',
-    APPLY_UPDATE: 'system:apply-update',
-    GET_CONFIG: 'system:get-config',
-    GET_CONFIG_VALUE: 'system:get-config-value',
-    RENDERER_ERROR_REPORT: 'renderer-error-report',
-    GET_RECOMMENDED_CONCURRENCY: 'system:get-recommended-concurrency'
-  },
-
-  // WINDOW
-  WINDOW: {
-    MINIMIZE: 'window:minimize',
-    MAXIMIZE: 'window:maximize',
-    UNMAXIMIZE: 'window:unmaximize',
-    TOGGLE_MAXIMIZE: 'window:toggle-maximize',
-    IS_MAXIMIZED: 'window:is-maximized',
-    CLOSE: 'window:close'
-  },
-
-  // SUGGESTIONS
-  SUGGESTIONS: {
-    GET_FILE_SUGGESTIONS: 'suggestions:get-file',
-    GET_BATCH_SUGGESTIONS: 'suggestions:get-batch',
-    RECORD_FEEDBACK: 'suggestions:record-feedback',
-    GET_STRATEGIES: 'suggestions:get-strategies',
-    APPLY_STRATEGY: 'suggestions:apply-strategy',
-    GET_USER_PATTERNS: 'suggestions:get-user-patterns',
-    CLEAR_PATTERNS: 'suggestions:clear-patterns',
-    ANALYZE_FOLDER_STRUCTURE: 'suggestions:analyze-folder-structure',
-    SUGGEST_NEW_FOLDER: 'suggestions:suggest-new-folder',
-    ADD_FEEDBACK_MEMORY: 'suggestions:add-feedback-memory',
-    GET_FEEDBACK_MEMORY: 'suggestions:get-feedback-memory',
-    UPDATE_FEEDBACK_MEMORY: 'suggestions:update-feedback-memory',
-    DELETE_FEEDBACK_MEMORY: 'suggestions:delete-feedback-memory'
-  },
-
-  // ORGANIZE
-  ORGANIZE: {
-    AUTO: 'organize:auto',
-    BATCH: 'organize:batch',
-    PROCESS_NEW: 'organize:process-new',
-    GET_STATS: 'organize:get-stats',
-    UPDATE_THRESHOLDS: 'organize:update-thresholds',
-    CLUSTER_BATCH: 'organize:cluster-batch',
-    IDENTIFY_OUTLIERS: 'organize:identify-outliers',
-    GET_CLUSTER_SUGGESTIONS: 'organize:get-cluster-suggestions'
-  },
-
-  // CHROMADB
-  CHROMADB: {
-    GET_STATUS: 'chromadb:get-status',
-    GET_CIRCUIT_STATS: 'chromadb:get-circuit-stats',
-    GET_QUEUE_STATS: 'chromadb:get-queue-stats',
-    FORCE_RECOVERY: 'chromadb:force-recovery',
-    HEALTH_CHECK: 'chromadb:health-check',
-    STATUS_CHANGED: 'chromadb:status-changed'
-  },
-
-  // DEPENDENCIES
-  DEPENDENCIES: {
-    GET_STATUS: 'dependencies:get-status',
-    INSTALL_OLLAMA: 'dependencies:install-ollama',
-    INSTALL_CHROMADB: 'dependencies:install-chromadb',
-    UPDATE_OLLAMA: 'dependencies:update-ollama',
-    UPDATE_CHROMADB: 'dependencies:update-chromadb',
-    SERVICE_STATUS_CHANGED: 'dependencies:service-status-changed'
-  },
-
-  // CHAT
-  CHAT: {
-    QUERY: 'chat:query',
-    RESET_SESSION: 'chat:reset-session'
-  },
-
-  // KNOWLEDGE
-  KNOWLEDGE: {
-    GET_RELATIONSHIP_EDGES: 'knowledge:get-relationship-edges',
-    GET_RELATIONSHIP_STATS: 'knowledge:get-relationship-stats'
-  }
-};
+const { IPC_CHANNELS } = require('../shared/constants');
 // === END GENERATED IPC_CHANNELS ===
 
 const preloadLogger = new Logger();
@@ -220,6 +23,17 @@ preloadLogger.setContext('Preload');
 preloadLogger.setLevel(
   process?.env?.NODE_ENV === 'development' ? LOG_LEVELS.DEBUG : LOG_LEVELS.INFO
 );
+
+// Initialize Crash Reporter (Scaffolding)
+try {
+  crashReporter.start({
+    uploadToServer: false,
+    compress: true
+  });
+  preloadLogger.info('[CRASH-REPORTER] Initialized in preload');
+} catch (error) {
+  preloadLogger.warn('[CRASH-REPORTER] Failed to initialize in preload:', error.message);
+}
 
 const log = {
   debug: (message, data) => preloadLogger.debug(message, data),
@@ -271,13 +85,12 @@ const buildEmbeddingSearchPayload = (query, options = {}) => {
 log.info('Secure preload script loaded');
 
 // Dynamically derive allowed send channels from centralized IPC_CHANNELS to prevent drift
-// FIX: Removed hardcoded SETTINGS_EXTENDED - now all settings channels are in IPC_CHANNELS.SETTINGS
 const ALLOWED_CHANNELS = {
   FILES: Object.values(IPC_CHANNELS.FILES),
   SMART_FOLDERS: Object.values(IPC_CHANNELS.SMART_FOLDERS),
   ANALYSIS: Object.values(IPC_CHANNELS.ANALYSIS),
-  SETTINGS: Object.values(IPC_CHANNELS.SETTINGS), // Now includes all extended settings channels
-  OLLAMA: Object.values(IPC_CHANNELS.OLLAMA),
+  SETTINGS: Object.values(IPC_CHANNELS.SETTINGS),
+  LLAMA: Object.values(IPC_CHANNELS.LLAMA),
   UNDO_REDO: Object.values(IPC_CHANNELS.UNDO_REDO),
   ANALYSIS_HISTORY: Object.values(IPC_CHANNELS.ANALYSIS_HISTORY),
   EMBEDDINGS: Object.values(IPC_CHANNELS.EMBEDDINGS),
@@ -285,8 +98,7 @@ const ALLOWED_CHANNELS = {
   WINDOW: Object.values(IPC_CHANNELS.WINDOW || {}),
   SUGGESTIONS: Object.values(IPC_CHANNELS.SUGGESTIONS || {}),
   ORGANIZE: Object.values(IPC_CHANNELS.ORGANIZE || {}),
-  CHROMADB: Object.values(IPC_CHANNELS.CHROMADB || {}),
-  DEPENDENCIES: Object.values(IPC_CHANNELS.DEPENDENCIES || {}),
+  VECTOR_DB: Object.values(IPC_CHANNELS.VECTOR_DB || {}),
   CHAT: Object.values(IPC_CHANNELS.CHAT || {}),
   KNOWLEDGE: Object.values(IPC_CHANNELS.KNOWLEDGE || {})
 };
@@ -295,7 +107,7 @@ const ALLOWED_CHANNELS = {
 // FIX: Use IPC_CHANNELS constant instead of hardcoded string
 const ALLOWED_RECEIVE_CHANNELS = [
   ...SECURITY_RECEIVE_CHANNELS,
-  IPC_CHANNELS.CHROMADB.STATUS_CHANGED, // ChromaDB status events
+  IPC_CHANNELS.VECTOR_DB.STATUS_CHANGED, // VectorDB status events
   'open-semantic-search' // Global shortcut trigger from tray
 ];
 
@@ -305,6 +117,11 @@ const ALLOWED_SEND_CHANNELS = [...SECURITY_SEND_CHANNELS];
 
 // Flatten allowed send channels for validation
 const ALL_SEND_CHANNELS = Object.values(ALLOWED_CHANNELS).flat();
+
+// FIX: Add 'system:log' to allowed send channels if not derived automatically
+if (!ALL_SEND_CHANNELS.includes(IPC_CHANNELS.SYSTEM.LOG)) {
+  ALL_SEND_CHANNELS.push(IPC_CHANNELS.SYSTEM.LOG);
+}
 
 const THROTTLED_CHANNELS = new Map([
   // Avoid request bursts on large folder scans.
@@ -431,10 +248,6 @@ class SecureIPCManager {
 
   /**
    * Periodic listener audit to detect potential leaks.
-   *
-   * IMPORTANT: Do NOT auto-remove listeners purely based on age.
-   * Some listeners are intentionally long-lived for the lifetime of a renderer window
-   * (settings changes, system metrics, app updates, etc.). Auto-removal breaks functionality.
    */
   auditStaleListeners() {
     const now = Date.now();
@@ -468,7 +281,6 @@ class SecureIPCManager {
         : 0;
 
     // Heuristics: warn only when counts/growth look suspicious.
-    // These values are intentionally conservative to avoid noisy warnings in normal operation.
     const MAX_TOTAL_LISTENERS_WARN = 50;
     const MAX_PER_CHANNEL_WARN = 10;
     const MAX_GROWTH_PER_AUDIT_WARN = 20;
@@ -491,7 +303,6 @@ class SecureIPCManager {
         topChannels
       });
     } else if (process.env.NODE_ENV === 'development') {
-      // Keep debug-level visibility in dev without scaring users or breaking behavior.
       log.debug('[SecureIPC] Listener audit', {
         totalListeners,
         maxPerChannel,
@@ -658,7 +469,7 @@ class SecureIPCManager {
 // Initialize secure IPC manager
 const secureIPC = new SecureIPCManager();
 
-// Log derived invoke timeouts once at startup to help diagnose preload caching/reload issues.
+// Log derived invoke timeouts once at startup
 try {
   log.info('[SecureIPC] Invoke timeouts', {
     defaultInvokeTimeoutMs: PERF_LIMITS.IPC_INVOKE_TIMEOUT || 30000,
@@ -671,23 +482,18 @@ try {
   // Non-fatal (logging only)
 }
 
-// FIX: Periodic listener audit to detect potential memory leaks (every 10 minutes)
-// Store interval ID for cleanup on window unload
+// Periodic listener audit
 const LISTENER_AUDIT_INTERVAL_MS = 10 * 60 * 1000;
 const listenerAuditIntervalId = setInterval(() => {
   try {
     secureIPC.auditStaleListeners();
   } catch {
-    // Silently ignore audit errors to avoid disrupting app functionality
+    // Silently ignore audit errors
   }
 }, LISTENER_AUDIT_INTERVAL_MS);
 
 /**
  * Throw on structured failure responses.
- *
- * Many IPC handlers return { success: boolean, error?: string } rather than throwing.
- * For operations that must not silently fail (like settings persistence), use this helper
- * to convert failures into exceptions so the renderer can show a real error.
  */
 function throwIfFailed(result, opts = {}) {
   const { allowCanceled = true, defaultMessage = 'Operation failed' } = opts;
@@ -706,7 +512,6 @@ function throwIfFailed(result, opts = {}) {
 
 // Cleanup on window unload
 window.addEventListener('beforeunload', () => {
-  // FIX: Clear the listener audit interval to prevent memory leaks on window recreation
   clearInterval(listenerAuditIntervalId);
   secureIPC.cleanup();
 });
@@ -724,23 +529,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const original = p;
       try {
         if (typeof p !== 'string') return p;
-        // CRITICAL FIX: Do NOT convert backslashes to forward slashes
-        // This causes HTML encoding issues when paths go through IPC sanitization
-        // Let the main process handle path normalization with Node.js path module
-
-        // Preserve UNC path prefix (\\server\share) before collapsing duplicates
         let uncPrefix = '';
         if (p.startsWith('\\\\')) {
           uncPrefix = '\\\\';
           p = p.slice(2);
         }
-
-        // Only remove duplicate slashes (keeping backslash or forward slash as-is)
         let normalized = uncPrefix + p.replace(/([\\/])+/g, '$1');
-
-        // Remove trailing slash unless it's the root (check both separator types)
         if (normalized.length > 3 && (normalized.endsWith('/') || normalized.endsWith('\\'))) {
-          // Keep trailing separator for roots like C:\ or /
           if (!(normalized.match(/^[A-Za-z]:[\\/]$/) || normalized === '/')) {
             normalized = normalized.slice(0, -1);
           }
@@ -776,7 +571,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     delete: (filePath) => secureIPC.safeInvoke(IPC_CHANNELS.FILES.DELETE_FILE, filePath),
     cleanupAnalysis: (filePath) =>
       secureIPC.safeInvoke(IPC_CHANNELS.FILES.CLEANUP_ANALYSIS, filePath),
-    // Add missing file operations that the UI is calling
     open: (filePath) => secureIPC.safeInvoke(IPC_CHANNELS.FILES.OPEN_FILE, filePath),
     reveal: (filePath) => secureIPC.safeInvoke(IPC_CHANNELS.FILES.REVEAL_FILE, filePath),
     copy: (sourcePath, destinationPath) =>
@@ -784,33 +578,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     openFolder: (folderPath) => secureIPC.safeInvoke(IPC_CHANNELS.FILES.OPEN_FOLDER, folderPath),
     deleteFolder: (folderPath) =>
       secureIPC.safeInvoke(IPC_CHANNELS.FILES.DELETE_FOLDER, folderPath),
-    // Add file analysis method that routes to appropriate analyzer
     analyze: (filePath) => {
-      // Fixed: Enhanced path validation to prevent directory traversal and unauthorized access
-      // CRITICAL FIX: Do NOT normalize path separators here - let main process handle it
-      // Converting backslashes to forward slashes causes HTML encoding issues
       try {
-        // Normalize incoming value (arrays, objects, quoted strings)
-        if (Array.isArray(filePath) && filePath.length > 0) {
-          filePath = filePath[0];
-        }
-        if (filePath && typeof filePath === 'object' && filePath.path) {
-          filePath = filePath.path;
-        }
-        if (typeof filePath === 'string') {
+        if (Array.isArray(filePath) && filePath.length > 0) filePath = filePath[0];
+        if (filePath && typeof filePath === 'object' && filePath.path) filePath = filePath.path;
+        if (typeof filePath === 'string')
           filePath = filePath.trim().replace(/^['"](.*)['"]$/, '$1');
-        }
 
-        // Normalize file:// URIs to filesystem paths (handles Windows drive prefix)
         if (typeof filePath === 'string' && filePath.toLowerCase().startsWith('file://')) {
           try {
             filePath = sanitizePath(filePath);
           } catch {
-            // fall through to validation
+            // Ignore invalid file:// input; subsequent validation will fail safely
           }
         }
 
-        // Allow any non-empty local path; block obvious remote URLs
         if (
           !filePath ||
           typeof filePath !== 'string' ||
@@ -821,53 +603,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
           throw new Error('Invalid file path');
         }
 
-        // SECURITY FIX: Block UNC paths (\\server\share) to prevent NTLM hash relay attacks.
-        // Accessing a UNC path on Windows triggers automatic NTLM authentication,
-        // which can be exploited to steal credential hashes.
         if (filePath.startsWith('\\\\') || filePath.startsWith('//')) {
-          throw new Error(
-            'Invalid file path: network (UNC) paths are not allowed for security reasons'
-          );
+          throw new Error('Invalid file path: network (UNC) paths are not allowed');
         }
 
-        // Require absolute filesystem path to avoid CWD-relative resolution
         const isAbsolute = /^[a-zA-Z]:[\\/]/.test(filePath) || filePath.startsWith('/');
-        if (!isAbsolute) {
-          throw new Error('Invalid file path: must be an absolute path');
-        }
+        if (!isAbsolute) throw new Error('Invalid file path: must be an absolute path');
 
-        // Extract file extension without path module (check both separator types)
         const lastDot = filePath.lastIndexOf('.');
-        const lastForwardSlash = filePath.lastIndexOf('/');
-        const lastBackSlash = filePath.lastIndexOf('\\');
-        const lastSlash = Math.max(lastForwardSlash, lastBackSlash);
+        const lastSlash = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
         let ext = '';
+        if (lastDot > lastSlash && lastDot > 0) ext = filePath.slice(lastDot + 1).toLowerCase();
 
-        if (lastDot > lastSlash && lastDot > 0) {
-          ext = filePath.slice(lastDot + 1).toLowerCase();
-        }
-
-        const imageExts = [
-          'jpg',
-          'jpeg',
-          'png',
-          'gif',
-          'bmp',
-          'webp',
-          'svg',
-          'tiff',
-          'ico',
-          'heic'
-        ];
-        const audioExts = ['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'wma', 'aiff'];
-
-        if (imageExts.includes(ext)) {
+        if (
+          ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'tiff', 'ico', 'heic'].includes(ext)
+        ) {
           return secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS.ANALYZE_IMAGE, filePath);
         }
-        if (audioExts.includes(ext)) {
-          throw new Error('Audio analysis is not supported in this build.');
-        }
-        // Audio analysis removed - all non-image files go to document analysis
         return secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS.ANALYZE_DOCUMENT, filePath);
       } catch (error) {
         log.error('File analysis security check failed:', error);
@@ -890,14 +642,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.EDIT, folderId, updatedFolder),
     delete: (folderId) => secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.DELETE, folderId),
     match: (text, folders) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.MATCH, {
-        text,
-        smartFolders: folders
-      }),
+      secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.MATCH, { text, smartFolders: folders }),
     resetToDefaults: () => secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.RESET_TO_DEFAULTS),
     generateDescription: (folderName) =>
       secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.GENERATE_DESCRIPTION, folderName),
-    // Smart Folder Watcher - auto-analyze files in smart folders
     watcherStart: () => secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.WATCHER_START),
     watcherStop: () => secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.WATCHER_STOP),
     watcherStatus: () => secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.WATCHER_STATUS),
@@ -936,30 +684,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     fullRebuild: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FULL_REBUILD),
     reanalyzeAll: (options) => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REANALYZE_ALL, options),
     reanalyzeFile: (filePath, options = {}) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REANALYZE_FILE, {
-        filePath,
-        ...options
-      }),
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REANALYZE_FILE, { filePath, ...options }),
     clearStore: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.CLEAR_STORE),
     getStats: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_STATS),
-    // Enhanced search with hybrid BM25 + vector fusion
-    // Options: { topK, mode: 'hybrid'|'vector'|'bm25', minScore, chunkWeight, chunkTopK, ... }
     search: (query, options = {}) =>
       secureIPC.safeInvoke(
         IPC_CHANNELS.EMBEDDINGS.SEARCH,
         buildEmbeddingSearchPayload(query, options)
       ),
     scoreFiles: (query, fileIds) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.SCORE_FILES, {
-        query,
-        fileIds
-      }),
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.SCORE_FILES, { query, fileIds }),
     findSimilar: (fileId, topK = 10) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FIND_SIMILAR, {
-        fileId,
-        topK
-      }),
-    // Backward compatibility: preserve hybridSearch API with mode override
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FIND_SIMILAR, { fileId, topK }),
     hybridSearch: (query, options = {}) =>
       secureIPC.safeInvoke(
         IPC_CHANNELS.EMBEDDINGS.SEARCH,
@@ -967,16 +703,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ),
     rebuildBM25Index: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REBUILD_BM25_INDEX),
     getSearchStatus: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_SEARCH_STATUS),
-    // Diagnostic endpoint for troubleshooting search issues
     diagnoseSearch: (testQuery = 'test') =>
       secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.DIAGNOSE_SEARCH, { testQuery }),
-    // Multi-hop expansion
     findMultiHop: (seedIds, options = {}) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FIND_MULTI_HOP, {
-        seedIds,
-        options
-      }),
-    // Clustering
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FIND_MULTI_HOP, { seedIds, options }),
     computeClusters: (k = 'auto') =>
       secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.COMPUTE_CLUSTERS, { k }),
     getClusters: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_CLUSTERS),
@@ -988,24 +718,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
         threshold: options.threshold,
         maxEdgesPerNode: options.maxEdgesPerNode
       }),
-    // Get fresh file metadata from ChromaDB (for current paths after moves)
     getFileMetadata: (fileIds) =>
       secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_FILE_METADATA, { fileIds }),
-    // Find near-duplicate files based on embedding similarity
     findDuplicates: (options) =>
       secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FIND_DUPLICATES, options || {}),
-    // FIX: Clear cluster cache manually (allows forcing recalculation)
     clearClusters: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.CLEAR_CLUSTERS)
   },
 
-  // Chat / Document QA
+  // Chat
   chat: {
     query: (payload) => secureIPC.safeInvoke(IPC_CHANNELS.CHAT.QUERY, payload),
     resetSession: (sessionId) =>
       secureIPC.safeInvoke(IPC_CHANNELS.CHAT.RESET_SESSION, { sessionId })
   },
 
-  // Knowledge relationships
+  // Knowledge
   knowledge: {
     getRelationshipEdges: (fileIds, options = {}) =>
       secureIPC.safeInvoke(IPC_CHANNELS.KNOWLEDGE.GET_RELATIONSHIP_EDGES, {
@@ -1016,18 +743,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getRelationshipStats: () => secureIPC.safeInvoke(IPC_CHANNELS.KNOWLEDGE.GET_RELATIONSHIP_STATS)
   },
 
-  // Organization Suggestions
+  // Suggestions
   suggestions: {
     getFileSuggestions: (file, options) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.GET_FILE_SUGGESTIONS, {
-        file,
-        options
-      }),
+      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.GET_FILE_SUGGESTIONS, { file, options }),
     getBatchSuggestions: (files, options) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.GET_BATCH_SUGGESTIONS, {
-        files,
-        options
-      }),
+      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.GET_BATCH_SUGGESTIONS, { files, options }),
     recordFeedback: (file, suggestion, accepted, note) =>
       secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.RECORD_FEEDBACK, {
         file,
@@ -1037,49 +758,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
       }),
     getStrategies: () => secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.GET_STRATEGIES),
     applyStrategy: (files, strategyId) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.APPLY_STRATEGY, {
-        files,
-        strategyId
-      }),
+      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.APPLY_STRATEGY, { files, strategyId }),
     getUserPatterns: () => secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.GET_USER_PATTERNS),
     clearPatterns: () => secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.CLEAR_PATTERNS),
     analyzeFolderStructure: (files) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.ANALYZE_FOLDER_STRUCTURE, {
-        files
-      }),
+      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.ANALYZE_FOLDER_STRUCTURE, { files }),
     suggestNewFolder: (file) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.SUGGEST_NEW_FOLDER, {
-        file
-      }),
+      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.SUGGEST_NEW_FOLDER, { file }),
     addFeedbackMemory: (text, metadata) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.ADD_FEEDBACK_MEMORY, {
-        text,
-        metadata
-      }),
+      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.ADD_FEEDBACK_MEMORY, { text, metadata }),
     getFeedbackMemory: () => secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.GET_FEEDBACK_MEMORY),
     updateFeedbackMemory: (id, text, metadata) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.UPDATE_FEEDBACK_MEMORY, {
-        id,
-        text,
-        metadata
-      }),
+      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.UPDATE_FEEDBACK_MEMORY, { id, text, metadata }),
     deleteFeedbackMemory: (id) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.DELETE_FEEDBACK_MEMORY, {
-        id
-      })
+      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.DELETE_FEEDBACK_MEMORY, { id })
   },
 
-  // Auto-Organize
+  // Organize
   organize: {
     auto: (params) => secureIPC.safeInvoke(IPC_CHANNELS.ORGANIZE.AUTO, params),
     batch: (params) => secureIPC.safeInvoke(IPC_CHANNELS.ORGANIZE.BATCH, params),
     processNew: (params) => secureIPC.safeInvoke(IPC_CHANNELS.ORGANIZE.PROCESS_NEW, params),
     getStats: () => secureIPC.safeInvoke(IPC_CHANNELS.ORGANIZE.GET_STATS),
     updateThresholds: (thresholds) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.ORGANIZE.UPDATE_THRESHOLDS, {
-        thresholds
-      }),
-    // Cluster-based organization
+      secureIPC.safeInvoke(IPC_CHANNELS.ORGANIZE.UPDATE_THRESHOLDS, { thresholds }),
     clusterBatch: (files, smartFolders) =>
       secureIPC.safeInvoke(IPC_CHANNELS.ORGANIZE.CLUSTER_BATCH, { files, smartFolders }),
     identifyOutliers: (files) =>
@@ -1088,7 +790,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       secureIPC.safeInvoke(IPC_CHANNELS.ORGANIZE.GET_CLUSTER_SUGGESTIONS, { file, smartFolders })
   },
 
-  // Undo/Redo System
+  // Undo/Redo
   undoRedo: {
     undo: () => secureIPC.safeInvoke(IPC_CHANNELS.UNDO_REDO.UNDO),
     redo: () => secureIPC.safeInvoke(IPC_CHANNELS.UNDO_REDO.REDO),
@@ -1097,29 +799,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
     clear: () => secureIPC.safeInvoke(IPC_CHANNELS.UNDO_REDO.CLEAR_HISTORY),
     canUndo: () => secureIPC.safeInvoke(IPC_CHANNELS.UNDO_REDO.CAN_UNDO),
     canRedo: () => secureIPC.safeInvoke(IPC_CHANNELS.UNDO_REDO.CAN_REDO),
-    // FIX H-3: Listen for state changes after undo/redo operations
-    // FIX: Use secureIPC.safeOn() for proper event source validation and cleanup tracking
     onStateChanged: (callback) => secureIPC.safeOn(IPC_CHANNELS.UNDO_REDO.STATE_CHANGED, callback)
   },
 
-  // System Monitoring
+  // System
   system: {
     getMetrics: () => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_METRICS),
     getApplicationStatistics: () =>
       secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_APPLICATION_STATISTICS),
     applyUpdate: () => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.APPLY_UPDATE),
-    // FIX: Expose config handlers that were registered but not exposed
     getConfig: () => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_CONFIG),
     getConfigValue: (path) => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_CONFIG_VALUE, path),
-    // Get recommended concurrency based on system capabilities (VRAM, etc.)
     getRecommendedConcurrency: () =>
       secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_RECOMMENDED_CONCURRENCY),
-    // Listen for semantic search trigger from tray/global shortcut
-    // FIX: Use secureIPC.safeOn() for proper event source validation and cleanup tracking
+    log: (level, message, data) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.LOG, { level, message, data }),
     onOpenSemanticSearch: (callback) => secureIPC.safeOn('open-semantic-search', callback)
   },
 
-  // Window controls (Windows custom title bar)
+  // Window
   window: {
     minimize: () =>
       IPC_CHANNELS.WINDOW?.MINIMIZE
@@ -1145,15 +843,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
       IPC_CHANNELS.WINDOW?.CLOSE ? secureIPC.safeInvoke(IPC_CHANNELS.WINDOW.CLOSE) : undefined
   },
 
-  // Ollama (only implemented endpoints)
-  ollama: {
-    getModels: () => secureIPC.safeInvoke(IPC_CHANNELS.OLLAMA.GET_MODELS),
-    testConnection: (hostUrl) => secureIPC.safeInvoke(IPC_CHANNELS.OLLAMA.TEST_CONNECTION, hostUrl),
-    pullModels: (models) => secureIPC.safeInvoke(IPC_CHANNELS.OLLAMA.PULL_MODELS, models),
-    deleteModel: (model) => secureIPC.safeInvoke(IPC_CHANNELS.OLLAMA.DELETE_MODEL, model)
+  // Llama Service (New in-process AI)
+  llama: {
+    getModels: () => secureIPC.safeInvoke(IPC_CHANNELS.LLAMA.GET_MODELS),
+    getConfig: () => secureIPC.safeInvoke(IPC_CHANNELS.LLAMA.GET_CONFIG),
+    updateConfig: (config) => secureIPC.safeInvoke(IPC_CHANNELS.LLAMA.UPDATE_CONFIG, config),
+    testConnection: () => secureIPC.safeInvoke(IPC_CHANNELS.LLAMA.TEST_CONNECTION),
+    downloadModel: (modelName) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.LLAMA.DOWNLOAD_MODEL, modelName),
+    deleteModel: (modelName) => secureIPC.safeInvoke(IPC_CHANNELS.LLAMA.DELETE_MODEL, modelName),
+    getDownloadStatus: () => secureIPC.safeInvoke(IPC_CHANNELS.LLAMA.GET_DOWNLOAD_STATUS)
   },
 
-  // Event Listeners (with automatic cleanup)
+  // Vector DB (Orama - New in-process)
+  vectorDb: {
+    getStatus: () => secureIPC.safeInvoke(IPC_CHANNELS.VECTOR_DB.GET_STATUS),
+    getStats: () => secureIPC.safeInvoke(IPC_CHANNELS.VECTOR_DB.GET_STATS),
+    healthCheck: () => secureIPC.safeInvoke(IPC_CHANNELS.VECTOR_DB.HEALTH_CHECK),
+    onStatusChanged: (callback) => secureIPC.safeOn(IPC_CHANNELS.VECTOR_DB.STATUS_CHANGED, callback)
+  },
+
+  // Event Listeners
   events: {
     onOperationProgress: (callback) => secureIPC.safeOn('operation-progress', callback),
     onAppError: (callback) => secureIPC.safeOn('app:error', callback),
@@ -1164,28 +874,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onOperationError: (callback) => secureIPC.safeOn('operation-error', callback),
     onOperationComplete: (callback) => secureIPC.safeOn('operation-complete', callback),
     onOperationFailed: (callback) => secureIPC.safeOn('operation-failed', callback),
-    // File operation events (move/delete) for search index invalidation
     onFileOperationComplete: (callback) => secureIPC.safeOn('file-operation-complete', callback),
-    // Notification events from watchers (SmartFolderWatcher, DownloadWatcher)
     onNotification: (callback) => secureIPC.safeOn('notification', callback),
-    // FIX: Batch results chunk events for progressive streaming during batch operations
     onBatchResultsChunk: (callback) => secureIPC.safeOn('batch-results-chunk', callback),
-    // Send error report to main process (uses send, not invoke)
     sendError: (errorData) => {
       try {
-        // Validate error data structure
-        if (!errorData || typeof errorData !== 'object' || !errorData.message) {
-          log.warn('[events.sendError] Invalid error data structure');
-          return;
-        }
-        // FIX: Use constant instead of hardcoded string
+        if (!errorData || typeof errorData !== 'object' || !errorData.message) return;
         const channel = IPC_CHANNELS.SYSTEM.RENDERER_ERROR_REPORT;
-        if (!ALLOWED_SEND_CHANNELS.includes(channel)) {
-          log.warn(`[events.sendError] Blocked send to unauthorized channel: ${channel}`);
-          return;
-        }
-        // Send error report to main process
-        // This uses send instead of invoke since it's fire-and-forget
+        if (!ALLOWED_SEND_CHANNELS.includes(channel)) return;
         ipcRenderer.send(channel, errorData);
       } catch (error) {
         log.error('[events.sendError] Failed to send error report:', error);
@@ -1193,83 +889,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
 
-  // Settings - FIX: Use centralized IPC_CHANNELS constants to prevent drift
+  // Settings
   settings: {
-    get: async () => {
-      const result = await secureIPC.safeInvoke(IPC_CHANNELS.SETTINGS.GET);
-      return throwIfFailed(result, {
-        allowCanceled: false,
-        defaultMessage: 'Failed to load settings'
-      });
-    },
-    save: async (settings) => {
-      const result = await secureIPC.safeInvoke(IPC_CHANNELS.SETTINGS.SAVE, settings);
-      // If persistence fails, throw so renderer can't "pretend" it saved.
-      return throwIfFailed(result, {
-        allowCanceled: false,
-        defaultMessage: 'Failed to save settings'
-      });
-    },
+    get: async () => throwIfFailed(await secureIPC.safeInvoke(IPC_CHANNELS.SETTINGS.GET)),
+    save: async (settings) =>
+      throwIfFailed(await secureIPC.safeInvoke(IPC_CHANNELS.SETTINGS.SAVE, settings)),
     getConfigurableLimits: () =>
       secureIPC.safeInvoke(IPC_CHANNELS.SETTINGS.GET_CONFIGURABLE_LIMITS),
     getLogsInfo: () => secureIPC.safeInvoke(IPC_CHANNELS.SETTINGS.GET_LOGS_INFO),
     openLogsFolder: () => secureIPC.safeInvoke(IPC_CHANNELS.SETTINGS.OPEN_LOGS_FOLDER),
-    export: async (exportPath) => {
-      const result = await secureIPC.safeInvoke(IPC_CHANNELS.SETTINGS.EXPORT, exportPath);
-      return throwIfFailed(result, {
-        allowCanceled: true,
-        defaultMessage: 'Failed to export settings'
-      });
-    },
-    import: async (importPath) => {
-      const result = await secureIPC.safeInvoke(IPC_CHANNELS.SETTINGS.IMPORT, importPath);
-      return throwIfFailed(result, {
-        allowCanceled: true,
-        defaultMessage: 'Failed to import settings'
-      });
-    },
+    export: async (exportPath) =>
+      throwIfFailed(await secureIPC.safeInvoke(IPC_CHANNELS.SETTINGS.EXPORT, exportPath)),
+    import: async (importPath) =>
+      throwIfFailed(await secureIPC.safeInvoke(IPC_CHANNELS.SETTINGS.IMPORT, importPath)),
     createBackup: () => secureIPC.safeInvoke(IPC_CHANNELS.SETTINGS.CREATE_BACKUP),
     listBackups: () => secureIPC.safeInvoke(IPC_CHANNELS.SETTINGS.LIST_BACKUPS),
-    restoreBackup: async (backupPath) => {
-      const result = await secureIPC.safeInvoke(IPC_CHANNELS.SETTINGS.RESTORE_BACKUP, backupPath);
-      return throwIfFailed(result, {
-        allowCanceled: false,
-        defaultMessage: 'Failed to restore settings backup'
-      });
-    },
-    deleteBackup: async (backupPath) => {
-      const result = await secureIPC.safeInvoke(IPC_CHANNELS.SETTINGS.DELETE_BACKUP, backupPath);
-      return throwIfFailed(result, {
-        allowCanceled: false,
-        defaultMessage: 'Failed to delete settings backup'
-      });
-    }
-  },
-
-  // ChromaDB Service Status
-  chromadb: {
-    getStatus: () => secureIPC.safeInvoke(IPC_CHANNELS.CHROMADB.GET_STATUS),
-    getCircuitStats: () => secureIPC.safeInvoke(IPC_CHANNELS.CHROMADB.GET_CIRCUIT_STATS),
-    getQueueStats: () => secureIPC.safeInvoke(IPC_CHANNELS.CHROMADB.GET_QUEUE_STATS),
-    forceRecovery: () => secureIPC.safeInvoke(IPC_CHANNELS.CHROMADB.FORCE_RECOVERY),
-    healthCheck: () => secureIPC.safeInvoke(IPC_CHANNELS.CHROMADB.HEALTH_CHECK),
-    // FIX: Use IPC_CHANNELS constant instead of hardcoded string
-    onStatusChanged: (callback) => secureIPC.safeOn(IPC_CHANNELS.CHROMADB.STATUS_CHANGED, callback)
-  },
-
-  // Dependency Management (Ollama + ChromaDB)
-  dependencies: {
-    getStatus: () => secureIPC.safeInvoke(IPC_CHANNELS.DEPENDENCIES.GET_STATUS),
-    installOllama: () => secureIPC.safeInvoke(IPC_CHANNELS.DEPENDENCIES.INSTALL_OLLAMA),
-    installChromaDb: () => secureIPC.safeInvoke(IPC_CHANNELS.DEPENDENCIES.INSTALL_CHROMADB),
-    updateOllama: () => secureIPC.safeInvoke(IPC_CHANNELS.DEPENDENCIES.UPDATE_OLLAMA),
-    updateChromaDb: () => secureIPC.safeInvoke(IPC_CHANNELS.DEPENDENCIES.UPDATE_CHROMADB),
-    // Event listener for service status changes (ChromaDB/Ollama start/stop/health)
-    onServiceStatusChanged: (callback) =>
-      secureIPC.safeOn(IPC_CHANNELS.DEPENDENCIES.SERVICE_STATUS_CHANGED, callback)
+    restoreBackup: async (backupPath) =>
+      throwIfFailed(await secureIPC.safeInvoke(IPC_CHANNELS.SETTINGS.RESTORE_BACKUP, backupPath)),
+    deleteBackup: async (backupPath) =>
+      throwIfFailed(await secureIPC.safeInvoke(IPC_CHANNELS.SETTINGS.DELETE_BACKUP, backupPath))
   }
-});
 
-// Legacy compatibility layer removed - use window.electronAPI instead
+  // Deprecated APIs removed - in-process stack only
+});
 
 log.info('Secure context bridge exposed with structured API');

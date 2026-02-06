@@ -35,7 +35,6 @@ function EmbeddingRebuildSection({ addNotification }) {
           files: typeof res.files === 'number' ? res.files : 0,
           folders: typeof res.folders === 'number' ? res.folders : 0,
           initialized: Boolean(res.initialized),
-          serverUrl: res.serverUrl || '',
           needsFileEmbeddingRebuild: res.needsFileEmbeddingRebuild,
           analysisHistory: res.analysisHistory,
           embeddingIndex: res.embeddingIndex,
@@ -108,7 +107,7 @@ function EmbeddingRebuildSection({ addNotification }) {
 
   const statsLabel = useMemo(() => {
     if (isLoadingStats && !stats) return 'Loading embeddings status...';
-    if (!stats) return 'Embeddings status unavailable - check Ollama connection';
+    if (!stats) return 'Embeddings status unavailable - check AI engine status';
     if (stats.embeddingModelMismatch) {
       const indexed = stats.embeddingIndex?.model ? `${stats.embeddingIndex.model}` : 'unknown';
       const active = stats.activeEmbeddingModel ? `${stats.activeEmbeddingModel}` : 'unknown';
@@ -139,10 +138,20 @@ function EmbeddingRebuildSection({ addNotification }) {
         );
       } else {
         const errorMsg = res?.error || '';
-        if (errorMsg.includes('Ollama') || errorMsg.includes('ECONNREFUSED')) {
-          addNotification('Ollama not running. Start Ollama and try again.', 'error');
-        } else if (errorMsg.includes('ChromaDB')) {
-          addNotification('ChromaDB unavailable. Check Settings or restart the app.', 'error');
+        const code = res?.code || '';
+        if (
+          code === 'AI_ENGINE_UNAVAILABLE' ||
+          errorMsg.includes('AI engine') ||
+          errorMsg.includes('ECONNREFUSED')
+        ) {
+          addNotification('AI engine unavailable. Check models and try again.', 'error');
+        } else if (code === 'VECTOR_DB_UNAVAILABLE' || code === 'VECTOR_DB_PENDING') {
+          addNotification(
+            'Vector DB is initializing. Please wait a moment and try again.',
+            'error'
+          );
+        } else if (errorMsg.includes('Vector DB')) {
+          addNotification('Vector DB unavailable. Check Settings or restart the app.', 'error');
         } else if (errorMsg.includes('MODEL_NOT_AVAILABLE')) {
           const modelLabel =
             res?.modelType === 'text'
@@ -155,11 +164,11 @@ function EmbeddingRebuildSection({ addNotification }) {
             'error'
           );
         } else {
-          addNotification('Full rebuild failed. Check Ollama connection in Settings.', 'error');
+          addNotification('Full rebuild failed. Check AI engine status in Settings.', 'error');
         }
       }
     } catch {
-      addNotification('Full rebuild failed. Check Ollama is running.', 'error');
+      addNotification('Full rebuild failed. Check AI engine status.', 'error');
     } finally {
       setIsFullRebuilding(false);
       refreshStats();
@@ -180,8 +189,18 @@ function EmbeddingRebuildSection({ addNotification }) {
         );
       } else {
         const errorMsg = res?.error || '';
-        if (errorMsg.includes('Ollama') || errorMsg.includes('ECONNREFUSED')) {
-          addNotification('Ollama not running. Start Ollama and try again.', 'error');
+        const code = res?.code || '';
+        if (
+          code === 'AI_ENGINE_UNAVAILABLE' ||
+          errorMsg.includes('AI engine') ||
+          errorMsg.includes('ECONNREFUSED')
+        ) {
+          addNotification('AI engine unavailable. Check models and try again.', 'error');
+        } else if (code === 'VECTOR_DB_UNAVAILABLE' || code === 'VECTOR_DB_PENDING') {
+          addNotification(
+            'Vector DB is initializing. Please wait a moment and try again.',
+            'error'
+          );
         } else if (errorMsg.includes('WATCHER_NOT_AVAILABLE')) {
           addNotification('Configure smart folders first before reanalyzing.', 'error');
         } else if (errorMsg.includes('MODEL_NOT_AVAILABLE')) {
@@ -191,13 +210,13 @@ function EmbeddingRebuildSection({ addNotification }) {
           );
         } else {
           addNotification(
-            res?.error || 'Reanalyze failed. Check Ollama connection in Settings.',
+            res?.error || 'Reanalyze failed. Check AI engine status in Settings.',
             'error'
           );
         }
       }
     } catch {
-      addNotification('Reanalyze failed. Check Ollama is running.', 'error');
+      addNotification('Reanalyze failed. Check AI engine status.', 'error');
     } finally {
       setIsReanalyzingAll(false);
       refreshStats();
@@ -226,7 +245,6 @@ function EmbeddingRebuildSection({ addNotification }) {
           </Text>
           <Text variant="small" className="text-system-gray-600">
             {statsLabel}
-            {stats?.serverUrl ? ` • ${stats.serverUrl}` : ''}
           </Text>
           <Text variant="tiny" className="text-system-gray-400 mt-1">
             When changing embedding models, use <strong>Rebuild All Embeddings</strong> to update

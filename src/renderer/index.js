@@ -295,6 +295,11 @@ function removeSplashScreen() {
 
   splashRemovalInProgress = true;
 
+  // Cancel the polyfill safety-net timeout — the app loaded fine
+  if (typeof window.__STRATOSORT_CANCEL_SPLASH_TIMEOUT === 'function') {
+    window.__STRATOSORT_CANCEL_SPLASH_TIMEOUT();
+  }
+
   // Add fade-out animation
   initialLoading.style.transition = 'opacity 0.3s ease-out';
   initialLoading.style.pointerEvents = 'none';

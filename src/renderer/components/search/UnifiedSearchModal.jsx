@@ -82,10 +82,11 @@ const GRAPH_SIDEBAR_SECTION_TITLE =
  */
 const getErrorMessage = (error, context = 'Operation') => {
   const msg = error?.message || '';
+  const code = error?.code || error?.cause?.code || '';
 
   // Connection errors - service unavailable
   if (msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND')) {
-    return `${context} failed: Embedding service unavailable. Is Ollama running?`;
+    return `${context} failed: Embedding service unavailable. Check the AI engine status.`;
   }
 
   // Timeout errors
@@ -93,8 +94,13 @@ const getErrorMessage = (error, context = 'Operation') => {
     return `${context} timed out. Try a shorter query or fewer files.`;
   }
 
-  // ChromaDB not available
-  if (msg.includes('ChromaDB') || msg.includes('not available yet')) {
+  // Vector DB not available
+  if (
+    code === 'VECTOR_DB_UNAVAILABLE' ||
+    code === 'VECTOR_DB_PENDING' ||
+    msg.includes('Vector DB') ||
+    msg.includes('not available yet')
+  ) {
     return `${context} failed: Knowledge OS is initializing. Please wait a moment and try again.`;
   }
 
@@ -251,7 +257,7 @@ function ResultRow({
 
   const confidence = result?.metadata?.confidence || 0;
 
-  // Parse keywords: might be an array or a comma-separated string from ChromaDB
+  // Parse keywords: might be an array or a comma-separated string from the vector DB
   const rawKeywords = result?.metadata?.keywords || [];
   const keywords = Array.isArray(rawKeywords)
     ? rawKeywords
@@ -1919,7 +1925,7 @@ export default function UnifiedSearchModal({
         setStats({
           files: typeof res.files === 'number' ? res.files : 0,
           folders: typeof res.folders === 'number' ? res.folders : 0,
-          serverUrl: res.serverUrl || ''
+          initialized: Boolean(res.initialized)
         });
       } else {
         setStats(null);
@@ -2980,7 +2986,7 @@ export default function UnifiedSearchModal({
     [nodes]
   );
 
-  // Fetch fresh metadata from ChromaDB when a file node is selected
+  // Fetch fresh metadata from the vector DB when a file node is selected
   // This ensures we show the CURRENT file path after files have been moved/organized
   useEffect(() => {
     if (!selectedNode || selectedNode.data?.kind !== 'file') {
@@ -3021,7 +3027,7 @@ export default function UnifiedSearchModal({
       const name = metadata.name || safeBasename(path) || id;
       const score = typeof result?.score === 'number' ? result.score : undefined;
 
-      // Parse tags from JSON string (ChromaDB stores as string) or use array directly
+      // Parse tags from JSON string (vector DB stores as string) or use array directly
       let tags = [];
       if (Array.isArray(metadata.tags)) {
         tags = metadata.tags;
@@ -3142,7 +3148,7 @@ export default function UnifiedSearchModal({
         for (const filePath of droppedPaths) {
           if (!filePath) continue;
 
-          // Search for this file by name to find it in ChromaDB
+          // Search for this file by name to find it in the vector DB
           const fileName = extractFileName(filePath) || filePath;
           const searchResp = await window.electronAPI?.embeddings?.search?.(fileName, {
             topK: 20,
@@ -4820,7 +4826,7 @@ export default function UnifiedSearchModal({
 
   const showEmptyBanner =
     hasLoadedStats && stats && typeof stats.files === 'number' && stats.files === 0 && !error;
-  // Use fresh metadata from ChromaDB when available (for current file paths after moves)
+  // Use fresh metadata from the vector DB when available (for current file paths after moves)
   const selectedPath = freshMetadata?.path || selectedNode?.data?.path || '';
   const selectedLabel = freshMetadata?.name || selectedNode?.data?.label || selectedNode?.id || '';
   const selectedKind = selectedNode?.data?.kind || '';

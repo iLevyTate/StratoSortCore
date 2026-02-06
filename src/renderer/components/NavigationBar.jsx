@@ -91,11 +91,11 @@ const ConnectionIndicator = memo(function ConnectionIndicator({ status = 'unknow
   const isOffline = status === 'offline';
   const isConnecting = status === 'connecting';
   const label = isOnline
-    ? 'Connected'
+    ? 'AI Engine Ready'
     : isOffline
-      ? 'Disconnected'
+      ? 'AI Engine Offline'
       : isConnecting
-        ? 'Connecting'
+        ? 'Initializing...'
         : 'Status unknown';
   return (
     <div className="relative flex items-center justify-center" title={label} aria-label={label}>
@@ -455,7 +455,8 @@ function NavigationBar() {
       return 'unknown';
     };
 
-    const statuses = [health?.ollama, health?.chromadb].map(normalizeStatus);
+    // Llama and VectorDB are in-process, always online after initialization
+    const statuses = [health?.llama, health?.vectorDb].map(normalizeStatus);
     if (statuses.every((s) => s === 'online')) return 'online';
     if (statuses.some((s) => s === 'offline')) return 'offline';
     if (statuses.some((s) => s === 'connecting' || s === 'unknown')) return 'connecting';
@@ -481,22 +482,38 @@ function NavigationBar() {
     didProbeHealth.current = true;
 
     const probeHealth = async () => {
-      try {
-        const settings = await window.electronAPI?.settings?.get?.();
-        const host = settings?.ollamaHost;
-        if (window.electronAPI?.ollama?.testConnection) {
-          const res = await window.electronAPI.ollama.testConnection(host);
-          const rawStatus = res?.ollamaHealth?.status;
+      // LlamaService is in-process - use testConnection to verify model loaded
+      if (window.electronAPI?.llama?.testConnection) {
+        try {
+          const res = await window.electronAPI.llama.testConnection();
+          const rawStatus = res?.status;
           const mappedStatus =
-            rawStatus === 'healthy' ? 'online' : rawStatus === 'unhealthy' ? 'offline' : null;
-          if (mappedStatus) {
-            dispatch(updateHealth({ ollama: mappedStatus }));
-          }
+            rawStatus === 'healthy' ? 'online' : rawStatus === 'unhealthy' ? 'offline' : 'online';
+          dispatch(updateHealth({ llama: mappedStatus }));
+        } catch (error) {
+          logger.debug('[NavigationBar] Llama health probe failed', {
+            error: error?.message || String(error)
+          });
+          dispatch(updateHealth({ llama: 'offline' }));
         }
-      } catch (error) {
-        logger.debug('[NavigationBar] Ollama health probe failed', {
-          error: error?.message || String(error)
-        });
+      } else {
+        dispatch(updateHealth({ llama: 'offline' }));
+      }
+
+      // Check VectorDB status
+      if (window.electronAPI?.vectorDb?.healthCheck) {
+        try {
+          const res = await window.electronAPI.vectorDb.healthCheck();
+          const status = res?.healthy ? 'online' : 'offline';
+          dispatch(updateHealth({ vectorDb: status }));
+        } catch (error) {
+          logger.debug('[NavigationBar] Vector DB health check failed', {
+            error: error?.message || String(error)
+          });
+          dispatch(updateHealth({ vectorDb: 'offline' }));
+        }
+      } else {
+        dispatch(updateHealth({ vectorDb: 'offline' }));
       }
     };
 

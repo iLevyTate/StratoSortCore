@@ -5,6 +5,7 @@ import analysisReducer from './slices/analysisSlice';
 import systemReducer from './slices/systemSlice';
 import ipcMiddleware, { markStoreReady } from './middleware/ipcMiddleware';
 import persistenceMiddleware from './middleware/persistenceMiddleware';
+import { migrateState } from './migrations';
 import { PHASES } from '../../shared/constants';
 import { logger } from '../../shared/logger';
 
@@ -105,7 +106,14 @@ const loadState = () => {
       }
       return undefined;
     }
-    const parsed = JSON.parse(serializedState);
+    const parsedRaw = JSON.parse(serializedState);
+    const parsed = migrateState(parsedRaw);
+
+    if (!parsed) {
+      // Migration failed or returned null - start fresh
+      logger.warn('[Store] State migration returned null, starting with fresh state');
+      return undefined;
+    }
 
     // State TTL: 24 hours
     // Rationale: Expire persisted state after 24 hours to prevent stale data issues
@@ -165,8 +173,8 @@ const loadState = () => {
         system: {
           metrics: { cpu: 0, memory: 0, uptime: 0 },
           health: {
-            chromadb: 'unknown',
-            ollama: 'unknown'
+            vectorDb: 'unknown',
+            llama: 'unknown'
           },
           notifications: [],
           unreadNotificationCount: 0,
@@ -232,8 +240,8 @@ const loadState = () => {
       system: {
         metrics: { cpu: 0, memory: 0, uptime: 0 },
         health: {
-          chromadb: 'unknown',
-          ollama: 'unknown'
+          vectorDb: 'unknown',
+          llama: 'unknown'
         },
         notifications: [], // Don't restore notifications - they're transient
         unreadNotificationCount: 0,

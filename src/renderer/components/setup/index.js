@@ -43,7 +43,7 @@ export default function FirstRunWizard({ onComplete }) {
     let isActive = true;
     (async () => {
       try {
-        const res = await window.electronAPI?.ollama?.testConnection?.();
+        const res = await window.electronAPI?.llama?.testConnection?.();
         if (isActive) setHostOk(Boolean(res?.success));
       } catch {
         if (isActive) setHostOk(false);
@@ -67,9 +67,8 @@ export default function FirstRunWizard({ onComplete }) {
           prev.map((r) => (r.model === model ? { ...r, status: 'pulling' } : r))
         );
         try {
-          const res = await window.electronAPI?.ollama?.pullModels?.([model]);
-          const result = res?.results?.[0];
-          if (result?.success) {
+          const res = await window.electronAPI?.llama?.downloadModel?.(model);
+          if (res?.success) {
             setResults((prev) =>
               prev.map((r) => (r.model === model ? { ...r, status: 'ready' } : r))
             );
@@ -79,7 +78,7 @@ export default function FirstRunWizard({ onComplete }) {
                 r.model === model
                   ? {
                       ...r,
-                      status: `failed: ${result?.error || 'unknown error'}`
+                      status: `failed: ${res?.error || 'unknown error'}`
                     }
                   : r
               )
@@ -111,7 +110,8 @@ export default function FirstRunWizard({ onComplete }) {
               Set up AI locally
             </Heading>
             <Text variant="small" className="mb-8">
-              StratoSort uses Ollama to run models locally. We can pull the base models for you.
+              StratoSort runs models locally using an in-process AI engine. We can download the base
+              models for you.
             </Text>
             <div className="space-y-2 mb-3">
               {models.map((m) => (
@@ -139,7 +139,7 @@ export default function FirstRunWizard({ onComplete }) {
                 Skip
               </Button>
               <Button onClick={handlePull} disabled={pulling || selectedModels.length === 0}>
-                {pulling ? 'Pulling…' : 'Pull models'}
+                {pulling ? 'Downloading…' : 'Download models'}
               </Button>
             </div>
           </div>

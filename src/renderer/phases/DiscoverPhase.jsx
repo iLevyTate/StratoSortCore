@@ -315,15 +315,15 @@ function DiscoverPhase() {
     useCallback(
       (changedSettings) => {
         logger.info('Settings changed externally:', Object.keys(changedSettings));
-        if (changedSettings.ollamaHost && !isAnalyzing) {
-          addNotification('Ollama settings saved', 'info', 2000, 'settings-changed');
+        if (changedSettings.textModel && !isAnalyzing) {
+          addNotification('AI settings saved', 'info', 2000, 'settings-changed');
         }
       },
       [isAnalyzing, addNotification]
     ),
     {
       enabled: true,
-      watchKeys: ['ollamaHost', 'ollamaModels', 'analysisSettings']
+      watchKeys: ['textModel', 'visionModel', 'embeddingModel', 'analysisSettings']
     }
   );
 

@@ -24,7 +24,7 @@ function APITestSection({ addNotification }) {
         analysisHistory: { success: false, message },
         undoRedo: { success: false, message },
         systemMonitoring: { success: false, message },
-        ollama: { success: false, message }
+        llama: { success: false, message }
       });
       setIsTestingApi(false);
       addNotification('API tests failed: Electron API not available', 'error');
@@ -67,10 +67,10 @@ function APITestSection({ addNotification }) {
     }
 
     try {
-      await window.electronAPI.ollama.getModels();
-      results.ollama = { success: true, message: 'Working' };
+      await window.electronAPI.llama.getModels();
+      results.llama = { success: true, message: 'Working' };
     } catch (error) {
-      results.ollama = { success: false, message: error.message };
+      results.llama = { success: false, message: error.message };
     }
 
     setTestResults(results);

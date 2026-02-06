@@ -73,8 +73,10 @@ const initialState = {
     uptime: 0
   },
   health: {
-    chromadb: 'unknown', // 'online', 'offline', 'connecting'
-    ollama: 'unknown'
+    // Vector DB (Orama) is in-process, always online after initialization
+    vectorDb: 'online',
+    // LLM (node-llama-cpp) is in-process, always online after initialization
+    llama: 'online'
   },
   notifications: [],
   // Track unread count for UI badge
