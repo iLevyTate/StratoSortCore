@@ -18,6 +18,14 @@ const { getModel } = require('../../../shared/modelRegistry');
 const logger = createLogger('StartupManager');
 
 /**
+ * Detect Ollama-style model names (e.g. 'llama3.2:latest', 'mistral:7b').
+ * These contain a ':' tag separator and are never valid GGUF filenames.
+ */
+function _isOllamaStyleName(name) {
+  return typeof name === 'string' && name.includes(':') && !name.endsWith('.gguf');
+}
+
+/**
  * StartupManager - Application startup orchestration
  *
  * Centralized service for managing application startup sequence.
@@ -340,14 +348,28 @@ class StartupManager {
    */
   /**
    * Fuzzy-match a configured model name against installed model filenames.
-   * Handles stale Ollama-era names (e.g. 'mistral' → 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf').
+   * Returns the default GGUF name for Ollama-era names that can't be resolved.
    * @param {string} configured - Model name from user settings
    * @param {string[]} installedList - Array of installed model filenames
+   * @param {string} [defaultModel] - Default GGUF model name to use if configured is stale
    * @returns {string|null} Resolved model name, or null if no match found
    */
-  _resolveModelName(configured, installedList) {
-    if (!configured) return null;
+  _resolveModelName(configured, installedList, defaultModel) {
+    if (!configured) return defaultModel || null;
     if (installedList.includes(configured)) return configured;
+
+    // Ollama-style names (e.g. 'llama3.2:latest') can't be fuzzy-matched to
+    // GGUF filenames - reset to the default immediately
+    if (_isOllamaStyleName(configured)) {
+      logger.info('[STARTUP] Detected Ollama-era model name, replacing with GGUF default', {
+        ollamaName: configured,
+        default: defaultModel
+      });
+      // Try to find the default in the installed list
+      if (defaultModel && installedList.includes(defaultModel)) return defaultModel;
+      return defaultModel || null;
+    }
+
     const lc = configured.toLowerCase();
     return (
       installedList.find((m) => m.toLowerCase().includes(lc)) ||
@@ -366,14 +388,28 @@ class StartupManager {
       const availableNames = available.map((m) => m.name || m.filename || '').filter(Boolean);
       const availableSet = new Set(availableNames);
 
-      // Resolve configured names with fuzzy matching for stale Ollama-era names
       const embeddingConfigured = cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
       const textConfigured = cfg.textModel || AI_DEFAULTS.TEXT.MODEL;
+      const visionConfigured = cfg.visionModel || AI_DEFAULTS.IMAGE.MODEL;
 
-      const resolvedEmbedding = this._resolveModelName(embeddingConfigured, availableNames);
-      const resolvedText = this._resolveModelName(textConfigured, availableNames);
+      // Resolve with defaults: Ollama-era names get replaced with GGUF defaults
+      const resolvedEmbedding = this._resolveModelName(
+        embeddingConfigured,
+        availableNames,
+        AI_DEFAULTS.EMBEDDING.MODEL
+      );
+      const resolvedText = this._resolveModelName(
+        textConfigured,
+        availableNames,
+        AI_DEFAULTS.TEXT.MODEL
+      );
+      const resolvedVision = this._resolveModelName(
+        visionConfigured,
+        availableNames,
+        AI_DEFAULTS.IMAGE.MODEL
+      );
 
-      // Auto-correct stale model names in settings
+      // Auto-correct stale/Ollama model names in settings
       const corrections = {};
       if (resolvedEmbedding && resolvedEmbedding !== embeddingConfigured) {
         corrections.embeddingModel = resolvedEmbedding;
@@ -381,8 +417,11 @@ class StartupManager {
       if (resolvedText && resolvedText !== textConfigured) {
         corrections.textModel = resolvedText;
       }
+      if (resolvedVision && resolvedVision !== visionConfigured) {
+        corrections.visionModel = resolvedVision;
+      }
       if (Object.keys(corrections).length > 0) {
-        logger.info('[STARTUP] Auto-resolved stale model names in settings', corrections);
+        logger.info('[STARTUP] Auto-corrected model names in settings', corrections);
         try {
           await llamaService.updateConfig(corrections);
         } catch (e) {
@@ -391,19 +430,14 @@ class StartupManager {
       }
 
       const missingRequired = [];
-      if (!resolvedEmbedding) missingRequired.push(embeddingConfigured);
-      if (!resolvedText) missingRequired.push(textConfigured);
+      if (!resolvedEmbedding || !availableSet.has(resolvedEmbedding)) {
+        missingRequired.push(resolvedEmbedding || AI_DEFAULTS.EMBEDDING.MODEL);
+      }
+      if (!resolvedText || !availableSet.has(resolvedText)) {
+        missingRequired.push(resolvedText || AI_DEFAULTS.TEXT.MODEL);
+      }
 
       // Vision is optional but includes a companion projector
-      const visionConfigured = cfg.visionModel || AI_DEFAULTS.IMAGE.MODEL;
-      const resolvedVision = this._resolveModelName(visionConfigured, availableNames);
-      if (resolvedVision && resolvedVision !== visionConfigured) {
-        try {
-          await llamaService.updateConfig({ visionModel: resolvedVision });
-        } catch (e) {
-          logger.warn('[STARTUP] Failed to persist vision model correction:', e?.message);
-        }
-      }
       const visionInfo = getModel(resolvedVision || visionConfigured);
       const projectorName = visionInfo?.clipModel?.name;
       const visionModelPresent = resolvedVision ? availableSet.has(resolvedVision) : false;

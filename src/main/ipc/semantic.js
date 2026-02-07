@@ -38,9 +38,31 @@ const _moduleLogger = createLogger('semantic-ipc');
  * @param {Object} logger - Logger instance
  * @returns {Promise<{available: boolean, model: string, error?: string}>}
  */
+/**
+ * Detect Ollama-style model names (e.g. 'llama3.2:latest', 'mistral:7b').
+ * These contain a ':' tag separator and are never valid GGUF filenames.
+ */
+function _isOllamaStyleName(name) {
+  return typeof name === 'string' && name.includes(':') && !name.endsWith('.gguf');
+}
+
 async function verifyEmbeddingModelAvailable(logger) {
   const cfg = await getLlamaService().getConfig();
-  const model = cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
+  let model = cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
+
+  // Replace Ollama-era names with the GGUF default and persist the correction
+  if (_isOllamaStyleName(model)) {
+    logger.info('[EMBEDDINGS] Replacing Ollama-era embedding model name with GGUF default', {
+      ollamaName: model,
+      default: AI_DEFAULTS.EMBEDDING.MODEL
+    });
+    model = AI_DEFAULTS.EMBEDDING.MODEL;
+    try {
+      await getLlamaService().updateConfig({ embeddingModel: model });
+    } catch (e) {
+      logger.warn('[EMBEDDINGS] Failed to persist embedding model correction:', e?.message);
+    }
+  }
 
   // Unit tests mock embedding generation and don't require real GGUF files.
   if (process.env.JEST_WORKER_ID) {
@@ -113,9 +135,32 @@ function isModelAvailable(modelNames, model) {
 
 async function verifyReanalyzeModelsAvailable(logger) {
   const cfg = await getLlamaService().getConfig();
-  const textModel = cfg.textModel || AI_DEFAULTS.TEXT.MODEL;
-  const visionModel = cfg.visionModel || AI_DEFAULTS.IMAGE.MODEL;
-  const embeddingModel = cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
+  let textModel = cfg.textModel || AI_DEFAULTS.TEXT.MODEL;
+  let visionModel = cfg.visionModel || AI_DEFAULTS.IMAGE.MODEL;
+  let embeddingModel = cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
+
+  // Replace Ollama-era names with GGUF defaults and persist corrections
+  const corrections = {};
+  if (_isOllamaStyleName(textModel)) {
+    corrections.textModel = AI_DEFAULTS.TEXT.MODEL;
+    textModel = AI_DEFAULTS.TEXT.MODEL;
+  }
+  if (_isOllamaStyleName(visionModel)) {
+    corrections.visionModel = AI_DEFAULTS.IMAGE.MODEL;
+    visionModel = AI_DEFAULTS.IMAGE.MODEL;
+  }
+  if (_isOllamaStyleName(embeddingModel)) {
+    corrections.embeddingModel = AI_DEFAULTS.EMBEDDING.MODEL;
+    embeddingModel = AI_DEFAULTS.EMBEDDING.MODEL;
+  }
+  if (Object.keys(corrections).length > 0) {
+    logger.info('[REANALYZE] Replacing Ollama-era model names with GGUF defaults', corrections);
+    try {
+      await getLlamaService().updateConfig(corrections);
+    } catch (e) {
+      logger.warn('[REANALYZE] Failed to persist model name corrections:', e?.message);
+    }
+  }
 
   // Unit tests mock analysis/embedding and don't require real GGUF files.
   if (process.env.JEST_WORKER_ID) {

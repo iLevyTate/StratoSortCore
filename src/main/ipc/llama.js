@@ -11,6 +11,7 @@ const { IpcServiceContext, createFromLegacyParams } = require('./IpcServiceConte
 const { createHandler, safeHandle, safeSend, z } = require('./ipcWrappers');
 const { container: serviceContainer, ServiceIds } = require('../services/ServiceContainer');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
+const { AI_DEFAULTS } = require('../../shared/constants');
 
 /**
  * Helper to add timeout to async operations
@@ -124,24 +125,41 @@ function registerLlamaIpc(servicesOrParams) {
           const config = await service.getConfig();
           const allModelNames = (models || []).map((m) => m.name || m.filename);
 
-          // Auto-resolve stale model names (e.g., Ollama-era 'mxbai-embed-large'
-          // → installed GGUF 'mxbai-embed-large-v1-f16.gguf')
-          const resolveModel = (configured, installedList) => {
-            if (!configured) return configured;
+          // Auto-resolve stale model names. Ollama-era names with ':' tags
+          // (e.g. 'llama3.2:latest') are replaced with GGUF defaults immediately.
+          // Partial-match names (e.g. 'mxbai-embed-large') are fuzzy-matched
+          // against installed GGUF filenames.
+          const isOllamaName = (n) =>
+            typeof n === 'string' && n.includes(':') && !n.endsWith('.gguf');
+
+          const resolveModel = (configured, installedList, defaultModel) => {
+            if (!configured) return defaultModel || configured;
             if (installedList.includes(configured)) return configured;
-            // Partial match: find an installed model whose name contains the old name
+            // Ollama-style names can't be fuzzy-matched — use the default
+            if (isOllamaName(configured)) return defaultModel || configured;
             const lc = configured.toLowerCase();
             return (
               installedList.find((m) => m.toLowerCase().includes(lc)) ||
-              // Reverse: old name is a substring of the installed name
               installedList.find((m) => lc.includes(m.toLowerCase())) ||
               configured
             );
           };
 
-          const resolvedText = resolveModel(config.textModel, categories.text);
-          const resolvedVision = resolveModel(config.visionModel, categories.vision);
-          const resolvedEmbedding = resolveModel(config.embeddingModel, categories.embedding);
+          const resolvedText = resolveModel(
+            config.textModel,
+            categories.text,
+            AI_DEFAULTS.TEXT.MODEL
+          );
+          const resolvedVision = resolveModel(
+            config.visionModel,
+            categories.vision,
+            AI_DEFAULTS.IMAGE.MODEL
+          );
+          const resolvedEmbedding = resolveModel(
+            config.embeddingModel,
+            categories.embedding,
+            AI_DEFAULTS.EMBEDDING.MODEL
+          );
 
           // Persist corrected names so the stale value is fixed permanently
           const corrections = {};

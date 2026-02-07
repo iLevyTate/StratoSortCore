@@ -65,7 +65,14 @@ class SettingsMigrator {
         return settings?.[key] !== undefined && KEY_MIGRATIONS[key] !== null;
       });
 
-      return version < CURRENT_SCHEMA_VERSION || hasOldKeys;
+      // Check for Ollama-era model names (contain ':' tag separator)
+      const modelKeys = ['textModel', 'visionModel', 'embeddingModel'];
+      const hasOllamaNames = modelKeys.some((key) => {
+        const val = settings?.[key];
+        return typeof val === 'string' && val.includes(':') && !val.endsWith('.gguf');
+      });
+
+      return version < CURRENT_SCHEMA_VERSION || hasOldKeys || hasOllamaNames;
     } catch (error) {
       logger.warn('[SettingsMigrator] Error checking migration status:', error.message);
       return false;
@@ -87,7 +94,14 @@ class SettingsMigrator {
       const settings = await this._loadSettings();
       const currentVersion = settings?.settingsSchemaVersion || 1;
 
-      if (currentVersion >= CURRENT_SCHEMA_VERSION) {
+      // Check if Ollama-era model names need cleanup (even at current version)
+      const modelKeys = ['textModel', 'visionModel', 'embeddingModel'];
+      const hasOllamaNames = modelKeys.some((key) => {
+        const val = settings?.[key];
+        return typeof val === 'string' && val.includes(':') && !val.endsWith('.gguf');
+      });
+
+      if (currentVersion >= CURRENT_SCHEMA_VERSION && !hasOllamaNames) {
         logger.info('[SettingsMigrator] Settings already at current version');
         return { success: true, migrated: [], errors: [] };
       }
@@ -109,6 +123,22 @@ class SettingsMigrator {
             migrated.push(`Migrated: ${oldKey} -> ${newKey}`);
             this._log(`Migrated: ${oldKey} -> ${newKey} = ${settings[oldKey]}`);
           }
+        }
+      }
+
+      // Replace Ollama-era model names (contain ':' tag separator) with GGUF defaults.
+      // e.g. 'llama3.2:latest' → 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf'
+      const modelDefaults = {
+        textModel: NEW_DEFAULTS.textModel,
+        visionModel: NEW_DEFAULTS.visionModel,
+        embeddingModel: NEW_DEFAULTS.embeddingModel
+      };
+      for (const [key, defaultValue] of Object.entries(modelDefaults)) {
+        const current = newSettings[key];
+        if (typeof current === 'string' && current.includes(':') && !current.endsWith('.gguf')) {
+          newSettings[key] = defaultValue;
+          migrated.push(`Replaced Ollama-era model name: ${key} (${current} → ${defaultValue})`);
+          this._log(`Ollama cleanup: ${key} = ${current} → ${defaultValue}`);
         }
       }
 
