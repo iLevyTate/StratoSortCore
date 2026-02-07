@@ -66,6 +66,9 @@ function getOcrPool() {
     minThreads: 1,
     idleTimeout: 60000
   });
+  ocrPool.on('error', (error) => {
+    logger.error('[WorkerPools] OCR worker thread error:', { error: error?.message });
+  });
   logger.info('[WorkerPools] OCR pool initialized', { maxThreads });
   return ocrPool;
 }
@@ -86,6 +89,9 @@ function getEmbeddingPool() {
     maxThreads: 1,
     minThreads: 1,
     idleTimeout: 60000
+  });
+  embeddingPool.on('error', (error) => {
+    logger.error('[WorkerPools] Embedding worker thread error:', { error: error?.message });
   });
   logger.info('[WorkerPools] Embedding pool initialized', { maxThreads: 1 });
   return embeddingPool;

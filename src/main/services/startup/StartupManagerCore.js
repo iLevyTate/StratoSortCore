@@ -338,6 +338,24 @@ class StartupManager {
    * Non-blocking: missing models are reported via progress events
    * so the renderer can show the ModelSetupWizard.
    */
+  /**
+   * Fuzzy-match a configured model name against installed model filenames.
+   * Handles stale Ollama-era names (e.g. 'mistral' → 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf').
+   * @param {string} configured - Model name from user settings
+   * @param {string[]} installedList - Array of installed model filenames
+   * @returns {string|null} Resolved model name, or null if no match found
+   */
+  _resolveModelName(configured, installedList) {
+    if (!configured) return null;
+    if (installedList.includes(configured)) return configured;
+    const lc = configured.toLowerCase();
+    return (
+      installedList.find((m) => m.toLowerCase().includes(lc)) ||
+      installedList.find((m) => lc.includes(m.toLowerCase())) ||
+      null
+    );
+  }
+
   async _checkModelAvailability() {
     this.reportProgress('models', 'Checking AI model availability...', 70);
 
@@ -345,21 +363,51 @@ class StartupManager {
       const llamaService = this._getLlamaService();
       const cfg = await llamaService.getConfig();
       const available = await llamaService.listModels();
-      const availableNames = new Set(available.map((m) => m.name || m.filename || ''));
+      const availableNames = available.map((m) => m.name || m.filename || '').filter(Boolean);
+      const availableSet = new Set(availableNames);
 
-      const required = [
-        cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL,
-        cfg.textModel || AI_DEFAULTS.TEXT.MODEL
-      ].filter(Boolean);
+      // Resolve configured names with fuzzy matching for stale Ollama-era names
+      const embeddingConfigured = cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
+      const textConfigured = cfg.textModel || AI_DEFAULTS.TEXT.MODEL;
+
+      const resolvedEmbedding = this._resolveModelName(embeddingConfigured, availableNames);
+      const resolvedText = this._resolveModelName(textConfigured, availableNames);
+
+      // Auto-correct stale model names in settings
+      const corrections = {};
+      if (resolvedEmbedding && resolvedEmbedding !== embeddingConfigured) {
+        corrections.embeddingModel = resolvedEmbedding;
+      }
+      if (resolvedText && resolvedText !== textConfigured) {
+        corrections.textModel = resolvedText;
+      }
+      if (Object.keys(corrections).length > 0) {
+        logger.info('[STARTUP] Auto-resolved stale model names in settings', corrections);
+        try {
+          await llamaService.updateConfig(corrections);
+        } catch (e) {
+          logger.warn('[STARTUP] Failed to persist model name corrections:', e?.message);
+        }
+      }
+
+      const missingRequired = [];
+      if (!resolvedEmbedding) missingRequired.push(embeddingConfigured);
+      if (!resolvedText) missingRequired.push(textConfigured);
 
       // Vision is optional but includes a companion projector
-      const visionModel = cfg.visionModel || AI_DEFAULTS.IMAGE.MODEL;
-      const visionInfo = getModel(visionModel);
+      const visionConfigured = cfg.visionModel || AI_DEFAULTS.IMAGE.MODEL;
+      const resolvedVision = this._resolveModelName(visionConfigured, availableNames);
+      if (resolvedVision && resolvedVision !== visionConfigured) {
+        try {
+          await llamaService.updateConfig({ visionModel: resolvedVision });
+        } catch (e) {
+          logger.warn('[STARTUP] Failed to persist vision model correction:', e?.message);
+        }
+      }
+      const visionInfo = getModel(resolvedVision || visionConfigured);
       const projectorName = visionInfo?.clipModel?.name;
-
-      const missingRequired = required.filter((name) => !availableNames.has(name));
-      const visionModelPresent = visionModel ? availableNames.has(visionModel) : false;
-      const projectorPresent = projectorName ? availableNames.has(projectorName) : true;
+      const visionModelPresent = resolvedVision ? availableSet.has(resolvedVision) : false;
+      const projectorPresent = projectorName ? availableSet.has(projectorName) : true;
       const visionAvailable = visionModelPresent && projectorPresent;
 
       this.serviceStatus.llama.modelsAvailable = missingRequired.length === 0;
@@ -370,7 +418,7 @@ class StartupManager {
       if (missingRequired.length > 0) {
         logger.warn('[STARTUP] Required models missing', {
           missing: missingRequired,
-          available: Array.from(availableNames)
+          available: availableNames
         });
         this.reportProgress('models', 'Some AI models need to be downloaded', 75, {
           warning: true,

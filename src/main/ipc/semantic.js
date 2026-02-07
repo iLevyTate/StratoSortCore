@@ -105,7 +105,10 @@ async function verifyEmbeddingModelAvailable(logger) {
 function isModelAvailable(modelNames, model) {
   const normalizedModel = String(model || '').toLowerCase();
   if (!normalizedModel) return false;
-  return modelNames.includes(normalizedModel);
+  // Exact match
+  if (modelNames.includes(normalizedModel)) return true;
+  // Fuzzy match: handles stale Ollama-era names (e.g. 'mistral' matches 'mistral-7b-instruct-v0.3-q4_k_m.gguf')
+  return modelNames.some((m) => m.includes(normalizedModel) || normalizedModel.includes(m));
 }
 
 async function verifyReanalyzeModelsAvailable(logger) {

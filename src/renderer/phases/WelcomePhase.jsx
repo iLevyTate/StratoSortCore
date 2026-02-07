@@ -27,12 +27,22 @@ function WelcomePhase() {
           if (!cancelled) setModelCheckState('ready');
           return;
         }
-        const [models, config] = await Promise.all([
+        const [modelsResponse, configResponse] = await Promise.all([
           getModels(),
           typeof getConfig === 'function' ? getConfig() : Promise.resolve(null)
         ]);
         if (cancelled) return;
-        const available = new Set((models || []).map((m) => m.name || m.filename || ''));
+
+        // getModels() returns { models: string[], categories, selected, ... }
+        const modelNames = Array.isArray(modelsResponse?.models)
+          ? modelsResponse.models
+          : Array.isArray(modelsResponse)
+            ? modelsResponse.map((m) => m.name || m.filename || '')
+            : [];
+        const available = new Set(modelNames.map((n) => String(n)));
+
+        // getConfig() returns { success, config: { textModel, ... } }
+        const config = configResponse?.config || configResponse;
         const required = [
           config?.embeddingModel || AI_DEFAULTS?.EMBEDDING?.MODEL,
           config?.textModel || AI_DEFAULTS?.TEXT?.MODEL
