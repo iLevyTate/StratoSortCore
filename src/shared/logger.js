@@ -26,12 +26,32 @@ const _hasPinoTransport = typeof pino.transport === 'function';
 // each registering its own process.on('exit') handler. With 100+ loggers in
 // the main process, this caused MaxListenersExceededWarning at startup.
 let _sharedDevTransport = null;
+let _transportDead = false;
+
 function _getSharedDevTransport() {
+  if (_transportDead) return null;
   if (!_sharedDevTransport && _hasPinoTransport) {
-    _sharedDevTransport = pino.transport({
-      target: 'pino-pretty',
-      options: { colorize: true }
-    });
+    try {
+      _sharedDevTransport = pino.transport({
+        target: 'pino-pretty',
+        options: { colorize: true }
+      });
+      // Prevent thread-stream worker death from becoming an uncaught exception.
+      // If the worker ends, mark the transport as dead so we fall back to console.
+      if (typeof _sharedDevTransport.on === 'function') {
+        _sharedDevTransport.on('error', (err) => {
+          _transportDead = true;
+          _sharedDevTransport = null;
+          console.error(
+            '[Logger] pino-pretty transport worker died, falling back to console:',
+            err?.message
+          );
+        });
+      }
+    } catch {
+      _transportDead = true;
+      return null;
+    }
   }
   return _sharedDevTransport;
 }
@@ -244,35 +264,45 @@ class Logger {
     }
   }
 
-  // Core logging methods
-  error(message, data) {
+  // Core logging methods — wrapped in _safeWrite to survive thread-stream death.
+  // If the pino-pretty transport worker has ended, we degrade gracefully to
+  // console output instead of crashing the Electron main process.
+  _safeWrite(level, message, data) {
     const sanitized = data ? sanitizeLogData(data) : undefined;
-    if (sanitized) this.pino.error(sanitized, message);
-    else this.pino.error(message);
+    try {
+      if (sanitized) this.pino[level](sanitized, message);
+      else this.pino[level](message);
+    } catch (err) {
+      if (err?.message?.includes('worker is ending') || err?.message?.includes('stream')) {
+        // Transport died mid-write. Fall back to console to keep the app alive.
+        _transportDead = true;
+        _sharedDevTransport = null;
+        const fallback = level === 'error' || level === 'warn' ? level : 'log';
+        console[fallback](`[${this.context || 'App'}] ${message}`, sanitized || '');
+      } else {
+        throw err; // Re-throw non-transport errors
+      }
+    }
+  }
+
+  error(message, data) {
+    this._safeWrite('error', message, data);
   }
 
   warn(message, data) {
-    const sanitized = data ? sanitizeLogData(data) : undefined;
-    if (sanitized) this.pino.warn(sanitized, message);
-    else this.pino.warn(message);
+    this._safeWrite('warn', message, data);
   }
 
   info(message, data) {
-    const sanitized = data ? sanitizeLogData(data) : undefined;
-    if (sanitized) this.pino.info(sanitized, message);
-    else this.pino.info(message);
+    this._safeWrite('info', message, data);
   }
 
   debug(message, data) {
-    const sanitized = data ? sanitizeLogData(data) : undefined;
-    if (sanitized) this.pino.debug(sanitized, message);
-    else this.pino.debug(message);
+    this._safeWrite('debug', message, data);
   }
 
   trace(message, data) {
-    const sanitized = data ? sanitizeLogData(data) : undefined;
-    if (sanitized) this.pino.trace(sanitized, message);
-    else this.pino.trace(message);
+    this._safeWrite('trace', message, data);
   }
 
   // Convenience methods
@@ -301,22 +331,14 @@ class Logger {
   }
 
   terminal(level, message, data = {}) {
-    // Force write to stdout/file by bypassing level check if possible?
-    // Pino respects configured level. We'll just log at 'info' or 'error'.
-    // And assume transport handles stdout.
     const lvl = (typeof level === 'string' ? level : 'info').toLowerCase();
-    const sanitized = data ? sanitizeLogData(data) : undefined;
     if (this.pino[lvl]) {
-      if (sanitized) this.pino[lvl](sanitized, message);
-      else this.pino[lvl](message);
+      this._safeWrite(lvl, message, data);
     }
   }
 
   terminalRaw(text) {
-    // Direct write for raw output (legacy support)
-    // Pino doesn't support raw text bypass easily.
-    // We'll log as info message.
-    this.info(text);
+    this._safeWrite('info', text);
   }
 }
 
