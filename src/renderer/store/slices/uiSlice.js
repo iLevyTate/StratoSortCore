@@ -40,7 +40,7 @@ function canTransitionTo(fromPhase, toPhase) {
 // FIX: isAnalyzing should be passed in context from analysisSlice for accurate state
 const NAVIGATION_RULES = {
   // Rules for when "Back" button should be disabled
-  // context.isAnalyzing should be passed from analysisSlice.isAnalyzing for accurate value
+  // context.isAnalyzing must be passed from analysisSlice.isAnalyzing
   canGoBack: (state, context = {}) => {
     // Cannot go back from welcome phase
     // FIX: Add null check for PHASES to prevent crash during module initialization
@@ -48,9 +48,7 @@ const NAVIGATION_RULES = {
     // Cannot go back while loading/processing
     if (state.isLoading) return false;
     // Cannot go back during file operations
-    // FIX: Prefer context.isAnalyzing (from analysisSlice) over state.isAnalyzing (deprecated)
-    const isAnalyzing = context.isAnalyzing ?? state.isAnalyzing;
-    if (state.isOrganizing || isAnalyzing) return false;
+    if (state.isOrganizing || context.isAnalyzing) return false;
     return true;
   },
   // Rules for when "Next/Continue" button should be disabled
@@ -58,9 +56,7 @@ const NAVIGATION_RULES = {
     // Cannot advance while loading
     if (state.isLoading) return false;
     // Cannot advance during file operations
-    // FIX: Prefer context.isAnalyzing (from analysisSlice) over state.isAnalyzing (deprecated)
-    const isAnalyzing = context.isAnalyzing ?? state.isAnalyzing;
-    if (state.isOrganizing || isAnalyzing) return false;
+    if (state.isOrganizing || context.isAnalyzing) return false;
 
     // Phase-specific rules
     // FIX: Add null checks for PHASES to prevent crash during module initialization
@@ -123,10 +119,6 @@ const initialState = {
   settingsError: null, // FIX: Track settings fetch errors
   // Navigation state tracking for consistent button states
   isOrganizing: false, // True during file organization operations
-  // DEPRECATED: isAnalyzing is now tracked in analysisSlice only
-  // Kept here for backward compatibility with NAVIGATION_RULES
-  // Pass context.isAnalyzing from analysisSlice when calling NAVIGATION_RULES
-  isAnalyzing: false,
   // FIX MEDIUM-1: Add additional processing states for better UX feedback
   isDiscovering: false, // True during file discovery/scanning operations
   isProcessing: false, // Generic processing state for any background operation
@@ -186,18 +178,6 @@ const uiSlice = createSlice({
     // Set operation states that affect navigation
     setOrganizing: (state, action) => {
       state.isOrganizing = Boolean(action.payload);
-    },
-    // DEPRECATED: Use analysisSlice.startAnalysis/stopAnalysis instead
-    // Kept for backward compatibility but no longer dispatched by useDiscoverState
-    // FIX L-5: Add deprecation warning to help migration
-    setAnalyzing: (state, action) => {
-      if (process.env.NODE_ENV === 'development') {
-        logger.warn(
-          '[uiSlice] setAnalyzing is DEPRECATED. Use analysisSlice.startAnalysis/stopAnalysis instead.',
-          { calledWith: action.payload }
-        );
-      }
-      state.isAnalyzing = Boolean(action.payload);
     },
     toggleSidebar: (state) => {
       state.sidebarOpen = !state.sidebarOpen;
@@ -301,7 +281,6 @@ export const {
   resetUi,
   updateSettings,
   setOrganizing,
-  setAnalyzing,
   setDiscovering,
   setProcessing,
   setOperationError,

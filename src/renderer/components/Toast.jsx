@@ -10,7 +10,7 @@ const logger = createLogger('Toast');
 // Simple ID counter - crypto API is overkill for toast IDs
 let toastIdCounter = 0;
 const generateSecureId = () => Date.now() + ++toastIdCounter;
-const MAX_VISIBLE_TOASTS = 3;
+const MAX_TOASTS = 4;
 const GROUP_WINDOW_MS = 2000; // merge toasts with same groupKey within 2s
 const getHighestSeverity = (a, b) => {
   const order = { error: 3, warning: 2, success: 1, info: 0 };
@@ -232,8 +232,7 @@ export function ToastContainer({ toasts = [], onRemoveToast }) {
     });
   };
 
-  const MAX_VISIBLE_TOASTS = 4;
-  const visibleToasts = toasts.slice(-MAX_VISIBLE_TOASTS);
+  const visibleToasts = toasts.slice(-MAX_TOASTS);
   const hiddenCount = Math.max(0, toasts.length - visibleToasts.length);
 
   return (
@@ -311,6 +310,8 @@ ToastContainer.propTypes = {
 // Hook for using toasts (with simple grouping and caps)
 export const useToast = () => {
   const [toasts, setToasts] = useState([]);
+  // Track IDs of toasts evicted by the cap so callers can clean up external mappings
+  const evictedIdsRef = useRef([]);
 
   const addToast = useCallback((message, severity = 'info', duration = 3000, groupKey = null) => {
     const id = generateSecureId();
@@ -357,9 +358,10 @@ export const useToast = () => {
           createdAt: now
         }
       ];
-      // Cap visible toasts
-      if (next.length > MAX_VISIBLE_TOASTS) {
-        next.shift();
+      // Cap visible toasts - track evicted IDs for caller cleanup
+      while (next.length > MAX_TOASTS) {
+        const evicted = next.shift();
+        if (evicted) evictedIdsRef.current.push(evicted.id);
       }
       return next;
     });
@@ -392,6 +394,17 @@ export const useToast = () => {
     [addToast]
   ); // Info disappears quickly
 
+  /**
+   * Drain and return IDs of toasts that were evicted by the cap.
+   * Callers should use this after addToast() to clean up any external
+   * mappings (e.g., toast-to-notification ID maps).
+   */
+  const drainEvictedIds = useCallback(() => {
+    const ids = evictedIdsRef.current;
+    evictedIdsRef.current = [];
+    return ids;
+  }, []);
+
   return {
     toasts,
     addToast,
@@ -403,7 +416,9 @@ export const useToast = () => {
     showSuccess,
     showError,
     showWarning,
-    showInfo
+    showInfo,
+    // Eviction tracking for external cleanup
+    drainEvictedIds
   };
 };
 

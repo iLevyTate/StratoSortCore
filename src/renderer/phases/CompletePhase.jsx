@@ -3,7 +3,6 @@ import PropTypes from 'prop-types';
 import { CheckCircle2, Check, RotateCcw, ArrowLeft } from 'lucide-react';
 import { PHASES } from '../../shared/constants';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
-import { batch } from 'react-redux';
 import { setPhase, resetUi } from '../store/slices/uiSlice';
 import { resetFilesState } from '../store/slices/filesSlice';
 import { resetAnalysisState } from '../store/slices/analysisSlice';
@@ -73,11 +72,10 @@ function CompletePhase() {
     () => ({
       advancePhase: (phase) => dispatch(setPhase(phase)),
       resetWorkflow: () => {
-        batch(() => {
-          dispatch(resetUi());
-          dispatch(resetFilesState());
-          dispatch(resetAnalysisState());
-        });
+        // React 18+ batches state updates automatically
+        dispatch(resetUi());
+        dispatch(resetFilesState());
+        dispatch(resetAnalysisState());
         try {
           localStorage.removeItem('stratosort_workflow_state');
           localStorage.removeItem('stratosort_redux_state');

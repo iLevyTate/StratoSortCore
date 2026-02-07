@@ -238,7 +238,7 @@ SourceList.propTypes = {
   onOpenSource: PropTypes.func.isRequired
 };
 
-function AnswerBlock({ title, items, showTitle, sources, onOpenSource }) {
+function AnswerBlock({ title, items, showTitle = true, sources = [], onOpenSource = null }) {
   // PERF: Use memoized selector instead of inline Boolean coercion
   const redactPaths = useSelector(selectRedactPaths);
 
@@ -325,12 +325,6 @@ AnswerBlock.propTypes = {
   onOpenSource: PropTypes.func
 };
 
-AnswerBlock.defaultProps = {
-  showTitle: true,
-  sources: [],
-  onOpenSource: null
-};
-
 ChatModeToggle.propTypes = {
   value: PropTypes.oneOf(['fast', 'deep']).isRequired,
   onChange: PropTypes.func.isRequired
@@ -341,16 +335,16 @@ export default function ChatPanel({
   onSend,
   onReset,
   isSending,
-  error,
-  warning,
+  error = '',
+  warning = '',
   useSearchContext,
   onToggleSearchContext,
   onOpenSource,
   onUseSourcesInGraph,
   isSearching,
   isLoadingStats,
-  responseMode,
-  onResponseModeChange
+  responseMode = 'fast',
+  onResponseModeChange = () => {}
 }) {
   const [input, setInput] = useState('');
   const showSearchStatus = useSearchContext && (isSearching || isLoadingStats);
@@ -632,11 +626,4 @@ ChatPanel.propTypes = {
   isLoadingStats: PropTypes.bool,
   responseMode: PropTypes.oneOf(['fast', 'deep']),
   onResponseModeChange: PropTypes.func
-};
-
-ChatPanel.defaultProps = {
-  error: '',
-  warning: '',
-  responseMode: 'fast',
-  onResponseModeChange: () => {}
 };

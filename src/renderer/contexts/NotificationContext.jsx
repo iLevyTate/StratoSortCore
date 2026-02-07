@@ -22,7 +22,8 @@ export function NotificationProvider({ children }) {
     showSuccess,
     showError,
     showWarning,
-    showInfo
+    showInfo,
+    drainEvictedIds
   } = useToast();
   // Map toast IDs to notification IDs for consistent Redux dismissal
   const toastToNotificationIdRef = useRef(new Map());
@@ -42,9 +43,19 @@ export function NotificationProvider({ children }) {
         })
       );
       toastToNotificationIdRef.current.set(toastId, notificationId);
+
+      // Clean up mappings for any toasts evicted by the cap
+      for (const evictedId of drainEvictedIds()) {
+        const evictedNotifId = toastToNotificationIdRef.current.get(evictedId);
+        if (evictedNotifId) {
+          toastToNotificationIdRef.current.delete(evictedId);
+          dispatch(markNotificationDismissed(evictedNotifId));
+        }
+      }
+
       return toastId;
     },
-    [addToast, dispatch]
+    [addToast, drainEvictedIds, dispatch]
   );
 
   const removeNotification = useCallback(

@@ -1,72 +1,210 @@
 // src/renderer/components/ModelSetupWizard.jsx
 
-import React, { useState, useEffect } from 'react';
-import { Download, HardDrive, Cpu, CheckCircle, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  Download,
+  HardDrive,
+  Cpu,
+  CheckCircle,
+  Loader2,
+  AlertTriangle,
+  RefreshCw
+} from 'lucide-react';
 import Button from './ui/Button';
 import Card from './ui/Card';
 import { Text, Heading } from './ui/Typography';
 import { formatBytes, formatDuration } from '../utils/format';
-import { getDefaultModel, MODEL_CATALOG } from '../../shared/modelRegistry';
+import { AI_DEFAULTS } from '../../shared/constants';
+import { MODEL_CATALOG } from '../../shared/modelRegistry';
 
 export default function ModelSetupWizard({ onComplete, onSkip }) {
   const [systemInfo, setSystemInfo] = useState(null);
   const [recommendations, setRecommendations] = useState(null);
   const [selectedModels, setSelectedModels] = useState({});
-  const [downloadProgress, setDownloadProgress] = useState({});
+  const [availableModels, setAvailableModels] = useState([]);
+  const [downloadState, setDownloadState] = useState({});
   const [step, setStep] = useState('checking'); // checking, select, downloading, complete
+  const [initError, setInitError] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hasApi, setHasApi] = useState(true);
+
+  const availableSet = useMemo(() => new Set(availableModels || []), [availableModels]);
+
+  const updateDownloadState = useCallback((modelName, patch) => {
+    if (!modelName) return;
+    setDownloadState((prev) => ({
+      ...prev,
+      [modelName]: {
+        ...(prev[modelName] || {}),
+        ...patch
+      }
+    }));
+  }, []);
 
   useEffect(() => {
-    checkSystem();
+    void checkSystem();
   }, []);
 
   useEffect(() => {
     // Subscribe to download progress
     // Note: Assuming window.electronAPI.events.onOperationProgress handles this
-    const unsubscribe = window.electronAPI.events.onOperationProgress((data) => {
-      if (data.type === 'model-download') {
-        setDownloadProgress((prev) => ({
-          ...prev,
-          [data.model]: data.progress
-        }));
-      }
+    const subscribe = window?.electronAPI?.events?.onOperationProgress;
+    if (typeof subscribe !== 'function') return undefined;
+    const unsubscribe = subscribe((data) => {
+      if (!data || data.type !== 'model-download') return;
+
+      const payload = data.progress || data;
+      const modelName = data.model || payload.model || payload.filename;
+      if (!modelName) return;
+
+      updateDownloadState(modelName, {
+        status: 'downloading',
+        percent: payload.percent ?? payload.percentage ?? 0,
+        downloadedBytes: payload.downloadedBytes,
+        totalBytes: payload.totalBytes,
+        speedBps: payload.speedBps,
+        etaSeconds: payload.etaSeconds
+      });
     });
-    return unsubscribe;
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
   }, []);
 
-  async function checkSystem() {
-    // Mock system check for now - use real API when available
-    // const info = await window.electronAPI.system.getInfo();
-    const info = { totalRAM: 16 * 1024 * 1024 * 1024, gpuName: 'Detected GPU' }; // Placeholder
-    setSystemInfo(info);
+  const checkSystem = useCallback(async () => {
+    setIsRefreshing(true);
+    setInitError(null);
 
-    const recs = {
-      embedding: getDefaultModel('embedding'),
-      text: getDefaultModel('text'),
-      vision: getDefaultModel('vision')
+    const llamaApi = window?.electronAPI?.llama;
+    const hasLlamaApi =
+      typeof llamaApi?.getModels === 'function' && typeof llamaApi?.getConfig === 'function';
+    setHasApi(hasLlamaApi);
+
+    const fallbackDefaults = {
+      embedding: AI_DEFAULTS?.EMBEDDING?.MODEL,
+      text: AI_DEFAULTS?.TEXT?.MODEL,
+      vision: AI_DEFAULTS?.IMAGE?.MODEL
     };
-    setRecommendations(recs);
 
-    // Pre-select recommended models
-    setSelectedModels(recs);
-    setStep('select');
-  }
+    if (!hasLlamaApi) {
+      setRecommendations(fallbackDefaults);
+      setSelectedModels(fallbackDefaults);
+      setSystemInfo({ gpuBackend: null, modelsPath: null });
+      setInitError('AI engine is still starting. Please try again in a moment.');
+      setStep('select');
+      setIsRefreshing(false);
+      return;
+    }
+
+    try {
+      const [config, models, downloadStatus] = await Promise.all([
+        llamaApi.getConfig(),
+        llamaApi.getModels(),
+        typeof llamaApi.getDownloadStatus === 'function' ? llamaApi.getDownloadStatus() : null
+      ]);
+
+      const defaults = {
+        embedding: config?.embeddingModel || fallbackDefaults.embedding,
+        text: config?.textModel || fallbackDefaults.text,
+        vision: config?.visionModel || fallbackDefaults.vision
+      };
+
+      const available = Array.isArray(models)
+        ? models.map((m) => m.name || m.filename || '').filter(Boolean)
+        : [];
+      const availableNow = new Set(available);
+
+      setRecommendations(defaults);
+      setSelectedModels(defaults);
+      setAvailableModels(available);
+      setSystemInfo({
+        gpuBackend: config?.gpuBackend || null,
+        modelsPath: config?.modelsPath || null
+      });
+
+      const nextDownloadState = {};
+      available.forEach((name) => {
+        nextDownloadState[name] = { status: 'ready', percent: 100 };
+      });
+
+      const activeDownloads = downloadStatus?.status?.downloads || [];
+      activeDownloads.forEach((download) => {
+        if (!download?.filename) return;
+        nextDownloadState[download.filename] = {
+          status: 'downloading',
+          percent: download.progress ?? 0,
+          downloadedBytes: download.downloadedBytes,
+          totalBytes: download.totalBytes
+        };
+      });
+      if (activeDownloads.length > 0) {
+        setStep('downloading');
+      }
+
+      setDownloadState((prev) => ({ ...prev, ...nextDownloadState }));
+
+      const missingRequired = [defaults.embedding, defaults.text]
+        .filter(Boolean)
+        .filter((name) => !availableNow.has(name));
+
+      if (activeDownloads.length === 0) {
+        setStep(missingRequired.length === 0 ? 'complete' : 'select');
+      }
+    } catch (error) {
+      setInitError(error?.message || 'Failed to load AI model status.');
+      setStep('select');
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, []);
 
   async function startDownloads() {
+    const modelsToDownload = Object.values(selectedModels)
+      .filter(Boolean)
+      .filter((modelName) => !availableSet.has(modelName));
+
+    if (modelsToDownload.length === 0) {
+      setStep('complete');
+      return;
+    }
+
+    if (!window?.electronAPI?.llama?.downloadModel) {
+      setInitError('Download service unavailable. Try again once the app finishes loading.');
+      return;
+    }
+
     setStep('downloading');
 
-    const modelsToDownload = Object.values(selectedModels).filter(Boolean);
-
+    const nextAvailable = new Set(availableSet);
     for (const filename of modelsToDownload) {
+      updateDownloadState(filename, { status: 'downloading', percent: 0 });
       try {
-        await window.electronAPI.llama.downloadModel(filename);
+        const result = await window.electronAPI.llama.downloadModel(filename);
+        if (result?.success) {
+          updateDownloadState(filename, { status: 'ready', percent: 100 });
+          nextAvailable.add(filename);
+          setAvailableModels((prev) => Array.from(new Set([...(prev || []), filename])));
+        } else {
+          updateDownloadState(filename, {
+            status: 'failed',
+            error: result?.error || 'Download failed'
+          });
+        }
       } catch (error) {
-        // eslint-disable-next-line no-console -- download error visible to user via UI state
-        console.error(`Failed to download ${filename}:`, error);
-        // Continue with other models
+        updateDownloadState(filename, {
+          status: 'failed',
+          error: error?.message || 'Download failed'
+        });
       }
     }
 
-    setStep('complete');
+    const requiredMissing = [selectedModels.embedding, selectedModels.text]
+      .filter(Boolean)
+      .filter((name) => !nextAvailable.has(name));
+
+    setStep(requiredMissing.length === 0 ? 'complete' : 'select');
   }
 
   function toggleModel(type, filename) {
@@ -88,9 +226,12 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
 
   const totalDownloadSize = Object.values(selectedModels)
     .filter(Boolean)
-    .reduce((sum, filename) => {
-      return sum + getModelSize(filename);
-    }, 0);
+    .filter((filename) => !availableSet.has(filename))
+    .reduce((sum, filename) => sum + getModelSize(filename), 0);
+
+  const requiredModelsMissing = [selectedModels.embedding, selectedModels.text]
+    .filter(Boolean)
+    .filter((name) => !availableSet.has(name));
 
   if (step === 'checking') {
     return (
@@ -109,18 +250,31 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
           <Cpu className="w-12 h-12 mx-auto mb-4 text-blue-500" />
           <Heading level={2}>AI Model Setup</Heading>
           <Text className="text-gray-600 mt-2">
-            StratoSort runs AI locally on your device. Select the models to download.
+            StratoSort runs AI locally on your device. Download the core models once, then use them
+            offline.
           </Text>
         </div>
+
+        {initError && (
+          <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-4 flex gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5" />
+            <div className="space-y-1">
+              <Text className="font-medium text-amber-700">Setup not ready</Text>
+              <Text variant="small" className="text-amber-700/90">
+                {initError}
+              </Text>
+            </div>
+          </div>
+        )}
 
         {/* System Info */}
         <div className="bg-gray-50 rounded-lg p-4 mb-6">
           <Text variant="small" className="font-medium mb-2">
             Your System
           </Text>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div>RAM: {Math.round(systemInfo?.totalRAM / 1024 / 1024 / 1024)}GB</div>
-            <div>GPU: {systemInfo?.gpuName || 'CPU only'}</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+            <div>GPU: {systemInfo?.gpuBackend || 'CPU only'}</div>
+            <div>Models path: {systemInfo?.modelsPath || 'Default app storage'}</div>
           </div>
         </div>
 
@@ -133,6 +287,10 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
             selected={selectedModels.embedding}
             recommendations={recommendations}
             onChange={(f) => toggleModel('embedding', f)}
+            status={downloadState[selectedModels.embedding]?.status}
+            error={downloadState[selectedModels.embedding]?.error}
+            disabled={!hasApi || isRefreshing}
+            required
             getModelSize={getModelSize}
           />
 
@@ -143,6 +301,10 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
             selected={selectedModels.text}
             recommendations={recommendations}
             onChange={(f) => toggleModel('text', f)}
+            status={downloadState[selectedModels.text]?.status}
+            error={downloadState[selectedModels.text]?.error}
+            disabled={!hasApi || isRefreshing}
+            required
             getModelSize={getModelSize}
           />
 
@@ -153,6 +315,9 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
             selected={selectedModels.vision}
             recommendations={recommendations}
             onChange={(f) => toggleModel('vision', f)}
+            status={downloadState[selectedModels.vision]?.status}
+            error={downloadState[selectedModels.vision]?.error}
+            disabled={!hasApi || isRefreshing}
             optional
             getModelSize={getModelSize}
           />
@@ -166,23 +331,36 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
               <Text variant="small" className="text-gray-600">
                 {formatBytes(totalDownloadSize)}
               </Text>
+              <Text variant="tiny" className="text-gray-500">
+                One-time download. You can keep using the app while this runs.
+              </Text>
             </div>
             <HardDrive className="w-6 h-6 text-blue-500" />
           </div>
         </div>
 
-        <div className="flex gap-3">
+        {requiredModelsMissing.length > 0 && (
+          <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
+            Required models are missing. Download them to enable AI features.
+          </div>
+        )}
+
+        <div className="flex flex-col sm:flex-row gap-3">
           <Button
             onClick={startDownloads}
             variant="primary"
             className="flex-1"
-            disabled={!selectedModels.embedding || !selectedModels.text}
+            disabled={!selectedModels.embedding || !selectedModels.text || !hasApi || isRefreshing}
           >
             <Download className="w-4 h-4 mr-2" />
             Download Models
           </Button>
-          <Button onClick={onSkip} variant="secondary">
-            Skip for Now
+          <Button onClick={checkSystem} variant="secondary" disabled={isRefreshing}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button onClick={onSkip} variant="secondary" className="sm:min-w-[140px]">
+            Continue without AI
           </Button>
         </div>
       </Card>
@@ -193,8 +371,12 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     const models = Object.entries(selectedModels).filter(([_, v]) => v);
     // Simple check: if all active downloads are complete
     // In reality, you'd track each download's state from the event
-    const allComplete = models.every(
-      ([_, filename]) => downloadProgress[filename]?.percent === 100
+    const allComplete = models.every(([_, filename]) => {
+      const status = downloadState[filename]?.status;
+      return status === 'ready' || status === 'complete';
+    });
+    const hasFailures = models.some(
+      ([_, filename]) => downloadState[filename]?.status === 'failed'
     );
 
     return (
@@ -209,45 +391,66 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
 
         <div className="space-y-4">
           {models.map(([_type, filename]) => {
-            const progress = downloadProgress[filename] || { percent: 0 };
+            const progress = downloadState[filename] || { percent: 0 };
+            const status = progress.status || 'downloading';
             return (
               <div key={filename} className="border rounded-lg p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <Text className="font-medium">{filename}</Text>
+                  <Text className="font-medium">
+                    {MODEL_CATALOG[filename]?.displayName || filename}
+                  </Text>
                   <Text variant="small" className="text-gray-600">
-                    {progress.percent}%
+                    {status === 'failed' ? 'Failed' : `${progress.percent || 0}%`}
                   </Text>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
                   <div
                     className="bg-blue-500 h-2 rounded-full transition-all"
-                    style={{ width: `${progress.percent}%` }}
+                    style={{ width: `${progress.percent || 0}%` }}
                   />
                 </div>
                 <div className="flex justify-between text-xs text-gray-500">
                   <span>{formatBytes(progress.downloadedBytes || 0)}</span>
                   <span>
-                    {progress.speedBps ? `${formatBytes(progress.speedBps)}/s` : 'Starting...'}
+                    {progress.speedBps
+                      ? `${formatBytes(progress.speedBps)}/s`
+                      : status === 'failed'
+                        ? 'Download failed'
+                        : 'Starting...'}
                   </span>
                   <span>
                     {progress.etaSeconds ? `ETA: ${formatDuration(progress.etaSeconds)}` : ''}
                   </span>
                 </div>
+                {progress.error && (
+                  <Text variant="tiny" className="text-red-600 mt-2">
+                    {progress.error}
+                  </Text>
+                )}
               </div>
             );
           })}
         </div>
 
-        <div className="mt-6 flex justify-end">
+        <div className="mt-6 flex flex-col sm:flex-row gap-3">
           <Button
-            onClick={() => setStep('complete')}
-            variant="primary"
-            className="w-full"
-            // Enable button if downloads are done OR user wants to background it (maybe?)
-            // For wizard, better to wait or offer "Background" option
+            onClick={() => {
+              if (allComplete) {
+                setStep('complete');
+              } else {
+                onSkip();
+              }
+            }}
+            variant={allComplete ? 'primary' : 'secondary'}
+            className="w-full sm:flex-1"
           >
-            {allComplete ? 'Continue' : 'Run in Background'}
+            {allComplete ? 'Continue' : 'Continue while downloading'}
           </Button>
+          {hasFailures && (
+            <Button onClick={startDownloads} variant="secondary" className="w-full sm:flex-1">
+              Retry Failed Downloads
+            </Button>
+          )}
         </div>
       </Card>
     );
@@ -275,12 +478,26 @@ function ModelSelector({
   recommendations,
   onChange,
   optional,
-  getModelSize
+  required,
+  getModelSize,
+  status,
+  error,
+  disabled
 }) {
   // Using passed recommendations to show options
   // In real app, might want a dropdown if there are multiple choices
   const filename = recommendations?.[type];
   if (!filename) return null;
+
+  const modelInfo = MODEL_CATALOG[filename];
+  const displayName = modelInfo?.displayName || filename;
+  const isInstalled = status === 'ready' || status === 'complete';
+  const statusLabel = isInstalled ? 'Installed' : status === 'failed' ? 'Failed' : 'Not installed';
+  const statusClass = isInstalled
+    ? 'bg-green-100 text-green-700'
+    : status === 'failed'
+      ? 'bg-red-100 text-red-700'
+      : 'bg-gray-100 text-gray-700';
 
   return (
     <div className="border rounded-lg p-4">
@@ -291,7 +508,13 @@ function ModelSelector({
             {description}
           </Text>
         </div>
-        {optional && <span className="text-xs bg-gray-100 px-2 py-1 rounded">Optional</span>}
+        <div className="flex items-center gap-2">
+          {required && (
+            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">Required</span>
+          )}
+          {optional && <span className="text-xs bg-gray-100 px-2 py-1 rounded">Optional</span>}
+          <span className={`text-xs px-2 py-1 rounded ${statusClass}`}>{statusLabel}</span>
+        </div>
       </div>
 
       <label
@@ -306,12 +529,13 @@ function ModelSelector({
           type="checkbox"
           checked={selected === filename}
           onChange={() => onChange(filename)}
+          disabled={disabled || required}
           className="mr-3"
         />
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <Text variant="small" className="font-medium">
-              {filename}
+              {displayName}
             </Text>
             <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
               Recommended
@@ -320,6 +544,11 @@ function ModelSelector({
           <Text variant="tiny" className="text-gray-500">
             {formatBytes(getModelSize(filename))}
           </Text>
+          {error && (
+            <Text variant="tiny" className="text-red-600 mt-1">
+              {error}
+            </Text>
+          )}
         </div>
       </label>
     </div>

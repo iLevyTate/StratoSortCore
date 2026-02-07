@@ -62,16 +62,7 @@ const isElectronAPIAvailable = () => {
   return getElectronAPI() != null;
 };
 
-const ALLOWED_EMBED_MODELS = [
-  'mxbai-embed-large',
-  'nomic-embed-text',
-  'embeddinggemma',
-  'all-minilm',
-  'bge-large'
-];
-// FIX: Must match DEFAULT_AI_MODELS.EMBEDDING in shared/constants.js to avoid
-// Vector DB dimension mismatch (mxbai-embed-large=1024d, embeddinggemma=768d)
-const DEFAULT_EMBED_MODEL = 'mxbai-embed-large';
+const DEFAULT_EMBED_MODEL = DEFAULT_AI_MODELS.EMBEDDING;
 
 const stableStringify = (value) =>
   JSON.stringify(
@@ -175,9 +166,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
   const visionModelOptions = useMemo(() => modelLists.vision, [modelLists.vision]);
 
-  const embeddingModelOptions = useMemo(() => {
-    return modelLists.embedding.length > 0 ? modelLists.embedding : ALLOWED_EMBED_MODELS;
-  }, [modelLists.embedding]);
+  const embeddingModelOptions = useMemo(() => modelLists.embedding, [modelLists.embedding]);
 
   const modelList = useMemo(() => {
     const typeLookup = new Map();
@@ -233,19 +222,11 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       };
 
       const installedModels = response?.models || [];
-      const installedEmbeddingModels = ALLOWED_EMBED_MODELS.filter((allowedModel) =>
-        installedModels.some(
-          (installed) =>
-            installed === allowedModel ||
-            installed.startsWith(`${allowedModel}:`) ||
-            installed.includes(allowedModel)
-        )
-      );
 
       setModelLists({
         text: (categories.text || []).slice().sort(),
         vision: (categories.vision || []).slice().sort(),
-        embedding: installedEmbeddingModels,
+        embedding: (categories.embedding || []).slice().sort(),
         all: installedModels.slice().sort()
       });
       if (response?.llamaHealth) setLlamaHealth(response.llamaHealth);
@@ -253,9 +234,12 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         skipAutoSaveRef.current += 1;
         applySettingsUpdate((prev) => {
           const desiredEmbed = response.selected.embeddingModel || prev.embeddingModel;
-          const nextEmbeddingModel = ALLOWED_EMBED_MODELS.includes(desiredEmbed)
-            ? desiredEmbed
-            : DEFAULT_EMBED_MODEL;
+          const embeddingList = categories.embedding || [];
+          // Must be an actually-installed model, not just a pattern-valid name
+          const nextEmbeddingModel =
+            desiredEmbed && embeddingList.includes(desiredEmbed)
+              ? desiredEmbed
+              : embeddingList[0] || DEFAULT_EMBED_MODEL;
 
           return {
             ...prev,

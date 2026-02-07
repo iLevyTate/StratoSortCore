@@ -7,22 +7,47 @@
 
 import { logger } from '../../shared/logger';
 
-// Current schema version
-export const CURRENT_STATE_VERSION = 1;
+// Current schema version – bump this when adding a new migration
+export const CURRENT_STATE_VERSION = 2;
 
 /**
  * Migration functions map
- * Key: Version to migrate FROM (e.g., 1 means migrate from v1 to v2)
+ * Key: Version to migrate FROM (e.g., 0 means migrate from v0 to v1)
  * Value: Function(state) => newState
+ *
+ * All migrations MUST be idempotent – running them twice on the same state
+ * should produce the same result.
  */
 const migrations = {
-  // Example migration:
-  // 1: (state) => {
-  //   return {
-  //     ...state,
-  //     newFeature: { enabled: true }
-  //   };
-  // }
+  // v0 → v1: Validate baseline state shape (no-op for well-formed state)
+  0: (state) => {
+    const migrated = { ...state };
+
+    // Ensure top-level slices exist
+    if (!migrated.ui || typeof migrated.ui !== 'object') migrated.ui = {};
+    if (!migrated.files || typeof migrated.files !== 'object') migrated.files = {};
+    if (!migrated.analysis || typeof migrated.analysis !== 'object') migrated.analysis = {};
+
+    // Ensure critical arrays are arrays
+    if (!Array.isArray(migrated.files.selectedFiles)) migrated.files.selectedFiles = [];
+    if (!Array.isArray(migrated.files.smartFolders)) migrated.files.smartFolders = [];
+    if (!Array.isArray(migrated.files.organizedFiles)) migrated.files.organizedFiles = [];
+    if (!Array.isArray(migrated.analysis.results)) migrated.analysis.results = [];
+
+    return migrated;
+  },
+
+  // v1 → v2: Remove deprecated ui.isAnalyzing (canonical source is analysisSlice)
+  1: (state) => {
+    const migrated = { ...state };
+
+    if (migrated.ui) {
+      migrated.ui = { ...migrated.ui };
+      delete migrated.ui.isAnalyzing;
+    }
+
+    return migrated;
+  }
 };
 
 /**

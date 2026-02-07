@@ -17,12 +17,17 @@ function DefaultLocationsSection({ settings, setSettings }) {
   const redactPaths = useSelector(selectRedactPaths);
 
   const handleBrowse = useCallback(async () => {
-    const res = await window.electronAPI.files.selectDirectory();
-    if (res?.success && res.path) {
-      setSettings((prev) => ({
-        ...prev,
-        defaultSmartFolderLocation: res.path
-      }));
+    try {
+      if (!window?.electronAPI?.files?.selectDirectory) return;
+      const res = await window.electronAPI.files.selectDirectory();
+      if (res?.success && res.path) {
+        setSettings((prev) => ({
+          ...prev,
+          defaultSmartFolderLocation: res.path
+        }));
+      }
+    } catch {
+      // Ignore selection errors
     }
   }, [setSettings]);
 

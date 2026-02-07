@@ -193,6 +193,10 @@ export function useLoadInitialData(refs, addNotification) {
     try {
       const currentSmartFolders = smartFoldersRef.current;
       if (!Array.isArray(currentSmartFolders) || currentSmartFolders.length === 0) {
+        if (!window?.electronAPI?.smartFolders?.get) {
+          logger.debug('[Organize] Smart folder API unavailable; skipping load');
+          return;
+        }
         const folders = await window.electronAPI.smartFolders.get();
         if (Array.isArray(folders) && folders.length > 0) {
           dispatchRef.current(setSmartFoldersAction(folders));

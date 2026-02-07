@@ -16,9 +16,9 @@ const KnowledgeEdge = memo(
     sourceY,
     targetX,
     targetY,
-    sourcePosition,
-    targetPosition,
-    data,
+    sourcePosition = 'right',
+    targetPosition = 'left',
+    data = null,
     style,
     markerEnd
   }) => {
@@ -169,14 +169,6 @@ KnowledgeEdge.propTypes = {
   }),
   style: PropTypes.object,
   markerEnd: PropTypes.oneOfType([PropTypes.string, PropTypes.object])
-};
-
-KnowledgeEdge.defaultProps = {
-  sourcePosition: 'right',
-  targetPosition: 'left',
-  data: null,
-  style: undefined,
-  markerEnd: undefined
 };
 
 export default KnowledgeEdge;

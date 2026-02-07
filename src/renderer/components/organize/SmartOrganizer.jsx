@@ -83,7 +83,7 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
       // Get suggestions for all files
       if (files.length === 1) {
         // Single file mode
-        const result = await window.electronAPI.suggestions.getFileSuggestions(files[0], {
+        const result = await window.electronAPI?.suggestions?.getFileSuggestions?.(files[0], {
           includeAlternatives: true
         });
         if (!isLatestRun()) return;
@@ -93,7 +93,7 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
         }
       } else {
         // Batch mode
-        const batchResult = await window.electronAPI.suggestions.getBatchSuggestions(files, {
+        const batchResult = await window.electronAPI?.suggestions?.getBatchSuggestions?.(files, {
           analyzePatterns: true
         });
         if (!isLatestRun()) return;
@@ -104,7 +104,7 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
       }
 
       // Get folder improvement suggestions
-      const improvements = await window.electronAPI.suggestions.analyzeFolderStructure(files);
+      const improvements = await window.electronAPI?.suggestions?.analyzeFolderStructure?.(files);
       if (!isLatestRun()) return;
       if (isMountedRef.current) {
         setFolderImprovements(improvements?.improvements || []);
@@ -178,7 +178,7 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
     // Await feedback recording before finalizing UI state
     isRecordingFeedbackRef.current = true;
     try {
-      await window.electronAPI.suggestions.recordFeedback(
+      await window.electronAPI?.suggestions?.recordFeedback?.(
         file,
         suggestion,
         true,
@@ -216,7 +216,7 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
     // Await feedback recording and update ref on completion
     isRecordingFeedbackRef.current = true;
     try {
-      await window.electronAPI.suggestions.recordFeedback(
+      await window.electronAPI?.suggestions?.recordFeedback?.(
         file,
         suggestion,
         false,

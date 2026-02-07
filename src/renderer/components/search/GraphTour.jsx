@@ -42,7 +42,7 @@ const TOUR_STEPS = [
  * Shows a series of helpful tips when the user first opens the graph tab.
  * Stores dismissal state in localStorage so it won't show again.
  */
-const GraphTour = ({ isOpen, onComplete, forceShow = false }) => {
+const GraphTour = ({ isOpen, onComplete = null, forceShow = false }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [isVisible, setIsVisible] = useState(false);
   const [dontShowAgain, setDontShowAgain] = useState(true); // Default checked
@@ -236,11 +236,6 @@ GraphTour.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onComplete: PropTypes.func,
   forceShow: PropTypes.bool
-};
-
-GraphTour.defaultProps = {
-  onComplete: null,
-  forceShow: false
 };
 
 export default GraphTour;

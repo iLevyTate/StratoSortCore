@@ -13,6 +13,7 @@ import { Text } from '../ui/Typography';
  */
 function ApplicationSection({ settings, setSettings }) {
   const [isOpeningLogs, setIsOpeningLogs] = React.useState(false);
+  const [isExportingLogs, setIsExportingLogs] = React.useState(false);
 
   const handleOpenLogsFolder = React.useCallback(async () => {
     if (isOpeningLogs) return;
@@ -27,6 +28,25 @@ function ApplicationSection({ settings, setSettings }) {
       setIsOpeningLogs(false);
     }
   }, [isOpeningLogs]);
+
+  const handleExportLogs = React.useCallback(async () => {
+    if (isExportingLogs) return;
+    if (!window?.electronAPI?.system?.exportLogs) return;
+
+    setIsExportingLogs(true);
+    try {
+      const result = await window.electronAPI.system.exportLogs();
+      if (result?.success) {
+        // Success notification handled by caller if needed, or we can add one here
+      } else if (result?.error) {
+        logger.error('[Settings] Failed to export logs', { error: result.error });
+      }
+    } catch (error) {
+      logger.error('[Settings] Failed to export logs', { error });
+    } finally {
+      setIsExportingLogs(false);
+    }
+  }, [isExportingLogs]);
 
   return (
     <Card variant="default" className="space-y-5">
@@ -59,17 +79,28 @@ function ApplicationSection({ settings, setSettings }) {
         {/* Logs */}
         <SettingRow
           label="Troubleshooting Logs"
-          description="Open the folder that contains StratoSort logs (useful for sharing with support)."
+          description="Manage application logs for debugging and support."
         >
-          <Button
-            variant="subtle"
-            size="sm"
-            onClick={handleOpenLogsFolder}
-            disabled={!window?.electronAPI?.settings?.openLogsFolder}
-            isLoading={isOpeningLogs}
-          >
-            Open Logs Folder
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="subtle"
+              size="sm"
+              onClick={handleOpenLogsFolder}
+              disabled={!window?.electronAPI?.settings?.openLogsFolder}
+              isLoading={isOpeningLogs}
+            >
+              Open Folder
+            </Button>
+            <Button
+              variant="subtle"
+              size="sm"
+              onClick={handleExportLogs}
+              disabled={!window?.electronAPI?.system?.exportLogs}
+              isLoading={isExportingLogs}
+            >
+              Export Logs
+            </Button>
+          </div>
         </SettingRow>
       </Stack>
     </Card>

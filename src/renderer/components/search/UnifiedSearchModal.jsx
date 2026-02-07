@@ -655,6 +655,14 @@ export default function UnifiedSearchModal({
     [initialTab]
   );
   const [activeTab, setActiveTab] = useState(effectiveInitialTab);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Track previous isOpen to detect modal open transitions
   const prevIsOpenRef = useRef(false);
@@ -1033,8 +1041,9 @@ export default function UnifiedSearchModal({
 
   const hydrateRecommendationMap = useCallback(async () => {
     const files = buildSuggestionFiles(searchResults);
-    if (!files.length || !window.electronAPI?.suggestions?.getBatchSuggestions) {
-      setRecommendationMap({});
+    const getBatchSuggestions = window?.electronAPI?.suggestions?.getBatchSuggestions;
+    if (!files.length || typeof getBatchSuggestions !== 'function') {
+      if (isMountedRef.current) setRecommendationMap({});
       return;
     }
 
@@ -1049,11 +1058,11 @@ export default function UnifiedSearchModal({
       });
     }
 
-    setIsLoadingRecommendations(true);
+    if (isMountedRef.current) setIsLoadingRecommendations(true);
     try {
-      const response = await window.electronAPI.suggestions.getBatchSuggestions(filesToProcess);
+      const response = await getBatchSuggestions(filesToProcess);
       if (!response?.success || !Array.isArray(response.groups)) {
-        setRecommendationMap({});
+        if (isMountedRef.current) setRecommendationMap({});
         return;
       }
 
@@ -1068,12 +1077,12 @@ export default function UnifiedSearchModal({
         });
       });
 
-      setRecommendationMap(nextMap);
+      if (isMountedRef.current) setRecommendationMap(nextMap);
     } catch (recErr) {
       logger.debug('[Search] Recommendation lookup failed:', recErr?.message || recErr);
-      setRecommendationMap({});
+      if (isMountedRef.current) setRecommendationMap({});
     } finally {
-      setIsLoadingRecommendations(false);
+      if (isMountedRef.current) setIsLoadingRecommendations(false);
     }
   }, [buildSuggestionFiles, searchResults]);
 
@@ -1892,17 +1901,18 @@ export default function UnifiedSearchModal({
   // ============================================================================
 
   const refreshStats = useCallback(async () => {
-    if (!window?.electronAPI?.embeddings?.getStats) return;
-    setIsLoadingStats(true);
+    const getStats = window?.electronAPI?.embeddings?.getStats;
+    if (typeof getStats !== 'function') return;
+    if (isMountedRef.current) setIsLoadingStats(true);
     try {
       const [statsResult, settingsResult] = await Promise.allSettled([
-        window.electronAPI.embeddings.getStats(),
+        getStats(),
         window.electronAPI?.settings?.get?.()
       ]);
       const res = statsResult.status === 'fulfilled' ? statsResult.value : null;
       const settings = settingsResult.status === 'fulfilled' ? settingsResult.value : null;
 
-      if (settings && typeof settings === 'object') {
+      if (isMountedRef.current && settings && typeof settings === 'object') {
         setEmbeddingConfig({
           timing:
             settings.embeddingTiming === 'during_analysis' ||
@@ -1917,26 +1927,30 @@ export default function UnifiedSearchModal({
               ? settings.defaultEmbeddingPolicy
               : null
         });
-      } else {
+      } else if (isMountedRef.current) {
         setEmbeddingConfig(null);
       }
 
-      if (res?.success) {
+      if (isMountedRef.current && res?.success) {
         setStats({
           files: typeof res.files === 'number' ? res.files : 0,
           folders: typeof res.folders === 'number' ? res.folders : 0,
           initialized: Boolean(res.initialized)
         });
-      } else {
+      } else if (isMountedRef.current) {
         setStats(null);
       }
     } catch (e) {
       logger.warn('Failed to load embedding stats', { error: e?.message });
-      setStats(null);
-      setEmbeddingConfig(null);
+      if (isMountedRef.current) {
+        setStats(null);
+        setEmbeddingConfig(null);
+      }
     } finally {
-      setIsLoadingStats(false);
-      setHasLoadedStats(true);
+      if (isMountedRef.current) {
+        setIsLoadingStats(false);
+        setHasLoadedStats(true);
+      }
     }
   }, []);
 
@@ -1968,32 +1982,38 @@ export default function UnifiedSearchModal({
   }, [isOpen, refreshStats]);
 
   const rebuildFolders = useCallback(async () => {
-    if (!window?.electronAPI?.embeddings?.rebuildFolders) return;
-    setIsRebuildingFolders(true);
-    setError('');
+    const rebuild = window?.electronAPI?.embeddings?.rebuildFolders;
+    if (typeof rebuild !== 'function') return;
+    if (isMountedRef.current) {
+      setIsRebuildingFolders(true);
+      setError('');
+    }
     try {
-      const res = await window.electronAPI.embeddings.rebuildFolders();
+      const res = await rebuild();
       if (!res?.success) throw new Error(res?.error || 'Folder rebuild failed');
       await refreshStats();
     } catch (e) {
-      setError(getErrorMessage(e, 'Folder rebuild'));
+      if (isMountedRef.current) setError(getErrorMessage(e, 'Folder rebuild'));
     } finally {
-      setIsRebuildingFolders(false);
+      if (isMountedRef.current) setIsRebuildingFolders(false);
     }
   }, [refreshStats]);
 
   const rebuildFiles = useCallback(async () => {
-    if (!window?.electronAPI?.embeddings?.rebuildFiles) return;
-    setIsRebuildingFiles(true);
-    setError('');
+    const rebuild = window?.electronAPI?.embeddings?.rebuildFiles;
+    if (typeof rebuild !== 'function') return;
+    if (isMountedRef.current) {
+      setIsRebuildingFiles(true);
+      setError('');
+    }
     try {
-      const res = await window.electronAPI.embeddings.rebuildFiles();
+      const res = await rebuild();
       if (!res?.success) throw new Error(res?.error || 'File rebuild failed');
       await refreshStats();
     } catch (e) {
-      setError(getErrorMessage(e, 'File rebuild'));
+      if (isMountedRef.current) setError(getErrorMessage(e, 'File rebuild'));
     } finally {
-      setIsRebuildingFiles(false);
+      if (isMountedRef.current) setIsRebuildingFiles(false);
     }
   }, [refreshStats]);
 
@@ -2096,19 +2116,22 @@ export default function UnifiedSearchModal({
         category: clusterData.dominantCategory || 'General'
       });
 
-      if (result?.success) {
-        setError(''); // Clear any existing error
-        setGraphStatus(`Smart folder "${folderName}" created successfully!`);
-        logger.info('[Graph] Created smart folder from cluster', {
-          folderName,
-          memberCount: clusterData.memberCount
-        });
-      } else {
-        setError(`Failed to create folder: ${result?.error || 'Unknown error'}`);
+      if (isMountedRef.current) {
+        if (result?.success) {
+          setError(''); // Clear any existing error
+          setGraphStatus(`Smart folder "${folderName}" created successfully!`);
+          logger.info('[Graph] Created smart folder from cluster', {
+            folderName,
+            memberCount: clusterData.memberCount
+          });
+        } else {
+          setError(`Failed to create folder: ${result?.error || 'Unknown error'}`);
+        }
       }
     } catch (e) {
       logger.error('[Graph] Failed to create smart folder from cluster', e);
-      setError(`Failed to create folder: ${e?.message || 'Unknown error'}`);
+      if (isMountedRef.current)
+        setError(`Failed to create folder: ${e?.message || 'Unknown error'}`);
     }
   }, []);
 
@@ -2166,15 +2189,17 @@ export default function UnifiedSearchModal({
         }
       }
 
-      if (successCount > 0) {
-        setGraphStatus(`Moved ${successCount} file(s) to ${safeBasename(destFolder)}`);
-      }
-      if (failCount > 0) {
-        setError(`Failed to move ${failCount} file(s)`);
+      if (isMountedRef.current) {
+        if (successCount > 0) {
+          setGraphStatus(`Moved ${successCount} file(s) to ${safeBasename(destFolder)}`);
+        }
+        if (failCount > 0) {
+          setError(`Failed to move ${failCount} file(s)`);
+        }
       }
     } catch (e) {
       logger.error('[Graph] Move all to folder failed', e);
-      setError(`Move failed: ${e?.message || 'Unknown error'}`);
+      if (isMountedRef.current) setError(`Move failed: ${e?.message || 'Unknown error'}`);
     }
   }, []);
 
@@ -2192,7 +2217,7 @@ export default function UnifiedSearchModal({
       // Get file metadata for all members in one call
       const metadataResult = await window.electronAPI?.embeddings?.getFileMetadata?.(memberIds);
       if (!metadataResult?.success) {
-        setError('Failed to retrieve file metadata');
+        if (isMountedRef.current) setError('Failed to retrieve file metadata');
         return;
       }
 
@@ -2200,20 +2225,22 @@ export default function UnifiedSearchModal({
       const paths = memberIds.map((id) => metadata[id]?.path).filter(Boolean);
 
       if (paths.length === 0) {
-        setError('Could not retrieve file paths');
+        if (isMountedRef.current) setError('Could not retrieve file paths');
         return;
       }
 
       try {
         await navigator.clipboard.writeText(paths.join('\n'));
-        setGraphStatus(`Copied ${paths.length} file path(s) to clipboard`);
+        if (isMountedRef.current)
+          setGraphStatus(`Copied ${paths.length} file path(s) to clipboard`);
       } catch (clipboardErr) {
         logger.error('[Graph] Clipboard write failed', clipboardErr);
-        setError('Could not copy to clipboard. Check browser permissions.');
+        if (isMountedRef.current)
+          setError('Could not copy to clipboard. Check browser permissions.');
       }
     } catch (e) {
       logger.error('[Graph] Export file list failed', e);
-      setError(`Export failed: ${e?.message || 'Unknown error'}`);
+      if (isMountedRef.current) setError(`Export failed: ${e?.message || 'Unknown error'}`);
     }
   }, []);
 
@@ -2276,16 +2303,18 @@ export default function UnifiedSearchModal({
         }
       }
 
-      if (openedCount > 0 && failedCount > 0) {
-        setGraphStatus(`Opened ${openedCount} file(s) (${failedCount} failed)`);
-      } else if (openedCount > 0) {
-        setGraphStatus(`Opened ${openedCount} file(s)`);
-      } else if (failedCount > 0) {
-        setError('Unable to open files. They may have been moved or deleted.');
+      if (isMountedRef.current) {
+        if (openedCount > 0 && failedCount > 0) {
+          setGraphStatus(`Opened ${openedCount} file(s) (${failedCount} failed)`);
+        } else if (openedCount > 0) {
+          setGraphStatus(`Opened ${openedCount} file(s)`);
+        } else if (failedCount > 0) {
+          setError('Unable to open files. They may have been moved or deleted.');
+        }
       }
     } catch (e) {
       logger.error('[Graph] Open all files failed', e);
-      setError(`Failed to open files: ${e?.message || 'Unknown error'}`);
+      if (isMountedRef.current) setError(`Failed to open files: ${e?.message || 'Unknown error'}`);
     }
   }, []);
 
@@ -3084,16 +3113,18 @@ export default function UnifiedSearchModal({
         layerSpacing: GRAPH_LAYER_SPACING
       });
 
-      graphActions.setNodes(layoutedNodes);
-      if (layoutedEdges && layoutedEdges.length > 0) {
-        graphActions.setEdges(applyEdgeUiPrefs(layoutedEdges));
+      if (isMountedRef.current) {
+        graphActions.setNodes(layoutedNodes);
+        if (layoutedEdges && layoutedEdges.length > 0) {
+          graphActions.setEdges(applyEdgeUiPrefs(layoutedEdges));
+        }
+        setGraphStatus('Layout applied');
       }
-      setGraphStatus('Layout applied');
     } catch (error) {
       logger.error('[Graph] Layout failed:', error);
-      setGraphStatus('Layout failed');
+      if (isMountedRef.current) setGraphStatus('Layout failed');
     } finally {
-      setIsLayouting(false);
+      if (isMountedRef.current) setIsLayouting(false);
     }
   }, [nodes, edges, graphActions, applyEdgeUiPrefs]);
 

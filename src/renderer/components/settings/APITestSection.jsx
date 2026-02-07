@@ -11,6 +11,14 @@ import { Text } from '../ui/Typography';
 function APITestSection({ addNotification }) {
   const [testResults, setTestResults] = useState({});
   const [isTestingApi, setIsTestingApi] = useState(false);
+  const isMountedRef = React.useRef(true);
+
+  React.useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const runAPITests = useCallback(async () => {
     setIsTestingApi(true);
@@ -32,50 +40,76 @@ function APITestSection({ addNotification }) {
     }
 
     try {
-      await window.electronAPI.files.getDocumentsPath();
-      results.fileOperations = { success: true, message: 'Working' };
+      if (window.electronAPI.files?.getDocumentsPath) {
+        await window.electronAPI.files.getDocumentsPath();
+        results.fileOperations = { success: true, message: 'Working' };
+      } else {
+        results.fileOperations = { success: false, message: 'API missing' };
+      }
     } catch (error) {
       results.fileOperations = { success: false, message: error.message };
     }
 
     try {
-      await window.electronAPI.smartFolders.get();
-      results.smartFolders = { success: true, message: 'Working' };
+      if (window.electronAPI.smartFolders?.get) {
+        await window.electronAPI.smartFolders.get();
+        results.smartFolders = { success: true, message: 'Working' };
+      } else {
+        results.smartFolders = { success: false, message: 'API missing' };
+      }
     } catch (error) {
       results.smartFolders = { success: false, message: error.message };
     }
 
     try {
-      await window.electronAPI.analysisHistory.getStatistics();
-      results.analysisHistory = { success: true, message: 'Working' };
+      if (window.electronAPI.analysisHistory?.getStatistics) {
+        await window.electronAPI.analysisHistory.getStatistics();
+        results.analysisHistory = { success: true, message: 'Working' };
+      } else {
+        results.analysisHistory = { success: false, message: 'API missing' };
+      }
     } catch (error) {
       results.analysisHistory = { success: false, message: error.message };
     }
 
     try {
-      await window.electronAPI.undoRedo.canUndo();
-      results.undoRedo = { success: true, message: 'Working' };
+      if (window.electronAPI.undoRedo?.canUndo) {
+        await window.electronAPI.undoRedo.canUndo();
+        results.undoRedo = { success: true, message: 'Working' };
+      } else {
+        results.undoRedo = { success: false, message: 'API missing' };
+      }
     } catch (error) {
       results.undoRedo = { success: false, message: error.message };
     }
 
     try {
-      await window.electronAPI.system.getApplicationStatistics();
-      results.systemMonitoring = { success: true, message: 'Working' };
+      if (window.electronAPI.system?.getApplicationStatistics) {
+        await window.electronAPI.system.getApplicationStatistics();
+        results.systemMonitoring = { success: true, message: 'Working' };
+      } else {
+        results.systemMonitoring = { success: false, message: 'API missing' };
+      }
     } catch (error) {
       results.systemMonitoring = { success: false, message: error.message };
     }
 
     try {
-      await window.electronAPI.llama.getModels();
-      results.llama = { success: true, message: 'Working' };
+      if (window.electronAPI.llama?.getModels) {
+        await window.electronAPI.llama.getModels();
+        results.llama = { success: true, message: 'Working' };
+      } else {
+        results.llama = { success: false, message: 'API missing' };
+      }
     } catch (error) {
       results.llama = { success: false, message: error.message };
     }
 
-    setTestResults(results);
-    setIsTestingApi(false);
-    addNotification('API tests completed', 'info');
+    if (isMountedRef.current) {
+      setTestResults(results);
+      setIsTestingApi(false);
+      addNotification('API tests completed', 'info');
+    }
   }, [addNotification]);
 
   return (

@@ -14,10 +14,10 @@ const BaseEdgeTooltip = memo(
     badgeText,
     badgeColorClass,
     title,
-    headerColorClass,
-    onMouseEnter,
-    onMouseLeave,
-    children
+    headerColorClass = 'text-system-gray-900',
+    onMouseEnter = null,
+    onMouseLeave = null,
+    children = null
   }) => {
     return (
       <EdgeLabelRenderer>
@@ -85,13 +85,6 @@ BaseEdgeTooltip.propTypes = {
   onMouseEnter: PropTypes.func,
   onMouseLeave: PropTypes.func,
   children: PropTypes.node
-};
-
-BaseEdgeTooltip.defaultProps = {
-  headerColorClass: 'text-system-gray-900',
-  onMouseEnter: null,
-  onMouseLeave: null,
-  children: null
 };
 
 export default BaseEdgeTooltip;

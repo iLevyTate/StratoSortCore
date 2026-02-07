@@ -1,6 +1,7 @@
 import { PHASES } from '../../../shared/constants';
 import { logger } from '../../../shared/logger';
 import { addNotification } from '../slices/systemSlice';
+import { CURRENT_STATE_VERSION } from '../migrations';
 
 const SAVE_DEBOUNCE_MS = 1000;
 // FIX #24: Add max wait time to prevent infinite debounce delay
@@ -258,7 +259,7 @@ const persistenceMiddleware = (store) => {
           const freshState = store.getState();
 
           const stateToSave = {
-            _version: 1, // Schema version for migration support
+            _version: CURRENT_STATE_VERSION,
             ui: {
               currentPhase: freshState.ui.currentPhase,
               sidebarOpen: freshState.ui.sidebarOpen
@@ -392,6 +393,7 @@ export const cleanupPersistence = (store) => {
       try {
         const freshState = store.getState();
         const stateToSave = {
+          _version: CURRENT_STATE_VERSION,
           ui: {
             currentPhase: freshState.ui.currentPhase,
             sidebarOpen: freshState.ui.sidebarOpen

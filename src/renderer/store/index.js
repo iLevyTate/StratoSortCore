@@ -45,6 +45,44 @@ const serializeLoadedFiles = (files) => {
   return files.map(serializeLoadedFile);
 };
 
+/**
+ * Lightweight type validation for loaded state.
+ * Fixes corrupted values to their defaults rather than rejecting the entire state.
+ * This catches cases where persisted data was mangled (e.g., an array stored as a string).
+ */
+const validateLoadedState = (state) => {
+  if (!state || typeof state !== 'object') return null;
+
+  if (state.ui) {
+    if (typeof state.ui.currentPhase !== 'string') {
+      state.ui.currentPhase = PHASES?.WELCOME ?? 'welcome';
+    }
+  }
+
+  if (state.files) {
+    if (!Array.isArray(state.files.selectedFiles)) state.files.selectedFiles = [];
+    if (!Array.isArray(state.files.smartFolders)) state.files.smartFolders = [];
+    if (!Array.isArray(state.files.organizedFiles)) state.files.organizedFiles = [];
+    if (
+      state.files.fileStates == null ||
+      typeof state.files.fileStates !== 'object' ||
+      Array.isArray(state.files.fileStates)
+    ) {
+      state.files.fileStates = {};
+    }
+  }
+
+  if (state.analysis) {
+    if (!Array.isArray(state.analysis.results)) state.analysis.results = [];
+  }
+
+  if (state.system) {
+    if (!Array.isArray(state.system.notifications)) state.system.notifications = [];
+  }
+
+  return state;
+};
+
 // Load persisted state
 const loadState = () => {
   try {
@@ -70,7 +108,6 @@ const loadState = () => {
               settingsLoading: false,
               settingsError: null,
               isOrganizing: false,
-              isAnalyzing: false,
               isDiscovering: false,
               isProcessing: false,
               navigationError: null,
@@ -107,7 +144,8 @@ const loadState = () => {
       return undefined;
     }
     const parsedRaw = JSON.parse(serializedState);
-    const parsed = migrateState(parsedRaw);
+    const migrated = migrateState(parsedRaw);
+    const parsed = migrated ? validateLoadedState(migrated) : null;
 
     if (!parsed) {
       // Migration failed or returned null - start fresh
@@ -120,13 +158,23 @@ const loadState = () => {
     // when the app hasn't been used for a while. This ensures users start fresh
     // rather than resuming a potentially outdated workflow state.
     const STATE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-    if (Date.now() - parsed.timestamp > STATE_TTL_MS) {
+    const parsedTimestamp = Number(parsed.timestamp);
+    const hasValidTimestamp = Number.isFinite(parsedTimestamp);
+    const stateAgeMs = hasValidTimestamp ? Date.now() - parsedTimestamp : Number.POSITIVE_INFINITY;
+
+    if (!hasValidTimestamp) {
+      logger.warn(
+        '[Store] Persisted state missing/invalid timestamp; expiring session state defensively'
+      );
+    }
+
+    if (stateAgeMs > STATE_TTL_MS) {
       // FIX: Store flag so UI can notify user their state was expired
       // This prevents silent data loss confusion
       window.__STRATOSORT_STATE_EXPIRED__ = true;
-      window.__STRATOSORT_STATE_EXPIRED_AGE_HOURS__ = Math.round(
-        (Date.now() - parsed.timestamp) / (1000 * 60 * 60)
-      );
+      window.__STRATOSORT_STATE_EXPIRED_AGE_HOURS__ = hasValidTimestamp
+        ? Math.round(stateAgeMs / (1000 * 60 * 60))
+        : 24;
 
       // Preserve durable data (smart folders + organization history) while resetting session state.
       return {
@@ -142,7 +190,6 @@ const loadState = () => {
           settingsLoading: false,
           settingsError: null,
           isOrganizing: false,
-          isAnalyzing: false,
           isDiscovering: false,
           isProcessing: false,
           navigationError: null,
@@ -206,7 +253,6 @@ const loadState = () => {
         settingsLoading: false,
         settingsError: null,
         isOrganizing: false,
-        isAnalyzing: false,
         isDiscovering: false,
         isProcessing: false,
         navigationError: null,
@@ -305,25 +351,10 @@ const store = configureStore({
 // FIX Issue 3: Mark store as ready to flush any queued IPC events
 markStoreReady();
 
-// FIX HIGH-8: Notify user if their state was expired
-// This runs after store is ready so notification can be dispatched
-if (window.__STRATOSORT_STATE_EXPIRED__) {
-  // Import dynamically to avoid circular dependency
-  const { addNotification } = require('./slices/systemSlice');
-  const ageHours = window.__STRATOSORT_STATE_EXPIRED_AGE_HOURS__ || 24;
-  // Delay notification to ensure UI is ready to display it
-  setTimeout(() => {
-    store.dispatch(
-      addNotification({
-        message: `Your previous session data expired after ${ageHours} hours of inactivity. Starting fresh.`,
-        severity: 'info',
-        duration: 8000
-      })
-    );
-    // Clean up flags
-    delete window.__STRATOSORT_STATE_EXPIRED__;
-    delete window.__STRATOSORT_STATE_EXPIRED_AGE_HOURS__;
-  }, 1000);
-}
+// NOTE: State-expiration notification is handled by WelcomePhase.jsx (which
+// shows a visible toast). The TTL-expired loadState path always resets to the
+// WELCOME phase, so WelcomePhase is guaranteed to mount and display the notice.
+// A previous duplicate handler here dispatched a silent Redux entry, causing
+// two notification records for the same event.
 
 export default store;

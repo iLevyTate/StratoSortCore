@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import Switch from '../ui/Switch';
 import Input from '../ui/Input';
@@ -29,6 +29,14 @@ function clampNumber(value, min, max, fallback) {
 function GraphRetrievalSection({ settings, setSettings }) {
   const [stats, setStats] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const updateSetting = useCallback(
     (key, value) => {
@@ -67,22 +75,25 @@ function GraphRetrievalSection({ settings, setSettings }) {
   }, [stats?.updatedAt]);
 
   const refreshStats = useCallback(async () => {
-    if (!window?.electronAPI?.knowledge?.getRelationshipStats) return;
-    setIsLoading(true);
+    const getRelationshipStats = window?.electronAPI?.knowledge?.getRelationshipStats;
+    if (typeof getRelationshipStats !== 'function') return;
+    if (isMountedRef.current) setIsLoading(true);
     try {
-      const response = await window.electronAPI.knowledge.getRelationshipStats();
-      if (response?.success) {
-        setStats(response);
-      } else {
-        setStats(null);
+      const response = await getRelationshipStats();
+      if (isMountedRef.current) {
+        if (response?.success) {
+          setStats(response);
+        } else {
+          setStats(null);
+        }
       }
     } catch (error) {
       logger.debug('[GraphRetrievalSection] Failed to fetch graph stats', {
         error: error?.message
       });
-      setStats(null);
+      if (isMountedRef.current) setStats(null);
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) setIsLoading(false);
     }
   }, []);
 

@@ -262,20 +262,28 @@ const ipcMiddleware = (store) => {
 
     // Listen for operation progress from batch operations
     // FIX: Use safeDispatch to handle early events
-    const progressCleanup = window.electronAPI.events.onOperationProgress((data) => {
-      const { valid, data: validatedData } = validateIncomingEvent('operation-progress', data);
-      if (!valid) return;
-      safeDispatch(updateProgress, validatedData);
-    });
-    if (progressCleanup) cleanupFunctions.push(progressCleanup);
+    if (typeof window.electronAPI.events.onOperationProgress === 'function') {
+      const progressCleanup = window.electronAPI.events.onOperationProgress((data) => {
+        const { valid, data: validatedData } = validateIncomingEvent('operation-progress', data);
+        if (!valid) return;
+        safeDispatch(updateProgress, validatedData);
+      });
+      if (progressCleanup) cleanupFunctions.push(progressCleanup);
+    } else {
+      logger.debug('[IPC] onOperationProgress handler unavailable');
+    }
 
     // Listen for system metrics updates
-    const metricsCleanup = window.electronAPI.events.onSystemMetrics((metrics) => {
-      const { valid, data: validatedMetrics } = validateIncomingEvent('system-metrics', metrics);
-      if (!valid) return;
-      safeDispatch(updateMetrics, validatedMetrics);
-    });
-    if (metricsCleanup) cleanupFunctions.push(metricsCleanup);
+    if (typeof window.electronAPI.events.onSystemMetrics === 'function') {
+      const metricsCleanup = window.electronAPI.events.onSystemMetrics((metrics) => {
+        const { valid, data: validatedMetrics } = validateIncomingEvent('system-metrics', metrics);
+        if (!valid) return;
+        safeDispatch(updateMetrics, validatedMetrics);
+      });
+      if (metricsCleanup) cleanupFunctions.push(metricsCleanup);
+    } else {
+      logger.debug('[IPC] onSystemMetrics handler unavailable');
+    }
 
     // FIX: Subscribe to operation complete events for batch operations
     if (window.electronAPI.events.onOperationComplete) {

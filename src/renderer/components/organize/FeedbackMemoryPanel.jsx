@@ -11,18 +11,26 @@ function FeedbackMemoryPanel({ className = '', refreshToken }) {
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [editingText, setEditingText] = useState('');
+  const isMountedRef = React.useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const loadMemories = async () => {
-    setLoading(true);
+    if (isMountedRef.current) setLoading(true);
     try {
-      const result = await window.electronAPI.suggestions.getFeedbackMemory();
-      if (result?.success && Array.isArray(result.items)) {
+      const result = await window.electronAPI?.suggestions?.getFeedbackMemory?.();
+      if (isMountedRef.current && result?.success && Array.isArray(result.items)) {
         setMemories(result.items);
       }
     } catch {
       // Best-effort UI; errors are surfaced via IPC logs
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
   };
 
@@ -35,22 +43,26 @@ function FeedbackMemoryPanel({ className = '', refreshToken }) {
     if (!trimmed) return;
     setSaving(true);
     try {
-      const result = await window.electronAPI.suggestions.addFeedbackMemory(trimmed);
-      if (result?.success && result.item) {
-        setMemories((prev) => [result.item, ...prev]);
-        setNewText('');
-      } else {
-        await loadMemories();
+      const result = await window.electronAPI?.suggestions?.addFeedbackMemory?.(trimmed);
+      if (isMountedRef.current) {
+        if (result?.success && result.item) {
+          setMemories((prev) => [result.item, ...prev]);
+          setNewText('');
+        } else {
+          await loadMemories();
+        }
       }
     } finally {
-      setSaving(false);
+      if (isMountedRef.current) setSaving(false);
     }
   };
 
   const handleDelete = async (id) => {
     if (!id) return;
-    await window.electronAPI.suggestions.deleteFeedbackMemory(id);
-    setMemories((prev) => prev.filter((entry) => entry.id !== id));
+    await window.electronAPI?.suggestions?.deleteFeedbackMemory?.(id);
+    if (isMountedRef.current) {
+      setMemories((prev) => prev.filter((entry) => entry.id !== id));
+    }
   };
 
   const startEditing = (entry) => {
@@ -66,13 +78,18 @@ function FeedbackMemoryPanel({ className = '', refreshToken }) {
   const handleUpdate = async () => {
     const trimmed = editingText.trim();
     if (!editingId || !trimmed) return;
-    const result = await window.electronAPI.suggestions.updateFeedbackMemory(editingId, trimmed);
-    if (result?.success && result.item) {
-      setMemories((prev) => prev.map((entry) => (entry.id === editingId ? result.item : entry)));
-    } else {
-      await loadMemories();
+    const result = await window.electronAPI?.suggestions?.updateFeedbackMemory?.(
+      editingId,
+      trimmed
+    );
+    if (isMountedRef.current) {
+      if (result?.success && result.item) {
+        setMemories((prev) => prev.map((entry) => (entry.id === editingId ? result.item : entry)));
+      } else {
+        await loadMemories();
+      }
+      cancelEditing();
     }
-    cancelEditing();
   };
 
   return (

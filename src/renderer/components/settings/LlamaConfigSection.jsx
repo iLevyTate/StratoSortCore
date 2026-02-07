@@ -15,9 +15,9 @@ import SettingRow from './SettingRow';
  */
 function LlamaConfigSection({
   llamaHealth,
-  isRefreshingModels,
+  isRefreshingModels = false,
   downloadProgress,
-  modelList,
+  modelList = [],
   showAllModels,
   setShowAllModels,
   onRefreshModels,
@@ -243,11 +243,6 @@ LlamaConfigSection.propTypes = {
   onRefreshModels: PropTypes.func.isRequired,
   onDownloadModel: PropTypes.func,
   onDeleteModel: PropTypes.func
-};
-
-LlamaConfigSection.defaultProps = {
-  isRefreshingModels: false,
-  modelList: []
 };
 
 export default LlamaConfigSection;

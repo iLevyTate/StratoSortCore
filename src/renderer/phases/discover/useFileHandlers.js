@@ -7,7 +7,7 @@
  * @module phases/discover/useFileHandlers
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { TIMEOUTS } from '../../../shared/performanceConstants';
 import { ANALYSIS_SUPPORTED_EXTENSIONS, ALL_SUPPORTED_EXTENSIONS } from '../../../shared/constants';
 import { createLogger } from '../../../shared/logger';
@@ -69,6 +69,21 @@ export function useFileHandlers({
   analyzeFiles
 }) {
   const [isScanning, setIsScanning] = useState(false);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const setIsScanningSafe = useCallback(
+    (value) => {
+      if (isMountedRef.current) setIsScanning(value);
+    },
+    [setIsScanning]
+  );
   const buildBaseFileEntry = (file) => {
     const filePath = typeof file === 'string' ? file : file.path;
     const fileName = file?.name || extractFileName(filePath || '');
@@ -387,7 +402,7 @@ export function useFileHandlers({
    */
   const handleFileSelection = useCallback(async () => {
     try {
-      setIsScanning(true);
+      setIsScanningSafe(true);
       if (!ensureFileApi(addNotification, 'handleFileSelection')) {
         return;
       }
@@ -469,7 +484,7 @@ export function useFileHandlers({
         'file-selection-error'
       );
     } finally {
-      setIsScanning(false);
+      setIsScanningSafe(false);
     }
   }, [
     selectedFiles,
@@ -478,7 +493,8 @@ export function useFileHandlers({
     addNotification,
     filterNewFiles,
     analyzeFiles,
-    enrichSelectedFiles
+    enrichSelectedFiles,
+    setIsScanningSafe
   ]);
 
   /**
@@ -486,7 +502,7 @@ export function useFileHandlers({
    */
   const handleFolderSelection = useCallback(async () => {
     try {
-      setIsScanning(true);
+      setIsScanningSafe(true);
       if (!ensureFileApi(addNotification, 'handleFolderSelection')) {
         return;
       }
@@ -591,7 +607,7 @@ export function useFileHandlers({
         'folder-selection-error'
       );
     } finally {
-      setIsScanning(false);
+      setIsScanningSafe(false);
     }
   }, [
     selectedFiles,
@@ -600,7 +616,8 @@ export function useFileHandlers({
     addNotification,
     filterNewFiles,
     analyzeFiles,
-    enrichSelectedFiles
+    enrichSelectedFiles,
+    setIsScanningSafe
   ]);
 
   /**

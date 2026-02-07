@@ -84,6 +84,9 @@ export const createFileAction = ({ actionType, description, source, destination 
   description,
   execute: async () => {
     if (destination) {
+      if (!window?.electronAPI?.files?.performOperation) {
+        throw new Error('File operations API not available');
+      }
       return await window.electronAPI.files.performOperation({
         type: 'move',
         source,
@@ -94,10 +97,16 @@ export const createFileAction = ({ actionType, description, source, destination 
   },
   undo: async () => {
     // Delegate to main process UndoRedoService to maintain history integrity
+    if (!window?.electronAPI?.undoRedo?.undo) {
+      throw new Error('Undo API not available');
+    }
     return await window.electronAPI.undoRedo.undo();
   },
   redo: async () => {
     // Delegate to main process UndoRedoService to maintain history integrity
+    if (!window?.electronAPI?.undoRedo?.redo) {
+      throw new Error('Redo API not available');
+    }
     return await window.electronAPI.undoRedo.redo();
   },
   metadata: { source, destination }
@@ -107,9 +116,15 @@ export const createSettingsAction = (description, newSettings, oldSettings) => (
   type: ACTION_TYPES.SETTINGS_CHANGE,
   description,
   execute: async () => {
+    if (!window?.electronAPI?.settings?.save) {
+      throw new Error('Settings API not available');
+    }
     return await window.electronAPI.settings.save(newSettings);
   },
   undo: async () => {
+    if (!window?.electronAPI?.settings?.save) {
+      throw new Error('Settings API not available');
+    }
     return await window.electronAPI.settings.save(oldSettings);
   },
   metadata: { newSettings, oldSettings }
@@ -119,6 +134,9 @@ export const createOrganizeBatchAction = (description, operations, stateCallback
   type: ACTION_TYPES.BATCH_OPERATION,
   description,
   execute: async () => {
+    if (!window?.electronAPI?.files?.performOperation) {
+      throw new Error('File operations API not available');
+    }
     const result = await window.electronAPI.files.performOperation({
       type: 'batch_organize',
       operations
@@ -138,6 +156,9 @@ export const createOrganizeBatchAction = (description, operations, stateCallback
     // 1. We don't create a NEW "move" action in the history stack
     // 2. We use the robust backup/restore logic in the main process
     // 3. The result structure is consistent (contains originalPath/newPath)
+    if (!window?.electronAPI?.undoRedo?.undo) {
+      throw new Error('Undo API not available');
+    }
     const result = await window.electronAPI.undoRedo.undo();
 
     if (stateCallbacks.onUndo) {
@@ -151,6 +172,9 @@ export const createOrganizeBatchAction = (description, operations, stateCallback
   },
   redo: async (_action) => {
     // Delegate to main process UndoRedoService
+    if (!window?.electronAPI?.undoRedo?.redo) {
+      throw new Error('Redo API not available');
+    }
     const result = await window.electronAPI.undoRedo.redo();
 
     if (stateCallbacks.onRedo) {

@@ -82,7 +82,7 @@ function BatchOrganizationSuggestions({
     if (!trimmed) return;
     setSavingMemory(true);
     try {
-      await window.electronAPI.suggestions.addFeedbackMemory(trimmed);
+      await window.electronAPI?.suggestions?.addFeedbackMemory?.(trimmed);
       if (isMountedRef.current) {
         setMemoryNote('');
         addNotification('Memory saved', 'success');

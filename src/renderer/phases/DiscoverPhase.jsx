@@ -74,6 +74,7 @@ function DiscoverPhase() {
   const [totalAnalysisFailure, setTotalAnalysisFailure] = useState(false);
   const [showEmbeddingPrompt, setShowEmbeddingPrompt] = useState(false);
   const [isRebuildingEmbeddings, setIsRebuildingEmbeddings] = useState(false);
+  const isMountedRef = useRef(true);
 
   const prevAnalyzingRef = useRef(isAnalyzing);
   const hasShownEmbeddingPromptRef = useRef(
@@ -105,6 +106,13 @@ function DiscoverPhase() {
     });
     return paths;
   }, [organizedFiles]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const visibleAnalysisResults = useMemo(() => {
     return (analysisResults || []).filter((result) => {
@@ -192,7 +200,7 @@ function DiscoverPhase() {
           stats.files === 0 &&
           historyTotal > 0;
 
-        if (needsRebuild) {
+        if (needsRebuild && isMountedRef.current) {
           setShowEmbeddingPrompt(true);
           hasShownEmbeddingPromptRef.current = true;
         }
@@ -218,7 +226,7 @@ function DiscoverPhase() {
   }, []);
 
   const handleRebuildEmbeddings = useCallback(async () => {
-    setIsRebuildingEmbeddings(true);
+    if (isMountedRef.current) setIsRebuildingEmbeddings(true);
     try {
       const res = await window.electronAPI?.embeddings?.rebuildFiles?.();
       if (res?.success) {
@@ -235,7 +243,7 @@ function DiscoverPhase() {
     } catch (e) {
       addNotification(e?.message || 'Failed to build embeddings', 'error', 5000, 'embedding-error');
     } finally {
-      setIsRebuildingEmbeddings(false);
+      if (isMountedRef.current) setIsRebuildingEmbeddings(false);
     }
   }, [addNotification, dismissEmbeddingPrompt]);
 

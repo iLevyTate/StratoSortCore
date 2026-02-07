@@ -1,19 +1,17 @@
-import React, { forwardRef, useId } from 'react';
+import React, { useId } from 'react';
 import PropTypes from 'prop-types';
 import Label from './Label';
 
-const Textarea = forwardRef(function Textarea(
-  {
-    className = '',
-    invalid = false,
-    error = '',
-    label = '',
-    required = false,
-    autoExpand = false,
-    ...rest
-  },
-  ref
-) {
+function Textarea({
+  className = '',
+  invalid = false,
+  error = '',
+  label = '',
+  required = false,
+  autoExpand = false,
+  ref,
+  ...rest
+}) {
   // Always call useId unconditionally to follow React hooks rules
   const generatedId = useId();
   const id = rest.id || `textarea-${generatedId}`;
@@ -53,7 +51,7 @@ const Textarea = forwardRef(function Textarea(
       )}
     </div>
   );
-});
+}
 
 Textarea.propTypes = {
   className: PropTypes.string,

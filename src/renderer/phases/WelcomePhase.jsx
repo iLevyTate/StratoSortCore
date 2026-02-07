@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Rocket, FolderOpen, Settings, Search, Sparkles, FolderCheck } from 'lucide-react';
-import { PHASES } from '../../shared/constants';
+import { PHASES, AI_DEFAULTS } from '../../shared/constants';
 import { useAppDispatch } from '../store/hooks';
 import { toggleSettings, setPhase } from '../store/slices/uiSlice';
 import { useNotification } from '../contexts/NotificationContext';
@@ -8,11 +8,61 @@ import { Button, Card } from '../components/ui';
 import { Heading, Text } from '../components/ui/Typography';
 import Modal from '../components/ui/Modal';
 import { Stack } from '../components/layout';
+import ModelSetupWizard from '../components/ModelSetupWizard';
 
 function WelcomePhase() {
   const dispatch = useAppDispatch();
   const { addNotification } = useNotification();
   const [showFlowsModal, setShowFlowsModal] = useState(false);
+  const [modelCheckState, setModelCheckState] = useState('loading'); // 'loading' | 'missing' | 'ready'
+
+  // Check if required AI models are downloaded
+  useEffect(() => {
+    let cancelled = false;
+    async function checkModels() {
+      try {
+        const getModels = window?.electronAPI?.llama?.getModels;
+        const getConfig = window?.electronAPI?.llama?.getConfig;
+        if (typeof getModels !== 'function') {
+          if (!cancelled) setModelCheckState('ready');
+          return;
+        }
+        const [models, config] = await Promise.all([
+          getModels(),
+          typeof getConfig === 'function' ? getConfig() : Promise.resolve(null)
+        ]);
+        if (cancelled) return;
+        const available = new Set((models || []).map((m) => m.name || m.filename || ''));
+        const required = [
+          config?.embeddingModel || AI_DEFAULTS?.EMBEDDING?.MODEL,
+          config?.textModel || AI_DEFAULTS?.TEXT?.MODEL
+        ].filter(Boolean);
+        const missing = required.filter((name) => !available.has(name));
+        setModelCheckState(missing.length > 0 ? 'missing' : 'ready');
+      } catch {
+        // If the IPC call fails (service not ready), treat as ready and let
+        // backgroundSetup handle downloads. Don't block the user.
+        if (!cancelled) setModelCheckState('ready');
+      }
+    }
+    checkModels();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleModelSetupComplete = useCallback(() => {
+    setModelCheckState('ready');
+    addNotification('AI models are ready. You can start organizing files.', 'success');
+  }, [addNotification]);
+
+  const handleModelSetupSkip = useCallback(() => {
+    setModelCheckState('ready');
+    addNotification(
+      'Models will download in the background. Some AI features may be limited until complete.',
+      'info'
+    );
+  }, [addNotification]);
 
   // FIX: Notify user if their previous session state was expired due to TTL
   useEffect(() => {
@@ -49,6 +99,15 @@ function WelcomePhase() {
       copy: 'Approve suggestions, rename intelligently, undo instantly.'
     }
   ];
+
+  // Show ModelSetupWizard when required models are missing
+  if (modelCheckState === 'missing') {
+    return (
+      <div className="flex flex-col flex-1 min-h-0 justify-center py-12">
+        <ModelSetupWizard onComplete={handleModelSetupComplete} onSkip={handleModelSetupSkip} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col flex-1 min-h-0 justify-center py-12">

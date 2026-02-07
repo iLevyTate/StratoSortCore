@@ -1,8 +1,23 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { Provider } from 'react-redux';
+import { init } from '@sentry/electron/renderer';
 import { createLogger } from '../shared/logger';
 import store from './store';
+
+// Initialize Sentry for Renderer
+// Sentry will automatically pick up the DSN from the main process if configured there,
+// or we can configure it explicitly here if needed.
+// For Electron, initializing in main is often enough to capture renderer crashes if context isolation is on,
+// but explicit renderer init gives better React component stack traces.
+if (process.env.SENTRY_DSN) {
+  init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'production',
+    replaysSessionSampleRate: 0.1,
+    replaysOnErrorSampleRate: 1.0
+  });
+}
 import { fetchDocumentsPath, fetchRedactPaths } from './store/slices/systemSlice';
 import { fetchSmartFolders, setOrganizedFiles } from './store/slices/filesSlice';
 import { fetchSettings } from './store/slices/uiSlice';
@@ -117,7 +132,6 @@ applyFlexGapSupportClass();
 // Store handlers in a module-level object for reliable cleanup
 const eventHandlers = {
   click: null,
-  visibilitychange: null,
   beforeunload: null,
   unhandledrejection: null,
   error: null
@@ -127,9 +141,6 @@ const eventHandlers = {
 function cleanupEventHandlers() {
   if (eventHandlers.click) {
     document.removeEventListener('click', eventHandlers.click);
-  }
-  if (eventHandlers.visibilitychange) {
-    document.removeEventListener('visibilitychange', eventHandlers.visibilitychange);
   }
   if (eventHandlers.beforeunload) {
     window.removeEventListener('beforeunload', eventHandlers.beforeunload);
@@ -218,14 +229,6 @@ if (typeof window !== 'undefined') {
   };
 
   document.addEventListener('click', eventHandlers.click);
-
-  // Handle visibility changes - simplified, removed ineffective animation frame cleanup
-  eventHandlers.visibilitychange = function handleVisibilityChange() {
-    // Visibility changes are handled - no action needed currently
-    // The previous animation frame cancellation loop was ineffective
-    // as it only cancelled frames that hadn't started yet
-  };
-  document.addEventListener('visibilitychange', eventHandlers.visibilitychange);
 
   // Add cleanup on page unload to prevent dangling references
   eventHandlers.beforeunload = function handleBeforeUnload() {

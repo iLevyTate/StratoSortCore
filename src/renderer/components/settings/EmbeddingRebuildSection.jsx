@@ -9,6 +9,7 @@ import { useAppSelector } from '../../store/hooks';
 import { Text } from '../ui/Typography';
 import { Stack } from '../layout';
 
+const { DEFAULT_AI_MODELS } = require('../../../shared/constants');
 const logger = createLogger('EmbeddingRebuildSection');
 
 /**
@@ -21,35 +22,47 @@ function EmbeddingRebuildSection({ addNotification }) {
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [applyNamingOnReanalyze, setApplyNamingOnReanalyze] = useState(false);
+  const isMountedRef = React.useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const isAnalyzing = useAppSelector((state) => Boolean(state?.analysis?.isAnalyzing));
   const analysisProgress = useAppSelector((state) => state?.analysis?.analysisProgress);
 
   const refreshStats = useCallback(async () => {
     if (!window?.electronAPI?.embeddings?.getStats) return;
-    setIsLoadingStats(true);
+    if (isMountedRef.current) setIsLoadingStats(true);
     try {
       const res = await window.electronAPI.embeddings.getStats();
-      if (res && res.success) {
-        setStats({
-          files: typeof res.files === 'number' ? res.files : 0,
-          folders: typeof res.folders === 'number' ? res.folders : 0,
-          initialized: Boolean(res.initialized),
-          needsFileEmbeddingRebuild: res.needsFileEmbeddingRebuild,
-          analysisHistory: res.analysisHistory,
-          embeddingIndex: res.embeddingIndex,
-          activeEmbeddingModel: res.activeEmbeddingModel,
-          embeddingModelMismatch: Boolean(res.embeddingModelMismatch)
-        });
-      } else {
-        logger.warn('[EmbeddingRebuildSection] getStats returned failure', { error: res?.error });
-        setStats(null);
+      if (isMountedRef.current) {
+        if (res && res.success) {
+          setStats({
+            files: typeof res.files === 'number' ? res.files : 0,
+            folders: typeof res.folders === 'number' ? res.folders : 0,
+            initialized: Boolean(res.initialized),
+            needsFileEmbeddingRebuild: res.needsFileEmbeddingRebuild,
+            analysisHistory: res.analysisHistory,
+            embeddingIndex: res.embeddingIndex,
+            activeEmbeddingModel: res.activeEmbeddingModel,
+            embeddingModelMismatch: Boolean(res.embeddingModelMismatch)
+          });
+        } else {
+          logger.warn('[EmbeddingRebuildSection] getStats returned failure', { error: res?.error });
+          setStats(null);
+        }
       }
     } catch (e) {
-      logger.debug('[EmbeddingRebuildSection] getStats failed', { error: e?.message });
-      setStats(null);
+      if (isMountedRef.current) {
+        logger.debug('[EmbeddingRebuildSection] getStats failed', { error: e?.message });
+        setStats(null);
+      }
     } finally {
-      setIsLoadingStats(false);
+      if (isMountedRef.current) setIsLoadingStats(false);
     }
   }, []);
 
@@ -126,6 +139,10 @@ function EmbeddingRebuildSection({ addNotification }) {
   const handleFullRebuild = useCallback(async () => {
     try {
       setIsFullRebuilding(true);
+      if (!window?.electronAPI?.embeddings?.fullRebuild) {
+        addNotification('Embedding API not available', 'error');
+        return;
+      }
       addNotification('Starting full rebuild... This may take a while.', 'info');
       const res = await window.electronAPI.embeddings.fullRebuild();
       if (res?.success) {
@@ -160,7 +177,7 @@ function EmbeddingRebuildSection({ addNotification }) {
                 ? 'Vision model'
                 : 'Embedding model';
           addNotification(
-            `${modelLabel} not available. Pull it first: ${res.model || 'nomic-embed-text'}`,
+            `${modelLabel} not available. Download it first: ${res.model || DEFAULT_AI_MODELS.EMBEDDING}`,
             'error'
           );
         } else {
@@ -170,14 +187,18 @@ function EmbeddingRebuildSection({ addNotification }) {
     } catch {
       addNotification('Full rebuild failed. Check AI engine status.', 'error');
     } finally {
-      setIsFullRebuilding(false);
+      if (isMountedRef.current) setIsFullRebuilding(false);
       refreshStats();
     }
   }, [addNotification, refreshStats]);
 
   const handleReanalyzeAll = useCallback(async () => {
     try {
-      setIsReanalyzingAll(true);
+      if (isMountedRef.current) setIsReanalyzingAll(true);
+      if (!window?.electronAPI?.embeddings?.reanalyzeAll) {
+        addNotification('Embedding API not available', 'error');
+        return;
+      }
       addNotification('Starting reanalysis of all files... This may take a while.', 'info');
       const res = await window.electronAPI.embeddings.reanalyzeAll({
         applyNaming: applyNamingOnReanalyze
@@ -205,7 +226,7 @@ function EmbeddingRebuildSection({ addNotification }) {
           addNotification('Configure smart folders first before reanalyzing.', 'error');
         } else if (errorMsg.includes('MODEL_NOT_AVAILABLE')) {
           addNotification(
-            `Embedding model not available. Pull it first: ${res.model || 'nomic-embed-text'}`,
+            `Embedding model not available. Download it first: ${res.model || DEFAULT_AI_MODELS.EMBEDDING}`,
             'error'
           );
         } else {
@@ -218,7 +239,7 @@ function EmbeddingRebuildSection({ addNotification }) {
     } catch {
       addNotification('Reanalyze failed. Check AI engine status.', 'error');
     } finally {
-      setIsReanalyzingAll(false);
+      if (isMountedRef.current) setIsReanalyzingAll(false);
       refreshStats();
     }
   }, [addNotification, refreshStats, applyNamingOnReanalyze]);

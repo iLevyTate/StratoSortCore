@@ -11,14 +11,36 @@ import StateMessage from '../ui/StateMessage';
 import { Text } from '../ui/Typography';
 import { logger } from '../../../shared/logger';
 
-// Embedding model dimensions - used for dimension change warnings
-const EMBEDDING_DIMENSIONS = {
-  embeddinggemma: 768,
+const { getModel } = require('../../../shared/modelRegistry');
+
+/**
+ * Resolve the embedding dimension for a model name.
+ * Primary: exact lookup in MODEL_CATALOG (GGUF filenames).
+ * Fallback: partial-match known dimension prefixes.
+ */
+const DIMENSION_FALLBACKS = {
+  'nomic-embed': 768,
   'mxbai-embed-large': 1024,
-  'nomic-embed-text': 768,
+  embeddinggemma: 768,
   'all-minilm': 384,
-  'bge-large': 1024
+  'bge-large': 1024,
+  'snowflake-arctic-embed': 1024,
+  gte: 768
 };
+
+function getEmbeddingDimensions(modelName) {
+  if (!modelName) return null;
+  // Exact registry lookup (GGUF filenames)
+  const info = getModel(modelName);
+  if (info?.dimensions) return info.dimensions;
+  // Partial-match fallback for unknown models
+  const lower = modelName.toLowerCase();
+  const entries = Object.entries(DIMENSION_FALLBACKS).sort(([a], [b]) => b.length - a.length);
+  for (const [prefix, dim] of entries) {
+    if (lower.includes(prefix)) return dim;
+  }
+  return null;
+}
 
 /**
  * Model selection section for text, vision, and embedding models
@@ -36,12 +58,25 @@ function ModelSelectionSection({
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [stats, setStats] = useState(null);
   const [isRebuilding, setIsRebuilding] = useState(false);
+  const isMountedRef = React.useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   useEffect(() => {
     if (window.electronAPI?.embeddings?.getStats) {
       window.electronAPI.embeddings
         .getStats()
-        .then((s) => setStats(s))
-        .catch((err) => logger.error('Failed to fetch stats', err));
+        .then((s) => {
+          if (isMountedRef.current) setStats(s);
+        })
+        .catch((err) => {
+          if (isMountedRef.current) logger.error('Failed to fetch stats', err);
+        });
     }
   }, [settings.embeddingModel]);
 
@@ -53,8 +88,12 @@ function ModelSelectionSection({
       if (window.electronAPI?.embeddings?.getStats) {
         window.electronAPI.embeddings
           .getStats()
-          .then((s) => setStats(s))
-          .catch((err) => logger.error('Failed to fetch stats', err));
+          .then((s) => {
+            if (isMountedRef.current) setStats(s);
+          })
+          .catch((err) => {
+            if (isMountedRef.current) logger.error('Failed to fetch stats', err);
+          });
       }
     }
   };
@@ -66,13 +105,15 @@ function ModelSelectionSection({
       if (window.electronAPI?.embeddings?.fullRebuild) {
         await window.electronAPI.embeddings.fullRebuild();
       }
-      setEmbeddingModelChanged(false);
+      if (isMountedRef.current) setEmbeddingModelChanged(false);
     } catch (error) {
       logger.error('Failed to rebuild embeddings', error);
     } finally {
-      setIsRebuilding(false);
-      setShowConfirmDialog(false);
-      setPendingModel(null);
+      if (isMountedRef.current) {
+        setIsRebuilding(false);
+        setShowConfirmDialog(false);
+        setPendingModel(null);
+      }
     }
   };
 
@@ -146,7 +187,7 @@ function ModelSelectionSection({
               size="sm"
               align="left"
               title="No text models found"
-              description="Pull a model like llama3.2 or mistral."
+              description="Download a text model from the Models tab."
               className="p-3 bg-system-gray-50 rounded-lg border border-system-gray-100"
               contentClassName="max-w-xs"
             />
@@ -184,7 +225,7 @@ function ModelSelectionSection({
               size="sm"
               align="left"
               title="No vision models found"
-              description="Pull a model like llava or moondream for image analysis."
+              description="Download a vision model from the Models tab for image analysis."
               className="p-3 bg-system-gray-50 rounded-lg border border-system-gray-100"
               contentClassName="max-w-xs"
             />
@@ -207,7 +248,7 @@ function ModelSelectionSection({
               >
                 {embeddingModelOptions.map((model) => (
                   <option key={model} value={model}>
-                    {model} ({EMBEDDING_DIMENSIONS[model] || '?'} dims)
+                    {model} ({getEmbeddingDimensions(model) || '?'} dims)
                   </option>
                 ))}
               </Select>

@@ -106,6 +106,23 @@ const systemSlice = createSlice({
       }
     },
     addNotification: (state, action) => {
+      // Prune stale notifications: remove seen/dismissed entries older than 1 hour.
+      // This prevents the list from filling up with items the user already handled.
+      const STALE_THRESHOLD_MS = 60 * 60 * 1000;
+      const cutoffIso = new Date(Date.now() - STALE_THRESHOLD_MS).toISOString();
+      const beforeLen = state.notifications.length;
+      state.notifications = state.notifications.filter((n) => {
+        if (n.timestamp > cutoffIso) return true;
+        // Keep unseen notifications regardless of age
+        return n.status !== NotificationStatus.SEEN && n.status !== NotificationStatus.DISMISSED;
+      });
+      // Recalculate unread count after pruning to prevent drift
+      if (state.notifications.length < beforeLen) {
+        state.unreadNotificationCount = state.notifications.filter(
+          (n) => n.status !== NotificationStatus.SEEN && n.status !== NotificationStatus.DISMISSED
+        ).length;
+      }
+
       // Limit notifications history
       if (state.notifications.length >= 50) {
         state.notifications.shift();
