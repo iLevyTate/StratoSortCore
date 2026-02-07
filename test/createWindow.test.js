@@ -166,11 +166,13 @@ describe('createWindow', () => {
       expect(options.webPreferences.webSecurity).toBe(true);
     });
 
-    test('disables remote module', () => {
+    test('does not enable remote module (removed in Electron 40+)', () => {
       createMainWindow();
 
       const options = BrowserWindow.mock.calls[0][0];
-      expect(options.webPreferences.enableRemoteModule).toBe(false);
+      // enableRemoteModule was removed from Electron 40+ (always false).
+      // Verify it is not explicitly set to true.
+      expect(options.webPreferences.enableRemoteModule).not.toBe(true);
     });
 
     test('disables webviewTag', () => {

@@ -78,6 +78,50 @@ describe('ServiceContainer', () => {
     expect(second).toBe(instance);
   });
 
+  test('resolveAsync detects circular dependencies', async () => {
+    const container = new ServiceContainer();
+    container.registerSingleton('a', async (c) => {
+      const b = await c.resolveAsync('b');
+      return { b };
+    });
+    container.registerSingleton('b', async (c) => {
+      const a = await c.resolveAsync('a');
+      return { a };
+    });
+    await expect(container.resolveAsync('a')).rejects.toThrow(/Circular dependency/);
+  });
+
+  test('resolveAsync allows concurrent unrelated resolutions', async () => {
+    const container = new ServiceContainer();
+    container.registerSingleton('x', async () => {
+      await new Promise((r) => setTimeout(r, 10));
+      return { name: 'x' };
+    });
+    container.registerSingleton('y', async () => {
+      await new Promise((r) => setTimeout(r, 10));
+      return { name: 'y' };
+    });
+    const [x, y] = await Promise.all([container.resolveAsync('x'), container.resolveAsync('y')]);
+    expect(x).toEqual({ name: 'x' });
+    expect(y).toEqual({ name: 'y' });
+  });
+
+  test('resolveAsync deduplicates concurrent calls to the same singleton', async () => {
+    const container = new ServiceContainer();
+    let callCount = 0;
+    container.registerSingleton('svc', async () => {
+      callCount++;
+      await new Promise((r) => setTimeout(r, 10));
+      return { id: 1 };
+    });
+    const [first, second] = await Promise.all([
+      container.resolveAsync('svc'),
+      container.resolveAsync('svc')
+    ]);
+    expect(first).toBe(second);
+    expect(callCount).toBe(1);
+  });
+
   test('clearInstance refuses during async resolution', async () => {
     const container = new ServiceContainer();
     let resolveFactory;

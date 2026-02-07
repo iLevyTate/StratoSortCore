@@ -62,11 +62,14 @@ describe('DegradationManager', () => {
     expect(result.warnings[0].type).toBe('low_disk_space');
   });
 
-  test('handleError maps gpu memory errors to cpu retry', async () => {
+  test('handleError maps gpu memory errors to cpu retry and updates state', async () => {
     const manager = new DegradationManager();
     const result = await manager.handleError(new Error('CUDA out of memory'));
     expect(result.action).toBe('retry_with_cpu');
     expect(result.shouldNotifyUser).toBe(true);
+    // Verify internal state is updated so attemptRecovery() knows to re-enable GPU
+    expect(manager._degradationState.usingCPUFallback).toBe(true);
+    expect(manager._degradationState.gpuAvailable).toBe(false);
   });
 
   test('handleError maps model errors to redownload', async () => {
@@ -91,9 +94,11 @@ describe('DegradationManager', () => {
     mockGpuMonitor.detectGPU.mockResolvedValue({ type: 'gpu' });
     const manager = new DegradationManager();
     manager._degradationState.usingCPUFallback = true;
+    manager._degradationState.gpuAvailable = false;
 
     const result = await manager.attemptRecovery();
     expect(result.action).toBe('gpu_restored');
     expect(manager._degradationState.usingCPUFallback).toBe(false);
+    expect(manager._degradationState.gpuAvailable).toBe(true);
   });
 });

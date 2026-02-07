@@ -84,7 +84,7 @@ jest.mock('../src/shared/securityConfig', () => ({
     'notification',
     'batch-results-chunk'
   ],
-  ALLOWED_SEND_CHANNELS: ['system:renderer-error-report']
+  ALLOWED_SEND_CHANNELS: ['renderer-error-report']
 }));
 
 jest.mock('../src/shared/constants', () => ({
@@ -304,17 +304,17 @@ describe('Preload Coverage', () => {
 
     test('routes image extensions to analyze:image', async () => {
       await electronAPI.files.analyze('C:\\photos\\test.jpg');
-      expect(mockInvoke).toHaveBeenCalledWith('analysis:image', 'C:\\photos\\test.jpg');
+      expect(mockInvoke).toHaveBeenCalledWith('analysis:analyze-image', 'C:\\photos\\test.jpg');
     });
 
     test('routes PNG to image analysis', async () => {
       await electronAPI.files.analyze('C:\\photos\\test.png');
-      expect(mockInvoke).toHaveBeenCalledWith('analysis:image', 'C:\\photos\\test.png');
+      expect(mockInvoke).toHaveBeenCalledWith('analysis:analyze-image', 'C:\\photos\\test.png');
     });
 
     test('routes document extensions to analyze:document', async () => {
       await electronAPI.files.analyze('C:\\docs\\report.pdf');
-      expect(mockInvoke).toHaveBeenCalledWith('analysis:document', 'C:\\docs\\report.pdf');
+      expect(mockInvoke).toHaveBeenCalledWith('analysis:analyze-document', 'C:\\docs\\report.pdf');
     });
 
     test('rejects empty file path', async () => {
@@ -352,32 +352,32 @@ describe('Preload Coverage', () => {
 
     test('unwraps array input', async () => {
       await electronAPI.files.analyze(['C:\\docs\\report.pdf']);
-      expect(mockInvoke).toHaveBeenCalledWith('analysis:document', 'C:\\docs\\report.pdf');
+      expect(mockInvoke).toHaveBeenCalledWith('analysis:analyze-document', 'C:\\docs\\report.pdf');
     });
 
     test('unwraps object with path property', async () => {
       await electronAPI.files.analyze({ path: 'C:\\docs\\report.pdf' });
-      expect(mockInvoke).toHaveBeenCalledWith('analysis:document', 'C:\\docs\\report.pdf');
+      expect(mockInvoke).toHaveBeenCalledWith('analysis:analyze-document', 'C:\\docs\\report.pdf');
     });
 
     test('trims whitespace and quotes from path', async () => {
       await electronAPI.files.analyze('"C:\\docs\\report.pdf"');
-      expect(mockInvoke).toHaveBeenCalledWith('analysis:document', 'C:\\docs\\report.pdf');
+      expect(mockInvoke).toHaveBeenCalledWith('analysis:analyze-document', 'C:\\docs\\report.pdf');
     });
 
     test('routes .gif to image analysis', async () => {
       await electronAPI.files.analyze('C:\\img\\anim.gif');
-      expect(mockInvoke).toHaveBeenCalledWith('analysis:image', 'C:\\img\\anim.gif');
+      expect(mockInvoke).toHaveBeenCalledWith('analysis:analyze-image', 'C:\\img\\anim.gif');
     });
 
     test('routes .webp to image analysis', async () => {
       await electronAPI.files.analyze('C:\\img\\photo.webp');
-      expect(mockInvoke).toHaveBeenCalledWith('analysis:image', 'C:\\img\\photo.webp');
+      expect(mockInvoke).toHaveBeenCalledWith('analysis:analyze-image', 'C:\\img\\photo.webp');
     });
 
     test('routes .heic to image analysis', async () => {
       await electronAPI.files.analyze('C:\\img\\photo.heic');
-      expect(mockInvoke).toHaveBeenCalledWith('analysis:image', 'C:\\img\\photo.heic');
+      expect(mockInvoke).toHaveBeenCalledWith('analysis:analyze-image', 'C:\\img\\photo.heic');
     });
   });
 
@@ -440,7 +440,7 @@ describe('Preload Coverage', () => {
   describe('events.sendError', () => {
     test('sends error report via ipcRenderer.send', () => {
       electronAPI.events.sendError({ message: 'Test error', stack: 'stack...' });
-      expect(mockSend).toHaveBeenCalledWith('system:renderer-error-report', expect.any(Object));
+      expect(mockSend).toHaveBeenCalledWith('renderer-error-report', expect.any(Object));
     });
 
     test('does nothing for null error data', () => {
@@ -473,7 +473,7 @@ describe('Preload Coverage', () => {
       mockInvoke.mockResolvedValue({ results: [] });
       await electronAPI.embeddings.search('test query');
       expect(mockInvoke).toHaveBeenCalledWith(
-        'emb:search',
+        'embeddings:search',
         expect.objectContaining({
           query: 'test query',
           topK: 20,
@@ -496,7 +496,7 @@ describe('Preload Coverage', () => {
       });
 
       expect(mockInvoke).toHaveBeenCalledWith(
-        'emb:search',
+        'embeddings:search',
         expect.objectContaining({
           query: 'test',
           topK: 5,
@@ -515,7 +515,7 @@ describe('Preload Coverage', () => {
       mockInvoke.mockResolvedValue({ results: [] });
       await electronAPI.embeddings.hybridSearch('test', { mode: 'vector' });
       expect(mockInvoke).toHaveBeenCalledWith(
-        'emb:search',
+        'embeddings:search',
         expect.objectContaining({ mode: 'hybrid' })
       );
     });

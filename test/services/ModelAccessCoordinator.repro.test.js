@@ -39,6 +39,10 @@ jest.mock('p-queue', () => {
   };
 });
 
+// Set inference concurrency BEFORE module load so DEFAULT_INFERENCE_CONCURRENCY picks it up.
+// The queue-limit test requires concurrency > 1 to fill active slots independently.
+process.env.STRATOSORT_INFERENCE_CONCURRENCY = '3';
+
 const { ModelAccessCoordinator } = require('../../src/main/services/ModelAccessCoordinator');
 
 // Mock logger
@@ -50,6 +54,10 @@ jest.mock('../../src/shared/logger', () => ({
     error: jest.fn()
   })
 }));
+
+afterAll(() => {
+  delete process.env.STRATOSORT_INFERENCE_CONCURRENCY;
+});
 
 describe('ModelAccessCoordinator', () => {
   let coordinator;

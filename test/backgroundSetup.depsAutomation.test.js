@@ -2,9 +2,11 @@
  * Background dependency setup tests
  *
  * Verifies first-run automation:
- * - Removes installer marker
- * - Installs Tesseract when missing (best-effort)
+ * - Downloads missing GGUF models
  * - Writes dependency setup marker
+ *
+ * OCR uses bundled tesseract.js (no external install).
+ * Vision runtime is bundled in production builds.
  */
 
 jest.mock('../src/shared/logger', () => {
@@ -38,7 +40,31 @@ jest.mock('electron', () => ({
   }
 }));
 
-// Legacy dependency automation removed (in-process AI stack).
+// Mock LlamaService (new in-process AI engine)
+jest.mock('../src/main/services/LlamaService', () => ({
+  getInstance: jest.fn(() => ({
+    getConfig: jest.fn().mockResolvedValue({
+      embeddingModel: 'nomic-embed-text-v1.5-Q8_0.gguf',
+      textModel: 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf',
+      visionModel: 'llava-v1.6-mistral-7b-Q4_K_M.gguf'
+    }),
+    listModels: jest
+      .fn()
+      .mockResolvedValue([
+        { name: 'nomic-embed-text-v1.5-Q8_0.gguf' },
+        { name: 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf' },
+        { name: 'llava-v1.6-mistral-7b-Q4_K_M.gguf' }
+      ])
+  }))
+}));
+
+// Mock ModelDownloadManager (used for background model downloads)
+jest.mock('../src/main/services/ModelDownloadManager', () => ({
+  getInstance: jest.fn(() => ({
+    initialize: jest.fn().mockResolvedValue(undefined),
+    downloadModel: jest.fn().mockResolvedValue({ success: true })
+  }))
+}));
 
 // Import after mocks so module under test uses our fakes
 const { runBackgroundSetup } = require('../src/main/core/backgroundSetup');
@@ -48,7 +74,6 @@ describe('backgroundSetup automated dependencies', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    process.env.SKIP_TESSERACT_SETUP = 'true';
 
     // memfs in this repo normalizes writeFile/rename/readFile, but NOT access/unlink.
     // backgroundSetup uses fs.access/unlink with platform paths, so normalize them here.
@@ -68,10 +93,6 @@ describe('backgroundSetup automated dependencies', () => {
     await fs.mkdir('/test/userData', { recursive: true });
   });
 
-  afterEach(() => {
-    delete process.env.SKIP_TESSERACT_SETUP;
-  });
-
   test('first run installs deps, starts services, pulls models, writes marker', async () => {
     await runBackgroundSetup();
 
@@ -84,14 +105,20 @@ describe('backgroundSetup automated dependencies', () => {
     expect(mockSendSpy).toHaveBeenCalled();
   });
 
-  test('not first run skips automation', async () => {
+  test('not first run skips dependency automation but still checks models', async () => {
     // Seed marker to indicate previous completion
     await fs.writeFile('/test/userData/dependency-setup-complete.marker', 'done');
 
     await runBackgroundSetup();
 
-    // Still should not emit progress if no automation runs.
-    expect(mockSendSpy).not.toHaveBeenCalled();
+    // Model availability check still runs on subsequent launches
+    // (models could be deleted or missing), so progress may be emitted.
+    // The key assertion is that dependency INSTALL automation is skipped.
+    const allCalls = mockSendSpy.mock.calls;
+    const installCalls = allCalls.filter((call) =>
+      JSON.stringify(call).includes('"stage":"install"')
+    );
+    expect(installCalls).toHaveLength(0);
   });
 
   describe('Migration: no Ollama/ChromaDB dependency setup', () => {
@@ -147,19 +174,20 @@ describe('backgroundSetup automated dependencies', () => {
       expect(isFirst).toBe(false);
     });
 
-    test('only Tesseract is installed on first run (no Ollama/ChromaDB)', async () => {
-      // On first run, the only dependency that gets checked is Tesseract
-      // Ollama/ChromaDB setup scripts were deleted in the migration
+    test('no external dependency installs on first run (no Ollama/ChromaDB/Tesseract)', async () => {
+      // On first run, only model availability is checked.
+      // No external installs: OCR uses bundled tesseract.js,
+      // vision runtime is bundled in production builds.
       await runBackgroundSetup();
 
-      // The progress messages should only mention tesseract or generic setup
       const allCalls = mockSendSpy.mock.calls;
       for (const call of allCalls) {
         const serialized = JSON.stringify(call).toLowerCase();
         if (serialized.includes('dependency')) {
-          // If dependency-related, should not mention ollama or chromadb
           expect(serialized).not.toContain('ollama');
           expect(serialized).not.toContain('chromadb');
+          // No external install stages (winget/brew/apt-get)
+          expect(serialized).not.toContain('"stage":"install"');
         }
       }
     });

@@ -293,6 +293,42 @@ describe('EmbeddingQueueCore', () => {
     jest.useRealTimers();
   });
 
+  test('shutdown waits for a scheduled flush that is in progress', async () => {
+    jest.useFakeTimers();
+    const EmbeddingQueue = require('../src/main/analysis/embeddingQueue/EmbeddingQueueCore');
+
+    const q = new EmbeddingQueue({ flushDelayMs: 10 });
+    q.initialized = true;
+    q.queue = [{ id: 'file:a', vector: [1] }];
+
+    let resolveFlush;
+    const flushPromise = new Promise((resolve) => {
+      resolveFlush = resolve;
+    });
+    const flushSpy = jest.spyOn(q, 'flush').mockImplementation(() => flushPromise);
+    mockFailedHandler.persistAll = jest.fn().mockResolvedValue(undefined);
+
+    q.scheduleFlush();
+    await advance(15);
+    expect(flushSpy).toHaveBeenCalled();
+    expect(q._pendingFlush).toBeTruthy();
+
+    const shutdownP = q.shutdown();
+    await flushMicrotasks();
+    let settled = false;
+    shutdownP.finally(() => {
+      settled = true;
+    });
+    await flushMicrotasks();
+    expect(settled).toBe(false);
+
+    resolveFlush();
+    await flushMicrotasks();
+    await expect(shutdownP).resolves.toBeUndefined();
+
+    jest.useRealTimers();
+  });
+
   test('shutdown drains outstanding persistence promises and rejects further enqueues', async () => {
     jest.useFakeTimers();
     const EmbeddingQueue = require('../src/main/analysis/embeddingQueue/EmbeddingQueueCore');

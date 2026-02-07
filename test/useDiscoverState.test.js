@@ -60,8 +60,7 @@ jest.mock('../src/renderer/store/slices/analysisSlice', () => ({
 }));
 
 jest.mock('../src/renderer/store/slices/uiSlice', () => ({
-  setPhase: jest.fn((payload) => ({ type: 'ui/setPhase', payload })),
-  setAnalyzing: jest.fn((payload) => ({ type: 'ui/setAnalyzing', payload }))
+  setPhase: jest.fn((payload) => ({ type: 'ui/setPhase', payload }))
 }));
 
 describe('useDiscoverState', () => {

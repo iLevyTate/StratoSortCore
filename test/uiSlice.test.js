@@ -42,7 +42,6 @@ import uiReducer, {
   resetUi,
   updateSettings,
   setOrganizing,
-  setAnalyzing,
   clearNavigationError,
   goBack,
   fetchSettings,
@@ -63,7 +62,6 @@ describe('uiSlice', () => {
     settings: null,
     settingsLoading: false,
     isOrganizing: false,
-    isAnalyzing: false,
     navigationError: null
   };
 
@@ -155,14 +153,6 @@ describe('uiSlice', () => {
       const result = uiReducer(initialState, setOrganizing('yes'));
 
       expect(result.isOrganizing).toBe(true);
-    });
-  });
-
-  describe('setAnalyzing', () => {
-    test('sets analyzing state', () => {
-      const result = uiReducer(initialState, setAnalyzing(true));
-
-      expect(result.isAnalyzing).toBe(true);
     });
   });
 
@@ -389,23 +379,22 @@ describe('uiSlice', () => {
         ).toBe(false);
       });
 
-      test('returns false when analyzing', () => {
+      test('returns false when analyzing (via context)', () => {
         expect(
-          NAVIGATION_RULES.canGoBack({
-            currentPhase: 'discover',
-            isAnalyzing: true
-          })
+          NAVIGATION_RULES.canGoBack({ currentPhase: 'discover' }, { isAnalyzing: true })
         ).toBe(false);
       });
 
       test('returns true otherwise', () => {
         expect(
-          NAVIGATION_RULES.canGoBack({
-            currentPhase: 'setup',
-            isLoading: false,
-            isOrganizing: false,
-            isAnalyzing: false
-          })
+          NAVIGATION_RULES.canGoBack(
+            {
+              currentPhase: 'setup',
+              isLoading: false,
+              isOrganizing: false
+            },
+            { isAnalyzing: false }
+          )
         ).toBe(true);
       });
     });

@@ -377,9 +377,11 @@ describe('Model Categorization', () => {
     });
 
     test('prioritizes lightweight models first', () => {
-      // qwen3:0.6b should be early in the list (lightweight)
-      const qwenIndex = FALLBACK_MODEL_PREFERENCES.indexOf('qwen3:0.6b');
+      // qwen3 should be early in the list (lightweight)
+      const qwenIndex = FALLBACK_MODEL_PREFERENCES.indexOf('qwen3');
       const llamaIndex = FALLBACK_MODEL_PREFERENCES.indexOf('llama3');
+      expect(qwenIndex).toBeGreaterThanOrEqual(0);
+      expect(llamaIndex).toBeGreaterThanOrEqual(0);
       expect(qwenIndex).toBeLessThan(llamaIndex);
     });
 
