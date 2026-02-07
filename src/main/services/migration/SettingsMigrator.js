@@ -14,11 +14,17 @@ const logger = createLogger('SettingsMigrator');
 // Current settings schema version
 const CURRENT_SCHEMA_VERSION = SETTINGS_SCHEMA_VERSION;
 
-// Setting key migrations: old key -> new key
+// Setting key migrations: old key -> new key (null = remove)
 const KEY_MIGRATIONS = {
   llamaTextModel: 'textModel',
   llamaVisionModel: 'visionModel',
-  llamaEmbeddingModel: 'embeddingModel'
+  llamaEmbeddingModel: 'embeddingModel',
+  // Legacy Ollama/ChromaDB keys (replaced by in-process node-llama-cpp + Orama)
+  ollamaHost: null,
+  autoUpdateOllama: null,
+  autoUpdateChromaDb: null,
+  enableChromaLearningSync: null,
+  enableChromaLearningDryRun: null
 };
 
 // Default values for new settings

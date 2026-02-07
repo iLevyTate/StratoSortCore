@@ -66,8 +66,7 @@ async function getUnpdfRenderer() {
 
     ensurePromiseResolversPolyfill();
     try {
-      // eslint-disable-next-line import/no-unresolved -- dynamic import resolved at runtime by webpack
-      await definePDFJSModule(() => import('pdfjs-dist/legacy/build/pdf.js'));
+      await definePDFJSModule(() => import('pdfjs-dist/legacy/build/pdf.mjs'));
     } catch (error) {
       logger.warn('[OCR] Failed to load pdfjs-dist renderer', { error: error.message });
       return null;

@@ -130,7 +130,7 @@ function createMainWindow() {
     // Frameless chrome with platform-sensitive styling
     frame: !!isMac,
     titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
-    ...(isMac ? { trafficLightPosition: { x: 16, y: 16 } } : {}),
+    ...(isMac ? { windowButtonPosition: { x: 16, y: 16 } } : {}),
     backgroundColor: '#f8fafc', // Align with glass morphism surface-muted tone
     darkTheme: false,
     webPreferences: {
@@ -139,7 +139,6 @@ function createMainWindow() {
       // Sandbox enabled: preload script is bundled with webpack (target: 'web')
       // and only uses contextBridge to expose safe APIs.
       sandbox: true,
-      enableRemoteModule: false,
       preload: getPreloadPath(),
       webSecurity: true,
       allowRunningInsecureContent: false,

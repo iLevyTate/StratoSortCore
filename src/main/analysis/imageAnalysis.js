@@ -243,7 +243,9 @@ Analyze this image:`;
         return globalDeduplicator.deduplicate(
           deduplicationKey,
           () =>
-            llamaService.analyzeImage(prompt, imageBase64, {
+            llamaService.analyzeImage({
+              prompt,
+              imageBase64,
               maxTokens: AppConfig.ai.imageAnalysis.maxTokens,
               temperature: AppConfig.ai.imageAnalysis.temperature,
               signal: abortController.signal
@@ -1378,7 +1380,9 @@ async function extractTextFromImage(filePath, options = {}) {
     });
     const response = await withAbortableTimeout(
       (abortController) =>
-        llamaService2.analyzeImage(prompt, imageBase64, {
+        llamaService2.analyzeImage({
+          prompt,
+          imageBase64,
           maxTokens: OCR_DEFAULTS.maxTokens,
           temperature: 0.1,
           signal: abortController.signal

@@ -25,6 +25,7 @@ const { getInstance: getLlamaService } = require('../services/LlamaService');
 const { chunkText } = require('../utils/textChunking');
 const { normalizeText } = require('../../shared/normalization');
 const { getFileEmbeddingId } = require('../utils/fileIdUtils');
+const { enrichFolderTextForEmbedding } = require('../analysis/semanticExtensionMap');
 const {
   readEmbeddingIndexMetadata,
   writeEmbeddingIndexMetadata
@@ -632,7 +633,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
         const folderPayloads = await Promise.all(
           smartFolders.map(async (folder) => {
             try {
-              const folderText = [folder.name, folder.description].filter(Boolean).join(' - ');
+              const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
 
               const { vector, model } = await folderMatcher.embedText(folderText);
               const folderId = folder.id || folderMatcher.generateFolderId(folder);
@@ -799,7 +800,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
           const folderPayloads = await Promise.all(
             smartFolders.map(async (folder) => {
               try {
-                const folderText = [folder.name, folder.description].filter(Boolean).join(' - ');
+                const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
 
                 const { vector, model } = await folderMatcher.embedText(folderText);
                 const folderId = folder.id || folderMatcher.generateFolderId(folder);
@@ -1185,7 +1186,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
           const folderPayloads = await Promise.all(
             smartFolders.map(async (folder) => {
               try {
-                const folderText = [folder.name, folder.description].filter(Boolean).join(' - ');
+                const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
                 const { vector, model } = await folderMatcher.embedText(folderText);
                 const folderId = folder.id || folderMatcher.generateFolderId(folder);
 

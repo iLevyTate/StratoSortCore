@@ -159,6 +159,8 @@ async function runDocumentAnalysisChecks(llama, errors) {
     warn(`- ${message}`);
     warn('- Running minimal text model sanity check...');
     try {
+      // CPU-only 7B models can take 60-120s for even short generations
+      const sanityTimeoutMs = parseInt(process.env.AI_SANITY_TIMEOUT, 10) || 120000;
       const sanity = await withAbortableTimeout(
         (abortController) =>
           llama.generateText({
@@ -167,7 +169,7 @@ async function runDocumentAnalysisChecks(llama, errors) {
             temperature: 0.1,
             signal: abortController.signal
           }),
-        60000,
+        sanityTimeoutMs,
         'Text model sanity check'
       );
       if (!sanity?.response) {
@@ -236,24 +238,31 @@ async function runVectorSearchChecks(llama, errors) {
     const invoiceEmbedding = await llama.generateEmbedding(invoiceText);
     const contractEmbedding = await llama.generateEmbedding(contractText);
 
-    await vectorDb.upsertFile({
-      id: 'file:invoice',
+    const upsert1 = await vectorDb.upsertFile({
+      id: 'file:diag-invoice',
       vector: invoiceEmbedding.embedding,
       meta: { path: invoicePath, fileName: 'sample.txt', fileType: 'text/plain' }
     });
-    await vectorDb.upsertFile({
-      id: 'file:contract',
+    if (upsert1?.success === false) {
+      throw new Error(`Upsert invoice failed: ${upsert1.error || 'unknown'}`);
+    }
+
+    const upsert2 = await vectorDb.upsertFile({
+      id: 'file:diag-contract',
       vector: contractEmbedding.embedding,
       meta: { path: contractPath, fileName: 'contract.txt', fileType: 'text/plain' }
     });
+    if (upsert2?.success === false) {
+      throw new Error(`Upsert contract failed: ${upsert2.error || 'unknown'}`);
+    }
 
     const queryEmbedding = await llama.generateEmbedding('invoice payment financial');
     const results = await vectorDb.querySimilarFiles(queryEmbedding.embedding, 5);
     if (!results || results.length === 0) {
       throw new Error('Search returned no results');
     }
-    if (results[0].id !== 'file:invoice') {
-      throw new Error(`Unexpected top result: ${results[0].id}`);
+    if (results[0].id !== 'file:diag-invoice') {
+      throw new Error(`Unexpected top result: ${results[0].id} (expected file:diag-invoice)`);
     }
     log(`- search: OK (top=${results[0].id}, score=${results[0].score.toFixed(3)})`);
   } catch (error) {

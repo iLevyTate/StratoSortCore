@@ -96,6 +96,10 @@ class DegradationManager {
     ) {
       logger.warn('[Degradation] GPU memory error, attempting recovery');
 
+      // Update state so attemptRecovery() knows to try re-enabling GPU later
+      this._degradationState.usingCPUFallback = true;
+      this._degradationState.gpuAvailable = false;
+
       return {
         action: 'retry_with_cpu',
         message: 'GPU memory exhausted. Switching to CPU mode.',
@@ -157,6 +161,7 @@ class DegradationManager {
       const gpuInfo = await this._gpuMonitor.detectGPU();
       if (gpuInfo.type !== 'cpu') {
         this._degradationState.usingCPUFallback = false;
+        this._degradationState.gpuAvailable = true;
         return {
           canRecover: true,
           action: 'gpu_restored',

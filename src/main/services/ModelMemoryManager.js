@@ -23,6 +23,7 @@ class ModelMemoryManager {
       }
     };
     this._loadedModels = new Map(); // type -> { model, context, lastUsed, sizeBytes }
+    this._activeRefs = new Map(); // type -> number of in-flight operations using this model
     this._maxMemoryUsage = this._calculateMaxMemory();
     this._currentMemoryUsage = 0;
 
@@ -54,6 +55,36 @@ class ModelMemoryManager {
   }
 
   /**
+   * Refresh the memory budget based on current free memory.
+   * Called before load decisions to avoid using a stale snapshot from constructor time.
+   */
+  _refreshMemoryBudget() {
+    this._maxMemoryUsage = this._calculateMaxMemory();
+  }
+
+  /**
+   * Mark a model as actively in-use (prevents eviction while held).
+   * Callers MUST call releaseRef when done.
+   * @param {string} modelType
+   */
+  acquireRef(modelType) {
+    this._activeRefs.set(modelType, (this._activeRefs.get(modelType) || 0) + 1);
+  }
+
+  /**
+   * Release an active reference on a model type.
+   * @param {string} modelType
+   */
+  releaseRef(modelType) {
+    const current = this._activeRefs.get(modelType) || 0;
+    if (current <= 1) {
+      this._activeRefs.delete(modelType);
+    } else {
+      this._activeRefs.set(modelType, current - 1);
+    }
+  }
+
+  /**
    * Check if we can load a model of given type
    */
   canLoadModel(modelType) {
@@ -73,10 +104,23 @@ class ModelMemoryManager {
       return entry.context;
     }
 
-    // Check if we need to free memory
+    // Refresh budget from current system state before making load decisions
+    this._refreshMemoryBudget();
+
+    // Check if we need to free memory -- evict LRU models until budget allows.
+    // Break if _unloadLeastRecentlyUsed could not evict (all models in active use).
     const estimatedSize = this._modelSizeEstimates[modelType] || 0;
     while (!this.canLoadModel(modelType) && this._loadedModels.size > 0) {
+      const sizeBefore = this._loadedModels.size;
       await this._unloadLeastRecentlyUsed();
+      if (this._loadedModels.size === sizeBefore) {
+        // Nothing was evicted (all models have active refs) -- stop to avoid infinite loop
+        logger.warn('[Memory] Cannot free enough memory -- all models in active use', {
+          requestedType: modelType,
+          loadedModels: Array.from(this._loadedModels.keys())
+        });
+        break;
+      }
     }
 
     // Load the model via the bound callback
@@ -98,13 +142,16 @@ class ModelMemoryManager {
   }
 
   /**
-   * Unload least recently used model
+   * Unload least recently used model, skipping models with active references.
    */
   async _unloadLeastRecentlyUsed() {
     let oldest = null;
     let oldestTime = Infinity;
 
     for (const [type, entry] of this._loadedModels) {
+      // Never evict a model that is currently in-use for inference
+      if ((this._activeRefs.get(type) || 0) > 0) continue;
+
       if (entry.lastUsed < oldestTime) {
         oldest = type;
         oldestTime = entry.lastUsed;
@@ -113,6 +160,8 @@ class ModelMemoryManager {
 
     if (oldest) {
       await this._unloadModel(oldest);
+    } else {
+      logger.warn('[Memory] Cannot evict any model -- all loaded models are in active use');
     }
   }
 
@@ -125,7 +174,7 @@ class ModelMemoryManager {
 
     // Remove from map FIRST to prevent double-dispose if called concurrently
     this._loadedModels.delete(modelType);
-    this._currentMemoryUsage -= entry.sizeBytes;
+    this._currentMemoryUsage = Math.max(0, this._currentMemoryUsage - entry.sizeBytes);
 
     logger.info('[Memory] Unloading model', { type: modelType });
 

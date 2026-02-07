@@ -11,6 +11,8 @@ const { createLogger } = require('../../../shared/logger');
 const { container } = require('../ServiceContainer');
 const { withTimeout, delay } = require('../../../shared/promiseUtils');
 const { getDataMigrationService } = require('../migration');
+const { AI_DEFAULTS } = require('../../../shared/constants');
+const { getModel } = require('../../../shared/modelRegistry');
 
 // In-process services
 const { getInstance: getLlamaService } = require('../LlamaService');
@@ -267,11 +269,79 @@ class StartupManager {
     if (signal?.aborted) throw new Error('Startup aborted');
     await this.initializeServices(signal);
 
-    // Phase 2: App Services (Placeholders for other initializers)
+    // Phase 2: Check model availability (non-blocking)
+    if (signal?.aborted) throw new Error('Startup aborted');
+    await this._checkModelAvailability();
+
+    // Phase 3: App Services (Placeholders for other initializers)
     if (signal?.aborted) throw new Error('Startup aborted');
     this.reportProgress('app-services', 'Initializing application components...', 85);
 
     logger.info('[STARTUP] Internal startup sequence complete');
+  }
+
+  /**
+   * Check if required AI models are available.
+   * Non-blocking: missing models are reported via progress events
+   * so the renderer can show the ModelSetupWizard.
+   */
+  async _checkModelAvailability() {
+    this.reportProgress('models', 'Checking AI model availability...', 70);
+
+    try {
+      const llamaService = getLlamaService();
+      const cfg = await llamaService.getConfig();
+      const available = await llamaService.listModels();
+      const availableNames = new Set(available.map((m) => m.name || m.filename || ''));
+
+      const required = [
+        cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL,
+        cfg.textModel || AI_DEFAULTS.TEXT.MODEL
+      ].filter(Boolean);
+
+      // Vision is optional but includes a companion projector
+      const visionModel = cfg.visionModel || AI_DEFAULTS.IMAGE.MODEL;
+      const visionInfo = getModel(visionModel);
+      const projectorName = visionInfo?.clipModel?.name;
+
+      const missingRequired = required.filter((name) => !availableNames.has(name));
+      const visionModelPresent = visionModel ? availableNames.has(visionModel) : false;
+      const projectorPresent = projectorName ? availableNames.has(projectorName) : true;
+      const visionAvailable = visionModelPresent && projectorPresent;
+
+      this.serviceStatus.llama.modelsAvailable = missingRequired.length === 0;
+      this.serviceStatus.llama.missingModels = missingRequired;
+      this.serviceStatus.llama.visionAvailable = visionAvailable;
+      this.serviceStatus.llama.availableModelCount = available.length;
+
+      if (missingRequired.length > 0) {
+        logger.warn('[STARTUP] Required models missing', {
+          missing: missingRequired,
+          available: Array.from(availableNames)
+        });
+        this.reportProgress('models', 'Some AI models need to be downloaded', 75, {
+          warning: true,
+          missingModels: missingRequired,
+          visionAvailable
+        });
+      } else {
+        logger.info('[STARTUP] All required models available', {
+          count: available.length,
+          vision: visionAvailable
+        });
+        this.reportProgress('models', 'AI models ready', 75, {
+          modelsReady: true,
+          visionAvailable
+        });
+      }
+    } catch (error) {
+      logger.warn('[STARTUP] Model availability check failed (non-fatal):', error?.message);
+      this.serviceStatus.llama.modelsAvailable = false;
+      this.reportProgress('models', 'Could not verify model availability', 75, {
+        warning: true,
+        error: error?.message
+      });
+    }
   }
 
   startHealthMonitoring() {
@@ -290,6 +360,10 @@ class StartupManager {
         // Vector DB is always healthy if running, but we can check stats
         this.serviceStatus.vectorDb.health = 'healthy';
       } catch (error) {
+        // Mark Llama as unhealthy on health check failures.
+        // Vector DB health is unknown without a successful check.
+        this.serviceStatus.llama.health = 'unhealthy';
+        this.serviceStatus.vectorDb.health = 'unknown';
         logger.warn('[Health] Health check failed', error);
       }
     }, this.config.healthCheckInterval);

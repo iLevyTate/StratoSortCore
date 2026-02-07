@@ -237,7 +237,7 @@ class SettingsService {
             // Reload the restored settings
             const raw = await fs.readFile(this.settingsPath, 'utf-8');
             const parsed = JSON.parse(raw);
-            const merged = { ...this.defaults, ...parsed };
+            const merged = mergeWithDefaults(parsed);
             const sanitized = sanitizeSettings(merged);
             this._cache = sanitized;
             this._cacheTimestamp = Date.now();

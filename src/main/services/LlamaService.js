@@ -27,7 +27,7 @@ const { ModelMemoryManager } = require('./ModelMemoryManager');
 const { DegradationManager } = require('./DegradationManager');
 const { ModelAccessCoordinator } = require('./ModelAccessCoordinator');
 const { PerformanceMetrics } = require('./PerformanceMetrics');
-const { withLlamaResilience } = require('./LlamaResilience');
+const { withLlamaResilience, cleanupLlamaCircuits } = require('./LlamaResilience');
 const { delay } = require('../../shared/promiseUtils');
 
 const logger = createLogger('LlamaService');
@@ -66,7 +66,7 @@ const DEFAULT_CONFIG = {
   textModel: AI_DEFAULTS.TEXT?.MODEL || 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf',
   visionModel: AI_DEFAULTS.IMAGE?.MODEL || 'llava-v1.6-mistral-7b-Q4_K_M.gguf',
   embeddingModel: AI_DEFAULTS.EMBEDDING?.MODEL || 'nomic-embed-text-v1.5-Q8_0.gguf',
-  gpuLayers: -1, // -1 = auto (use all available GPU layers)
+  gpuLayers: 'auto', // 'auto' = offload all layers to GPU when available
   contextSize: 8192,
   threads: 0 // 0 = auto-detect
 };
@@ -361,19 +361,47 @@ class LlamaService extends EventEmitter {
   }
 
   /**
-   * Initialize Llama with automatic GPU detection/fallback
+   * Initialize Llama with automatic GPU detection/fallback.
+   *
+   * node-llama-cpp's `getLlama({ gpu: 'auto' })` probes for CUDA → Vulkan → Metal
+   * and silently falls back to CPU when none are usable.  We surface the result
+   * so users know whether inference will be fast (GPU) or slow (CPU-only).
    */
   async _initializeLlama() {
-    // Try to init with GPU first
+    const { getLlama } = await loadNodeLlamaModule();
+
+    // Detect what GPU the OS sees (independent of node-llama-cpp's own probe)
     try {
-      const { getLlama } = await loadNodeLlamaModule();
+      const gpuInfo = await this._gpuMonitor.detectGPU();
+      logger.info('[LlamaService] System GPU detected', {
+        type: gpuInfo.type,
+        name: gpuInfo.name,
+        vramMB: gpuInfo.vramMB || 0
+      });
+    } catch {
+      logger.debug('[LlamaService] GPU detection skipped');
+    }
+
+    // Try GPU-enabled init first
+    try {
       this._llama = await getLlama({ gpu: 'auto' });
       this._gpuBackend = this._llama.gpu || 'cpu';
     } catch (error) {
-      logger.warn('[LlamaService] GPU initialization failed, falling back to CPU', error);
-      const { getLlama } = await loadNodeLlamaModule();
+      logger.warn('[LlamaService] GPU initialization failed, falling back to CPU', {
+        error: error?.message
+      });
       this._llama = await getLlama({ gpu: false });
       this._gpuBackend = 'cpu';
+    }
+
+    if (this._gpuBackend === 'cpu' || this._gpuBackend === false || !this._gpuBackend) {
+      this._gpuBackend = 'cpu';
+      logger.warn(
+        '[LlamaService] Running on CPU only — inference will be slow for large models. ' +
+          'Install CUDA toolkit (NVIDIA) or ensure Vulkan drivers are up to date for GPU acceleration.'
+      );
+    } else {
+      logger.info('[LlamaService] GPU backend active', { backend: this._gpuBackend });
     }
   }
 
@@ -522,9 +550,21 @@ class LlamaService extends EventEmitter {
     logger.info(`[LlamaService] Loading ${type} model: ${modelName}`);
 
     try {
+      // Resolve gpuLayers: 'auto' or -1 → Infinity (offload all layers to GPU).
+      // node-llama-cpp treats -1 as 0 (CPU-only), so we must map it ourselves.
+      const configLayers = this._config.gpuLayers;
+      const gpuLayers =
+        configLayers === 'auto' || configLayers === -1 ? Infinity : (configLayers ?? Infinity);
+
       const model = await this._llama.loadModel({
         modelPath,
-        gpuLayers: this._config.gpuLayers
+        gpuLayers
+      });
+
+      logger.info(`[LlamaService] Model ${type} GPU offload`, {
+        requestedLayers: gpuLayers === Infinity ? 'all' : gpuLayers,
+        actualGpuLayers: model.gpuLayers ?? 'unknown',
+        backend: this._gpuBackend
       });
 
       let context;
@@ -532,7 +572,10 @@ class LlamaService extends EventEmitter {
         context = await model.createEmbeddingContext();
       } else {
         context = await model.createContext({
-          contextSize: this._config.contextSize
+          contextSize: this._config.contextSize,
+          // Use 2 sequences so a stale/orphaned session from a timed-out
+          // inference doesn't block the next request with "No sequences left"
+          sequences: 2
         });
       }
 
@@ -559,29 +602,37 @@ class LlamaService extends EventEmitter {
     return this._coordinator.withModel(
       'embedding',
       async () => {
-        return withLlamaResilience(async (_retryOptions) => {
-          const startTime = Date.now();
+        this._modelMemoryManager?.acquireRef('embedding');
+        try {
+          return await withLlamaResilience(
+            async (_retryOptions) => {
+              const startTime = Date.now();
 
-          try {
-            const context = await this._ensureModelLoaded('embedding');
+              try {
+                const context = await this._ensureModelLoaded('embedding');
 
-            // Use retryOptions to handle CPU fallback if needed
-            // Note: node-llama-cpp context might need recreation for CPU fallback,
-            // but for now we rely on LlamaResilience to handle re-attempts
+                // Use retryOptions to handle CPU fallback if needed
+                // Note: node-llama-cpp context might need recreation for CPU fallback,
+                // but for now we rely on LlamaResilience to handle re-attempts
 
-            const embedding = await context.getEmbeddingFor(text);
-            const vector = Array.from(embedding.vector);
+                const embedding = await context.getEmbeddingFor(text);
+                const vector = Array.from(embedding.vector);
 
-            this._metrics.recordEmbedding(Date.now() - startTime, true);
-            return { embedding: vector };
-          } catch (error) {
-            this._metrics.recordEmbedding(Date.now() - startTime, false);
-            if (isOutOfMemoryError(error)) {
-              throw attachErrorCode(error, ERROR_CODES.LLAMA_OOM);
-            }
-            throw attachErrorCode(error, ERROR_CODES.LLAMA_INFERENCE_FAILED);
-          }
-        });
+                this._metrics.recordEmbedding(Date.now() - startTime, true);
+                return { embedding: vector };
+              } catch (error) {
+                this._metrics.recordEmbedding(Date.now() - startTime, false);
+                if (isOutOfMemoryError(error)) {
+                  throw attachErrorCode(error, ERROR_CODES.LLAMA_OOM);
+                }
+                throw attachErrorCode(error, ERROR_CODES.LLAMA_INFERENCE_FAILED);
+              }
+            },
+            { modelType: 'embedding' }
+          );
+        } finally {
+          this._modelMemoryManager?.releaseRef('embedding');
+        }
       },
       { operationId }
     );
@@ -627,84 +678,92 @@ class LlamaService extends EventEmitter {
     return this._coordinator.withModel(
       'text',
       async () => {
-        return withLlamaResilience(async () => {
-          const startTime = Date.now();
-          let session;
-          let abortHandler;
+        this._modelMemoryManager?.acquireRef('text');
+        try {
+          return await withLlamaResilience(
+            async () => {
+              const startTime = Date.now();
+              let session;
+              let abortHandler;
 
-          const runOnce = async () => {
-            if (signal?.aborted) {
-              const abortError = new Error('Operation aborted');
-              abortError.name = 'AbortError';
-              throw abortError;
-            }
-
-            const context = await this._ensureModelLoaded('text');
-            const { LlamaChatSession } = await loadNodeLlamaModule();
-            session = new LlamaChatSession({
-              contextSequence: context.getSequence(),
-              systemPrompt: systemPrompt || 'You are a helpful assistant.'
-            });
-
-            if (signal) {
-              abortHandler = () => {
-                try {
-                  session?.dispose();
-                } catch (disposeError) {
-                  logger.warn('[LlamaService] Session dispose on abort failed', {
-                    error: disposeError?.message
-                  });
+              const runOnce = async () => {
+                if (signal?.aborted) {
+                  const abortError = new Error('Operation aborted');
+                  abortError.name = 'AbortError';
+                  throw abortError;
                 }
-              };
-              signal.addEventListener('abort', abortHandler, { once: true });
-            }
 
-            const promptOptions = { maxTokens, temperature };
-            if (signal) promptOptions.signal = signal;
-            return await session.prompt(prompt, promptOptions);
-          };
-
-          try {
-            let response;
-            try {
-              response = await runOnce();
-            } catch (error) {
-              if (isSequenceExhaustedError(error)) {
-                await this._recoverFromSequenceExhaustion('text', error);
-                response = await runOnce();
-              } else {
-                throw error;
-              }
-            }
-
-            const tokenCount = response.length / 4;
-            this._metrics.recordTextGeneration(Date.now() - startTime, tokenCount, true);
-            return { response };
-          } catch (error) {
-            this._metrics.recordTextGeneration(Date.now() - startTime, 0, false);
-            if (isOutOfMemoryError(error)) {
-              throw attachErrorCode(error, ERROR_CODES.LLAMA_OOM);
-            }
-            throw attachErrorCode(error, ERROR_CODES.LLAMA_INFERENCE_FAILED);
-          } finally {
-            if (signal && abortHandler) {
-              try {
-                signal.removeEventListener('abort', abortHandler);
-              } catch {
-                /* ignore */
-              }
-            }
-            if (session) {
-              try {
-                session.dispose();
-              } catch (disposeError) {
-                logger.warn('[LlamaService] Session dispose failed', {
-                  error: disposeError?.message
+                const context = await this._ensureModelLoaded('text');
+                const { LlamaChatSession } = await loadNodeLlamaModule();
+                session = new LlamaChatSession({
+                  contextSequence: context.getSequence(),
+                  systemPrompt: systemPrompt || 'You are a helpful assistant.'
                 });
+
+                if (signal) {
+                  abortHandler = () => {
+                    try {
+                      session?.dispose();
+                    } catch (disposeError) {
+                      logger.warn('[LlamaService] Session dispose on abort failed', {
+                        error: disposeError?.message
+                      });
+                    }
+                  };
+                  signal.addEventListener('abort', abortHandler, { once: true });
+                }
+
+                const promptOptions = { maxTokens, temperature };
+                if (signal) promptOptions.signal = signal;
+                return await session.prompt(prompt, promptOptions);
+              };
+
+              try {
+                let response;
+                try {
+                  response = await runOnce();
+                } catch (error) {
+                  if (isSequenceExhaustedError(error)) {
+                    await this._recoverFromSequenceExhaustion('text', error);
+                    response = await runOnce();
+                  } else {
+                    throw error;
+                  }
+                }
+
+                const tokenCount = response.length / 4;
+                this._metrics.recordTextGeneration(Date.now() - startTime, tokenCount, true);
+                return { response };
+              } catch (error) {
+                this._metrics.recordTextGeneration(Date.now() - startTime, 0, false);
+                if (isOutOfMemoryError(error)) {
+                  throw attachErrorCode(error, ERROR_CODES.LLAMA_OOM);
+                }
+                throw attachErrorCode(error, ERROR_CODES.LLAMA_INFERENCE_FAILED);
+              } finally {
+                if (signal && abortHandler) {
+                  try {
+                    signal.removeEventListener('abort', abortHandler);
+                  } catch {
+                    /* ignore */
+                  }
+                }
+                if (session) {
+                  try {
+                    session.dispose();
+                  } catch (disposeError) {
+                    logger.warn('[LlamaService] Session dispose failed', {
+                      error: disposeError?.message
+                    });
+                  }
+                }
               }
-            }
-          }
-        });
+            },
+            { modelType: 'text' }
+          );
+        } finally {
+          this._modelMemoryManager?.releaseRef('text');
+        }
       },
       { operationId }
     );
@@ -733,32 +792,23 @@ class LlamaService extends EventEmitter {
   }
 
   /**
-   * Analyze image.
-   * Supports two calling conventions:
-   *   analyzeImage({ imagePath, imageBase64, prompt, maxTokens, temperature })
-   *   analyzeImage(prompt, imageBase64, { maxTokens, temperature })  // legacy
+   * Analyze image using the vision model.
+   * @param {Object} options
+   * @param {string} [options.imagePath] - Path to image file
+   * @param {string} [options.imageBase64] - Base64-encoded image data
+   * @param {string} [options.prompt] - Prompt for the vision model
+   * @param {number} [options.maxTokens] - Maximum tokens to generate
+   * @param {number} [options.temperature] - Sampling temperature
+   * @param {AbortSignal} [options.signal] - Abort signal for cancellation
    */
-  async analyzeImage(promptOrOptions, imageBase64Arg, legacyOpts) {
-    let prompt, imageBase64, imagePath, maxTokens, temperature, signal;
-
-    if (typeof promptOrOptions === 'string') {
-      // Legacy signature: analyzeImage(prompt, imageBase64, opts)
-      prompt = promptOrOptions;
-      imageBase64 = imageBase64Arg;
-      maxTokens = legacyOpts?.maxTokens || 1024;
-      temperature = legacyOpts?.temperature || 0.2;
-      signal = legacyOpts?.signal;
-    } else {
-      // Options-object signature: analyzeImage({ imagePath, imageBase64, prompt, ... })
-      const opts = promptOrOptions || {};
-      prompt = opts.prompt || 'Describe this image.';
-      imageBase64 = opts.imageBase64;
-      imagePath = opts.imagePath;
-      maxTokens = opts.maxTokens || 1024;
-      temperature = opts.temperature || 0.2;
-      signal = opts.signal;
-    }
-
+  async analyzeImage({
+    imagePath,
+    imageBase64,
+    prompt = 'Describe this image.',
+    maxTokens = 1024,
+    temperature = 0.2,
+    signal
+  } = {}) {
     const imageSource = imageBase64 || imagePath;
     if (!imageSource) {
       return this.generateText({
@@ -774,61 +824,72 @@ class LlamaService extends EventEmitter {
     return this._coordinator.withModel(
       'vision',
       async () => {
-        return withLlamaResilience(async () => {
-          const startTime = Date.now();
-          try {
-            const modelName = this._selectedModels.vision || this._config.visionModel;
-            await this._ensureVisionAssets(modelName);
-            try {
-              await fs.access(path.join(this._modelsPath, modelName));
-            } catch {
-              const missingModelError = new Error(`Vision model not found: ${modelName}`);
-              missingModelError.code = ERROR_CODES.LLAMA_MODEL_NOT_FOUND;
-              throw missingModelError;
-            }
-            if (this._visionProjectorStatus.required && !this._visionProjectorStatus.available) {
-              const missingError = new Error(
-                `Vision model not found: missing projector ${this._visionProjectorStatus.projectorName}`
-              );
-              missingError.code = ERROR_CODES.LLAMA_MODEL_NOT_FOUND;
-              throw missingError;
-            }
+        this._modelMemoryManager?.acquireRef('vision');
+        try {
+          return await withLlamaResilience(
+            async () => {
+              const startTime = Date.now();
+              try {
+                const modelName = this._selectedModels.vision || this._config.visionModel;
+                await this._ensureVisionAssets(modelName);
+                try {
+                  await fs.access(path.join(this._modelsPath, modelName));
+                } catch {
+                  const missingModelError = new Error(`Vision model not found: ${modelName}`);
+                  missingModelError.code = ERROR_CODES.LLAMA_MODEL_NOT_FOUND;
+                  throw missingModelError;
+                }
+                if (
+                  this._visionProjectorStatus.required &&
+                  !this._visionProjectorStatus.available
+                ) {
+                  const missingError = new Error(
+                    `Vision model not found: missing projector ${this._visionProjectorStatus.projectorName}`
+                  );
+                  missingError.code = ERROR_CODES.LLAMA_MODEL_NOT_FOUND;
+                  throw missingError;
+                }
 
-            const visionService = getVisionService();
-            logger.info('[LlamaService] Using local vision runtime for image analysis');
-            const result = await visionService.analyzeImage({
-              imageBase64,
-              imagePath,
-              prompt,
-              systemPrompt:
-                'You are a vision assistant that analyzes images based on provided descriptions and OCR text.',
-              maxTokens,
-              temperature,
-              signal,
-              config: {
-                modelPath: path.join(this._modelsPath, modelName),
-                mmprojPath: this._visionProjectorStatus.projectorPath,
-                mmprojRequired: this._visionProjectorStatus.required,
-                contextSize: this._config.contextSize,
-                threads: this._config.threads,
-                gpuLayers: this._config.gpuLayers
+                const visionService = getVisionService();
+                logger.info('[LlamaService] Using local vision runtime for image analysis');
+                const result = await visionService.analyzeImage({
+                  imageBase64,
+                  imagePath,
+                  prompt,
+                  systemPrompt:
+                    'You are a vision assistant that analyzes images based on provided descriptions and OCR text.',
+                  maxTokens,
+                  temperature,
+                  signal,
+                  config: {
+                    modelPath: path.join(this._modelsPath, modelName),
+                    mmprojPath: this._visionProjectorStatus.projectorPath,
+                    mmprojRequired: this._visionProjectorStatus.required,
+                    contextSize: this._config.contextSize,
+                    threads: this._config.threads,
+                    gpuLayers: this._config.gpuLayers
+                  }
+                });
+
+                this._metrics.recordTextGeneration(
+                  Date.now() - startTime,
+                  result?.response?.length ? result.response.length / 4 : 0,
+                  true
+                );
+                return { response: result.response };
+              } catch (error) {
+                this._metrics.recordTextGeneration(Date.now() - startTime, 0, false);
+                if (isOutOfMemoryError(error)) {
+                  throw attachErrorCode(error, ERROR_CODES.LLAMA_OOM);
+                }
+                throw attachErrorCode(error, ERROR_CODES.LLAMA_INFERENCE_FAILED);
               }
-            });
-
-            this._metrics.recordTextGeneration(
-              Date.now() - startTime,
-              result?.response?.length ? result.response.length / 4 : 0,
-              true
-            );
-            return { response: result.response };
-          } catch (error) {
-            this._metrics.recordTextGeneration(Date.now() - startTime, 0, false);
-            if (isOutOfMemoryError(error)) {
-              throw attachErrorCode(error, ERROR_CODES.LLAMA_OOM);
-            }
-            throw attachErrorCode(error, ERROR_CODES.LLAMA_INFERENCE_FAILED);
-          }
-        });
+            },
+            { modelType: 'vision' }
+          );
+        } finally {
+          this._modelMemoryManager?.releaseRef('vision');
+        }
       },
       { operationId }
     );
@@ -909,6 +970,9 @@ class LlamaService extends EventEmitter {
         logger.warn('[LlamaService] Error disposing llama during shutdown:', error?.message);
       }
     }
+
+    // Clean up circuit breaker timers
+    cleanupLlamaCircuits();
 
     // Clean up all references to prevent stale state
     this._initialized = false;

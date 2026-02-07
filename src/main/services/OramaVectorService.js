@@ -282,6 +282,7 @@ class OramaVectorService extends EventEmitter {
         logger.warn(
           `[OramaVectorService] Dimension changed (${restoredDim} → ${this._dimension}) for ${name}. Wiping collection.`
         );
+        this._clearQueryCache();
         this._collectionDimensions[name] = null;
         try {
           await fs.unlink(persistPath);
@@ -401,6 +402,14 @@ class OramaVectorService extends EventEmitter {
       );
     } finally {
       this._isPersisting = false;
+      // If new writes arrived while we were persisting, the debounce timer that
+      // fired during our run was dropped (guard on line 368). Reschedule so
+      // those writes are not silently orphaned.
+      if (this._persistPending && !this._isShuttingDown) {
+        this._persistTimer = setTimeout(() => {
+          this._currentPersistPromise = this._doPersist();
+        }, PERSIST_DEBOUNCE_MS);
+      }
     }
   }
 
@@ -489,6 +498,44 @@ class OramaVectorService extends EventEmitter {
       };
     }
 
+    return { valid: true };
+  }
+
+  _validateBatchDimensions(items, collectionType) {
+    const vectors = (items || [])
+      .map((item) => item?.vector)
+      .filter((vector) => Array.isArray(vector) && vector.length > 0);
+
+    if (vectors.length === 0) {
+      return { valid: true };
+    }
+
+    const expectedDim = this._collectionDimensions[collectionType];
+    if (expectedDim !== null) {
+      const mismatch = vectors.find((vector) => vector.length !== expectedDim);
+      if (mismatch) {
+        return {
+          valid: false,
+          error: 'dimension_mismatch',
+          expectedDim,
+          actualDim: mismatch.length
+        };
+      }
+      return { valid: true };
+    }
+
+    const expected = vectors[0].length;
+    const mismatch = vectors.find((vector) => vector.length !== expected);
+    if (mismatch) {
+      return {
+        valid: false,
+        error: 'dimension_mismatch',
+        expectedDim: expected,
+        actualDim: mismatch.length
+      };
+    }
+
+    this._collectionDimensions[collectionType] = expected;
     return { valid: true };
   }
 
@@ -617,28 +664,22 @@ class OramaVectorService extends EventEmitter {
 
     await this.initialize();
 
-    // Validate first file's dimensions
-    const firstFileWithVector = files.find((f) => Array.isArray(f.vector) && f.vector.length > 0);
-    if (firstFileWithVector) {
-      const dimValidation = await this.validateEmbeddingDimension(
-        firstFileWithVector.vector,
-        'files'
-      );
-      if (!dimValidation.valid && dimValidation.error === 'dimension_mismatch') {
-        this.emit('embedding-blocked', {
-          type: 'dimension_mismatch',
-          fileCount: files.length,
-          expectedDim: dimValidation.expectedDim,
-          actualDim: dimValidation.actualDim,
-          message: 'Embedding model changed. Run "Rebuild Embeddings" to fix.'
-        });
-        return {
-          success: false,
-          count: files.length,
-          error: 'dimension_mismatch',
-          requiresRebuild: true
-        };
-      }
+    // Validate batch dimensions before upserting any items to avoid partial writes
+    const dimValidation = this._validateBatchDimensions(files, 'files');
+    if (!dimValidation.valid && dimValidation.error === 'dimension_mismatch') {
+      this.emit('embedding-blocked', {
+        type: 'dimension_mismatch',
+        fileCount: files.length,
+        expectedDim: dimValidation.expectedDim,
+        actualDim: dimValidation.actualDim,
+        message: 'Embedding model changed. Run "Rebuild Embeddings" to fix.'
+      });
+      return {
+        success: false,
+        count: files.length,
+        error: 'dimension_mismatch',
+        requiresRebuild: true
+      };
     }
 
     let successCount = 0;
@@ -1042,6 +1083,24 @@ class OramaVectorService extends EventEmitter {
     }
 
     await this.initialize();
+
+    // Validate batch dimensions before upserting any items to avoid partial writes
+    const dimValidation = this._validateBatchDimensions(folders, 'folders');
+    if (!dimValidation.valid && dimValidation.error === 'dimension_mismatch') {
+      this.emit('embedding-blocked', {
+        type: 'dimension_mismatch',
+        fileCount: folders.length,
+        expectedDim: dimValidation.expectedDim,
+        actualDim: dimValidation.actualDim,
+        message: 'Embedding model changed. Run "Rebuild Embeddings" to fix.'
+      });
+      return {
+        success: false,
+        count: folders.length,
+        error: 'dimension_mismatch',
+        requiresRebuild: true
+      };
+    }
 
     let successCount = 0;
     const skipped = [];
@@ -1839,6 +1898,13 @@ class OramaVectorService extends EventEmitter {
         await this._doPersist();
       } catch (error) {
         logger.error('[OramaVectorService] Final persistence failed:', error);
+      }
+      // Clear any timer the reschedule logic in _doPersist may have created
+      // during the final persist (writes arriving mid-persist set _persistPending
+      // which triggers a new timer in the finally block).
+      if (this._persistTimer) {
+        clearTimeout(this._persistTimer);
+        this._persistTimer = null;
       }
     }
 

@@ -608,6 +608,17 @@ class SmartFolderWatcher {
         this.stats.queueDropped++;
         this._queueDropsSinceLog++;
 
+        // FIX: Log specific warning if we dropped a retry item
+        if (dropped.retryCount > 0) {
+          logger.warn(
+            '[SMART-FOLDER-WATCHER] Dropped retried analysis item due to queue pressure',
+            {
+              filePath: dropped.filePath,
+              retryCount: dropped.retryCount
+            }
+          );
+        }
+
         // FIX P1-2: Notify user about dropped items so they know analysis was skipped
         // We rate limit this notification to avoid spamming
         const now = Date.now();
@@ -1177,6 +1188,8 @@ class SmartFolderWatcher {
           error: error.message
         });
         this.stats.errors++;
+        // FIX: Re-throw error to trigger retry logic in _processQueue
+        throw error;
       }
     } finally {
       this.processingFiles.delete(filePath);

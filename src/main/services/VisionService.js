@@ -16,7 +16,8 @@ const LLAMA_CPP_RELEASE_TAG = process.env.STRATOSORT_LLAMA_CPP_TAG || 'b7956';
 const LLAMA_CPP_BASE_URL = 'https://github.com/ggml-org/llama.cpp/releases/download';
 const SERVER_BINARY_NAME = process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
 
-const DEFAULT_STARTUP_TIMEOUT_MS = 60000;
+// Vision models (4-5GB) can take several minutes to load on CPU-only systems
+const DEFAULT_STARTUP_TIMEOUT_MS = 180000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 120000;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -268,6 +269,8 @@ class VisionService {
     this._activeConfig = null;
     this._runtimeInit = null;
     this._startPromise = null;
+    this._shutdownPromise = null; // FIX: Track shutdown to prevent race conditions
+    this._serverLock = Promise.resolve(); // FIX: Mutex for server state changes
   }
 
   async isAvailable() {
@@ -493,23 +496,51 @@ class VisionService {
   }
 
   async _ensureServer(config) {
-    if (this._process && this._port && this._configMatches(config)) {
-      return;
-    }
+    // Acquire lock to prevent concurrent config changes
+    let releaseLock;
+    const acquireLock = new Promise((resolve) => {
+      releaseLock = resolve;
+    });
 
-    if (this._process) {
-      await this.shutdown();
-    }
+    // Chain the lock
+    const previousLock = this._serverLock;
+    this._serverLock = (async () => {
+      try {
+        await previousLock;
+      } catch {
+        // Ignore previous errors
+      }
+      await acquireLock;
+    })();
 
-    this._activeConfig = { ...config };
-    if (!this._startPromise) {
+    try {
+      // Wait for any previous operation to complete
+      await previousLock;
+
+      // Wait for any pending shutdown to complete before starting
+      if (this._shutdownPromise) {
+        await this._shutdownPromise;
+      }
+
+      if (this._process && this._port && this._configMatches(config)) {
+        return;
+      }
+
+      if (this._process) {
+        await this.shutdown();
+      }
+
+      this._activeConfig = { ...config };
+      // We are holding the lock, so it's safe to set _startPromise
       this._startPromise = this._startServer(config).catch((error) => {
         this._startPromise = null;
         throw error;
       });
-    }
 
-    await this._startPromise;
+      await this._startPromise;
+    } finally {
+      releaseLock();
+    }
   }
 
   async analyzeImage(options = {}) {
@@ -590,19 +621,53 @@ class VisionService {
   }
 
   async shutdown() {
-    if (this._process) {
-      logger.info('[VisionService] Shutting down vision runtime');
-      try {
-        this._process.kill();
-      } catch {
-        // ignore
-      }
+    // If already shutting down, return the existing promise
+    if (this._shutdownPromise) {
+      return this._shutdownPromise;
     }
 
+    const proc = this._process;
+
+    // Clear state immediately so concurrent callers don't re-use the dying server
     this._process = null;
     this._port = null;
     this._activeConfig = null;
     this._startPromise = null;
+
+    if (proc) {
+      logger.info('[VisionService] Shutting down vision runtime');
+
+      this._shutdownPromise = (async () => {
+        try {
+          proc.kill();
+        } catch {
+          // ignore -- process may have already exited
+        }
+
+        // Wait for the process to actually exit (max 5 s) so a subsequent
+        // _startServer doesn't race against the dying instance.
+        await new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            try {
+              proc.kill('SIGKILL');
+            } catch {
+              /* ignore */
+            }
+            resolve();
+          }, 5000);
+          if (timeout.unref) timeout.unref();
+
+          proc.once('exit', () => {
+            clearTimeout(timeout);
+            resolve();
+          });
+        });
+      })().finally(() => {
+        this._shutdownPromise = null;
+      });
+
+      await this._shutdownPromise;
+    }
   }
 }
 

@@ -114,19 +114,19 @@ const MODEL_CATEGORY_PREFIXES = {
 };
 
 /**
- * Fallback model preferences (in order of preference)
- * Prioritizes lightweight models for accessibility
+ * Fallback text model preferences (in order of preference).
+ * Used by ModelManager.findBestModel() for substring matching against GGUF filenames.
+ * Prefixes must be colon-free to match GGUF naming (e.g., "Llama-3.2-3B-Instruct-Q4_K_M.gguf").
  */
 const FALLBACK_MODEL_PREFERENCES = [
-  'qwen3:0.6b',
   'qwen3',
-  'gemma3:4b',
-  'gemma2:2b',
-  'llama3.2',
-  'llama3.1',
+  'gemma3',
+  'llama-3.2',
+  'llama-3.1',
+  'llama-3',
   'llama3',
-  'llama2',
   'mistral',
+  'phi-3',
   'phi3',
   'phi',
   'gemma2',
@@ -134,7 +134,7 @@ const FALLBACK_MODEL_PREFERENCES = [
   'qwen2',
   'qwen',
   'neural-chat',
-  'orca-mini'
+  'orca'
 ];
 
 /**

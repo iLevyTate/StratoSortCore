@@ -24,7 +24,16 @@
  * @module ServiceContainer
  */
 
+const { AsyncLocalStorage } = require('node:async_hooks');
 const { logger: baseLogger, createLogger } = require('../../shared/logger');
+
+/**
+ * Per-chain resolution tracking for async circular dependency detection.
+ * Each resolveAsync() call chain gets its own Set<string> via AsyncLocalStorage,
+ * so concurrent unrelated resolutions never interfere with each other.
+ * @type {AsyncLocalStorage<Set<string>>}
+ */
+const _asyncResolutionStore = new AsyncLocalStorage();
 
 const logger = typeof createLogger === 'function' ? createLogger('ServiceContainer') : baseLogger;
 if (typeof createLogger !== 'function' && logger?.setContext) {
@@ -296,28 +305,34 @@ class ServiceContainer {
       );
     }
 
-    // For singletons, check for in-progress initialization
-    if (registration.lifetime === ServiceLifetime.SINGLETON) {
-      // Return cached instance if available
-      if (registration.instance !== null) {
-        return registration.instance;
-      }
-
-      // Return existing init promise if in progress
-      if (this._initPromises.has(name)) {
-        return this._initPromises.get(name);
-      }
+    // For singletons, return cached instance if available (no factory call, safe)
+    if (registration.lifetime === ServiceLifetime.SINGLETON && registration.instance !== null) {
+      return registration.instance;
     }
 
-    // Track resolution for circular dependency detection
-    // FIX HIGH-69: Use AsyncLocalStorage for thread-safe circular dependency detection
-    // Since we can't easily add ALS in this environment without breaking changes,
-    // we disable circular dependency detection for async resolutions to avoid false positives/race conditions.
-    // The synchronous resolve() still protects against the most common cycles.
-    // this._resolutionStack.add(name);
+    // Circular dependency detection for async resolution chains.
+    // Uses AsyncLocalStorage so each call chain gets its own Set, avoiding the
+    // false-positive problem that a shared Set would cause with concurrent resolves.
+    const parentChain = _asyncResolutionStore.getStore();
+    if (parentChain?.has(name)) {
+      const chain = `${Array.from(parentChain).join(' -> ')} -> ${name}`;
+      throw new Error(`Circular dependency detected while resolving '${name}': ${chain}`);
+    }
 
-    // Create initialization promise for singletons
-    const rawInitPromise = (async () => {
+    // For singletons, return existing init promise if in progress (concurrent access dedup).
+    // This check comes AFTER the circular dep check: a same-chain re-entry is a cycle,
+    // but a different chain waiting on the same service is legitimate deduplication.
+    if (registration.lifetime === ServiceLifetime.SINGLETON && this._initPromises.has(name)) {
+      return this._initPromises.get(name);
+    }
+
+    // Build the resolution chain for nested factory calls
+    const currentChain = new Set(parentChain || []);
+    currentChain.add(name);
+
+    // Create initialization promise, running the factory within an async context
+    // that carries the current resolution chain for circular dependency detection.
+    const rawInitPromise = _asyncResolutionStore.run(currentChain, async () => {
       const instance = await registration.factory(this);
 
       // FIX M4: Check shutdown state after async factory completes
@@ -326,7 +341,7 @@ class ServiceContainer {
         logger.warn(`[ServiceContainer] Service '${name}' resolved during shutdown, discarding`);
         this._initPromises.delete(name);
 
-        // FIX: Attempt to cleanup the discarded instance to prevent resource leaks
+        // Attempt to cleanup the discarded instance to prevent resource leaks
         // The instance may have acquired resources (connections, timers) during creation
         if (instance) {
           try {
@@ -358,7 +373,7 @@ class ServiceContainer {
       }
 
       return instance;
-    })();
+    });
 
     // For singletons, store promise to prevent duplicate initialization.
     // Also ensure we clear the initPromise entry if initialization fails, otherwise

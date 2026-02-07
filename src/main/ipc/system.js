@@ -197,6 +197,54 @@ function registerSystemIpc(servicesOrParams) {
       }
     })
   );
+
+  // Export logs to a zip file
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.SYSTEM.EXPORT_LOGS,
+    createHandler({
+      logger,
+      context,
+      handler: async () => {
+        try {
+          const { app, dialog } = require('electron');
+          const path = require('path');
+          const fs = require('fs');
+          const AdmZip = require('adm-zip');
+
+          const logsDir = path.join(app.getPath('userData'), 'logs');
+          if (!fs.existsSync(logsDir)) {
+            return { success: false, error: 'No logs found' };
+          }
+
+          const zip = new AdmZip();
+          zip.addLocalFolder(logsDir, 'logs');
+
+          // Also include crash dumps if they exist
+          const crashDumpsDir = path.join(app.getPath('userData'), 'crash-dumps');
+          if (fs.existsSync(crashDumpsDir)) {
+            zip.addLocalFolder(crashDumpsDir, 'crash-dumps');
+          }
+
+          const { filePath } = await dialog.showSaveDialog({
+            title: 'Export Debug Logs',
+            defaultPath: `stratosort-logs-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`,
+            filters: [{ name: 'Zip Files', extensions: ['zip'] }]
+          });
+
+          if (!filePath) {
+            return { success: false, cancelled: true };
+          }
+
+          zip.writeZip(filePath);
+          return { success: true, filePath };
+        } catch (error) {
+          logger.error('Failed to export logs:', error);
+          return createErrorResponse(error);
+        }
+      }
+    })
+  );
 }
 
 module.exports = registerSystemIpc;

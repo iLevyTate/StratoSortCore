@@ -104,14 +104,50 @@ function registerLlamaIpc(servicesOrParams) {
         };
 
         const config = await service.getConfig();
+        const allModelNames = (models || []).map((m) => m.name || m.filename);
+
+        // Auto-resolve stale model names (e.g., Ollama-era 'mxbai-embed-large'
+        // → installed GGUF 'mxbai-embed-large-v1-f16.gguf')
+        const resolveModel = (configured, installedList) => {
+          if (!configured) return configured;
+          if (installedList.includes(configured)) return configured;
+          // Partial match: find an installed model whose name contains the old name
+          const lc = configured.toLowerCase();
+          return (
+            installedList.find((m) => m.toLowerCase().includes(lc)) ||
+            // Reverse: old name is a substring of the installed name
+            installedList.find((m) => lc.includes(m.toLowerCase())) ||
+            configured
+          );
+        };
+
+        const resolvedText = resolveModel(config.textModel, categories.text);
+        const resolvedVision = resolveModel(config.visionModel, categories.vision);
+        const resolvedEmbedding = resolveModel(config.embeddingModel, categories.embedding);
+
+        // Persist corrected names so the stale value is fixed permanently
+        const corrections = {};
+        if (resolvedText !== config.textModel) corrections.textModel = resolvedText;
+        if (resolvedVision !== config.visionModel) corrections.visionModel = resolvedVision;
+        if (resolvedEmbedding !== config.embeddingModel)
+          corrections.embeddingModel = resolvedEmbedding;
+
+        if (Object.keys(corrections).length > 0) {
+          logger.info('[IPC:Llama] Auto-resolved stale model names', corrections);
+          try {
+            await service.updateConfig(corrections);
+          } catch (e) {
+            logger.warn('[IPC:Llama] Failed to persist model name corrections:', e?.message);
+          }
+        }
 
         return {
-          models: (models || []).map((m) => m.name || m.filename),
+          models: allModelNames,
           categories,
           selected: {
-            textModel: config.textModel,
-            visionModel: config.visionModel,
-            embeddingModel: config.embeddingModel
+            textModel: resolvedText,
+            visionModel: resolvedVision,
+            embeddingModel: resolvedEmbedding
           },
           llamaHealth: systemAnalytics.llamaHealth,
           inProcess: true

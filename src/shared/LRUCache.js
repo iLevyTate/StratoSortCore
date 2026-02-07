@@ -141,13 +141,15 @@ class LRUCache {
    * @param {*} data - Data to cache
    */
   set(key, data) {
-    // For insertion-based LRU, delete existing to update position
-    if (this.lruStrategy === 'insertion' && this.cache.has(key)) {
+    // Delete existing entry to update Map insertion order for both strategies.
+    // Map.set() on an existing key preserves position, so we must delete first
+    // to ensure the re-inserted entry moves to the end (most-recent position).
+    if (this.cache.has(key)) {
       this.cache.delete(key);
     }
 
-    // Evict if at capacity (and not updating existing entry)
-    if (this.cache.size >= this.maxSize && !this.cache.has(key)) {
+    // Evict if at capacity
+    if (this.cache.size >= this.maxSize) {
       this._evictOne();
     }
 

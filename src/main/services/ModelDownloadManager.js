@@ -82,12 +82,47 @@ class ModelDownloadManager {
   }
 
   /**
-   * Download a model with progress tracking and resume support
+   * Resolve model info from the catalog.
+   * Checks top-level entries first, then scans clipModel companions
+   * so projector files like mmproj-model-f16.gguf are downloadable by name.
+   * @private
+   */
+  _resolveModelInfo(filename) {
+    const direct = MODEL_CATALOG[filename];
+    if (direct) return direct;
+
+    // Check if filename matches a clipModel companion of any vision model
+    for (const info of Object.values(MODEL_CATALOG)) {
+      if (info.clipModel && info.clipModel.name === filename) {
+        return {
+          type: 'vision-helper',
+          displayName: `Vision Projector (${filename})`,
+          description: `Required companion for vision model`,
+          size: info.clipModel.size,
+          url: info.clipModel.url,
+          checksum: info.clipModel.checksum
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Download a model with progress tracking and resume support.
+   * For vision models with a clipModel companion (mmproj), the companion
+   * is automatically downloaded after the main model completes.
    */
   async downloadModel(filename, options = {}) {
-    const modelInfo = MODEL_CATALOG[filename];
+    const modelInfo = this._resolveModelInfo(filename);
     if (!modelInfo) {
       throw new Error(`Unknown model: ${filename}`);
+    }
+
+    // Guard: prevent concurrent downloads of the same file (corrupts .partial)
+    const existing = this._downloads.get(filename);
+    if (existing && existing.status === 'downloading') {
+      throw new Error(`Download already in progress: ${filename}`);
     }
 
     const { onProgress, signal } = options;
@@ -151,9 +186,15 @@ class ModelDownloadManager {
         // Handle redirects with loop protection
         if (response.statusCode === 301 || response.statusCode === 302) {
           if (redirectCount >= MAX_REDIRECTS) {
+            downloadState.status = 'error';
+            this._downloads.delete(filename);
             reject(new Error(`Too many redirects (${MAX_REDIRECTS})`));
             return;
           }
+          // Clean up current state before following redirect
+          downloadState.status = 'redirect';
+          this._downloads.delete(filename);
+          response.resume(); // Drain response to free socket
           this.downloadModel(filename, {
             ...options,
             _redirectUrl: response.headers.location,
@@ -165,12 +206,24 @@ class ModelDownloadManager {
         }
 
         if (response.statusCode !== 200 && response.statusCode !== 206) {
+          downloadState.status = 'error';
+          this._downloads.delete(filename);
           reject(new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`));
           return;
         }
 
+        // Fix: If server ignores Range header (returns 200 instead of 206), restart from 0
+        let isResume = startByte > 0 && response.statusCode === 206;
+        if (startByte > 0 && response.statusCode === 200) {
+          logger.info('[Download] Server ignored range request, restarting from beginning');
+          startByte = 0;
+          downloadState.downloadedBytes = 0;
+          downloadState.startByte = 0;
+          isResume = false;
+        }
+
         const writeStream = createWriteStream(partialPath, {
-          flags: startByte > 0 ? 'a' : 'w'
+          flags: isResume ? 'a' : 'w'
         });
 
         let downloaded = startByte;
@@ -196,37 +249,64 @@ class ModelDownloadManager {
         response.pipe(writeStream);
 
         writeStream.on('finish', async () => {
-          // Verify file size
-          const stats = await fs.stat(partialPath);
-          if (stats.size !== modelInfo.size) {
-            downloadState.status = 'incomplete';
-            reject(new Error('Download incomplete - file size mismatch'));
-            return;
-          }
-
-          // Verify checksum if available
-          const expectedChecksum = modelInfo.checksum || modelInfo.sha256;
-          if (expectedChecksum) {
-            const isValid = await this._verifyChecksum(partialPath, expectedChecksum);
-            if (!isValid) {
-              downloadState.status = 'corrupted';
-              await fs.unlink(partialPath);
-              reject(new Error('Download corrupted - checksum mismatch'));
+          try {
+            // Verify file size
+            const stats = await fs.stat(partialPath);
+            if (stats.size !== modelInfo.size) {
+              downloadState.status = 'incomplete';
+              reject(new Error('Download incomplete - file size mismatch'));
               return;
             }
+
+            // Verify checksum if available
+            const expectedChecksum = modelInfo.checksum || modelInfo.sha256;
+            if (expectedChecksum) {
+              const isValid = await this._verifyChecksum(partialPath, expectedChecksum);
+              if (!isValid) {
+                downloadState.status = 'corrupted';
+                await fs.unlink(partialPath);
+                reject(new Error('Download corrupted - checksum mismatch'));
+                return;
+              }
+            }
+
+            // Rename to final filename
+            await fs.rename(partialPath, filePath);
+            downloadState.status = 'complete';
+            this._downloads.delete(filename);
+
+            logger.info(`[Download] Completed: ${filename}`);
+
+            // Auto-download clipModel companion (mmproj) for vision models
+            if (modelInfo.clipModel && modelInfo.clipModel.name && modelInfo.clipModel.url) {
+              const companionPath = path.join(this._modelPath, modelInfo.clipModel.name);
+              try {
+                await fs.access(companionPath);
+                logger.info(`[Download] Companion already exists: ${modelInfo.clipModel.name}`);
+              } catch {
+                logger.info(`[Download] Downloading companion: ${modelInfo.clipModel.name}`);
+                try {
+                  await this.downloadModel(modelInfo.clipModel.name, { onProgress, signal });
+                } catch (companionError) {
+                  logger.warn(
+                    `[Download] Companion download failed (vision may not work): ${companionError.message}`
+                  );
+                  // Don't fail the main download - vision just won't work until companion is available
+                }
+              }
+            }
+
+            resolve({ success: true, path: filePath });
+          } catch (finishError) {
+            downloadState.status = 'error';
+            this._downloads.delete(filename); // FIX: Clean up on error to prevent memory leak
+            reject(finishError);
           }
-
-          // Rename to final filename
-          await fs.rename(partialPath, filePath);
-          downloadState.status = 'complete';
-          this._downloads.delete(filename);
-
-          logger.info(`[Download] Completed: ${filename}`);
-          resolve({ success: true, path: filePath });
         });
 
         writeStream.on('error', (error) => {
           downloadState.status = 'error';
+          this._downloads.delete(filename); // FIX: Clean up on error to prevent memory leak
           reject(error);
         });
 
@@ -235,6 +315,7 @@ class ModelDownloadManager {
           request.destroy();
           writeStream.close();
           downloadState.status = 'cancelled';
+          this._downloads.delete(filename); // FIX: Clean up on cancel to prevent memory leak
           reject(new Error('Download cancelled'));
         };
         internalAbortController.signal.addEventListener('abort', onAbort);
@@ -245,11 +326,13 @@ class ModelDownloadManager {
 
       request.on('error', (error) => {
         downloadState.status = 'error';
+        this._downloads.delete(filename); // FIX: Clean up on request error
         reject(error);
       });
 
       request.setTimeout(30000, () => {
         request.destroy();
+        this._downloads.delete(filename); // FIX: Clean up on timeout
         reject(new Error('Download timeout'));
       });
     });

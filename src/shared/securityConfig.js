@@ -345,12 +345,7 @@ const ALLOWED_RECEIVE_CHANNELS = [
 /**
  * IPC send channels that renderer can use
  */
-const ALLOWED_SEND_CHANNELS = [
-  'renderer-error-report',
-  'startup-continue',
-  'startup-quit',
-  'system:log'
-];
+const ALLOWED_SEND_CHANNELS = ['renderer-error-report', 'startup-continue', 'startup-quit'];
 
 module.exports = {
   // Path security

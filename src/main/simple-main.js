@@ -18,17 +18,29 @@ const { withTimeout } = require('../shared/promiseUtils');
 
 const logger = createLogger('Main');
 
-// Initialize Crash Reporter (Scaffolding)
-try {
-  const crashDumpsDir = path.join(app.getPath('userData'), 'crash-dumps');
-  app.setPath('crashDumps', crashDumpsDir);
-  crashReporter.start({
-    uploadToServer: false,
-    compress: true
+// Initialize Crash Reporter via Sentry
+const { init } = require('@sentry/electron/main');
+
+if (process.env.SENTRY_DSN) {
+  init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'production',
+    // We recommend adjusting this value in production
+    tracesSampleRate: 1.0
   });
-  logger.info('[CRASH-REPORTER] Initialized locally', { crashDumpsDir });
-} catch (error) {
-  logger.error('[CRASH-REPORTER] Failed to initialize:', error.message);
+  logger.info('[CRASH-REPORTER] Sentry initialized');
+} else {
+  // Fallback to local crash reporter if no Sentry DSN
+  try {
+    const crashDumpsDir = path.join(app.getPath('userData'), 'crash-dumps');
+    app.setPath('crashDumps', crashDumpsDir);
+    crashReporter.start({
+      uploadToServer: false
+    });
+    logger.info('[CRASH-REPORTER] Initialized locally (no Sentry DSN)', { crashDumpsDir });
+  } catch (error) {
+    logger.error('[CRASH-REPORTER] Failed to initialize:', error.message);
+  }
 }
 
 // Import error handling system

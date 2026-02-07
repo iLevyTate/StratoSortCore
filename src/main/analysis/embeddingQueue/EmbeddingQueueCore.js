@@ -114,6 +114,9 @@ class EmbeddingQueue {
     // Track all outstanding persistence promises (including from remove/update ops)
     this._outstandingPersistence = new Set();
 
+    // Track retry timers so they can be cleared on shutdown
+    this._retryTimers = new Set();
+
     // Mutex for flush operation to prevent double-flush race conditions
     this._flushMutex = Promise.resolve();
   }
@@ -375,6 +378,7 @@ class EmbeddingQueue {
     if (!this._persistDebounceTimer) {
       this._persistDebounceTimer = setTimeout(() => {
         this._persistDebounceTimer = null;
+        if (this._isShuttingDown) return;
         this._pendingPersistence = this.persistQueue()
           .catch((err) => logger.warn('[EmbeddingQueue] Failed to persist queue:', err.message))
           .finally(() => {
@@ -400,14 +404,35 @@ class EmbeddingQueue {
    * Schedule a delayed flush
    */
   scheduleFlush() {
+    if (this._isShuttingDown) return;
     if (this.flushTimer) return;
 
     this.flushTimer = setTimeout(() => {
       this.flushTimer = null;
-      this.flush().catch((err) => {
-        logger.error('[EmbeddingQueue] Delayed flush failed:', err.message);
-      });
+      // If a flush is already in progress, reschedule to avoid overriding _pendingFlush.
+      if (this._pendingFlush || this.isFlushing) {
+        this.scheduleFlush();
+        return;
+      }
+      this._pendingFlush = this.flush()
+        .catch((err) => {
+          logger.error('[EmbeddingQueue] Delayed flush failed:', err.message);
+        })
+        .finally(() => {
+          this._pendingFlush = null;
+        });
     }, this.FLUSH_DELAY_MS);
+  }
+
+  _scheduleRetry(backoffDelay) {
+    if (this._isShuttingDown) return;
+    const retryTimer = setTimeout(() => {
+      this._retryTimers.delete(retryTimer);
+      if (this._isShuttingDown) return;
+      this.scheduleFlush();
+    }, backoffDelay);
+    this._retryTimers.add(retryTimer);
+    if (retryTimer.unref) retryTimer.unref();
   }
 
   /**
@@ -575,8 +600,7 @@ class EmbeddingQueue {
           RETRY.BACKOFF_MAX_MS
         );
         logger.info(`[EmbeddingQueue] Will retry in ${backoffDelay / 1000}s`);
-        const retryTimer = setTimeout(() => this.scheduleFlush(), backoffDelay);
-        if (retryTimer.unref) retryTimer.unref();
+        this._scheduleRetry(backoffDelay);
       } finally {
         this.isFlushing = false;
       }
@@ -634,8 +658,7 @@ class EmbeddingQueue {
       RETRY.BACKOFF_MAX_MS
     );
     logger.info(`[EmbeddingQueue] Retry in ${backoffDelay / 1000}s`);
-    const retryTimer = setTimeout(() => this.scheduleFlush(), backoffDelay);
-    if (retryTimer.unref) retryTimer.unref();
+    this._scheduleRetry(backoffDelay);
     // FIX HIGH-4: Removed redundant isFlushing = false - handled by flush() finally block
   }
 
@@ -1032,6 +1055,13 @@ class EmbeddingQueue {
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
+    }
+
+    if (this._retryTimers.size > 0) {
+      for (const timer of this._retryTimers) {
+        clearTimeout(timer);
+      }
+      this._retryTimers.clear();
     }
 
     // FIX: Clear progress tracker callbacks to prevent memory leak

@@ -11,20 +11,22 @@ const { validateEmbeddingDimensions } = require('../../shared/vectorMath');
 const { capEmbeddingInput } = require('../utils/embeddingInput');
 const { chunkText } = require('../utils/textChunking');
 
+const { getModel } = require('../../shared/modelRegistry');
+
 /**
- * Embedding dimension constants for different models
- * FIX: Made configurable instead of hardcoding 1024
- * These are the default dimensions for common embedding models
+ * Embedding dimension fallbacks for partial model name matching.
+ * Primary lookup uses MODEL_CATALOG via getModel() for exact GGUF filenames.
+ * These prefixes catch unknown or user-supplied models that aren't in the registry.
  */
-const EMBEDDING_DIMENSIONS = {
-  embeddinggemma: 768, // New default - Google's best-in-class
-  'nomic-embed-text': 768,
+const DIMENSION_FALLBACKS = {
+  'nomic-embed': 768,
+  embeddinggemma: 768,
   'mxbai-embed-large': 1024,
   'all-minilm': 384,
   'bge-large': 1024,
-  'snowflake-arctic-embed': 1024, // FIX: Added Snowflake Arctic Embed
-  gte: 768, // FIX: Added Alibaba GTE models (default to 768)
-  default: 768 // Updated fallback for new default model
+  'snowflake-arctic-embed': 1024,
+  gte: 768,
+  default: 768
 };
 
 function meanPoolVectors(vectors, expectedDim) {
@@ -47,18 +49,19 @@ function meanPoolVectors(vectors, expectedDim) {
  * @returns {number} The embedding dimension
  */
 function getEmbeddingDimension(modelName) {
-  if (!modelName) return EMBEDDING_DIMENSIONS.default;
+  if (!modelName) return DIMENSION_FALLBACKS.default;
 
-  // Check exact match first
-  if (EMBEDDING_DIMENSIONS[modelName]) {
-    return EMBEDDING_DIMENSIONS[modelName];
+  // Primary: exact lookup in MODEL_CATALOG (handles GGUF filenames)
+  const catalogEntry = getModel(modelName);
+  if (catalogEntry?.dimensions) {
+    return catalogEntry.dimensions;
   }
 
-  // Check partial match (model names often include version suffixes)
+  // Secondary: partial match for models not in the catalog
   // Sort by key length descending so more specific names match first (e.g. "nomic-embed-text" before "gte")
   // Exclude "default" from partial matching to prevent false positives
   const normalizedName = modelName.toLowerCase();
-  const partialEntries = Object.entries(EMBEDDING_DIMENSIONS)
+  const partialEntries = Object.entries(DIMENSION_FALLBACKS)
     .filter(([key]) => key !== 'default')
     .sort(([a], [b]) => b.length - a.length);
   for (const [key, dimension] of partialEntries) {
@@ -68,7 +71,7 @@ function getEmbeddingDimension(modelName) {
   }
 
   // Use configurable default
-  return getConfig('ANALYSIS.embeddingDimension', EMBEDDING_DIMENSIONS.default);
+  return getConfig('ANALYSIS.embeddingDimension', DIMENSION_FALLBACKS.default);
 }
 
 /**
@@ -389,8 +392,8 @@ class FolderMatchingService {
       // If the expected dimension came from the fallback default, trust the
       // actual model output to avoid silently destroying vector data.
       const modelIsKnown =
-        EMBEDDING_DIMENSIONS[model] ||
-        Object.keys(EMBEDDING_DIMENSIONS).some(
+        getModel(model)?.dimensions ||
+        Object.keys(DIMENSION_FALLBACKS).some(
           (key) => key !== 'default' && model.toLowerCase().includes(key.toLowerCase())
         );
 
@@ -946,6 +949,19 @@ class FolderMatchingService {
         for (const result of embedResults) {
           if (result && result.success) {
             const originalItem = uncachedFiles.find((f) => f.fileId === result.id);
+
+            // FIX: Validate dimensions of batch results
+            const expectedDim = getEmbeddingDimension(result.model);
+            if (!validateEmbeddingDimensions(result.vector, expectedDim)) {
+              logger.warn('[FolderMatchingService] Batch embedding dimension mismatch, skipping', {
+                fileId: result.id,
+                model: result.model,
+                expected: expectedDim,
+                actual: result.vector?.length
+              });
+              skipped.push({ fileId: result.id, error: 'dimension_mismatch' });
+              continue;
+            }
 
             // Cache the embedding for future use
             if (originalItem) {

@@ -112,7 +112,13 @@ const CHAT_PERSONA_IDS = CHAT_PERSONAS.map((persona) => persona.id);
 const DEPRECATED_SETTINGS_KEYS = new Set([
   'dependencyWizardShown',
   'dependencyWizardLastPromptAt',
-  'dependencyWizardPromptIntervalDays'
+  'dependencyWizardPromptIntervalDays',
+  // Legacy Ollama/ChromaDB keys (replaced by in-process node-llama-cpp + Orama)
+  'ollamaHost',
+  'autoUpdateOllama',
+  'autoUpdateChromaDb',
+  'enableChromaLearningSync',
+  'enableChromaLearningDryRun'
 ]);
 
 /**
@@ -403,6 +409,13 @@ const VALIDATION_RULES = {
   // Deprecated settings (kept for backward compatibility)
   smartFolderWatchEnabled: {
     type: 'boolean',
+    required: false
+  },
+  // Internal schema version for settings migrations
+  settingsSchemaVersion: {
+    type: 'number',
+    min: 1,
+    integer: true,
     required: false
   }
 

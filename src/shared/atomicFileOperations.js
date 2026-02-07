@@ -19,7 +19,7 @@
  * Key features:
  * - Transaction journaling for crash recovery
  * - Automatic rollback on failure
- * - SHA256 integrity verification
+ * - Size-based integrity verification (with optional checksum callback)
  * - Orphaned operation cleanup
  */
 

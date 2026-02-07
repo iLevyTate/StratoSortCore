@@ -118,7 +118,8 @@ const IPC_CHANNELS = {
     GET_CONFIG_VALUE: 'system:get-config-value',
     RENDERER_ERROR_REPORT: 'renderer-error-report',
     GET_RECOMMENDED_CONCURRENCY: 'system:get-recommended-concurrency',
-    LOG: 'system:log'
+    LOG: 'system:log',
+    EXPORT_LOGS: 'system:export-logs'
   },
   WINDOW: {
     MINIMIZE: 'window:minimize',
@@ -214,7 +215,7 @@ const SETTINGS_SCHEMA_VERSION = 2;
 const AI_DEFAULTS = {
   TEXT: {
     MODEL: DEFAULT_AI_MODELS.TEXT_ANALYSIS,
-    GPU_LAYERS: -1, // -1 = auto (use all available GPU layers)
+    GPU_LAYERS: -1, // -1 = auto → resolved to Infinity (all layers on GPU) by LlamaService
     TEMPERATURE: 0.7,
     MAX_TOKENS: 8192,
     CONTEXT_SIZE: 8192,
@@ -222,14 +223,14 @@ const AI_DEFAULTS = {
   },
   IMAGE: {
     MODEL: DEFAULT_AI_MODELS.IMAGE_ANALYSIS,
-    GPU_LAYERS: -1,
+    GPU_LAYERS: -1, // -1 = auto → resolved to Infinity by LlamaService
     TEMPERATURE: 0.2,
     MAX_TOKENS: 4096
   },
   EMBEDDING: {
     MODEL: DEFAULT_AI_MODELS.EMBEDDING,
     DIMENSIONS: 768, // nomic-embed-text v1.5 uses 768 dimensions
-    GPU_LAYERS: -1,
+    GPU_LAYERS: -1, // -1 = auto → resolved to Infinity by LlamaService
     FALLBACK_MODELS: ['nomic-embed-text-v1.5-Q4_K_M.gguf', 'all-MiniLM-L6-v2.Q8_0.gguf'],
     AUTO_CHUNK_ON_ANALYSIS: false
   }

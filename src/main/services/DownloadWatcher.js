@@ -982,7 +982,16 @@ class DownloadWatcher {
               logger.debug('[DOWNLOAD-WATCHER] File no longer exists, skipping retry:', source);
               return; // File was moved/deleted by user
             }
-            throw statError;
+            // FIX: Treat other stat errors (e.g. EACCES, EBUSY) as transient during retry loop
+            // Log and continue to next retry instead of aborting
+            logger.warn(
+              '[DOWNLOAD-WATCHER] Transient error checking file existence during retry:',
+              {
+                source,
+                error: statError.message
+              }
+            );
+            // Fall through to recursive retry
           }
 
           // Recursive retry
