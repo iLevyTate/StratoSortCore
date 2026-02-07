@@ -4,7 +4,7 @@ const { ERROR_CODES } = require('../../shared/errorCodes');
 
 const logger = createLogger('EmbeddingWorker');
 
-let llamaModule = null;
+let llamaInstance = null;
 let currentModelPath = null;
 let currentGpuLayers = null;
 let model = null;
@@ -15,10 +15,37 @@ const isOutOfMemoryError = (error) => {
   return message.includes('out of memory') || message.includes('oom');
 };
 
-async function loadLlamaModule() {
-  if (llamaModule) return llamaModule;
-  llamaModule = await import('node-llama-cpp');
-  return llamaModule;
+/**
+ * Resolve gpuLayers value to match LlamaService convention.
+ * node-llama-cpp treats -1 as 0 (CPU-only), so we map 'auto' and -1
+ * to Infinity (offload all layers to GPU).
+ */
+function resolveGpuLayers(gpuLayers) {
+  if (gpuLayers === 'auto' || gpuLayers === -1) return Infinity;
+  if (typeof gpuLayers === 'number' && gpuLayers >= 0) return gpuLayers;
+  return Infinity; // Default: full GPU offload
+}
+
+/**
+ * Initialize the Llama runtime with GPU auto-detection.
+ * Cached across calls so GPU probe only happens once per worker lifetime.
+ */
+async function getLlamaInstance() {
+  if (llamaInstance) return llamaInstance;
+
+  const { getLlama } = await import(/* webpackIgnore: true */ 'node-llama-cpp');
+
+  try {
+    llamaInstance = await getLlama({ gpu: 'auto' });
+    logger.info('[EmbeddingWorker] Llama initialized', { gpu: llamaInstance.gpu || 'cpu' });
+  } catch (error) {
+    logger.warn('[EmbeddingWorker] GPU init failed, falling back to CPU', {
+      error: error?.message
+    });
+    llamaInstance = await getLlama({ gpu: false });
+  }
+
+  return llamaInstance;
 }
 
 async function ensureModelLoaded({ modelPath, gpuLayers }) {
@@ -28,13 +55,18 @@ async function ensureModelLoaded({ modelPath, gpuLayers }) {
     throw error;
   }
 
-  if (model && context && currentModelPath === modelPath && currentGpuLayers === gpuLayers) {
+  const resolvedLayers = resolveGpuLayers(gpuLayers);
+
+  if (model && context && currentModelPath === modelPath && currentGpuLayers === resolvedLayers) {
     return context;
   }
 
-  const llama = await loadLlamaModule();
+  const llama = await getLlamaInstance();
   const resolvedPath = path.normalize(modelPath);
-  logger.info('[EmbeddingWorker] Loading embedding model', { modelPath: resolvedPath });
+  logger.info('[EmbeddingWorker] Loading embedding model', {
+    modelPath: resolvedPath,
+    gpuLayers: resolvedLayers === Infinity ? 'all' : resolvedLayers
+  });
 
   // Dispose previous model if exists
   if (context) {
@@ -56,10 +88,10 @@ async function ensureModelLoaded({ modelPath, gpuLayers }) {
   }
 
   try {
-    model = await llama.loadModel({ modelPath: resolvedPath, gpuLayers });
+    model = await llama.loadModel({ modelPath: resolvedPath, gpuLayers: resolvedLayers });
     context = await model.createEmbeddingContext();
     currentModelPath = modelPath;
-    currentGpuLayers = gpuLayers;
+    currentGpuLayers = resolvedLayers;
     return context;
   } catch (error) {
     logger.error('[EmbeddingWorker] Failed to load embedding model', { error: error.message });
@@ -73,7 +105,7 @@ async function ensureModelLoaded({ modelPath, gpuLayers }) {
 }
 
 module.exports = async function runEmbeddingTask(payload = {}) {
-  const { text, modelPath, gpuLayers = -1 } = payload || {};
+  const { text, modelPath, gpuLayers = 'auto' } = payload || {};
   if (typeof text !== 'string') {
     const error = new Error('Embedding text must be a string');
     error.code = ERROR_CODES.LLAMA_INFERENCE_FAILED;

@@ -592,6 +592,7 @@ const container = new ServiceContainer();
  */
 const ServiceIds = {
   // Core services
+  SERVICE_INTEGRATION: 'serviceIntegration',
   ORAMA_VECTOR: 'oramaVector', // New in-process vector database
   SETTINGS: 'settings',
   SEARCH_SERVICE: 'searchService',
@@ -605,6 +606,7 @@ const ServiceIds = {
   PARALLEL_EMBEDDING: 'parallelEmbedding',
   EMBEDDING_CACHE: 'embeddingCache',
   MODEL_MANAGER: 'modelManager',
+  MODEL_DOWNLOAD_MANAGER: 'modelDownloadManager',
 
   // Analysis services
   FOLDER_MATCHING: 'folderMatching',

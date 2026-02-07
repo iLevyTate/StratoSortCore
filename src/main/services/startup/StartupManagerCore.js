@@ -8,15 +8,13 @@
  */
 
 const { createLogger } = require('../../../shared/logger');
-const { container } = require('../ServiceContainer');
+const { container, ServiceIds } = require('../ServiceContainer');
 const { withTimeout, delay } = require('../../../shared/promiseUtils');
 const { getDataMigrationService } = require('../migration');
 const { AI_DEFAULTS } = require('../../../shared/constants');
 const { getModel } = require('../../../shared/modelRegistry');
 
 // In-process services
-const { getInstance: getLlamaService } = require('../LlamaService');
-const { getInstance: getOramaService } = require('../OramaVectorService');
 const logger = createLogger('StartupManager');
 
 /**
@@ -76,6 +74,53 @@ class StartupManager {
     }
   }
 
+  _registerCoreServices() {
+    if (!this.container.has(ServiceIds.ORAMA_VECTOR)) {
+      const { registerWithContainer } = require('../OramaVectorService');
+      registerWithContainer(this.container, ServiceIds.ORAMA_VECTOR);
+    }
+
+    if (!this.container.has(ServiceIds.LLAMA_SERVICE)) {
+      const { registerWithContainer } = require('../LlamaService');
+      registerWithContainer(this.container, ServiceIds.LLAMA_SERVICE);
+    }
+  }
+
+  _getLlamaService() {
+    this._registerCoreServices();
+    return this.container.resolve(ServiceIds.LLAMA_SERVICE);
+  }
+
+  _getOramaService() {
+    this._registerCoreServices();
+    return this.container.resolve(ServiceIds.ORAMA_VECTOR);
+  }
+
+  _verifyPhaseHealth(phase, options = {}) {
+    const { requireVectorDb = false, requireLlama = false } = options;
+    const failures = [];
+
+    if (requireVectorDb && this.serviceStatus.vectorDb.status !== 'running') {
+      failures.push('vectorDb');
+    }
+    if (requireLlama && this.serviceStatus.llama.status !== 'running') {
+      failures.push('llama');
+    }
+
+    if (failures.length > 0) {
+      const errorMessage = `Health check failed after ${phase}: ${failures.join(', ')}`;
+      this.errors.push({
+        phase: `health:${phase}`,
+        error: errorMessage,
+        critical: true
+      });
+      logger.error(`[STARTUP] ${errorMessage}`);
+      throw new Error(errorMessage);
+    }
+
+    logger.info(`[STARTUP] Health check passed after ${phase}`);
+  }
+
   _withTimeout(promise, timeoutMs, operation) {
     return withTimeout(promise, timeoutMs, operation);
   }
@@ -87,11 +132,12 @@ class StartupManager {
     try {
       logger.info('[STARTUP] Starting LlamaService and OramaVectorService');
 
+      this._registerCoreServices();
       const [oramaResult, llamaResult] = await Promise.all([
         (async () => {
           try {
             if (signal?.aborted) throw new Error('Startup aborted');
-            const oramaService = getOramaService();
+            const oramaService = this._getOramaService();
             await oramaService.initialize();
 
             this.serviceStatus.vectorDb = { status: 'running', health: 'healthy' };
@@ -110,7 +156,7 @@ class StartupManager {
         (async () => {
           try {
             if (signal?.aborted) throw new Error('Startup aborted');
-            const llamaService = getLlamaService();
+            const llamaService = this._getLlamaService();
             await llamaService.initialize();
 
             // Check if models are actually loaded/available (even if service init passed)
@@ -191,7 +237,12 @@ class StartupManager {
       // Start background health monitoring
       this.startHealthMonitoring();
 
-      return { success: true };
+      return {
+        success: true,
+        services: { ...this.serviceStatus },
+        errors: [...this.errors],
+        phase: this.startupPhase
+      };
     } catch (error) {
       // Ensure shutdown on timeout/failure to prevent zombie processes
       logger.warn('[STARTUP] Startup failed or timed out, initiating shutdown cleanup...');
@@ -268,10 +319,12 @@ class StartupManager {
     // Phase 1: Services
     if (signal?.aborted) throw new Error('Startup aborted');
     await this.initializeServices(signal);
+    this._verifyPhaseHealth('services', { requireVectorDb: true });
 
     // Phase 2: Check model availability (non-blocking)
     if (signal?.aborted) throw new Error('Startup aborted');
     await this._checkModelAvailability();
+    this._verifyPhaseHealth('models', { requireVectorDb: true });
 
     // Phase 3: App Services (Placeholders for other initializers)
     if (signal?.aborted) throw new Error('Startup aborted');
@@ -289,7 +342,7 @@ class StartupManager {
     this.reportProgress('models', 'Checking AI model availability...', 70);
 
     try {
-      const llamaService = getLlamaService();
+      const llamaService = this._getLlamaService();
       const cfg = await llamaService.getConfig();
       const available = await llamaService.listModels();
       const availableNames = new Set(available.map((m) => m.name || m.filename || ''));
@@ -352,7 +405,7 @@ class StartupManager {
     // Simple health check polling
     this.healthMonitor = setInterval(async () => {
       try {
-        const llamaService = getLlamaService();
+        const llamaService = this._getLlamaService();
         const health = await llamaService.testConnection(); // Checks model loading
 
         this.serviceStatus.llama.health = health.success ? 'healthy' : 'unhealthy';
@@ -388,8 +441,8 @@ class StartupManager {
     logger.info('[StartupManager] Shutting down services...');
 
     try {
-      await getLlamaService().shutdown();
-      await getOramaService().shutdown();
+      await this._getLlamaService().shutdown();
+      await this._getOramaService().shutdown();
     } catch (error) {
       logger.error('[StartupManager] Error during service shutdown:', error);
     }

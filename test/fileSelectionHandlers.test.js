@@ -50,10 +50,12 @@ jest.mock('../src/shared/performanceConstants', () => ({
 
 // Mock ipcWrappers
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
+  createHandler: jest.fn(({ handler }) => handler),
   withErrorLogging: jest.fn((logger, handler) => handler),
   safeHandle: (ipcMain, channel, handler) => {
     ipcMain.handle(channel, handler);
-  }
+  },
+  z: null
 }));
 
 // Mock electron

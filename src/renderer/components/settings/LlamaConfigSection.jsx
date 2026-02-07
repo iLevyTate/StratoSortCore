@@ -57,14 +57,29 @@ function LlamaConfigSection({
   }, [modelList]);
 
   const gpuInfo = useMemo(() => {
-    if (!llamaHealth?.gpuBackend) return null;
-    const backend = llamaHealth.gpuBackend;
-    if (backend === 'metal') return 'Apple Metal GPU';
-    if (backend === 'cuda') return 'NVIDIA CUDA GPU';
-    if (backend === 'vulkan') return 'Vulkan GPU';
-    if (backend === 'cpu' || backend === false) return 'CPU (no GPU detected)';
-    return backend;
+    const backend = llamaHealth?.gpuBackend;
+    if (!backend) return null;
+    if (backend === 'metal') return 'Apple Metal (GPU accelerated)';
+    if (backend === 'cuda') return 'NVIDIA CUDA (GPU accelerated)';
+    if (backend === 'vulkan') return 'Vulkan (GPU accelerated)';
+    if (backend === 'cpu' || backend === false) return 'CPU only (no GPU backend)';
+    return String(backend);
   }, [llamaHealth]);
+
+  const detectedGpu = useMemo(() => {
+    const detected = llamaHealth?.gpuDetected;
+    if (!detected || typeof detected !== 'object') return null;
+    return {
+      name: detected.name || 'Unknown GPU',
+      type: detected.type || null,
+      vramMB: Number.isFinite(detected.vramMB) ? detected.vramMB : null
+    };
+  }, [llamaHealth]);
+
+  const isCpuBackend =
+    llamaHealth?.gpuBackend === 'cpu' ||
+    llamaHealth?.gpuBackend === false ||
+    !llamaHealth?.gpuBackend;
 
   return (
     <Card variant="default" className="space-y-5">
@@ -97,18 +112,32 @@ function LlamaConfigSection({
         </div>
       </div>
 
-      {gpuInfo && (
+      {(gpuInfo || detectedGpu) && (
         <SettingRow
           layout="col"
           label="GPU Acceleration"
           description="AI processing is accelerated using your device's GPU when available."
           className="space-y-2"
         >
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-system-gray-50 border border-system-gray-200">
-            <Cpu className="w-5 h-5 text-system-gray-500" />
-            <Text variant="small" className="font-medium">
-              {gpuInfo}
-            </Text>
+          <div className="flex flex-col gap-2 px-3 py-2 rounded-lg bg-system-gray-50 border border-system-gray-200">
+            <div className="flex items-center gap-2">
+              <Cpu className="w-5 h-5 text-system-gray-500" />
+              <Text variant="small" className="font-medium">
+                AI backend: {gpuInfo || 'Unknown'}
+              </Text>
+            </div>
+            {detectedGpu && (
+              <Text variant="tiny" className="text-system-gray-600">
+                System GPU detected: {detectedGpu.name}
+                {detectedGpu.vramMB ? ` (${detectedGpu.vramMB} MB VRAM)` : ''}
+              </Text>
+            )}
+            {isCpuBackend && detectedGpu?.type && detectedGpu.type !== 'cpu' && (
+              <Text variant="tiny" className="text-stratosort-warning">
+                GPU detected but the AI backend is running on CPU. Update GPU drivers and ensure
+                Vulkan/CUDA runtimes are installed.
+              </Text>
+            )}
           </div>
         </SettingRow>
       )}

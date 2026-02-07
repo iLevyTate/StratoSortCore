@@ -1,9 +1,8 @@
 const { IpcServiceContext, createFromLegacyParams } = require('./IpcServiceContext');
 const { performance } = require('perf_hooks');
-const { withErrorLogging, withValidation, safeHandle } = require('./ipcWrappers');
+const { createHandler, safeHandle, z } = require('./ipcWrappers');
 const { safeFilePath } = require('../utils/safeAccess');
 const { mapFoldersToCategories, getFolderNamesString } = require('../../shared/folderUtils');
-const { logger: moduleLogger } = require('../../shared/logger');
 const { recognizeIfAvailable } = require('../utils/tesseractUtils');
 const {
   withProcessingState,
@@ -12,16 +11,6 @@ const {
   recordAnalysisResult,
   getFolderCategories
 } = require('./analysisUtils');
-
-let z;
-try {
-  z = require('zod');
-} catch (error) {
-  // Zod is optional - validation will fall back to manual checks
-  // Log at debug level for troubleshooting module loading issues
-  moduleLogger.debug('[IPC-ANALYSIS] Zod not available:', error.message);
-  z = null;
-}
 
 function registerAnalysisIpc(servicesOrParams) {
   let container;
@@ -97,10 +86,12 @@ function registerAnalysisIpc(servicesOrParams) {
     }
   }
 
-  const analyzeDocumentHandler =
-    z && stringSchema
-      ? withValidation(logger, stringSchema, (event, filePath) => performDocumentAnalysis(filePath))
-      : withErrorLogging(logger, (event, filePath) => performDocumentAnalysis(filePath));
+  const analyzeDocumentHandler = createHandler({
+    logger,
+    context: 'Analysis',
+    schema: stringSchema,
+    handler: (event, filePath) => performDocumentAnalysis(filePath)
+  });
 
   safeHandle(ipcMain, IPC_CHANNELS.ANALYSIS.ANALYZE_DOCUMENT, analyzeDocumentHandler);
 
@@ -164,10 +155,12 @@ function registerAnalysisIpc(servicesOrParams) {
     }
   }
 
-  const analyzeImageHandler =
-    z && stringSchema
-      ? withValidation(logger, stringSchema, (event, filePath) => performImageAnalysis(filePath))
-      : withErrorLogging(logger, (event, filePath) => performImageAnalysis(filePath));
+  const analyzeImageHandler = createHandler({
+    logger,
+    context: 'Analysis',
+    schema: stringSchema,
+    handler: (event, filePath) => performImageAnalysis(filePath)
+  });
 
   safeHandle(ipcMain, IPC_CHANNELS.ANALYSIS.ANALYZE_IMAGE, analyzeImageHandler);
 
@@ -194,26 +187,20 @@ function registerAnalysisIpc(servicesOrParams) {
     return { success: true, text: ocrResult.text };
   }
 
-  const extractImageTextHandler =
-    z && stringSchema
-      ? withValidation(logger, stringSchema, async (event, filePath) => {
-          try {
-            return await runOcr(filePath);
-          } catch (error) {
-            logger.error('OCR failed:', error);
-            systemAnalytics.recordFailure(error);
-            return { success: false, error: error.message };
-          }
-        })
-      : withErrorLogging(logger, async (event, filePath) => {
-          try {
-            return await runOcr(filePath);
-          } catch (error) {
-            logger.error('OCR failed:', error);
-            systemAnalytics.recordFailure(error);
-            return { success: false, error: error.message };
-          }
-        });
+  const extractImageTextHandler = createHandler({
+    logger,
+    context: 'Analysis',
+    schema: stringSchema,
+    handler: async (event, filePath) => {
+      try {
+        return await runOcr(filePath);
+      } catch (error) {
+        logger.error('OCR failed:', error);
+        systemAnalytics.recordFailure(error);
+        return { success: false, error: error.message };
+      }
+    }
+  });
   safeHandle(ipcMain, IPC_CHANNELS.ANALYSIS.EXTRACT_IMAGE_TEXT, extractImageTextHandler);
 }
 

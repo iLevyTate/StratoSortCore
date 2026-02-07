@@ -7,21 +7,41 @@ jest.mock('../src/shared/logger', () => ({
   })
 }));
 
-jest.mock('../src/main/services/LlamaService', () => ({
-  getInstance: jest.fn(() => ({
+jest.mock('../src/main/services/LlamaService', () => {
+  const defaultInstance = {
     initialize: jest.fn().mockResolvedValue(),
     getHealthStatus: jest.fn(() => ({ gpuBackend: 'cpu' })),
     testConnection: jest.fn().mockResolvedValue({ success: true, status: 'healthy' }),
     shutdown: jest.fn().mockResolvedValue()
-  }))
-}));
+  };
+  const mod = {
+    getInstance: jest.fn(() => defaultInstance),
+    registerWithContainer: jest.fn((cont, id) => {
+      if (!cont.has(id)) {
+        // Delegate to getInstance() so test overrides are picked up by container.resolve()
+        cont.registerSingleton(id, () => mod.getInstance());
+      }
+    })
+  };
+  return mod;
+});
 
-jest.mock('../src/main/services/OramaVectorService', () => ({
-  getInstance: jest.fn(() => ({
+jest.mock('../src/main/services/OramaVectorService', () => {
+  const defaultInstance = {
     initialize: jest.fn().mockResolvedValue(),
     shutdown: jest.fn().mockResolvedValue()
-  }))
-}));
+  };
+  const mod = {
+    getInstance: jest.fn(() => defaultInstance),
+    registerWithContainer: jest.fn((cont, id) => {
+      if (!cont.has(id)) {
+        // Delegate to getInstance() so test overrides are picked up by container.resolve()
+        cont.registerSingleton(id, () => mod.getInstance());
+      }
+    })
+  };
+  return mod;
+});
 
 jest.mock('../src/main/services/migration', () => ({
   getDataMigrationService: jest.fn(() => ({
@@ -35,8 +55,14 @@ jest.mock('../src/main/services/startup/shutdownHandler', () => ({
 }));
 
 const { StartupManager } = require('../src/main/services/startup/StartupManagerCore');
+const { container } = require('../src/main/services/ServiceContainer');
 
 describe('StartupManagerCore', () => {
+  beforeEach(() => {
+    // Reset the DI container to prevent cached singletons from leaking between tests
+    container.reset();
+  });
+
   test('startup completes and returns success', async () => {
     const manager = new StartupManager({ startupTimeout: 1000 });
     manager.startHealthMonitoring = jest.fn();

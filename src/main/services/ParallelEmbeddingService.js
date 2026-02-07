@@ -67,7 +67,8 @@ class ParallelEmbeddingService {
   }
 
   /**
-   * Calculate optimal concurrency based on system resources
+   * Calculate optimal concurrency based on system resources and GPU capabilities.
+   * Embeddings are lightweight on GPU, so GPU systems get a concurrency boost.
    * @returns {number} Recommended concurrency level
    */
   _calculateOptimalConcurrency() {
@@ -89,7 +90,29 @@ class ParallelEmbeddingService {
       });
     }
 
-    // Cap at reasonable maximum - higher for GPU setups
+    // Boost concurrency for GPU systems — embeddings are lightweight on GPU.
+    // Query PerformanceService synchronously from cached capabilities if available.
+    try {
+      const llamaService = getLlamaService();
+      const health = llamaService?.getHealthStatus?.();
+      const gpuBackend = health?.gpuBackend;
+
+      if (gpuBackend && gpuBackend !== 'cpu' && gpuBackend !== false) {
+        // GPU is active — boost embedding concurrency
+        // Embeddings use far less VRAM than text/vision inference
+        const prevConcurrency = concurrency;
+        concurrency = Math.max(concurrency, 6);
+        logger.info('[ParallelEmbeddingService] GPU-boosted concurrency', {
+          gpuBackend,
+          cpuBased: prevConcurrency,
+          gpuBoosted: concurrency
+        });
+      }
+    } catch {
+      // LlamaService not yet available — use CPU-based calculation
+    }
+
+    // Cap at reasonable maximum
     return Math.min(concurrency, 10);
   }
 

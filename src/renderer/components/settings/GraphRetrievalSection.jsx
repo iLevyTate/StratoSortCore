@@ -28,6 +28,7 @@ function clampNumber(value, min, max, fallback) {
 
 function GraphRetrievalSection({ settings, setSettings }) {
   const [stats, setStats] = useState(null);
+  const [historyStats, setHistoryStats] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const isMountedRef = useRef(true);
 
@@ -74,17 +75,44 @@ function GraphRetrievalSection({ settings, setSettings }) {
     }
   }, [stats?.updatedAt]);
 
+  const formattedSourceUpdatedAt = useMemo(() => {
+    if (!stats?.sourceUpdatedAt) return 'Unknown';
+    try {
+      return new Date(stats.sourceUpdatedAt).toLocaleString();
+    } catch {
+      return stats.sourceUpdatedAt;
+    }
+  }, [stats?.sourceUpdatedAt]);
+
+  const formattedHistoryUpdatedAt = useMemo(() => {
+    if (!historyStats?.lastUpdated) return 'Unknown';
+    try {
+      return new Date(historyStats.lastUpdated).toLocaleString();
+    } catch {
+      return historyStats.lastUpdated;
+    }
+  }, [historyStats?.lastUpdated]);
+
   const refreshStats = useCallback(async () => {
     const getRelationshipStats = window?.electronAPI?.knowledge?.getRelationshipStats;
+    const getHistoryStats = window?.electronAPI?.analysisHistory?.getStatistics;
     if (typeof getRelationshipStats !== 'function') return;
     if (isMountedRef.current) setIsLoading(true);
     try {
-      const response = await getRelationshipStats();
+      const [response, historyResponse] = await Promise.all([
+        getRelationshipStats(),
+        typeof getHistoryStats === 'function' ? getHistoryStats() : Promise.resolve(null)
+      ]);
       if (isMountedRef.current) {
         if (response?.success) {
           setStats(response);
         } else {
           setStats(null);
+        }
+        if (historyResponse && !historyResponse?.success) {
+          setHistoryStats(null);
+        } else if (historyResponse) {
+          setHistoryStats(historyResponse);
         }
       }
     } catch (error) {
@@ -96,6 +124,11 @@ function GraphRetrievalSection({ settings, setSettings }) {
       if (isMountedRef.current) setIsLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    // Load stats on mount so UI is always up to date.
+    refreshStats();
+  }, [refreshStats]);
 
   return (
     <Card variant="default" className="space-y-5">
@@ -215,7 +248,7 @@ function GraphRetrievalSection({ settings, setSettings }) {
           <div className="rounded-lg border border-system-gray-100 bg-system-gray-50 p-3 space-y-2">
             <div className="flex items-center justify-between">
               <Text variant="small" className="text-system-gray-700">
-                {stats?.edgeCount != null ? `${stats.edgeCount} edges` : 'No index yet'}
+                {stats?.edgeCount != null ? `${stats.edgeCount} edges (max 2000)` : 'No index yet'}
               </Text>
               <Button
                 variant="ghost"
@@ -230,7 +263,18 @@ function GraphRetrievalSection({ settings, setSettings }) {
               Concepts: {stats?.conceptCount ?? '—'} • Documents: {stats?.docCount ?? '—'}
             </Text>
             <Text variant="tiny" className="text-system-gray-500">
+              Analysis history files: {historyStats?.totalFiles ?? '—'} • History updated:{' '}
+              {formattedHistoryUpdatedAt}
+            </Text>
+            <Text variant="tiny" className="text-system-gray-500">
+              Graph documents count includes only files with extracted concepts (may be lower than
+              total analyzed files).
+            </Text>
+            <Text variant="tiny" className="text-system-gray-500">
               Last built: {formattedUpdatedAt}
+            </Text>
+            <Text variant="tiny" className="text-system-gray-500">
+              Source data: Analysis history updated {formattedSourceUpdatedAt}
             </Text>
           </div>
         </SettingRow>

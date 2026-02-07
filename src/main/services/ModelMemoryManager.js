@@ -10,8 +10,10 @@ class ModelMemoryManager {
    * @param {Object} llamaService - LlamaService instance that provides model loading/unloading.
    *   The manager accesses _loadModel(type), _models, and _contexts through bound callbacks
    *   to keep the coupling explicit and auditable.
+   * @param {Object} [options={}] - Configuration options
+   * @param {Object} [options.gpuInfo] - GPU info from GPUMonitor.detectGPU() for VRAM-aware budgeting
    */
-  constructor(llamaService) {
+  constructor(llamaService, options = {}) {
     // Bind specific callbacks rather than holding the entire service reference.
     // This makes the contract between ModelMemoryManager and LlamaService explicit.
     this._loadModelFn = (type) => llamaService._loadModel(type);
@@ -24,6 +26,7 @@ class ModelMemoryManager {
     };
     this._loadedModels = new Map(); // type -> { model, context, lastUsed, sizeBytes }
     this._activeRefs = new Map(); // type -> number of in-flight operations using this model
+    this._gpuInfo = options.gpuInfo || null;
     this._maxMemoryUsage = this._calculateMaxMemory();
     this._currentMemoryUsage = 0;
 
@@ -36,20 +39,56 @@ class ModelMemoryManager {
   }
 
   /**
-   * Calculate maximum memory we can use (70% of available)
+   * Update GPU info after construction (e.g., after async GPU detection completes).
+   * Recalculates memory budget with new VRAM data.
+   * @param {Object} gpuInfo - GPU info from GPUMonitor
+   */
+  setGpuInfo(gpuInfo) {
+    this._gpuInfo = gpuInfo;
+    this._maxMemoryUsage = this._calculateMaxMemory();
+    logger.info('[Memory] GPU info updated, recalculated budget', {
+      vramMB: gpuInfo?.vramMB || 0,
+      maxUsableGB: Math.round(this._maxMemoryUsage / 1024 / 1024 / 1024)
+    });
+  }
+
+  /**
+   * Calculate maximum memory we can use.
+   * When GPU VRAM info is available, uses the smaller of:
+   *   - 80% of VRAM (GPU-loaded models live in VRAM)
+   *   - 70% of free system RAM, capped at 16GB
+   * This prevents over-allocating VRAM on dedicated GPUs and
+   * over-allocating system RAM on unified memory (Apple Silicon).
    */
   _calculateMaxMemory() {
     const totalMemory = os.totalmem();
     const freeMemory = os.freemem();
 
-    // Use 70% of free memory, but cap at 16GB
-    const maxUsable = Math.min(freeMemory * 0.7, 16 * 1024 * 1024 * 1024);
+    // System RAM budget: 70% of free, capped at 16GB
+    const ramBudget = Math.min(freeMemory * 0.7, 16 * 1024 * 1024 * 1024);
 
-    logger.info('[Memory] Calculated max memory usage', {
-      totalGB: Math.round(totalMemory / 1024 / 1024 / 1024),
-      freeGB: Math.round(freeMemory / 1024 / 1024 / 1024),
-      maxUsableGB: Math.round(maxUsable / 1024 / 1024 / 1024)
-    });
+    let maxUsable = ramBudget;
+
+    // When GPU info is available, constrain to VRAM as well.
+    // Models loaded with GPU offload consume VRAM, so VRAM is the real bottleneck.
+    if (this._gpuInfo?.vramMB && this._gpuInfo.vramMB > 0) {
+      const vramBytes = this._gpuInfo.vramMB * 1024 * 1024;
+      const vramBudget = Math.floor(vramBytes * 0.8); // 80% of VRAM
+      maxUsable = Math.min(ramBudget, vramBudget);
+
+      logger.info('[Memory] VRAM-aware budget calculated', {
+        vramMB: this._gpuInfo.vramMB,
+        vramBudgetGB: Math.round(vramBudget / 1024 / 1024 / 1024),
+        ramBudgetGB: Math.round(ramBudget / 1024 / 1024 / 1024),
+        effectiveBudgetGB: Math.round(maxUsable / 1024 / 1024 / 1024)
+      });
+    } else {
+      logger.info('[Memory] Calculated max memory usage (no GPU VRAM info)', {
+        totalGB: Math.round(totalMemory / 1024 / 1024 / 1024),
+        freeGB: Math.round(freeMemory / 1024 / 1024 / 1024),
+        maxUsableGB: Math.round(maxUsable / 1024 / 1024 / 1024)
+      });
+    }
 
     return maxUsable;
   }

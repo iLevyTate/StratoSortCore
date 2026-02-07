@@ -179,8 +179,32 @@ class ServiceIntegration {
       // Vector DB availability check
       // OramaVectorService is in-process, so it's always available (no external server)
       // Only need to check if the service exists
+      const { startupResult } = options;
       let isVectorDbReady = !!this.vectorService;
-      const { startupResult: _startupResult } = options;
+      let skipVectorInit = false;
+
+      if (startupResult?.services?.vectorDb) {
+        const vectorStatus = startupResult.services.vectorDb;
+        const wasRunning =
+          vectorStatus.status === 'running' ||
+          vectorStatus.status === 'online' ||
+          vectorStatus.success;
+        const failed =
+          vectorStatus.status === 'failed' ||
+          vectorStatus.status === 'error' ||
+          vectorStatus.success === false;
+
+        if (wasRunning) {
+          isVectorDbReady = true;
+          skipVectorInit = true;
+          logger.debug('[ServiceIntegration] Using startupResult - vector DB already initialized');
+        } else if (failed) {
+          isVectorDbReady = false;
+          logger.warn(
+            '[ServiceIntegration] startupResult indicates vector DB failed to initialize'
+          );
+        }
+      }
 
       if (!isVectorDbReady) {
         logger.warn(
@@ -216,7 +240,9 @@ class ServiceIntegration {
       // Tier 1: Initialize Vector DB (OramaVectorService is in-process, always available)
       if (isVectorDbReady && this.vectorService) {
         try {
-          await this.vectorService.initialize();
+          if (!skipVectorInit) {
+            await this.vectorService.initialize();
+          }
           initStatus.initialized.push('vectorDb');
 
           // Wire up cascade orphan marking when analysis entries are removed
@@ -480,6 +506,14 @@ class ServiceIntegration {
     if (!container.has(ServiceIds.MODEL_MANAGER)) {
       const { registerWithContainer: registerModelManager } = require('./ModelManager');
       registerModelManager(container, ServiceIds.MODEL_MANAGER);
+    }
+
+    // Register ModelDownloadManager (singleton via existing factory)
+    if (!container.has(ServiceIds.MODEL_DOWNLOAD_MANAGER)) {
+      container.registerSingleton(ServiceIds.MODEL_DOWNLOAD_MANAGER, () => {
+        const { getInstance } = require('./ModelDownloadManager');
+        return getInstance();
+      });
     }
 
     // Register AnalysisCacheService

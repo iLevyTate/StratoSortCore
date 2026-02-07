@@ -18,7 +18,7 @@ const {
   THRESHOLDS,
   CHUNKING
 } = require('../../shared/performanceConstants');
-const { withErrorLogging, safeHandle, withVectorDbInit } = require('./ipcWrappers');
+const { createHandler, safeHandle, z } = require('./ipcWrappers');
 const { cosineSimilarity, padOrTruncateVector } = require('../../shared/vectorMath');
 const { validateFileOperationPath } = require('../../shared/pathSanitization');
 const { getInstance: getLlamaService } = require('../services/LlamaService');
@@ -570,16 +570,31 @@ function registerEmbeddingsIpc(servicesOrParams) {
     }, 1000); // 1 second delay for pre-warming, handlers use retries if called earlier
   });
 
-  // Helper config for handlers that need vector DB initialization
-  const vectorInitConfig = {
-    ensureInit: ensureInitialized,
-    isInitRef: () => initState === INIT_STATES.COMPLETED,
-    logger
-  };
+  // Reusable Zod schemas for handler validation
+  const context = 'Semantic';
+  const schemaVoid = z ? z.void() : null;
+  const schemaObject = z ? z.object({}).passthrough() : null;
+  const schemaObjectOptional = z ? z.object({}).passthrough().optional() : null;
+  const schemaStringOrObject = z ? z.union([z.string().min(1), z.object({}).passthrough()]) : null;
 
-  // Factory to create handlers with both error logging and vector DB init
-  const createVectorHandler = (handler) =>
-    withErrorLogging(logger, withVectorDbInit({ ...vectorInitConfig, handler }));
+  /**
+   * Safely ensure vector DB is initialized, returning a graceful error response on failure.
+   * Mirrors the safety net that withVectorDbInit previously provided.
+   * @returns {Object|null} Error response object if init failed, null if successful
+   */
+  async function safeEnsureInit() {
+    try {
+      await ensureInitialized();
+    } catch (e) {
+      return {
+        success: false,
+        error: 'Vector DB is not available yet. Please try again in a moment.',
+        code: e?.code || 'VECTOR_DB_UNAVAILABLE',
+        unavailable: true
+      };
+    }
+    return null;
+  }
 
   /**
    * Rebuild folder embeddings from current smart folders
@@ -589,131 +604,138 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS,
-    createVectorHandler(async () => {
-      // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
-      const lockResult = acquireRebuildLock('REBUILD_FOLDERS');
-      if (!lockResult.acquired) {
-        return {
-          success: false,
-          error: lockResult.reason,
-          errorCode: 'REBUILD_IN_PROGRESS'
-        };
-      }
-
-      try {
-        // FIX: Verify embedding model is available before starting
-        const modelCheck = await verifyEmbeddingModelAvailable(logger);
-        if (!modelCheck.available) {
+    createHandler({
+      logger,
+      context,
+      schema: schemaVoid,
+      handler: async () => {
+        const initErr = await safeEnsureInit();
+        if (initErr) return initErr;
+        // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
+        const lockResult = acquireRebuildLock('REBUILD_FOLDERS');
+        if (!lockResult.acquired) {
           return {
             success: false,
-            error: modelCheck.error,
-            errorCode: 'MODEL_NOT_AVAILABLE',
-            model: modelCheck.model,
-            availableModels: modelCheck.availableModels
+            error: lockResult.reason,
+            errorCode: 'REBUILD_IN_PROGRESS'
           };
         }
 
-        const smartFolders = getCustomFolders().filter((f) => f && f.name);
-
-        if (smartFolders.length === 0) {
-          return {
-            success: true,
-            folders: 0,
-            message: 'No smart folders to embed'
-          };
-        }
-
-        // SAFE: resetFolders() only deletes/recreates the collection, not the DB directory
-        await vectorDbService.resetFolders();
-
-        // Track successes and failures
-        const results = { success: 0, failed: 0, errors: [] };
-
-        // Process folder embeddings with error tracking
-        const folderPayloads = await Promise.all(
-          smartFolders.map(async (folder) => {
-            try {
-              const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
-
-              const { vector, model } = await folderMatcher.embedText(folderText);
-              const folderId = folder.id || folderMatcher.generateFolderId(folder);
-
-              results.success++;
-              return {
-                id: folderId,
-                name: folder.name,
-                description: folder.description || '',
-                path: folder.path || '',
-                vector,
-                model,
-                updatedAt: new Date().toISOString()
-              };
-            } catch (error) {
-              results.failed++;
-              results.errors.push({
-                folder: folder.name,
-                error: error.message
-              });
-              logger.warn(
-                '[EMBEDDINGS] Failed to generate folder embedding:',
-                folder.name,
-                error.message
-              );
-              return null;
-            }
-          })
-        );
-
-        const validPayloads = folderPayloads.filter((p) => p !== null);
-
-        // Only upsert if we have valid payloads
-        let upsertedCount = 0;
-        if (validPayloads.length > 0) {
-          const folderResult = await vectorDbService.batchUpsertFolders(validPayloads);
-          upsertedCount = folderResult?.count ?? folderResult ?? 0;
-        }
-
-        // Record which model/dimensions were used for the index (for UI mismatch warnings)
         try {
-          const probe = validPayloads[0];
-          const dims = Array.isArray(probe?.vector) ? probe.vector.length : null;
-          if (Number.isFinite(dims) && dims > 0) {
-            await writeEmbeddingIndexMetadata({
-              model: probe?.model || modelCheck.model,
-              dims,
-              source: 'rebuild-folders'
-            });
+          // FIX: Verify embedding model is available before starting
+          const modelCheck = await verifyEmbeddingModelAvailable(logger);
+          if (!modelCheck.available) {
+            return {
+              success: false,
+              error: modelCheck.error,
+              errorCode: 'MODEL_NOT_AVAILABLE',
+              model: modelCheck.model,
+              availableModels: modelCheck.availableModels
+            };
           }
-        } catch {
-          // Non-fatal
-        }
 
-        // Return detailed status
-        const allFailed = results.success === 0 && results.failed > 0;
-        return {
-          success: !allFailed,
-          folders: upsertedCount,
-          total: smartFolders.length,
-          succeeded: results.success,
-          failed: results.failed,
-          errors: results.errors.slice(0, 5), // Limit error details
-          model: modelCheck.model,
-          message: allFailed
-            ? `All ${results.failed} folder embeddings failed. Check AI engine status.`
-            : results.failed > 0
-              ? `${results.success} folders embedded, ${results.failed} failed`
-              : `Successfully embedded ${results.success} folders`
-        };
-      } catch (e) {
-        logger.error('[EMBEDDINGS] Rebuild folders failed:', e);
-        return {
-          success: false,
-          error: e.message,
-          errorCode: e.code || 'REBUILD_FAILED'
-        };
-      } finally {
-        // FIX P0-2: Always release lock when done
-        releaseRebuildLock();
+          const smartFolders = getCustomFolders().filter((f) => f && f.name);
+
+          if (smartFolders.length === 0) {
+            return {
+              success: true,
+              folders: 0,
+              message: 'No smart folders to embed'
+            };
+          }
+
+          // SAFE: resetFolders() only deletes/recreates the collection, not the DB directory
+          await vectorDbService.resetFolders();
+
+          // Track successes and failures
+          const results = { success: 0, failed: 0, errors: [] };
+
+          // Process folder embeddings with error tracking
+          const folderPayloads = await Promise.all(
+            smartFolders.map(async (folder) => {
+              try {
+                const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
+
+                const { vector, model } = await folderMatcher.embedText(folderText);
+                const folderId = folder.id || folderMatcher.generateFolderId(folder);
+
+                results.success++;
+                return {
+                  id: folderId,
+                  name: folder.name,
+                  description: folder.description || '',
+                  path: folder.path || '',
+                  vector,
+                  model,
+                  updatedAt: new Date().toISOString()
+                };
+              } catch (error) {
+                results.failed++;
+                results.errors.push({
+                  folder: folder.name,
+                  error: error.message
+                });
+                logger.warn(
+                  '[EMBEDDINGS] Failed to generate folder embedding:',
+                  folder.name,
+                  error.message
+                );
+                return null;
+              }
+            })
+          );
+
+          const validPayloads = folderPayloads.filter((p) => p !== null);
+
+          // Only upsert if we have valid payloads
+          let upsertedCount = 0;
+          if (validPayloads.length > 0) {
+            const folderResult = await vectorDbService.batchUpsertFolders(validPayloads);
+            upsertedCount = folderResult?.count ?? folderResult ?? 0;
+          }
+
+          // Record which model/dimensions were used for the index (for UI mismatch warnings)
+          try {
+            const probe = validPayloads[0];
+            const dims = Array.isArray(probe?.vector) ? probe.vector.length : null;
+            if (Number.isFinite(dims) && dims > 0) {
+              await writeEmbeddingIndexMetadata({
+                model: probe?.model || modelCheck.model,
+                dims,
+                source: 'rebuild-folders'
+              });
+            }
+          } catch {
+            // Non-fatal
+          }
+
+          // Return detailed status
+          const allFailed = results.success === 0 && results.failed > 0;
+          return {
+            success: !allFailed,
+            folders: upsertedCount,
+            total: smartFolders.length,
+            succeeded: results.success,
+            failed: results.failed,
+            errors: results.errors.slice(0, 5), // Limit error details
+            model: modelCheck.model,
+            message: allFailed
+              ? `All ${results.failed} folder embeddings failed. Check AI engine status.`
+              : results.failed > 0
+                ? `${results.success} folders embedded, ${results.failed} failed`
+                : `Successfully embedded ${results.success} folders`
+          };
+        } catch (e) {
+          logger.error('[EMBEDDINGS] Rebuild folders failed:', e);
+          return {
+            success: false,
+            error: e.message,
+            errorCode: e.code || 'REBUILD_FAILED'
+          };
+        } finally {
+          // FIX P0-2: Always release lock when done
+          releaseRebuildLock();
+        }
       }
     })
   );
@@ -727,377 +749,384 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES,
-    createVectorHandler(async () => {
-      // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
-      const lockResult = acquireRebuildLock('REBUILD_FILES');
-      if (!lockResult.acquired) {
-        return {
-          success: false,
-          error: lockResult.reason,
-          errorCode: 'REBUILD_IN_PROGRESS'
-        };
-      }
-
-      try {
-        // FIX: Verify embedding model is available before starting
-        const modelCheck = await verifyEmbeddingModelAvailable(logger);
-        if (!modelCheck.available) {
+    createHandler({
+      logger,
+      context,
+      schema: schemaVoid,
+      handler: async () => {
+        const initErr = await safeEnsureInit();
+        if (initErr) return initErr;
+        // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
+        const lockResult = acquireRebuildLock('REBUILD_FILES');
+        if (!lockResult.acquired) {
           return {
             success: false,
-            error: modelCheck.error,
-            errorCode: 'MODEL_NOT_AVAILABLE',
-            model: modelCheck.model,
-            availableModels: modelCheck.availableModels
+            error: lockResult.reason,
+            errorCode: 'REBUILD_IN_PROGRESS'
           };
         }
 
-        const serviceIntegration = getServiceIntegration && getServiceIntegration();
-        const historyService = serviceIntegration?.analysisHistory;
-
-        if (!historyService?.getRecentAnalysis) {
-          return {
-            success: false,
-            error: 'Analysis history service unavailable',
-            errorCode: 'HISTORY_SERVICE_UNAVAILABLE'
-          };
-        }
-
-        // Load all history entries (bounded by service defaults if any)
-        const allEntries = await historyService.getRecentAnalysis(Number.MAX_SAFE_INTEGER);
-
-        // FIX #17: Validate allEntries is an array to prevent crash
-        if (!Array.isArray(allEntries)) {
-          logger.warn('[EMBEDDINGS] getRecentAnalysis returned non-array:', typeof allEntries);
-          return {
-            success: false,
-            error: 'Failed to load analysis history - invalid data format',
-            errorCode: 'INVALID_HISTORY_FORMAT'
-          };
-        }
-
-        if (allEntries.length === 0) {
-          return {
-            success: true,
-            files: 0,
-            message: 'No analysis history to embed. Analyze some files first.'
-          };
-        }
-
-        // De-dupe analysis history to unique file IDs.
-        // History can contain multiple entries per file (reanalysis, retries), which previously caused
-        // misleading "file counts" in UI.
-        const uniqueHistoryFileIds = new Set();
-
-        const smartFolders = (
-          typeof getCustomFolders === 'function' ? getCustomFolders() : []
-        ).filter((f) => f && f.name);
-
-        // Track results for folders
-        const folderResults = { success: 0, failed: 0 };
-
-        // Process folder embeddings (silently continue on failure)
-        if (smartFolders.length > 0) {
-          const folderPayloads = await Promise.all(
-            smartFolders.map(async (folder) => {
-              try {
-                const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
-
-                const { vector, model } = await folderMatcher.embedText(folderText);
-                const folderId = folder.id || folderMatcher.generateFolderId(folder);
-
-                folderResults.success++;
-                return {
-                  id: folderId,
-                  name: folder.name,
-                  description: folder.description || '',
-                  path: folder.path || '',
-                  vector,
-                  model,
-                  updatedAt: new Date().toISOString()
-                };
-              } catch {
-                folderResults.failed++;
-                logger.warn('[EMBEDDINGS] Failed to generate folder embedding:', folder.name);
-                return null;
-              }
-            })
-          );
-
-          const validFolderPayloads = folderPayloads.filter((p) => p !== null);
-          if (validFolderPayloads.length > 0) {
-            await vectorDbService.batchUpsertFolders(validFolderPayloads);
+        try {
+          // FIX: Verify embedding model is available before starting
+          const modelCheck = await verifyEmbeddingModelAvailable(logger);
+          if (!modelCheck.available) {
+            return {
+              success: false,
+              error: modelCheck.error,
+              errorCode: 'MODEL_NOT_AVAILABLE',
+              model: modelCheck.model,
+              availableModels: modelCheck.availableModels
+            };
           }
-        }
 
-        // SAFE: resetFiles() only deletes/recreates the collection, not the DB directory
-        // This rebuilds the search index from analysis history without re-analyzing files
-        await vectorDbService.resetFiles();
-        // SAFE: resetFileChunks() only deletes/recreates the chunk collection.
-        // This rebuilds deep semantic recall from extractedText without re-analyzing files.
-        await vectorDbService.resetFileChunks();
+          const serviceIntegration = getServiceIntegration && getServiceIntegration();
+          const historyService = serviceIntegration?.analysisHistory;
 
-        // Track results for files
-        const fileResults = {
-          success: 0,
-          failed: 0,
-          errors: [],
-          chunkFailures: 0,
-          chunkFailureSamples: []
-        };
-
-        // Process file embeddings with proper error tracking
-        const filePayloadsById = new Map();
-        const chunkPayloads = [];
-        const embeddingService = getParallelEmbeddingService();
-
-        // FIX: Yield every N entries to prevent UI blocking during large rebuilds
-        const YIELD_EVERY_N = 50;
-        let processedCount = 0;
-
-        for (const entry of allEntries) {
-          // FIX: Yield to event loop periodically to prevent UI blocking
-          processedCount++;
-          if (processedCount % YIELD_EVERY_N === 0) {
-            await new Promise((resolve) => setImmediate(resolve));
+          if (!historyService?.getRecentAnalysis) {
+            return {
+              success: false,
+              error: 'Analysis history service unavailable',
+              errorCode: 'HISTORY_SERVICE_UNAVAILABLE'
+            };
           }
-          try {
-            const organization = entry.organization || {};
-            const filePath = organization.actual || entry.originalPath;
-            if (!filePath || typeof filePath !== 'string') {
-              fileResults.failed++;
-              fileResults.errors.push({
-                file: entry.originalPath ? path.basename(entry.originalPath) : 'unknown',
-                error: 'Invalid file path in analysis history'
-              });
-              continue;
-            }
 
-            const ext = (path.extname(filePath) || '').toLowerCase();
-            const isImage = SUPPORTED_IMAGE_EXTENSIONS.includes(ext);
-            const fileId = getFileEmbeddingId(filePath, isImage ? 'image' : 'file');
+          // Load all history entries (bounded by service defaults if any)
+          const allEntries = await historyService.getRecentAnalysis(Number.MAX_SAFE_INTEGER);
 
-            // Track unique file IDs in history even if we later skip embedding due to empty content.
-            uniqueHistoryFileIds.add(fileId);
+          // FIX #17: Validate allEntries is an array to prevent crash
+          if (!Array.isArray(allEntries)) {
+            logger.warn('[EMBEDDINGS] getRecentAnalysis returned non-array:', typeof allEntries);
+            return {
+              success: false,
+              error: 'Failed to load analysis history - invalid data format',
+              errorCode: 'INVALID_HISTORY_FORMAT'
+            };
+          }
 
-            try {
-              await fs.access(filePath);
-            } catch (accessError) {
-              fileResults.failed++;
-              fileResults.errors.push({
-                file: path.basename(filePath),
-                error:
-                  accessError.code === 'ENOENT'
-                    ? 'File no longer exists'
-                    : `File access error: ${accessError.message}`
-              });
-              continue;
-            }
+          if (allEntries.length === 0) {
+            return {
+              success: true,
+              files: 0,
+              message: 'No analysis history to embed. Analyze some files first.'
+            };
+          }
 
-            // Skip duplicates (keep the most recent history entry; getRecentAnalysis is expected to be ordered).
-            if (filePayloadsById.has(fileId)) {
-              continue;
-            }
+          // De-dupe analysis history to unique file IDs.
+          // History can contain multiple entries per file (reanalysis, retries), which previously caused
+          // misleading "file counts" in UI.
+          const uniqueHistoryFileIds = new Set();
 
-            const summary = [
-              entry.analysis?.subject,
-              entry.analysis?.summary,
-              Array.isArray(entry.analysis?.tags) ? entry.analysis.tags.join(' ') : '',
-              entry.analysis?.extractedText
-                ? String(entry.analysis.extractedText).slice(0, 2000)
-                : ''
-            ]
-              .filter(Boolean)
-              .join('\n');
+          const smartFolders = (
+            typeof getCustomFolders === 'function' ? getCustomFolders() : []
+          ).filter((f) => f && f.name);
 
-            // Skip empty summaries
-            if (!summary.trim()) {
-              fileResults.failed++;
-              fileResults.errors.push({
-                file: path.basename(filePath),
-                error: 'No content to embed'
-              });
-              continue;
-            }
+          // Track results for folders
+          const folderResults = { success: 0, failed: 0 };
 
-            // Generate embedding
-            const { vector, model } = await folderMatcher.embedText(summary);
-
-            // Use renamed name if available, otherwise fall back to original basename
-            const displayName = entry.organization?.newName || path.basename(filePath);
-
-            // Extract rich metadata for graph visualization
-            const tags = Array.isArray(entry.analysis?.tags) ? entry.analysis.tags : [];
-            const category = entry.analysis?.category || '';
-            const subject = entry.analysis?.subject || '';
-            const summaryText = (entry.analysis?.summary || '').slice(0, 200);
-
-            filePayloadsById.set(fileId, {
-              id: fileId,
-              vector,
-              model,
-              meta: {
-                path: filePath,
-                fileName: displayName,
-                suggestedName: entry.organization?.newName || '',
-                fileType: isImage ? 'image' : 'document',
-                // Rich metadata for meaningful graph visualization
-                tags: Array.isArray(tags) ? tags : [], // Orama expects string[] (not JSON string)
-                category,
-                subject,
-                summary: summaryText
-              },
-              updatedAt: new Date().toISOString()
-            });
-            fileResults.success++;
-
-            // Chunk embeddings (analyzed-only): embed extracted text for deep semantic recall.
-            // This is intentionally behind the \"Rebuild\" flow so users can opt in.
-            const extractedText =
-              entry.analysis?.extractedText != null ? String(entry.analysis.extractedText) : '';
-            if (extractedText.trim().length >= CHUNKING.MIN_TEXT_LENGTH) {
-              const chunks = chunkText(extractedText, {
-                chunkSize: CHUNKING.CHUNK_SIZE,
-                overlap: CHUNKING.OVERLAP,
-                maxChunks: CHUNKING.MAX_CHUNKS
-              });
-
-              for (const c of chunks) {
+          // Process folder embeddings (silently continue on failure)
+          if (smartFolders.length > 0) {
+            const folderPayloads = await Promise.all(
+              smartFolders.map(async (folder) => {
                 try {
-                  const { vector: chunkVector, model: chunkModel } =
-                    await embeddingService.embedText(c.text);
-                  if (!Array.isArray(chunkVector) || chunkVector.length === 0) continue;
+                  const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
 
-                  const snippet = c.text.slice(0, 240);
-                  chunkPayloads.push({
-                    id: `chunk:${fileId}:${c.index}`,
-                    vector: chunkVector,
-                    model: chunkModel,
-                    meta: {
-                      fileId,
-                      path: filePath,
-                      name: displayName,
-                      chunkIndex: c.index,
-                      charStart: c.charStart,
-                      charEnd: c.charEnd,
-                      snippet,
-                      // FIX P0-3: Store embedding model version for mismatch detection
-                      model: chunkModel || 'unknown'
-                    },
-                    document: snippet,
+                  const { vector, model } = await folderMatcher.embedText(folderText);
+                  const folderId = folder.id || folderMatcher.generateFolderId(folder);
+
+                  folderResults.success++;
+                  return {
+                    id: folderId,
+                    name: folder.name,
+                    description: folder.description || '',
+                    path: folder.path || '',
+                    vector,
+                    model,
                     updatedAt: new Date().toISOString()
-                  });
-                } catch (chunkErr) {
-                  fileResults.chunkFailures++;
-                  if (fileResults.chunkFailureSamples.length < 5) {
-                    fileResults.chunkFailureSamples.push({
+                  };
+                } catch {
+                  folderResults.failed++;
+                  logger.warn('[EMBEDDINGS] Failed to generate folder embedding:', folder.name);
+                  return null;
+                }
+              })
+            );
+
+            const validFolderPayloads = folderPayloads.filter((p) => p !== null);
+            if (validFolderPayloads.length > 0) {
+              await vectorDbService.batchUpsertFolders(validFolderPayloads);
+            }
+          }
+
+          // SAFE: resetFiles() only deletes/recreates the collection, not the DB directory
+          // This rebuilds the search index from analysis history without re-analyzing files
+          await vectorDbService.resetFiles();
+          // SAFE: resetFileChunks() only deletes/recreates the chunk collection.
+          // This rebuilds deep semantic recall from extractedText without re-analyzing files.
+          await vectorDbService.resetFileChunks();
+
+          // Track results for files
+          const fileResults = {
+            success: 0,
+            failed: 0,
+            errors: [],
+            chunkFailures: 0,
+            chunkFailureSamples: []
+          };
+
+          // Process file embeddings with proper error tracking
+          const filePayloadsById = new Map();
+          const chunkPayloads = [];
+          const embeddingService = getParallelEmbeddingService();
+
+          // FIX: Yield every N entries to prevent UI blocking during large rebuilds
+          const YIELD_EVERY_N = 50;
+          let processedCount = 0;
+
+          for (const entry of allEntries) {
+            // FIX: Yield to event loop periodically to prevent UI blocking
+            processedCount++;
+            if (processedCount % YIELD_EVERY_N === 0) {
+              await new Promise((resolve) => setImmediate(resolve));
+            }
+            try {
+              const organization = entry.organization || {};
+              const filePath = organization.actual || entry.originalPath;
+              if (!filePath || typeof filePath !== 'string') {
+                fileResults.failed++;
+                fileResults.errors.push({
+                  file: entry.originalPath ? path.basename(entry.originalPath) : 'unknown',
+                  error: 'Invalid file path in analysis history'
+                });
+                continue;
+              }
+
+              const ext = (path.extname(filePath) || '').toLowerCase();
+              const isImage = SUPPORTED_IMAGE_EXTENSIONS.includes(ext);
+              const fileId = getFileEmbeddingId(filePath, isImage ? 'image' : 'file');
+
+              // Track unique file IDs in history even if we later skip embedding due to empty content.
+              uniqueHistoryFileIds.add(fileId);
+
+              try {
+                await fs.access(filePath);
+              } catch (accessError) {
+                fileResults.failed++;
+                fileResults.errors.push({
+                  file: path.basename(filePath),
+                  error:
+                    accessError.code === 'ENOENT'
+                      ? 'File no longer exists'
+                      : `File access error: ${accessError.message}`
+                });
+                continue;
+              }
+
+              // Skip duplicates (keep the most recent history entry; getRecentAnalysis is expected to be ordered).
+              if (filePayloadsById.has(fileId)) {
+                continue;
+              }
+
+              const summary = [
+                entry.analysis?.subject,
+                entry.analysis?.summary,
+                Array.isArray(entry.analysis?.tags) ? entry.analysis.tags.join(' ') : '',
+                entry.analysis?.extractedText
+                  ? String(entry.analysis.extractedText).slice(0, 2000)
+                  : ''
+              ]
+                .filter(Boolean)
+                .join('\n');
+
+              // Skip empty summaries
+              if (!summary.trim()) {
+                fileResults.failed++;
+                fileResults.errors.push({
+                  file: path.basename(filePath),
+                  error: 'No content to embed'
+                });
+                continue;
+              }
+
+              // Generate embedding
+              const { vector, model } = await folderMatcher.embedText(summary);
+
+              // Use renamed name if available, otherwise fall back to original basename
+              const displayName = entry.organization?.newName || path.basename(filePath);
+
+              // Extract rich metadata for graph visualization
+              const tags = Array.isArray(entry.analysis?.tags) ? entry.analysis.tags : [];
+              const category = entry.analysis?.category || '';
+              const subject = entry.analysis?.subject || '';
+              const summaryText = (entry.analysis?.summary || '').slice(0, 200);
+
+              filePayloadsById.set(fileId, {
+                id: fileId,
+                vector,
+                model,
+                meta: {
+                  path: filePath,
+                  fileName: displayName,
+                  suggestedName: entry.organization?.newName || '',
+                  fileType: isImage ? 'image' : 'document',
+                  // Rich metadata for meaningful graph visualization
+                  tags: Array.isArray(tags) ? tags : [], // Orama expects string[] (not JSON string)
+                  category,
+                  subject,
+                  summary: summaryText
+                },
+                updatedAt: new Date().toISOString()
+              });
+              fileResults.success++;
+
+              // Chunk embeddings (analyzed-only): embed extracted text for deep semantic recall.
+              // This is intentionally behind the \"Rebuild\" flow so users can opt in.
+              const extractedText =
+                entry.analysis?.extractedText != null ? String(entry.analysis.extractedText) : '';
+              if (extractedText.trim().length >= CHUNKING.MIN_TEXT_LENGTH) {
+                const chunks = chunkText(extractedText, {
+                  chunkSize: CHUNKING.CHUNK_SIZE,
+                  overlap: CHUNKING.OVERLAP,
+                  maxChunks: CHUNKING.MAX_CHUNKS
+                });
+
+                for (const c of chunks) {
+                  try {
+                    const { vector: chunkVector, model: chunkModel } =
+                      await embeddingService.embedText(c.text);
+                    if (!Array.isArray(chunkVector) || chunkVector.length === 0) continue;
+
+                    const snippet = c.text.slice(0, 240);
+                    chunkPayloads.push({
+                      id: `chunk:${fileId}:${c.index}`,
+                      vector: chunkVector,
+                      model: chunkModel,
+                      meta: {
+                        fileId,
+                        path: filePath,
+                        name: displayName,
+                        chunkIndex: c.index,
+                        charStart: c.charStart,
+                        charEnd: c.charEnd,
+                        snippet,
+                        // FIX P0-3: Store embedding model version for mismatch detection
+                        model: chunkModel || 'unknown'
+                      },
+                      document: snippet,
+                      updatedAt: new Date().toISOString()
+                    });
+                  } catch (chunkErr) {
+                    fileResults.chunkFailures++;
+                    if (fileResults.chunkFailureSamples.length < 5) {
+                      fileResults.chunkFailureSamples.push({
+                        file: path.basename(filePath),
+                        chunkIndex: c.index,
+                        error: chunkErr?.message || String(chunkErr)
+                      });
+                    }
+                    // Non-fatal: still keep file-level embedding even if a chunk fails
+                    logger.debug('[EMBEDDINGS] Failed to embed chunk:', {
                       file: path.basename(filePath),
                       chunkIndex: c.index,
-                      error: chunkErr?.message || String(chunkErr)
+                      error: chunkErr?.message
                     });
                   }
-                  // Non-fatal: still keep file-level embedding even if a chunk fails
-                  logger.debug('[EMBEDDINGS] Failed to embed chunk:', {
-                    file: path.basename(filePath),
-                    chunkIndex: c.index,
-                    error: chunkErr?.message
-                  });
                 }
               }
+            } catch (e) {
+              fileResults.failed++;
+              const fileName = entry.originalPath ? path.basename(entry.originalPath) : 'unknown';
+              fileResults.errors.push({
+                file: fileName,
+                error: e.message
+              });
+              logger.warn('[EMBEDDINGS] Failed to prepare file entry:', e.message);
+              // continue on individual entry failure
             }
-          } catch (e) {
-            fileResults.failed++;
-            const fileName = entry.originalPath ? path.basename(entry.originalPath) : 'unknown';
-            fileResults.errors.push({
-              file: fileName,
-              error: e.message
-            });
-            logger.warn('[EMBEDDINGS] Failed to prepare file entry:', e.message);
-            // continue on individual entry failure
           }
-        }
 
-        const filePayloads = Array.from(filePayloadsById.values());
+          const filePayloads = Array.from(filePayloadsById.values());
 
-        // Batch upsert all files at once (in chunks for large datasets)
-        const BATCH_SIZE = BATCH.SEMANTIC_BATCH_SIZE;
-        let rebuilt = 0;
-        for (let i = 0; i < filePayloads.length; i += BATCH_SIZE) {
-          const batch = filePayloads.slice(i, i + BATCH_SIZE);
+          // Batch upsert all files at once (in chunks for large datasets)
+          const BATCH_SIZE = BATCH.SEMANTIC_BATCH_SIZE;
+          let rebuilt = 0;
+          for (let i = 0; i < filePayloads.length; i += BATCH_SIZE) {
+            const batch = filePayloads.slice(i, i + BATCH_SIZE);
+            try {
+              const result = await vectorDbService.batchUpsertFiles(batch);
+              rebuilt += result?.count ?? result ?? 0;
+            } catch (e) {
+              logger.warn('[EMBEDDINGS] Failed to batch upsert files:', e.message);
+            }
+            // FIX: Yield between batches to prevent UI blocking
+            await new Promise((resolve) => setImmediate(resolve));
+          }
+
+          // Batch upsert chunk embeddings (in chunks to keep payloads bounded)
+          let chunkRebuilt = 0;
+          for (let i = 0; i < chunkPayloads.length; i += BATCH_SIZE) {
+            const batch = chunkPayloads.slice(i, i + BATCH_SIZE);
+            try {
+              const count = await vectorDbService.batchUpsertFileChunks(batch);
+              chunkRebuilt += count;
+            } catch (e) {
+              logger.warn('[EMBEDDINGS] Failed to batch upsert file chunks:', e.message);
+            }
+            // FIX: Yield between batches to prevent UI blocking
+            await new Promise((resolve) => setImmediate(resolve));
+          }
+
+          // Return detailed status
+          const allFailed = fileResults.success === 0 && allEntries.length > 0;
+
+          // Record which model/dimensions were used for the index (for UI mismatch warnings)
           try {
-            const result = await vectorDbService.batchUpsertFiles(batch);
-            rebuilt += result?.count ?? result ?? 0;
-          } catch (e) {
-            logger.warn('[EMBEDDINGS] Failed to batch upsert files:', e.message);
+            const probe = filePayloads[0];
+            const dims = Array.isArray(probe?.vector) ? probe.vector.length : null;
+            if (Number.isFinite(dims) && dims > 0) {
+              await writeEmbeddingIndexMetadata({
+                model: probe?.model || modelCheck.model,
+                dims,
+                source: 'rebuild-files'
+              });
+            }
+          } catch {
+            // Non-fatal
           }
-          // FIX: Yield between batches to prevent UI blocking
-          await new Promise((resolve) => setImmediate(resolve));
+
+          return {
+            success: !allFailed,
+            files: rebuilt,
+            fileChunks: chunkRebuilt,
+            total: allEntries.length,
+            totalUniqueFiles: uniqueHistoryFileIds.size,
+            uniquePrepared: filePayloads.length,
+            succeeded: fileResults.success,
+            failed: fileResults.failed,
+            errors: fileResults.errors.slice(0, 5), // Limit error details
+            chunkFailures: fileResults.chunkFailures,
+            chunkFailureSamples: fileResults.chunkFailureSamples.slice(0, 3),
+            folders: {
+              succeeded: folderResults.success,
+              failed: folderResults.failed
+            },
+            model: modelCheck.model,
+            message: allFailed
+              ? `All ${fileResults.failed} file embeddings failed. Check AI engine status.`
+              : fileResults.failed > 0
+                ? `${fileResults.success} files embedded, ${fileResults.failed} failed`
+                : `Successfully embedded ${fileResults.success} files`
+          };
+        } catch (e) {
+          logger.error('[EMBEDDINGS] Rebuild files failed:', e);
+          return {
+            success: false,
+            error: e.message,
+            errorCode: e.code || 'REBUILD_FAILED'
+          };
+        } finally {
+          // FIX P0-2: Always release lock when done
+          releaseRebuildLock();
         }
-
-        // Batch upsert chunk embeddings (in chunks to keep payloads bounded)
-        let chunkRebuilt = 0;
-        for (let i = 0; i < chunkPayloads.length; i += BATCH_SIZE) {
-          const batch = chunkPayloads.slice(i, i + BATCH_SIZE);
-          try {
-            const count = await vectorDbService.batchUpsertFileChunks(batch);
-            chunkRebuilt += count;
-          } catch (e) {
-            logger.warn('[EMBEDDINGS] Failed to batch upsert file chunks:', e.message);
-          }
-          // FIX: Yield between batches to prevent UI blocking
-          await new Promise((resolve) => setImmediate(resolve));
-        }
-
-        // Return detailed status
-        const allFailed = fileResults.success === 0 && allEntries.length > 0;
-
-        // Record which model/dimensions were used for the index (for UI mismatch warnings)
-        try {
-          const probe = filePayloads[0];
-          const dims = Array.isArray(probe?.vector) ? probe.vector.length : null;
-          if (Number.isFinite(dims) && dims > 0) {
-            await writeEmbeddingIndexMetadata({
-              model: probe?.model || modelCheck.model,
-              dims,
-              source: 'rebuild-files'
-            });
-          }
-        } catch {
-          // Non-fatal
-        }
-
-        return {
-          success: !allFailed,
-          files: rebuilt,
-          fileChunks: chunkRebuilt,
-          total: allEntries.length,
-          totalUniqueFiles: uniqueHistoryFileIds.size,
-          uniquePrepared: filePayloads.length,
-          succeeded: fileResults.success,
-          failed: fileResults.failed,
-          errors: fileResults.errors.slice(0, 5), // Limit error details
-          chunkFailures: fileResults.chunkFailures,
-          chunkFailureSamples: fileResults.chunkFailureSamples.slice(0, 3),
-          folders: {
-            succeeded: folderResults.success,
-            failed: folderResults.failed
-          },
-          model: modelCheck.model,
-          message: allFailed
-            ? `All ${fileResults.failed} file embeddings failed. Check AI engine status.`
-            : fileResults.failed > 0
-              ? `${fileResults.success} files embedded, ${fileResults.failed} failed`
-              : `Successfully embedded ${fileResults.success} files`
-        };
-      } catch (e) {
-        logger.error('[EMBEDDINGS] Rebuild files failed:', e);
-        return {
-          success: false,
-          error: e.message,
-          errorCode: e.code || 'REBUILD_FAILED'
-        };
-      } finally {
-        // FIX P0-2: Always release lock when done
-        releaseRebuildLock();
       }
     })
   );
@@ -1111,312 +1140,319 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.FULL_REBUILD,
-    createVectorHandler(async () => {
-      // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
-      const lockResult = acquireRebuildLock('FULL_REBUILD');
-      if (!lockResult.acquired) {
-        return {
-          success: false,
-          error: lockResult.reason,
-          errorCode: 'REBUILD_IN_PROGRESS'
+    createHandler({
+      logger,
+      context,
+      schema: schemaVoid,
+      handler: async () => {
+        const initErr = await safeEnsureInit();
+        if (initErr) return initErr;
+        // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
+        const lockResult = acquireRebuildLock('FULL_REBUILD');
+        if (!lockResult.acquired) {
+          return {
+            success: false,
+            error: lockResult.reason,
+            errorCode: 'REBUILD_IN_PROGRESS'
+          };
+        }
+
+        const results = {
+          folders: { success: 0, failed: 0 },
+          files: { success: 0, failed: 0 },
+          chunks: { success: 0, failed: 0 },
+          bm25: false,
+          model: null,
+          errors: []
         };
-      }
 
-      const results = {
-        folders: { success: 0, failed: 0 },
-        files: { success: 0, failed: 0 },
-        chunks: { success: 0, failed: 0 },
-        bm25: false,
-        model: null,
-        errors: []
-      };
-
-      try {
-        const embeddingService = getParallelEmbeddingService();
-        if (!embeddingService) {
-          return {
-            success: false,
-            error: 'ParallelEmbeddingService not available',
-            errorCode: 'EMBEDDING_SERVICE_UNAVAILABLE'
-          };
-        }
-
-        // Step 1: Verify embedding model is available
-        const modelCheck = await verifyEmbeddingModelAvailable(logger);
-        if (!modelCheck.available) {
-          return {
-            success: false,
-            error: modelCheck.error,
-            errorCode: 'MODEL_NOT_AVAILABLE',
-            model: modelCheck.model,
-            availableModels: modelCheck.availableModels
-          };
-        }
-        results.model = modelCheck.model;
-
-        logger.info('[EMBEDDINGS] Starting full rebuild with model:', modelCheck.model);
-
-        // Record which model/dimensions were used for the index (for UI mismatch warnings)
-        // Use a single probe embedding so we don't need to inspect downstream payloads.
         try {
-          const probe = await embeddingService.embedText('embedding index dimension probe');
-          const dims = Array.isArray(probe?.vector) ? probe.vector.length : null;
-          if (Number.isFinite(dims) && dims > 0) {
-            await writeEmbeddingIndexMetadata({
-              model: probe?.model || modelCheck.model,
-              dims,
-              source: 'full-rebuild'
-            });
+          const embeddingService = getParallelEmbeddingService();
+          if (!embeddingService) {
+            return {
+              success: false,
+              error: 'ParallelEmbeddingService not available',
+              errorCode: 'EMBEDDING_SERVICE_UNAVAILABLE'
+            };
           }
-        } catch {
-          // Non-fatal
-        }
 
-        // Step 2: Clear all vector DB collections
-        logger.info('[EMBEDDINGS] Clearing all vector DB collections...');
-        await vectorDbService.resetAll();
-
-        // Step 3: Rebuild folder embeddings
-        logger.info('[EMBEDDINGS] Rebuilding folder embeddings...');
-        const smartFolders = (
-          typeof getCustomFolders === 'function' ? getCustomFolders() : []
-        ).filter((f) => f && f.name);
-
-        if (smartFolders.length > 0) {
-          const folderPayloads = await Promise.all(
-            smartFolders.map(async (folder) => {
-              try {
-                const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
-                const { vector, model } = await folderMatcher.embedText(folderText);
-                const folderId = folder.id || folderMatcher.generateFolderId(folder);
-
-                results.folders.success++;
-                return {
-                  id: folderId,
-                  name: folder.name,
-                  description: folder.description || '',
-                  path: folder.path || '',
-                  vector,
-                  model,
-                  updatedAt: new Date().toISOString()
-                };
-              } catch (error) {
-                results.folders.failed++;
-                results.errors.push({ type: 'folder', name: folder.name, error: error.message });
-                return null;
-              }
-            })
-          );
-
-          const validFolderPayloads = folderPayloads.filter((p) => p !== null);
-          if (validFolderPayloads.length > 0) {
-            await vectorDbService.batchUpsertFolders(validFolderPayloads);
+          // Step 1: Verify embedding model is available
+          const modelCheck = await verifyEmbeddingModelAvailable(logger);
+          if (!modelCheck.available) {
+            return {
+              success: false,
+              error: modelCheck.error,
+              errorCode: 'MODEL_NOT_AVAILABLE',
+              model: modelCheck.model,
+              availableModels: modelCheck.availableModels
+            };
           }
-        }
+          results.model = modelCheck.model;
 
-        // Step 4: Rebuild file embeddings from analysis history
-        logger.info('[EMBEDDINGS] Rebuilding file embeddings...');
-        const serviceIntegration = getServiceIntegration && getServiceIntegration();
-        const historyService = serviceIntegration?.analysisHistory;
+          logger.info('[EMBEDDINGS] Starting full rebuild with model:', modelCheck.model);
 
-        if (historyService?.getRecentAnalysis) {
-          const allEntries = await historyService.getRecentAnalysis(Number.MAX_SAFE_INTEGER);
+          // Record which model/dimensions were used for the index (for UI mismatch warnings)
+          // Use a single probe embedding so we don't need to inspect downstream payloads.
+          try {
+            const probe = await embeddingService.embedText('embedding index dimension probe');
+            const dims = Array.isArray(probe?.vector) ? probe.vector.length : null;
+            if (Number.isFinite(dims) && dims > 0) {
+              await writeEmbeddingIndexMetadata({
+                model: probe?.model || modelCheck.model,
+                dims,
+                source: 'full-rebuild'
+              });
+            }
+          } catch {
+            // Non-fatal
+          }
 
-          if (Array.isArray(allEntries) && allEntries.length > 0) {
-            const filePayloads = [];
-            const chunkPayloads = [];
-            const processedFileIds = new Set();
+          // Step 2: Clear all vector DB collections
+          logger.info('[EMBEDDINGS] Clearing all vector DB collections...');
+          await vectorDbService.resetAll();
 
-            for (const entry of allEntries) {
-              try {
-                const analysis = entry.analysis || {};
-                const organization = entry.organization || {};
+          // Step 3: Rebuild folder embeddings
+          logger.info('[EMBEDDINGS] Rebuilding folder embeddings...');
+          const smartFolders = (
+            typeof getCustomFolders === 'function' ? getCustomFolders() : []
+          ).filter((f) => f && f.name);
 
-                // Use current path after organization if available
-                const filePath = organization.actual || entry.originalPath;
-                if (!filePath || typeof filePath !== 'string') {
-                  results.files.failed++;
-                  results.errors.push({
-                    type: 'file',
-                    file: entry.originalPath ? path.basename(entry.originalPath) : 'unknown',
-                    error: 'Invalid file path in analysis history'
-                  });
-                  continue;
-                }
-
+          if (smartFolders.length > 0) {
+            const folderPayloads = await Promise.all(
+              smartFolders.map(async (folder) => {
                 try {
-                  await fs.access(filePath);
-                } catch (accessError) {
-                  results.files.failed++;
-                  results.errors.push({
-                    type: 'file',
-                    file: path.basename(filePath),
-                    error:
-                      accessError.code === 'ENOENT'
-                        ? 'File no longer exists'
-                        : `File access error: ${accessError.message}`
-                  });
-                  continue;
+                  const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
+                  const { vector, model } = await folderMatcher.embedText(folderText);
+                  const folderId = folder.id || folderMatcher.generateFolderId(folder);
+
+                  results.folders.success++;
+                  return {
+                    id: folderId,
+                    name: folder.name,
+                    description: folder.description || '',
+                    path: folder.path || '',
+                    vector,
+                    model,
+                    updatedAt: new Date().toISOString()
+                  };
+                } catch (error) {
+                  results.folders.failed++;
+                  results.errors.push({ type: 'folder', name: folder.name, error: error.message });
+                  return null;
                 }
+              })
+            );
 
-                const displayName =
-                  organization.newName || entry.fileName || path.basename(filePath);
-                const ext = (path.extname(filePath) || '').toLowerCase();
-                const isImage = SUPPORTED_IMAGE_EXTENSIONS.includes(ext);
-                const fileId = getFileEmbeddingId(filePath, isImage ? 'image' : 'file');
+            const validFolderPayloads = folderPayloads.filter((p) => p !== null);
+            if (validFolderPayloads.length > 0) {
+              await vectorDbService.batchUpsertFolders(validFolderPayloads);
+            }
+          }
 
-                // Skip duplicate file IDs (history may contain multiple entries per file)
-                if (processedFileIds.has(fileId)) {
-                  continue;
-                }
-                processedFileIds.add(fileId);
+          // Step 4: Rebuild file embeddings from analysis history
+          logger.info('[EMBEDDINGS] Rebuilding file embeddings...');
+          const serviceIntegration = getServiceIntegration && getServiceIntegration();
+          const historyService = serviceIntegration?.analysisHistory;
 
-                // Build text representation for embedding
-                const textParts = [
-                  displayName,
-                  analysis.subject,
-                  analysis.summary,
-                  ...(analysis.tags || []),
-                  analysis.category
-                ].filter(Boolean);
+          if (historyService?.getRecentAnalysis) {
+            const allEntries = await historyService.getRecentAnalysis(Number.MAX_SAFE_INTEGER);
 
-                const embeddingText = textParts.join(' ').trim();
-                if (!embeddingText) continue;
+            if (Array.isArray(allEntries) && allEntries.length > 0) {
+              const filePayloads = [];
+              const chunkPayloads = [];
+              const processedFileIds = new Set();
 
-                const { vector, model } = await embeddingService.embedText(embeddingText);
-                if (!Array.isArray(vector) || vector.length === 0) continue;
+              for (const entry of allEntries) {
+                try {
+                  const analysis = entry.analysis || {};
+                  const organization = entry.organization || {};
 
-                results.files.success++;
-                filePayloads.push({
-                  id: fileId,
-                  vector,
-                  model,
-                  meta: {
-                    path: filePath,
-                    fileName: displayName,
-                    suggestedName: organization.newName || '',
-                    fileType: isImage ? 'image' : 'document',
-                    category: analysis.category || '',
-                    subject: analysis.subject || '',
-                    tags: Array.isArray(analysis.tags) ? analysis.tags : []
-                  },
-                  document: embeddingText.slice(0, 500),
-                  updatedAt: new Date().toISOString()
-                });
+                  // Use current path after organization if available
+                  const filePath = organization.actual || entry.originalPath;
+                  if (!filePath || typeof filePath !== 'string') {
+                    results.files.failed++;
+                    results.errors.push({
+                      type: 'file',
+                      file: entry.originalPath ? path.basename(entry.originalPath) : 'unknown',
+                      error: 'Invalid file path in analysis history'
+                    });
+                    continue;
+                  }
 
-                // Also process chunks from extracted text
-                const extractedText = analysis.extractedText || '';
-                if (extractedText.length >= CHUNKING.MIN_TEXT_LENGTH) {
-                  const chunks = chunkText(extractedText, {
-                    chunkSize: CHUNKING.CHUNK_SIZE,
-                    overlap: CHUNKING.OVERLAP,
-                    maxChunks: CHUNKING.MAX_CHUNKS
+                  try {
+                    await fs.access(filePath);
+                  } catch (accessError) {
+                    results.files.failed++;
+                    results.errors.push({
+                      type: 'file',
+                      file: path.basename(filePath),
+                      error:
+                        accessError.code === 'ENOENT'
+                          ? 'File no longer exists'
+                          : `File access error: ${accessError.message}`
+                    });
+                    continue;
+                  }
+
+                  const displayName =
+                    organization.newName || entry.fileName || path.basename(filePath);
+                  const ext = (path.extname(filePath) || '').toLowerCase();
+                  const isImage = SUPPORTED_IMAGE_EXTENSIONS.includes(ext);
+                  const fileId = getFileEmbeddingId(filePath, isImage ? 'image' : 'file');
+
+                  // Skip duplicate file IDs (history may contain multiple entries per file)
+                  if (processedFileIds.has(fileId)) {
+                    continue;
+                  }
+                  processedFileIds.add(fileId);
+
+                  // Build text representation for embedding
+                  const textParts = [
+                    displayName,
+                    analysis.subject,
+                    analysis.summary,
+                    ...(analysis.tags || []),
+                    analysis.category
+                  ].filter(Boolean);
+
+                  const embeddingText = textParts.join(' ').trim();
+                  if (!embeddingText) continue;
+
+                  const { vector, model } = await embeddingService.embedText(embeddingText);
+                  if (!Array.isArray(vector) || vector.length === 0) continue;
+
+                  results.files.success++;
+                  filePayloads.push({
+                    id: fileId,
+                    vector,
+                    model,
+                    meta: {
+                      path: filePath,
+                      fileName: displayName,
+                      suggestedName: organization.newName || '',
+                      fileType: isImage ? 'image' : 'document',
+                      category: analysis.category || '',
+                      subject: analysis.subject || '',
+                      tags: Array.isArray(analysis.tags) ? analysis.tags : []
+                    },
+                    document: embeddingText.slice(0, 500),
+                    updatedAt: new Date().toISOString()
                   });
 
-                  for (const chunk of chunks) {
-                    try {
-                      const { vector: chunkVector, model: chunkModel } =
-                        await embeddingService.embedText(chunk.text);
-                      if (!Array.isArray(chunkVector) || chunkVector.length === 0) continue;
+                  // Also process chunks from extracted text
+                  const extractedText = analysis.extractedText || '';
+                  if (extractedText.length >= CHUNKING.MIN_TEXT_LENGTH) {
+                    const chunks = chunkText(extractedText, {
+                      chunkSize: CHUNKING.CHUNK_SIZE,
+                      overlap: CHUNKING.OVERLAP,
+                      maxChunks: CHUNKING.MAX_CHUNKS
+                    });
 
-                      results.chunks.success++;
-                      const snippet = chunk.text.slice(0, 240);
-                      chunkPayloads.push({
-                        id: `chunk:${fileId}:${chunk.index}`,
-                        vector: chunkVector,
-                        model: chunkModel,
-                        meta: {
-                          fileId,
-                          path: filePath,
-                          name: displayName,
-                          chunkIndex: chunk.index,
-                          charStart: chunk.charStart,
-                          charEnd: chunk.charEnd,
-                          snippet,
-                          // FIX P0-3: Store embedding model version for mismatch detection
-                          model: chunkModel || 'unknown'
-                        },
-                        document: snippet,
-                        updatedAt: new Date().toISOString()
-                      });
-                    } catch {
-                      results.chunks.failed++;
+                    for (const chunk of chunks) {
+                      try {
+                        const { vector: chunkVector, model: chunkModel } =
+                          await embeddingService.embedText(chunk.text);
+                        if (!Array.isArray(chunkVector) || chunkVector.length === 0) continue;
+
+                        results.chunks.success++;
+                        const snippet = chunk.text.slice(0, 240);
+                        chunkPayloads.push({
+                          id: `chunk:${fileId}:${chunk.index}`,
+                          vector: chunkVector,
+                          model: chunkModel,
+                          meta: {
+                            fileId,
+                            path: filePath,
+                            name: displayName,
+                            chunkIndex: chunk.index,
+                            charStart: chunk.charStart,
+                            charEnd: chunk.charEnd,
+                            snippet,
+                            // FIX P0-3: Store embedding model version for mismatch detection
+                            model: chunkModel || 'unknown'
+                          },
+                          document: snippet,
+                          updatedAt: new Date().toISOString()
+                        });
+                      } catch {
+                        results.chunks.failed++;
+                      }
                     }
                   }
+                } catch (e) {
+                  results.files.failed++;
+                  results.errors.push({
+                    type: 'file',
+                    name: entry.fileName || 'unknown',
+                    error: e.message
+                  });
                 }
-              } catch (e) {
-                results.files.failed++;
-                results.errors.push({
-                  type: 'file',
-                  name: entry.fileName || 'unknown',
-                  error: e.message
-                });
               }
-            }
 
-            // Batch upsert files
-            const BATCH_SIZE = BATCH.SEMANTIC_BATCH_SIZE;
-            for (let i = 0; i < filePayloads.length; i += BATCH_SIZE) {
-              const batch = filePayloads.slice(i, i + BATCH_SIZE);
-              try {
-                await vectorDbService.batchUpsertFiles(batch);
-              } catch (e) {
-                logger.warn('[EMBEDDINGS] Failed to batch upsert files:', e.message);
+              // Batch upsert files
+              const BATCH_SIZE = BATCH.SEMANTIC_BATCH_SIZE;
+              for (let i = 0; i < filePayloads.length; i += BATCH_SIZE) {
+                const batch = filePayloads.slice(i, i + BATCH_SIZE);
+                try {
+                  await vectorDbService.batchUpsertFiles(batch);
+                } catch (e) {
+                  logger.warn('[EMBEDDINGS] Failed to batch upsert files:', e.message);
+                }
               }
-            }
 
-            // Batch upsert chunks
-            for (let i = 0; i < chunkPayloads.length; i += BATCH_SIZE) {
-              const batch = chunkPayloads.slice(i, i + BATCH_SIZE);
-              try {
-                await vectorDbService.batchUpsertFileChunks(batch);
-              } catch (e) {
-                logger.warn('[EMBEDDINGS] Failed to batch upsert chunks:', e.message);
+              // Batch upsert chunks
+              for (let i = 0; i < chunkPayloads.length; i += BATCH_SIZE) {
+                const batch = chunkPayloads.slice(i, i + BATCH_SIZE);
+                try {
+                  await vectorDbService.batchUpsertFileChunks(batch);
+                } catch (e) {
+                  logger.warn('[EMBEDDINGS] Failed to batch upsert chunks:', e.message);
+                }
               }
             }
           }
-        }
 
-        // Step 5: Rebuild BM25 index
-        logger.info('[EMBEDDINGS] Rebuilding BM25 search index...');
-        try {
-          const searchService = await getSearchService();
-          if (searchService) {
-            await searchService.buildBM25Index();
-            results.bm25 = true;
+          // Step 5: Rebuild BM25 index
+          logger.info('[EMBEDDINGS] Rebuilding BM25 search index...');
+          try {
+            const searchService = await getSearchService();
+            if (searchService) {
+              await searchService.buildBM25Index();
+              results.bm25 = true;
+            }
+          } catch (e) {
+            results.errors.push({ type: 'bm25', error: e.message });
           }
+
+          logger.info('[EMBEDDINGS] Full rebuild complete', {
+            folders: results.folders,
+            files: results.files,
+            chunks: results.chunks,
+            bm25: results.bm25
+          });
+
+          return {
+            success: true,
+            folders: results.folders.success,
+            files: results.files.success,
+            chunks: results.chunks.success,
+            bm25Rebuilt: results.bm25,
+            model: results.model,
+            errors: results.errors.slice(0, 5),
+            message: `Full rebuild complete: ${results.folders.success} folders, ${results.files.success} files, ${results.chunks.success} chunks`
+          };
         } catch (e) {
-          results.errors.push({ type: 'bm25', error: e.message });
+          logger.error('[EMBEDDINGS] Full rebuild failed:', e);
+          return {
+            success: false,
+            error: e.message,
+            errorCode: 'FULL_REBUILD_FAILED',
+            partialResults: results
+          };
+        } finally {
+          // FIX P0-2: Always release lock when done
+          releaseRebuildLock();
         }
-
-        logger.info('[EMBEDDINGS] Full rebuild complete', {
-          folders: results.folders,
-          files: results.files,
-          chunks: results.chunks,
-          bm25: results.bm25
-        });
-
-        return {
-          success: true,
-          folders: results.folders.success,
-          files: results.files.success,
-          chunks: results.chunks.success,
-          bm25Rebuilt: results.bm25,
-          model: results.model,
-          errors: results.errors.slice(0, 5),
-          message: `Full rebuild complete: ${results.folders.success} folders, ${results.files.success} files, ${results.chunks.success} chunks`
-        };
-      } catch (e) {
-        logger.error('[EMBEDDINGS] Full rebuild failed:', e);
-        return {
-          success: false,
-          error: e.message,
-          errorCode: 'FULL_REBUILD_FAILED',
-          partialResults: results
-        };
-      } finally {
-        // FIX P0-2: Always release lock when done
-        releaseRebuildLock();
       }
     })
   );
@@ -1429,108 +1465,113 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.REANALYZE_ALL,
-    withErrorLogging(logger, async (_event, options = {}) => {
-      // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
-      const lockResult = acquireRebuildLock('REANALYZE_ALL');
-      if (!lockResult.acquired) {
-        return {
-          success: false,
-          error: lockResult.reason,
-          errorCode: 'REBUILD_IN_PROGRESS'
-        };
-      }
-
-      try {
-        logger.info('[EMBEDDINGS] Starting reanalyze all files operation...', {
-          applyNaming: options.applyNaming
-        });
-
-        // Step 1: Verify text, vision, and embedding models are available
-        const modelCheck = await verifyReanalyzeModelsAvailable(logger);
-        if (!modelCheck.available) {
+    createHandler({
+      logger,
+      context,
+      schema: schemaObjectOptional,
+      handler: async (_event, options = {}) => {
+        // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
+        const lockResult = acquireRebuildLock('REANALYZE_ALL');
+        if (!lockResult.acquired) {
           return {
             success: false,
-            error: `MODEL_NOT_AVAILABLE: ${modelCheck.error}`,
-            errorCode: 'MODEL_NOT_AVAILABLE',
-            model: modelCheck.model,
-            modelType: modelCheck.modelType
+            error: lockResult.reason,
+            errorCode: 'REBUILD_IN_PROGRESS'
           };
         }
 
-        // Step 2: Get the smart folder watcher
-        const serviceIntegration =
-          typeof getServiceIntegration === 'function' ? getServiceIntegration() : null;
-        const smartFolderWatcher = serviceIntegration?.smartFolderWatcher;
+        try {
+          logger.info('[EMBEDDINGS] Starting reanalyze all files operation...', {
+            applyNaming: options.applyNaming
+          });
 
-        if (!smartFolderWatcher) {
-          return {
-            success: false,
-            error: 'Smart folder watcher not available. Configure smart folders first.',
-            errorCode: 'WATCHER_NOT_AVAILABLE'
-          };
-        }
-
-        // Step 3: Start the watcher if not running
-        if (!smartFolderWatcher.isRunning) {
-          logger.info('[EMBEDDINGS] Starting smart folder watcher...');
-          const started = await smartFolderWatcher.start();
-          if (!started) {
+          // Step 1: Verify text, vision, and embedding models are available
+          const modelCheck = await verifyReanalyzeModelsAvailable(logger);
+          if (!modelCheck.available) {
             return {
               success: false,
-              error: 'Failed to start smart folder watcher. Check smart folder configuration.',
-              errorCode: 'WATCHER_START_FAILED'
+              error: `MODEL_NOT_AVAILABLE: ${modelCheck.error}`,
+              errorCode: 'MODEL_NOT_AVAILABLE',
+              model: modelCheck.model,
+              modelType: modelCheck.modelType
             };
           }
-        }
 
-        // Step 4: Optional dry run (no clears/queues)
-        if (options.dryRun === true) {
-          const preview = await smartFolderWatcher.previewReanalyzeAll();
+          // Step 2: Get the smart folder watcher
+          const serviceIntegration =
+            typeof getServiceIntegration === 'function' ? getServiceIntegration() : null;
+          const smartFolderWatcher = serviceIntegration?.smartFolderWatcher;
+
+          if (!smartFolderWatcher) {
+            return {
+              success: false,
+              error: 'Smart folder watcher not available. Configure smart folders first.',
+              errorCode: 'WATCHER_NOT_AVAILABLE'
+            };
+          }
+
+          // Step 3: Start the watcher if not running
+          if (!smartFolderWatcher.isRunning) {
+            logger.info('[EMBEDDINGS] Starting smart folder watcher...');
+            const started = await smartFolderWatcher.start();
+            if (!started) {
+              return {
+                success: false,
+                error: 'Failed to start smart folder watcher. Check smart folder configuration.',
+                errorCode: 'WATCHER_START_FAILED'
+              };
+            }
+          }
+
+          // Step 4: Optional dry run (no clears/queues)
+          if (options.dryRun === true) {
+            const preview = await smartFolderWatcher.previewReanalyzeAll();
+            return {
+              success: true,
+              dryRun: true,
+              scanned: preview.scanned,
+              watchedFolders: preview.watchedFolders,
+              message: `Dry run complete: ${preview.scanned} files would be queued for reanalysis.`
+            };
+          }
+
+          // Step 5: Clear existing analysis history (optional - files will be re-analyzed anyway)
+          const historyService = serviceIntegration?.analysisHistory;
+          if (historyService?.clear) {
+            logger.info('[EMBEDDINGS] Clearing analysis history...');
+            await historyService.clear();
+          }
+
+          // Step 6: Clear all embeddings
+          logger.info('[EMBEDDINGS] Clearing all embeddings...');
+          await vectorDbService.resetAll();
+
+          // Step 7: Queue all files for reanalysis with naming option
+          logger.info('[EMBEDDINGS] Queueing all files for reanalysis...');
+          const result = await smartFolderWatcher.forceReanalyzeAll({
+            applyNaming: options.applyNaming === true // Default to false if not specified
+          });
+
+          logger.info('[EMBEDDINGS] Reanalyze all queued:', result);
+
           return {
             success: true,
-            dryRun: true,
-            scanned: preview.scanned,
-            watchedFolders: preview.watchedFolders,
-            message: `Dry run complete: ${preview.scanned} files would be queued for reanalysis.`
+            scanned: result.scanned,
+            queued: result.queued,
+            model: modelCheck.embeddingModel,
+            message: `Queued ${result.queued} files for reanalysis. Analysis will run in the background and embeddings will be rebuilt automatically.`
           };
+        } catch (e) {
+          logger.error('[EMBEDDINGS] Reanalyze all failed:', e);
+          return {
+            success: false,
+            error: e.message,
+            errorCode: 'REANALYZE_ALL_FAILED'
+          };
+        } finally {
+          // FIX P0-2: Always release lock when done
+          releaseRebuildLock();
         }
-
-        // Step 5: Clear existing analysis history (optional - files will be re-analyzed anyway)
-        const historyService = serviceIntegration?.analysisHistory;
-        if (historyService?.clear) {
-          logger.info('[EMBEDDINGS] Clearing analysis history...');
-          await historyService.clear();
-        }
-
-        // Step 6: Clear all embeddings
-        logger.info('[EMBEDDINGS] Clearing all embeddings...');
-        await vectorDbService.resetAll();
-
-        // Step 7: Queue all files for reanalysis with naming option
-        logger.info('[EMBEDDINGS] Queueing all files for reanalysis...');
-        const result = await smartFolderWatcher.forceReanalyzeAll({
-          applyNaming: options.applyNaming === true // Default to false if not specified
-        });
-
-        logger.info('[EMBEDDINGS] Reanalyze all queued:', result);
-
-        return {
-          success: true,
-          scanned: result.scanned,
-          queued: result.queued,
-          model: modelCheck.embeddingModel,
-          message: `Queued ${result.queued} files for reanalysis. Analysis will run in the background and embeddings will be rebuilt automatically.`
-        };
-      } catch (e) {
-        logger.error('[EMBEDDINGS] Reanalyze all failed:', e);
-        return {
-          success: false,
-          error: e.message,
-          errorCode: 'REANALYZE_ALL_FAILED'
-        };
-      } finally {
-        // FIX P0-2: Always release lock when done
-        releaseRebuildLock();
       }
     })
   );
@@ -1541,78 +1582,90 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.REANALYZE_FILE,
-    withErrorLogging(logger, async (_event, payload = {}) => {
-      const filePath = typeof payload === 'string' ? payload : payload?.filePath;
-      const applyNaming = payload?.applyNaming;
+    createHandler({
+      logger,
+      context,
+      schema: schemaStringOrObject,
+      handler: async (_event, payload = {}) => {
+        const filePath = typeof payload === 'string' ? payload : payload?.filePath;
+        const applyNaming = payload?.applyNaming;
 
-      if (!filePath) {
-        return {
-          success: false,
-          error: 'filePath is required',
-          errorCode: 'MISSING_FILE_PATH'
-        };
-      }
-
-      const validation = await validateFileOperationPath(filePath, { checkSymlinks: true });
-      if (!validation.valid) {
-        return {
-          success: false,
-          error: validation.error,
-          errorCode: 'INVALID_PATH'
-        };
-      }
-
-      const serviceIntegration =
-        typeof getServiceIntegration === 'function' ? getServiceIntegration() : null;
-      const smartFolderWatcher = serviceIntegration?.smartFolderWatcher;
-      if (!smartFolderWatcher) {
-        return {
-          success: false,
-          error: 'Smart folder watcher not available. Configure smart folders first.',
-          errorCode: 'WATCHER_NOT_AVAILABLE'
-        };
-      }
-
-      if (!smartFolderWatcher.isRunning) {
-        const started = await smartFolderWatcher.start();
-        if (!started) {
+        if (!filePath) {
           return {
             success: false,
-            error: 'Failed to start smart folder watcher. Check smart folder configuration.',
-            errorCode: 'WATCHER_START_FAILED'
+            error: 'filePath is required',
+            errorCode: 'MISSING_FILE_PATH'
           };
         }
-      }
 
-      const result = await smartFolderWatcher.reanalyzeFile(validation.normalizedPath, {
-        applyNaming
-      });
-      if (!result?.queued) {
+        const validation = await validateFileOperationPath(filePath, { checkSymlinks: true });
+        if (!validation.valid) {
+          return {
+            success: false,
+            error: validation.error,
+            errorCode: 'INVALID_PATH'
+          };
+        }
+
+        const serviceIntegration =
+          typeof getServiceIntegration === 'function' ? getServiceIntegration() : null;
+        const smartFolderWatcher = serviceIntegration?.smartFolderWatcher;
+        if (!smartFolderWatcher) {
+          return {
+            success: false,
+            error: 'Smart folder watcher not available. Configure smart folders first.',
+            errorCode: 'WATCHER_NOT_AVAILABLE'
+          };
+        }
+
+        if (!smartFolderWatcher.isRunning) {
+          const started = await smartFolderWatcher.start();
+          if (!started) {
+            return {
+              success: false,
+              error: 'Failed to start smart folder watcher. Check smart folder configuration.',
+              errorCode: 'WATCHER_START_FAILED'
+            };
+          }
+        }
+
+        const result = await smartFolderWatcher.reanalyzeFile(validation.normalizedPath, {
+          applyNaming
+        });
+        if (!result?.queued) {
+          return {
+            success: false,
+            error: result?.error || 'File not eligible for reanalysis',
+            errorCode: result?.errorCode || 'REANALYZE_FILE_SKIPPED'
+          };
+        }
+
         return {
-          success: false,
-          error: result?.error || 'File not eligible for reanalysis',
-          errorCode: result?.errorCode || 'REANALYZE_FILE_SKIPPED'
+          success: true,
+          queued: true,
+          filePath: validation.normalizedPath,
+          message: `Queued ${path.basename(validation.normalizedPath)} for reanalysis.`
         };
       }
-
-      return {
-        success: true,
-        queued: true,
-        filePath: validation.normalizedPath,
-        message: `Queued ${path.basename(validation.normalizedPath)} for reanalysis.`
-      };
     })
   );
 
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.CLEAR_STORE,
-    createVectorHandler(async () => {
-      try {
-        await vectorDbService.resetAll();
-        return { success: true };
-      } catch (e) {
-        return { success: false, error: e.message };
+    createHandler({
+      logger,
+      context,
+      schema: schemaVoid,
+      handler: async () => {
+        const initErr = await safeEnsureInit();
+        if (initErr) return initErr;
+        try {
+          await vectorDbService.resetAll();
+          return { success: true };
+        } catch (e) {
+          return { success: false, error: e.message };
+        }
       }
     })
   );
@@ -1621,61 +1674,68 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.GET_STATS,
-    createVectorHandler(async () => {
-      try {
-        const stats = await vectorDbService.getStats();
-
-        // Provide lightweight context so the UI can explain *why* embeddings are empty.
-        // This avoids confusing "rebuild embeddings" prompts when users already have analysis history.
-        let analysisHistory = null;
+    createHandler({
+      logger,
+      context,
+      schema: schemaVoid,
+      handler: async () => {
+        const initErr = await safeEnsureInit();
+        if (initErr) return initErr;
         try {
-          const serviceIntegration =
-            typeof getServiceIntegration === 'function' ? getServiceIntegration() : null;
-          const historyService = serviceIntegration?.analysisHistory;
-          if (historyService?.getQuickStats) {
-            analysisHistory = await historyService.getQuickStats();
-          } else if (historyService?.getStatistics) {
-            // Fallback (cached) stats if quick stats not available.
-            const full = await historyService.getStatistics();
-            analysisHistory = {
-              totalFiles: typeof full?.totalFiles === 'number' ? full.totalFiles : 0
-            };
+          const stats = await vectorDbService.getStats();
+
+          // Provide lightweight context so the UI can explain *why* embeddings are empty.
+          // This avoids confusing "rebuild embeddings" prompts when users already have analysis history.
+          let analysisHistory = null;
+          try {
+            const serviceIntegration =
+              typeof getServiceIntegration === 'function' ? getServiceIntegration() : null;
+            const historyService = serviceIntegration?.analysisHistory;
+            if (historyService?.getQuickStats) {
+              analysisHistory = await historyService.getQuickStats();
+            } else if (historyService?.getStatistics) {
+              // Fallback (cached) stats if quick stats not available.
+              const full = await historyService.getStatistics();
+              analysisHistory = {
+                totalFiles: typeof full?.totalFiles === 'number' ? full.totalFiles : 0
+              };
+            }
+          } catch {
+            // Non-fatal: stats still useful without history context
+            analysisHistory = null;
           }
-        } catch {
-          // Non-fatal: stats still useful without history context
-          analysisHistory = null;
+
+          const historyTotal =
+            typeof analysisHistory?.totalFiles === 'number' ? analysisHistory.totalFiles : 0;
+          const needsFileEmbeddingRebuild =
+            typeof stats?.files === 'number' && stats.files === 0 && historyTotal > 0;
+
+          let embeddingIndex = null;
+          try {
+            embeddingIndex = await readEmbeddingIndexMetadata();
+          } catch {
+            embeddingIndex = null;
+          }
+
+          const cfg = await getLlamaService().getConfig();
+          const activeEmbeddingModel = cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
+          const embeddingModelMismatch =
+            Boolean(embeddingIndex?.model) &&
+            typeof embeddingIndex?.model === 'string' &&
+            embeddingIndex.model !== activeEmbeddingModel;
+
+          return {
+            success: true,
+            ...stats,
+            analysisHistory,
+            needsFileEmbeddingRebuild,
+            embeddingIndex,
+            activeEmbeddingModel,
+            embeddingModelMismatch
+          };
+        } catch (e) {
+          return { success: false, error: e.message };
         }
-
-        const historyTotal =
-          typeof analysisHistory?.totalFiles === 'number' ? analysisHistory.totalFiles : 0;
-        const needsFileEmbeddingRebuild =
-          typeof stats?.files === 'number' && stats.files === 0 && historyTotal > 0;
-
-        let embeddingIndex = null;
-        try {
-          embeddingIndex = await readEmbeddingIndexMetadata();
-        } catch {
-          embeddingIndex = null;
-        }
-
-        const cfg = await getLlamaService().getConfig();
-        const activeEmbeddingModel = cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
-        const embeddingModelMismatch =
-          Boolean(embeddingIndex?.model) &&
-          typeof embeddingIndex?.model === 'string' &&
-          embeddingIndex.model !== activeEmbeddingModel;
-
-        return {
-          success: true,
-          ...stats,
-          analysisHistory,
-          needsFileEmbeddingRebuild,
-          embeddingIndex,
-          activeEmbeddingModel,
-          embeddingModelMismatch
-        };
-      } catch (e) {
-        return { success: false, error: e.message };
       }
     })
   );
@@ -1685,32 +1745,39 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.DIAGNOSE_SEARCH,
-    createVectorHandler(async (event, { testQuery = 'test' } = {}) => {
-      try {
-        const searchSvc = await getSearchService();
+    createHandler({
+      logger,
+      context,
+      schema: schemaObjectOptional,
+      handler: async (event, { testQuery = 'test' } = {}) => {
+        const initErr = await safeEnsureInit();
+        if (initErr) return initErr;
+        try {
+          const searchSvc = await getSearchService();
 
-        if (!searchSvc || !searchSvc.diagnoseSearchIssues) {
+          if (!searchSvc || !searchSvc.diagnoseSearchIssues) {
+            return {
+              success: false,
+              error: 'SearchService not available or missing diagnoseSearchIssues method'
+            };
+          }
+
+          const diagnostics = await searchSvc.diagnoseSearchIssues(testQuery);
+
+          return {
+            success: true,
+            diagnostics
+          };
+        } catch (e) {
+          logger.error('[EMBEDDINGS] Diagnose search failed:', {
+            error: e.message,
+            stack: e.stack
+          });
           return {
             success: false,
-            error: 'SearchService not available or missing diagnoseSearchIssues method'
+            error: e.message
           };
         }
-
-        const diagnostics = await searchSvc.diagnoseSearchIssues(testQuery);
-
-        return {
-          success: true,
-          diagnostics
-        };
-      } catch (e) {
-        logger.error('[EMBEDDINGS] Diagnose search failed:', {
-          error: e.message,
-          stack: e.stack
-        });
-        return {
-          success: false,
-          error: e.message
-        };
       }
     })
   );
@@ -1719,56 +1786,66 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.FIND_SIMILAR,
-    createVectorHandler(async (event, { fileId, topK = SEARCH.DEFAULT_TOP_K_SIMILAR }) => {
-      // HIGH PRIORITY FIX: Add timeout and validation (addresses HIGH-11)
-      const QUERY_TIMEOUT = TIMEOUTS.SEMANTIC_QUERY;
-      const { MAX_TOP_K } = LIMITS;
+    createHandler({
+      logger,
+      context,
+      schema: schemaObject,
+      handler: async (event, { fileId, topK = SEARCH.DEFAULT_TOP_K_SIMILAR }) => {
+        const initErr = await safeEnsureInit();
+        if (initErr) return initErr;
+        // HIGH PRIORITY FIX: Add timeout and validation (addresses HIGH-11)
+        const QUERY_TIMEOUT = TIMEOUTS.SEMANTIC_QUERY;
+        const { MAX_TOP_K } = LIMITS;
 
-      try {
-        if (!fileId) {
-          return { success: false, error: 'File ID is required' };
-        }
+        try {
+          if (!fileId) {
+            return { success: false, error: 'File ID is required' };
+          }
 
-        // Validate topK parameter
-        if (!Number.isInteger(topK) || topK < 1 || topK > MAX_TOP_K) {
+          // Validate topK parameter
+          if (!Number.isInteger(topK) || topK < 1 || topK > MAX_TOP_K) {
+            return {
+              success: false,
+              error: `topK must be between 1 and ${MAX_TOP_K}`
+            };
+          }
+
+          // Create timeout promise
+          // FIX: Store timeout ID to clear it after race resolves
+          let timeoutId;
+          const timeoutPromise = new Promise((_, reject) => {
+            timeoutId = setTimeout(
+              () => reject(new Error('Query timeout exceeded')),
+              QUERY_TIMEOUT
+            );
+          });
+
+          // Race query against timeout
+          let similarFiles;
+          try {
+            similarFiles = await Promise.race([
+              folderMatcher.findSimilarFiles(fileId, topK),
+              timeoutPromise
+            ]);
+          } finally {
+            // FIX: Always clear timeout to prevent memory leak
+            if (timeoutId) clearTimeout(timeoutId);
+          }
+
+          return { success: true, results: similarFiles };
+        } catch (e) {
+          logger.error('[EMBEDDINGS] Find similar failed:', {
+            fileId,
+            topK,
+            error: e.message,
+            timeout: e.message.includes('timeout')
+          });
           return {
             success: false,
-            error: `topK must be between 1 and ${MAX_TOP_K}`
+            error: e.message,
+            timeout: e.message.includes('timeout')
           };
         }
-
-        // Create timeout promise
-        // FIX: Store timeout ID to clear it after race resolves
-        let timeoutId;
-        const timeoutPromise = new Promise((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error('Query timeout exceeded')), QUERY_TIMEOUT);
-        });
-
-        // Race query against timeout
-        let similarFiles;
-        try {
-          similarFiles = await Promise.race([
-            folderMatcher.findSimilarFiles(fileId, topK),
-            timeoutPromise
-          ]);
-        } finally {
-          // FIX: Always clear timeout to prevent memory leak
-          if (timeoutId) clearTimeout(timeoutId);
-        }
-
-        return { success: true, results: similarFiles };
-      } catch (e) {
-        logger.error('[EMBEDDINGS] Find similar failed:', {
-          fileId,
-          topK,
-          error: e.message,
-          timeout: e.message.includes('timeout')
-        });
-        return {
-          success: false,
-          error: e.message,
-          timeout: e.message.includes('timeout')
-        };
       }
     })
   );
@@ -1779,8 +1856,11 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.SEARCH,
-    createVectorHandler(
-      async (
+    createHandler({
+      logger,
+      context,
+      schema: schemaObjectOptional,
+      handler: async (
         event,
         {
           query,
@@ -1804,6 +1884,8 @@ function registerEmbeddingsIpc(servicesOrParams) {
           chunkContextMaxNeighbors
         } = {}
       ) => {
+        const initErr = await safeEnsureInit();
+        if (initErr) return initErr;
         const { MAX_TOP_K } = LIMITS;
 
         let cleanQuery;
@@ -2026,122 +2108,132 @@ function registerEmbeddingsIpc(servicesOrParams) {
           };
         }
       }
-    )
+    })
   );
 
   // Score a subset of file IDs against a query (for "search within graph")
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.SCORE_FILES,
-    createVectorHandler(async (event, { query, fileIds } = {}) => {
-      const QUERY_TIMEOUT = TIMEOUTS.SEMANTIC_QUERY;
-
-      try {
-        const cleanQuery = normalizeText(query, { maxLength: 2000 });
-        if (!cleanQuery) {
-          return { success: false, error: 'Query is required' };
-        }
-        if (cleanQuery.length < 2 || cleanQuery.length > 2000) {
-          return { success: false, error: 'Query length must be between 2 and 2000 characters' };
-        }
-
-        if (!Array.isArray(fileIds) || fileIds.length === 0) {
-          return { success: false, error: 'fileIds must be a non-empty array' };
-        }
-
-        // Keep scoring fast and payloads bounded (renderer typically stays < 1000 nodes)
-        const MAX_IDS = 1000;
-        if (fileIds.length > MAX_IDS) {
-          return { success: false, error: `fileIds must contain at most ${MAX_IDS} ids` };
-        }
-
-        const normalizedIds = [];
-        const seenIds = new Set();
-        for (const id of fileIds) {
-          if (typeof id !== 'string' || id.length === 0 || id.length >= 2048) continue;
-          if (seenIds.has(id)) continue;
-          seenIds.add(id);
-          normalizedIds.push(id);
-          if (normalizedIds.length >= MAX_IDS) break;
-        }
-
-        if (normalizedIds.length === 0) {
-          return { success: false, error: 'No valid fileIds provided' };
-        }
-
-        // Create timeout promise
-        let timeoutId;
-        const timeoutPromise = new Promise((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error('Query timeout exceeded')), QUERY_TIMEOUT);
-        });
+    createHandler({
+      logger,
+      context,
+      schema: schemaObjectOptional,
+      handler: async (event, { query, fileIds } = {}) => {
+        const initErr = await safeEnsureInit();
+        if (initErr) return initErr;
+        const QUERY_TIMEOUT = TIMEOUTS.SEMANTIC_QUERY;
 
         try {
-          const scored = await Promise.race([
-            (async () => {
-              const embeddingService = getParallelEmbeddingService();
-              const { vector: rawQueryVector } = await embeddingService.embedText(cleanQuery);
-              if (!Array.isArray(rawQueryVector) || rawQueryVector.length === 0) {
-                return [];
-              }
+          const cleanQuery = normalizeText(query, { maxLength: 2000 });
+          if (!cleanQuery) {
+            return { success: false, error: 'Query is required' };
+          }
+          if (cleanQuery.length < 2 || cleanQuery.length > 2000) {
+            return { success: false, error: 'Query length must be between 2 and 2000 characters' };
+          }
 
-              await vectorDbService.initialize();
-              const expectedDim =
-                typeof vectorDbService.getCollectionDimension === 'function'
-                  ? await vectorDbService.getCollectionDimension('files')
-                  : null;
-              const queryVector = padOrTruncateVector(rawQueryVector, expectedDim);
-              if (!Array.isArray(queryVector) || queryVector.length === 0) {
-                return [];
-              }
+          if (!Array.isArray(fileIds) || fileIds.length === 0) {
+            return { success: false, error: 'fileIds must be a non-empty array' };
+          }
 
-              // Batch-fetch file embeddings via OramaVectorService.getFile()
-              const fileEntries = await Promise.all(
-                normalizedIds.map(async (id) => {
-                  try {
-                    const doc = await vectorDbService.getFile(id);
-                    return doc ? { id: doc.id, embedding: doc.embedding } : null;
-                  } catch {
-                    return null;
-                  }
-                })
-              );
-              const validEntries = fileEntries.filter(Boolean);
-              const ids = validEntries.map((e) => e.id);
-              const embeddings = validEntries.map((e) => e.embedding);
+          // Keep scoring fast and payloads bounded (renderer typically stays < 1000 nodes)
+          const MAX_IDS = 1000;
+          if (fileIds.length > MAX_IDS) {
+            return { success: false, error: `fileIds must contain at most ${MAX_IDS} ids` };
+          }
 
-              const scores = [];
-              for (let i = 0; i < ids.length; i += 1) {
-                const vec = embeddings[i];
-                // FIX P0-3: Skip files with missing/invalid embeddings to prevent crash
-                if (!Array.isArray(vec) || vec.length === 0) continue;
-                const fileVector = padOrTruncateVector(vec, queryVector.length);
-                if (!Array.isArray(fileVector) || fileVector.length !== queryVector.length)
-                  continue;
-                const score = cosineSimilarity(queryVector, fileVector);
-                scores.push({ id: ids[i], score });
-              }
+          const normalizedIds = [];
+          const seenIds = new Set();
+          for (const id of fileIds) {
+            if (typeof id !== 'string' || id.length === 0 || id.length >= 2048) continue;
+            if (seenIds.has(id)) continue;
+            seenIds.add(id);
+            normalizedIds.push(id);
+            if (normalizedIds.length >= MAX_IDS) break;
+          }
 
-              scores.sort((a, b) => b.score - a.score);
-              return scores;
-            })(),
-            timeoutPromise
-          ]);
+          if (normalizedIds.length === 0) {
+            return { success: false, error: 'No valid fileIds provided' };
+          }
 
-          return { success: true, scores: scored };
-        } finally {
-          if (timeoutId) clearTimeout(timeoutId);
+          // Create timeout promise
+          let timeoutId;
+          const timeoutPromise = new Promise((_, reject) => {
+            timeoutId = setTimeout(
+              () => reject(new Error('Query timeout exceeded')),
+              QUERY_TIMEOUT
+            );
+          });
+
+          try {
+            const scored = await Promise.race([
+              (async () => {
+                const embeddingService = getParallelEmbeddingService();
+                const { vector: rawQueryVector } = await embeddingService.embedText(cleanQuery);
+                if (!Array.isArray(rawQueryVector) || rawQueryVector.length === 0) {
+                  return [];
+                }
+
+                await vectorDbService.initialize();
+                const expectedDim =
+                  typeof vectorDbService.getCollectionDimension === 'function'
+                    ? await vectorDbService.getCollectionDimension('files')
+                    : null;
+                const queryVector = padOrTruncateVector(rawQueryVector, expectedDim);
+                if (!Array.isArray(queryVector) || queryVector.length === 0) {
+                  return [];
+                }
+
+                // Batch-fetch file embeddings via OramaVectorService.getFile()
+                const fileEntries = await Promise.all(
+                  normalizedIds.map(async (id) => {
+                    try {
+                      const doc = await vectorDbService.getFile(id);
+                      return doc ? { id: doc.id, embedding: doc.embedding } : null;
+                    } catch {
+                      return null;
+                    }
+                  })
+                );
+                const validEntries = fileEntries.filter(Boolean);
+                const ids = validEntries.map((e) => e.id);
+                const embeddings = validEntries.map((e) => e.embedding);
+
+                const scores = [];
+                for (let i = 0; i < ids.length; i += 1) {
+                  const vec = embeddings[i];
+                  // FIX P0-3: Skip files with missing/invalid embeddings to prevent crash
+                  if (!Array.isArray(vec) || vec.length === 0) continue;
+                  const fileVector = padOrTruncateVector(vec, queryVector.length);
+                  if (!Array.isArray(fileVector) || fileVector.length !== queryVector.length)
+                    continue;
+                  const score = cosineSimilarity(queryVector, fileVector);
+                  scores.push({ id: ids[i], score });
+                }
+
+                scores.sort((a, b) => b.score - a.score);
+                return scores;
+              })(),
+              timeoutPromise
+            ]);
+
+            return { success: true, scores: scored };
+          } finally {
+            if (timeoutId) clearTimeout(timeoutId);
+          }
+        } catch (e) {
+          logger.error('[EMBEDDINGS] scoreFiles failed:', {
+            fileCount: Array.isArray(fileIds) ? fileIds.length : 0,
+            error: e.message,
+            timeout: e.message.includes('timeout')
+          });
+          return {
+            success: false,
+            error: e.message,
+            timeout: e.message.includes('timeout')
+          };
         }
-      } catch (e) {
-        logger.error('[EMBEDDINGS] scoreFiles failed:', {
-          fileCount: Array.isArray(fileIds) ? fileIds.length : 0,
-          error: e.message,
-          timeout: e.message.includes('timeout')
-        });
-        return {
-          success: false,
-          error: e.message,
-          timeout: e.message.includes('timeout')
-        };
       }
     })
   );
@@ -2159,29 +2251,35 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.REBUILD_BM25_INDEX,
-    // FIX: Use createVectorHandler to ensure initialization before accessing service
-    createVectorHandler(async () => {
-      try {
-        const service = await getSearchService();
-        const result = await service.rebuildIndex();
-
-        // Extend vocabulary for spell correction after index rebuild
+    createHandler({
+      logger,
+      context,
+      schema: schemaVoid,
+      handler: async () => {
+        const initErr = await safeEnsureInit();
+        if (initErr) return initErr;
         try {
-          const queryProcessor = getQueryProcessor();
-          const serviceIntegration = getServiceIntegration && getServiceIntegration();
-          const historyService = serviceIntegration?.analysisHistory;
-          if (queryProcessor && historyService) {
-            await queryProcessor.extendVocabulary(historyService);
-            logger.debug('[EMBEDDINGS] Vocabulary extended after BM25 rebuild');
-          }
-        } catch (vocabErr) {
-          logger.debug('[EMBEDDINGS] Vocabulary extension failed:', vocabErr.message);
-        }
+          const service = await getSearchService();
+          const result = await service.rebuildIndex();
 
-        return result;
-      } catch (e) {
-        logger.error('[EMBEDDINGS] Rebuild BM25 index failed:', e);
-        return { success: false, error: e.message };
+          // Extend vocabulary for spell correction after index rebuild
+          try {
+            const queryProcessor = getQueryProcessor();
+            const serviceIntegration = getServiceIntegration && getServiceIntegration();
+            const historyService = serviceIntegration?.analysisHistory;
+            if (queryProcessor && historyService) {
+              await queryProcessor.extendVocabulary(historyService);
+              logger.debug('[EMBEDDINGS] Vocabulary extended after BM25 rebuild');
+            }
+          } catch (vocabErr) {
+            logger.debug('[EMBEDDINGS] Vocabulary extension failed:', vocabErr.message);
+          }
+
+          return result;
+        } catch (e) {
+          logger.error('[EMBEDDINGS] Rebuild BM25 index failed:', e);
+          return { success: false, error: e.message };
+        }
       }
     })
   );
@@ -2192,14 +2290,20 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.GET_SEARCH_STATUS,
-    // FIX: Use createVectorHandler to ensure initialization before accessing service
-    createVectorHandler(async () => {
-      try {
-        const service = await getSearchService();
-        return { success: true, status: service.getIndexStatus() };
-      } catch (e) {
-        logger.error('[EMBEDDINGS] Get search status failed:', e);
-        return { success: false, error: e.message };
+    createHandler({
+      logger,
+      context,
+      schema: schemaVoid,
+      handler: async () => {
+        const initErr = await safeEnsureInit();
+        if (initErr) return initErr;
+        try {
+          const service = await getSearchService();
+          return { success: true, status: service.getIndexStatus() };
+        } catch (e) {
+          logger.error('[EMBEDDINGS] Get search status failed:', e);
+          return { success: false, error: e.message };
+        }
       }
     })
   );
@@ -2215,33 +2319,40 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.FIND_MULTI_HOP,
-    createVectorHandler(async (event, { seedIds, options = {} } = {}) => {
-      try {
-        if (!Array.isArray(seedIds) || seedIds.length === 0) {
-          return { success: false, error: 'seedIds must be a non-empty array' };
+    createHandler({
+      logger,
+      context,
+      schema: schemaObjectOptional,
+      handler: async (event, { seedIds, options = {} } = {}) => {
+        const initErr = await safeEnsureInit();
+        if (initErr) return initErr;
+        try {
+          if (!Array.isArray(seedIds) || seedIds.length === 0) {
+            return { success: false, error: 'seedIds must be a non-empty array' };
+          }
+
+          const validIds = seedIds
+            .filter((id) => typeof id === 'string' && id.length > 0)
+            .slice(0, 10); // Limit to 10 seeds for performance
+
+          if (validIds.length === 0) {
+            return { success: false, error: 'No valid seedIds provided' };
+          }
+
+          // Map UI parameters to service parameters (fixes parameter name mismatch)
+          // UI sends: { hops, decay } but service expects: { maxHops, decayFactor }
+          const mappedOptions = {
+            maxHops: options.hops ?? options.maxHops,
+            topKPerHop: options.topKPerHop,
+            decayFactor: options.decay ?? options.decayFactor
+          };
+
+          const results = await folderMatcher.findMultiHopNeighbors(validIds, mappedOptions);
+          return { success: true, results };
+        } catch (e) {
+          logger.error('[EMBEDDINGS] Multi-hop expansion failed:', e);
+          return { success: false, error: e.message };
         }
-
-        const validIds = seedIds
-          .filter((id) => typeof id === 'string' && id.length > 0)
-          .slice(0, 10); // Limit to 10 seeds for performance
-
-        if (validIds.length === 0) {
-          return { success: false, error: 'No valid seedIds provided' };
-        }
-
-        // Map UI parameters to service parameters (fixes parameter name mismatch)
-        // UI sends: { hops, decay } but service expects: { maxHops, decayFactor }
-        const mappedOptions = {
-          maxHops: options.hops ?? options.maxHops,
-          topKPerHop: options.topKPerHop,
-          decayFactor: options.decay ?? options.decayFactor
-        };
-
-        const results = await folderMatcher.findMultiHopNeighbors(validIds, mappedOptions);
-        return { success: true, results };
-      } catch (e) {
-        logger.error('[EMBEDDINGS] Multi-hop expansion failed:', e);
-        return { success: false, error: e.message };
       }
     })
   );
@@ -2256,38 +2367,45 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.COMPUTE_CLUSTERS,
-    createVectorHandler(async (event, { k = 'auto', generateLabels = true } = {}) => {
-      try {
-        // Validate k parameter
-        if (k !== 'auto') {
-          const numK = Number(k);
-          if (!Number.isInteger(numK) || numK < 1 || numK > 100) {
-            return {
-              success: false,
-              error: "k must be 'auto' or an integer between 1 and 100"
-            };
+    createHandler({
+      logger,
+      context,
+      schema: schemaObjectOptional,
+      handler: async (event, { k = 'auto', generateLabels = true } = {}) => {
+        const initErr = await safeEnsureInit();
+        if (initErr) return initErr;
+        try {
+          // Validate k parameter
+          if (k !== 'auto') {
+            const numK = Number(k);
+            if (!Number.isInteger(numK) || numK < 1 || numK > 100) {
+              return {
+                success: false,
+                error: "k must be 'auto' or an integer between 1 and 100"
+              };
+            }
           }
+
+          const service = await getClusteringService();
+          const result = await service.computeClusters(k);
+
+          // Optionally generate LLM labels for clusters
+          if (result.success && generateLabels && result.clusters.length > 0) {
+            await service.generateClusterLabels();
+            // Update result with labels
+            result.clusters = service.getClustersForGraph();
+          }
+
+          return result;
+        } catch (e) {
+          logger.error('[EMBEDDINGS] Cluster computation failed:', e);
+          // FIX P2-12: Enrich error message with operation context
+          return {
+            success: false,
+            error: `Cluster computation failed: ${e.message}`,
+            operation: 'COMPUTE_CLUSTERS'
+          };
         }
-
-        const service = await getClusteringService();
-        const result = await service.computeClusters(k);
-
-        // Optionally generate LLM labels for clusters
-        if (result.success && generateLabels && result.clusters.length > 0) {
-          await service.generateClusterLabels();
-          // Update result with labels
-          result.clusters = service.getClustersForGraph();
-        }
-
-        return result;
-      } catch (e) {
-        logger.error('[EMBEDDINGS] Cluster computation failed:', e);
-        // FIX P2-12: Enrich error message with operation context
-        return {
-          success: false,
-          error: `Cluster computation failed: ${e.message}`,
-          operation: 'COMPUTE_CLUSTERS'
-        };
       }
     })
   );
@@ -2298,26 +2416,33 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.GET_CLUSTERS,
-    withErrorLogging(logger, async () => {
-      try {
-        const service = await getClusteringService();
-        const clusters = service.getClustersForGraph();
-        const crossClusterEdges = service.findCrossClusterEdges(THRESHOLDS.SIMILARITY_EDGE_DEFAULT);
+    createHandler({
+      logger,
+      context,
+      schema: schemaVoid,
+      handler: async () => {
+        try {
+          const service = await getClusteringService();
+          const clusters = service.getClustersForGraph();
+          const crossClusterEdges = service.findCrossClusterEdges(
+            THRESHOLDS.SIMILARITY_EDGE_DEFAULT
+          );
 
-        return {
-          success: true,
-          clusters,
-          crossClusterEdges,
-          stale: service.isClustersStale()
-        };
-      } catch (e) {
-        logger.error('[EMBEDDINGS] Get clusters failed:', e);
-        // FIX P2-12: Enrich error message with operation context
-        return {
-          success: false,
-          error: `Failed to retrieve clusters: ${e.message}`,
-          operation: 'GET_CLUSTERS'
-        };
+          return {
+            success: true,
+            clusters,
+            crossClusterEdges,
+            stale: service.isClustersStale()
+          };
+        } catch (e) {
+          logger.error('[EMBEDDINGS] Get clusters failed:', e);
+          // FIX P2-12: Enrich error message with operation context
+          return {
+            success: false,
+            error: `Failed to retrieve clusters: ${e.message}`,
+            operation: 'GET_CLUSTERS'
+          };
+        }
       }
     })
   );
@@ -2329,19 +2454,24 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.CLEAR_CLUSTERS,
-    withErrorLogging(logger, async () => {
-      try {
-        const service = await getClusteringService();
-        service.clearClusters();
-        logger.info('[EMBEDDINGS] Cluster cache cleared manually');
-        return { success: true, message: 'Cluster cache cleared' };
-      } catch (e) {
-        logger.error('[EMBEDDINGS] Clear clusters failed:', e);
-        return {
-          success: false,
-          error: `Failed to clear cluster cache: ${e.message}`,
-          operation: 'CLEAR_CLUSTERS'
-        };
+    createHandler({
+      logger,
+      context,
+      schema: schemaVoid,
+      handler: async () => {
+        try {
+          const service = await getClusteringService();
+          service.clearClusters();
+          logger.info('[EMBEDDINGS] Cluster cache cleared manually');
+          return { success: true, message: 'Cluster cache cleared' };
+        } catch (e) {
+          logger.error('[EMBEDDINGS] Clear clusters failed:', e);
+          return {
+            success: false,
+            error: `Failed to clear cluster cache: ${e.message}`,
+            operation: 'CLEAR_CLUSTERS'
+          };
+        }
       }
     })
   );
@@ -2352,30 +2482,35 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.GET_CLUSTER_MEMBERS,
-    withErrorLogging(logger, async (event, { clusterId } = {}) => {
-      try {
-        if (typeof clusterId !== 'number') {
-          return { success: false, error: 'clusterId must be a number' };
+    createHandler({
+      logger,
+      context,
+      schema: schemaObjectOptional,
+      handler: async (event, { clusterId } = {}) => {
+        try {
+          if (typeof clusterId !== 'number') {
+            return { success: false, error: 'clusterId must be a number' };
+          }
+
+          const service = await getClusteringService();
+          // Now async - fetches fresh metadata from vector DB
+          const members = await service.getClusterMembers(clusterId);
+
+          return {
+            success: true,
+            clusterId,
+            members
+          };
+        } catch (e) {
+          logger.error('[EMBEDDINGS] Get cluster members failed:', e);
+          // FIX P2-12: Enrich error message with operation context
+          return {
+            success: false,
+            error: `Failed to get members of cluster ${clusterId}: ${e.message}`,
+            operation: 'GET_CLUSTER_MEMBERS',
+            clusterId
+          };
         }
-
-        const service = await getClusteringService();
-        // Now async - fetches fresh metadata from vector DB
-        const members = await service.getClusterMembers(clusterId);
-
-        return {
-          success: true,
-          clusterId,
-          members
-        };
-      } catch (e) {
-        logger.error('[EMBEDDINGS] Get cluster members failed:', e);
-        // FIX P2-12: Enrich error message with operation context
-        return {
-          success: false,
-          error: `Failed to get members of cluster ${clusterId}: ${e.message}`,
-          operation: 'GET_CLUSTER_MEMBERS',
-          clusterId
-        };
       }
     })
   );
@@ -2386,9 +2521,11 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.GET_SIMILARITY_EDGES,
-    withErrorLogging(
+    createHandler({
       logger,
-      async (
+      context,
+      schema: schemaObjectOptional,
+      handler: async (
         event,
         {
           fileIds,
@@ -2451,7 +2588,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
           };
         }
       }
-    )
+    })
   );
 
   /**
@@ -2461,58 +2598,63 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.GET_FILE_METADATA,
-    withErrorLogging(logger, async (event, { fileIds } = {}) => {
-      try {
-        if (!Array.isArray(fileIds) || fileIds.length === 0) {
-          return { success: true, metadata: {} };
-        }
+    createHandler({
+      logger,
+      context,
+      schema: schemaObjectOptional,
+      handler: async (event, { fileIds } = {}) => {
+        try {
+          if (!Array.isArray(fileIds) || fileIds.length === 0) {
+            return { success: true, metadata: {} };
+          }
 
-        // Validate and limit file IDs
-        const validIds = fileIds
-          .filter((id) => typeof id === 'string' && id.length > 0 && id.length < 2048)
-          .slice(0, 100); // Limit to 100 files per request
+          // Validate and limit file IDs
+          const validIds = fileIds
+            .filter((id) => typeof id === 'string' && id.length > 0 && id.length < 2048)
+            .slice(0, 100); // Limit to 100 files per request
 
-        if (validIds.length === 0) {
-          return { success: true, metadata: {} };
-        }
+          if (validIds.length === 0) {
+            return { success: true, metadata: {} };
+          }
 
-        await vectorDbService.initialize();
+          await vectorDbService.initialize();
 
-        // Batch-fetch file metadata via OramaVectorService.getFile()
-        const metadata = {};
-        await Promise.all(
-          validIds.map(async (id) => {
-            try {
-              const doc = await vectorDbService.getFile(id);
-              if (doc) {
-                metadata[id] = {
-                  path: doc.filePath,
-                  filePath: doc.filePath,
-                  fileName: doc.fileName,
-                  fileType: doc.fileType,
-                  analyzedAt: doc.analyzedAt,
-                  suggestedName: doc.suggestedName,
-                  keywords: doc.keywords,
-                  tags: doc.tags,
-                  extractionMethod: doc.extractionMethod
-                };
+          // Batch-fetch file metadata via OramaVectorService.getFile()
+          const metadata = {};
+          await Promise.all(
+            validIds.map(async (id) => {
+              try {
+                const doc = await vectorDbService.getFile(id);
+                if (doc) {
+                  metadata[id] = {
+                    path: doc.filePath,
+                    filePath: doc.filePath,
+                    fileName: doc.fileName,
+                    fileType: doc.fileType,
+                    analyzedAt: doc.analyzedAt,
+                    suggestedName: doc.suggestedName,
+                    keywords: doc.keywords,
+                    tags: doc.tags,
+                    extractionMethod: doc.extractionMethod
+                  };
+                }
+              } catch {
+                // Individual fetch failure is non-critical
               }
-            } catch {
-              // Individual fetch failure is non-critical
-            }
-          })
-        );
+            })
+          );
 
-        return { success: true, metadata };
-      } catch (e) {
-        logger.error('[EMBEDDINGS] Get file metadata failed:', e);
-        // FIX P2-12: Enrich error message with operation context
-        return {
-          success: false,
-          error: `Failed to retrieve file metadata: ${e.message}`,
-          operation: 'GET_FILE_METADATA',
-          metadata: {}
-        };
+          return { success: true, metadata };
+        } catch (e) {
+          logger.error('[EMBEDDINGS] Get file metadata failed:', e);
+          // FIX P2-12: Enrich error message with operation context
+          return {
+            success: false,
+            error: `Failed to retrieve file metadata: ${e.message}`,
+            operation: 'GET_FILE_METADATA',
+            metadata: {}
+          };
+        }
       }
     })
   );
@@ -2524,47 +2666,52 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.FIND_DUPLICATES,
-    withErrorLogging(logger, async (event, { threshold = 0.9, maxResults = 50 } = {}) => {
-      try {
-        // Validate threshold (should be between 0.7 and 1.0 for duplicates)
-        const numThreshold = Number(threshold);
-        if (isNaN(numThreshold) || numThreshold < 0.7 || numThreshold > 1) {
+    createHandler({
+      logger,
+      context,
+      schema: schemaObjectOptional,
+      handler: async (event, { threshold = 0.9, maxResults = 50 } = {}) => {
+        try {
+          // Validate threshold (should be between 0.7 and 1.0 for duplicates)
+          const numThreshold = Number(threshold);
+          if (isNaN(numThreshold) || numThreshold < 0.7 || numThreshold > 1) {
+            return {
+              success: false,
+              error: 'threshold must be a number between 0.7 and 1.0',
+              groups: [],
+              totalDuplicates: 0
+            };
+          }
+
+          // Validate maxResults
+          const numMaxResults = Number(maxResults);
+          if (!Number.isInteger(numMaxResults) || numMaxResults < 1 || numMaxResults > 200) {
+            return {
+              success: false,
+              error: 'maxResults must be an integer between 1 and 200',
+              groups: [],
+              totalDuplicates: 0
+            };
+          }
+
+          const service = await getClusteringService();
+          const result = await service.findNearDuplicates({
+            threshold: numThreshold,
+            maxResults: numMaxResults
+          });
+
+          return result;
+        } catch (e) {
+          logger.error('[EMBEDDINGS] Find duplicates failed:', e);
+          // FIX P2-12: Enrich error message with operation context
           return {
             success: false,
-            error: 'threshold must be a number between 0.7 and 1.0',
+            error: `Failed to find duplicate files: ${e.message}`,
+            operation: 'FIND_DUPLICATES',
             groups: [],
             totalDuplicates: 0
           };
         }
-
-        // Validate maxResults
-        const numMaxResults = Number(maxResults);
-        if (!Number.isInteger(numMaxResults) || numMaxResults < 1 || numMaxResults > 200) {
-          return {
-            success: false,
-            error: 'maxResults must be an integer between 1 and 200',
-            groups: [],
-            totalDuplicates: 0
-          };
-        }
-
-        const service = await getClusteringService();
-        const result = await service.findNearDuplicates({
-          threshold: numThreshold,
-          maxResults: numMaxResults
-        });
-
-        return result;
-      } catch (e) {
-        logger.error('[EMBEDDINGS] Find duplicates failed:', e);
-        // FIX P2-12: Enrich error message with operation context
-        return {
-          success: false,
-          error: `Failed to find duplicate files: ${e.message}`,
-          operation: 'FIND_DUPLICATES',
-          groups: [],
-          totalDuplicates: 0
-        };
       }
     })
   );

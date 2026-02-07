@@ -172,6 +172,7 @@ jest.mock('../src/shared/validationConstants', () => ({
 
 // Mock IPC wrappers
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
+  createHandler: jest.fn(({ handler }) => handler),
   withErrorLogging: (logger, handler) => handler,
   withValidation: (logger, schema, handler) => async (event, data) => {
     // simulate validation behavior if schema is present
@@ -199,7 +200,8 @@ jest.mock('../src/main/ipc/ipcWrappers', () => ({
   canceledResponse: () => ({ success: false, canceled: true }),
   safeHandle: (ipcMain, channel, handler) => {
     ipcMain.handle(channel, handler);
-  }
+  },
+  z: null
 }));
 
 const { ipcMain } = require('electron');

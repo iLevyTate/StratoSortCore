@@ -1,17 +1,19 @@
 jest.mock('../src/main/ipc/ipcWrappers', () => {
   const handlers = new Map();
   return {
+    createHandler: jest.fn(({ handler }) => handler),
     safeHandle: jest.fn((_ipcMain, channel, handler) => {
       handlers.set(channel, handler);
     }),
     withErrorLogging: jest.fn((_logger, fn) => fn),
     safeSend: jest.fn(),
+    z: null,
     __handlers: handlers
   };
 });
 
-jest.mock('../src/main/services/LlamaService', () => ({
-  getInstance: jest.fn(() => ({
+jest.mock('../src/main/services/LlamaService', () => {
+  const defaultInstance = {
     initialize: jest.fn().mockResolvedValue(),
     listModels: jest.fn().mockResolvedValue([{ name: 'm1', type: 'text' }]),
     getConfig: jest.fn().mockResolvedValue({
@@ -24,8 +26,17 @@ jest.mock('../src/main/services/LlamaService', () => ({
       .fn()
       .mockResolvedValue({ healthy: true, initialized: true, gpuBackend: 'cpu' }),
     _gpuBackend: 'cpu'
-  }))
-}));
+  };
+  const mod = {
+    getInstance: jest.fn(() => defaultInstance),
+    registerWithContainer: jest.fn((cont, id) => {
+      if (typeof cont.has === 'function' && !cont.has(id)) {
+        cont.registerSingleton(id, () => mod.getInstance());
+      }
+    })
+  };
+  return mod;
+});
 
 jest.mock('../src/main/services/ModelDownloadManager', () => ({
   getInstance: jest.fn(() => ({
@@ -35,8 +46,13 @@ jest.mock('../src/main/services/ModelDownloadManager', () => ({
 
 const { registerLlamaIpc } = require('../src/main/ipc/llama');
 const wrappers = require('../src/main/ipc/ipcWrappers');
+const { container } = require('../src/main/services/ServiceContainer');
 
 describe('llama ipc', () => {
+  beforeEach(() => {
+    container.reset();
+  });
+
   const baseServices = {
     ipcMain: {},
     IPC_CHANNELS: { LLAMA: {} },

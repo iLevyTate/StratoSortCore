@@ -10,9 +10,11 @@ const mockRecognizeIfAvailable = jest.fn();
 
 // Mock IPC wrappers
 const mockIpcWrappers = {
+  createHandler: jest.fn(({ handler }) => handler),
   withErrorLogging: jest.fn((logger, handler) => handler),
   withValidation: jest.fn((logger, schema, handler) => handler), // Bypass validation logic for testing handler logic directly
-  safeHandle: jest.fn()
+  safeHandle: jest.fn(),
+  z: null
 };
 jest.mock('../src/main/ipc/ipcWrappers', () => mockIpcWrappers);
 

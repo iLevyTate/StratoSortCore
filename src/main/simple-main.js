@@ -584,7 +584,11 @@ app.whenReady().then(async () => {
     let _startupResult;
 
     // Create ServiceIntegration early so it's available for the coordinated startup
-    serviceIntegration = new ServiceIntegration();
+    const { container, ServiceIds } = require('./services/ServiceContainer');
+    if (!container.has(ServiceIds.SERVICE_INTEGRATION)) {
+      container.registerSingleton(ServiceIds.SERVICE_INTEGRATION, () => new ServiceIntegration());
+    }
+    serviceIntegration = container.resolve(ServiceIds.SERVICE_INTEGRATION);
 
     try {
       // Coordinated startup with single timeout

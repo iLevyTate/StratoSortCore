@@ -109,6 +109,7 @@ describe('Semantic IPC (Handlers)', () => {
 
     // Setup mocks
     const mockVectorDb = {
+      initialize: jest.fn().mockResolvedValue(),
       rebuildIndex: jest.fn(),
       cleanup: jest.fn(),
       resetFiles: jest.fn(),
@@ -126,6 +127,7 @@ describe('Semantic IPC (Handlers)', () => {
     ParallelEmbeddingService.getInstance.mockReturnValue(mockEmbeddingService);
 
     const mockFolderMatcher = {
+      initialize: jest.fn().mockResolvedValue(),
       embedText: jest.fn().mockResolvedValue({ vector: [], model: 'test' }),
       generateFolderId: jest.fn()
     };

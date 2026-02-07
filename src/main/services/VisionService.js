@@ -416,8 +416,12 @@ class VisionService {
       args.push('--threads', String(config.threads));
     }
 
-    if (typeof config.gpuLayers === 'number' && config.gpuLayers >= 0) {
-      args.push('--n-gpu-layers', String(config.gpuLayers));
+    // Resolve gpuLayers: 'auto' and -1 mean "offload all layers to GPU".
+    // llama-server treats large values as all-layers, so use 9999 as the sentinel.
+    const resolvedGpuLayers =
+      config.gpuLayers === 'auto' || config.gpuLayers === -1 ? 9999 : config.gpuLayers;
+    if (typeof resolvedGpuLayers === 'number' && resolvedGpuLayers >= 0) {
+      args.push('--n-gpu-layers', String(resolvedGpuLayers));
     }
 
     return args;

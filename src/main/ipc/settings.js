@@ -1,8 +1,7 @@
 const { IpcServiceContext, createFromLegacyParams } = require('./IpcServiceContext');
 const { app, dialog, shell } = require('electron');
 const {
-  withErrorLogging,
-  withValidation,
+  createHandler,
   successResponse,
   errorResponse,
   canceledResponse,
@@ -389,17 +388,27 @@ function registerSettingsIpc(servicesOrParams) {
   const { ipcMain, IPC_CHANNELS, logger } = container.core;
   const { settingsService, onSettingsChanged } = container.settings;
 
+  const context = 'Settings';
+  const schemaVoid = z ? z.void() : null;
+  const schemaSettings = z ? settingsSchema : null;
+  const schemaBackupPath = z ? backupPathSchema : null;
+
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SETTINGS.GET,
-    withErrorLogging(logger, async () => {
-      try {
-        const loaded = await settingsService.load();
-        return loaded;
-      } catch (error) {
-        logger.error('Failed to get settings:', error);
-        // FIX HIGH-24: Return proper error structure instead of swallowing error
-        return { success: false, error: error.message, settings: {} };
+    createHandler({
+      logger,
+      context,
+      schema: schemaVoid,
+      handler: async () => {
+        try {
+          const loaded = await settingsService.load();
+          return loaded;
+        } catch (error) {
+          logger.error('Failed to get settings:', error);
+          // FIX HIGH-24: Return proper error structure instead of swallowing error
+          return { success: false, error: error.message, settings: {} };
+        }
       }
     })
   );
@@ -408,13 +417,18 @@ function registerSettingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SETTINGS.GET_CONFIGURABLE_LIMITS,
-    withErrorLogging(logger, async () => {
-      try {
-        const settings = await settingsService.load();
-        return getConfigurableLimits(settings);
-      } catch (error) {
-        logger.error('Failed to get configurable limits:', error);
-        return getConfigurableLimits({});
+    createHandler({
+      logger,
+      context,
+      schema: schemaVoid,
+      handler: async () => {
+        try {
+          const settings = await settingsService.load();
+          return getConfigurableLimits(settings);
+        } catch (error) {
+          logger.error('Failed to get configurable limits:', error);
+          return getConfigurableLimits({});
+        }
       }
     })
   );
@@ -469,91 +483,95 @@ function registerSettingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SETTINGS.SAVE,
-    z && settingsSchema
-      ? withValidation(logger, settingsSchema, async (event, settings) => {
-          void event;
-          return handleSettingsSaveCore(settings, saveDeps);
-        })
-      : withErrorLogging(logger, async (event, settings) => {
-          void event;
-          return handleSettingsSaveCore(settings, saveDeps);
-        })
+    createHandler({
+      logger,
+      context,
+      schema: schemaSettings,
+      handler: async (event, settings) => {
+        void event;
+        return handleSettingsSaveCore(settings, saveDeps);
+      }
+    })
   );
 
   // Fixed: Add config export handler
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SETTINGS.EXPORT,
-    withErrorLogging(logger, async (event, exportPath) => {
-      void event;
-      try {
-        // SECURITY: Ignore exportPath from renderer - always use dialog
-        // This prevents path traversal attacks from compromised renderer
-        if (exportPath) {
-          logger.warn(
-            '[SETTINGS] Export path provided via IPC is ignored for security. Using dialog instead.'
-          );
-        }
-
-        const settings = await settingsService.load();
-
-        // Create export data with metadata
-        const exportData = {
-          version: '1.0.0',
-          exportDate: new Date().toISOString(),
-          appVersion: app.getVersion(),
-          settings
-        };
-
-        // Always show save dialog for security
-        const result = await dialog.showSaveDialog({
-          title: 'Export Settings',
-          defaultPath: `stratosort-config-${new Date().toISOString().split('T')[0]}.json`,
-          filters: [
-            { name: 'JSON Files', extensions: ['json'] },
-            { name: 'All Files', extensions: ['*'] }
-          ]
-        });
-
-        if (result.canceled) {
-          return canceledResponse();
-        }
-
-        const filePath = result.filePath;
-
-        // Serialize export data with proper error handling
-        let jsonContent;
+    createHandler({
+      logger,
+      context,
+      handler: async (event, exportPath) => {
+        void event;
         try {
-          // FIX: Yield to event loop before heavy serialization to prevent UI blocking
-          await new Promise((resolve) => setImmediate(resolve));
-          jsonContent = JSON.stringify(exportData, null, 2);
-        } catch (serializeError) {
-          logger.error('[SETTINGS] Failed to serialize export data:', serializeError);
-          throw new Error('Failed to serialize settings data for export');
-        }
-
-        // Write export file
-        // FIX: Use atomic write (temp + rename) to prevent corruption on crash
-        const tempPath = `${filePath}.tmp.${Date.now()}`;
-        try {
-          await fs.writeFile(tempPath, jsonContent, 'utf8');
-          await fs.rename(tempPath, filePath);
-        } catch (writeError) {
-          // Clean up temp file on failure
-          try {
-            await fs.unlink(tempPath);
-          } catch {
-            // Ignore cleanup errors
+          // SECURITY: Ignore exportPath from renderer - always use dialog
+          // This prevents path traversal attacks from compromised renderer
+          if (exportPath) {
+            logger.warn(
+              '[SETTINGS] Export path provided via IPC is ignored for security. Using dialog instead.'
+            );
           }
-          throw writeError;
+
+          const settings = await settingsService.load();
+
+          // Create export data with metadata
+          const exportData = {
+            version: '1.0.0',
+            exportDate: new Date().toISOString(),
+            appVersion: app.getVersion(),
+            settings
+          };
+
+          // Always show save dialog for security
+          const result = await dialog.showSaveDialog({
+            title: 'Export Settings',
+            defaultPath: `stratosort-config-${new Date().toISOString().split('T')[0]}.json`,
+            filters: [
+              { name: 'JSON Files', extensions: ['json'] },
+              { name: 'All Files', extensions: ['*'] }
+            ]
+          });
+
+          if (result.canceled) {
+            return canceledResponse();
+          }
+
+          const filePath = result.filePath;
+
+          // Serialize export data with proper error handling
+          let jsonContent;
+          try {
+            // FIX: Yield to event loop before heavy serialization to prevent UI blocking
+            await new Promise((resolve) => setImmediate(resolve));
+            jsonContent = JSON.stringify(exportData, null, 2);
+          } catch (serializeError) {
+            logger.error('[SETTINGS] Failed to serialize export data:', serializeError);
+            throw new Error('Failed to serialize settings data for export');
+          }
+
+          // Write export file
+          // FIX: Use atomic write (temp + rename) to prevent corruption on crash
+          const tempPath = `${filePath}.tmp.${Date.now()}`;
+          try {
+            await fs.writeFile(tempPath, jsonContent, 'utf8');
+            await fs.rename(tempPath, filePath);
+          } catch (writeError) {
+            // Clean up temp file on failure
+            try {
+              await fs.unlink(tempPath);
+            } catch {
+              // Ignore cleanup errors
+            }
+            throw writeError;
+          }
+
+          logger.info('[SETTINGS] Exported settings to:', filePath);
+
+          return successResponse({ path: filePath });
+        } catch (error) {
+          logger.error('[SETTINGS] Failed to export settings:', error);
+          return errorResponse(error.message);
         }
-
-        logger.info('[SETTINGS] Exported settings to:', filePath);
-
-        return successResponse({ path: filePath });
-      } catch (error) {
-        logger.error('[SETTINGS] Failed to export settings:', error);
-        return errorResponse(error.message);
       }
     })
   );
@@ -562,95 +580,99 @@ function registerSettingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SETTINGS.IMPORT,
-    withErrorLogging(logger, async (event, importPath) => {
-      void event;
-      try {
-        // SECURITY: Ignore importPath from renderer - always use dialog
-        // This prevents path traversal attacks from compromised renderer
-        // (matches the pattern used by the EXPORT handler)
-        if (importPath) {
-          logger.warn(
-            '[SETTINGS] Import path provided via IPC is ignored for security. Using dialog instead.'
-          );
-        }
-
-        const result = await dialog.showOpenDialog({
-          title: 'Import Settings',
-          filters: [
-            { name: 'JSON Files', extensions: ['json'] },
-            { name: 'All Files', extensions: ['*'] }
-          ],
-          properties: ['openFile']
-        });
-
-        if (result.canceled) {
-          return canceledResponse();
-        }
-
-        // FIX MED-9: Add bounds check before accessing filePaths[0]
-        if (!result.filePaths || result.filePaths.length === 0) {
-          return canceledResponse();
-        }
-        const filePath = result.filePaths[0];
-
-        // SECURITY FIX: Check file size before reading to prevent DoS
-        const MAX_IMPORT_SIZE = 1 * 1024 * 1024; // 1MB limit for settings files
-        const stats = await fs.stat(filePath);
-        if (stats.size > MAX_IMPORT_SIZE) {
-          throw new Error(
-            `Import file too large (${Math.round(stats.size / 1024)}KB). Maximum size is 1MB.`
-          );
-        }
-
-        // Read and parse import file
-        const fileContent = await fs.readFile(filePath, 'utf8');
-
-        // Fixed: Add specific error handling for JSON parsing
-        let importData;
+    createHandler({
+      logger,
+      context,
+      handler: async (event, importPath) => {
+        void event;
         try {
-          importData = JSON.parse(fileContent);
-        } catch (parseError) {
-          throw new Error(`Invalid JSON in settings file: ${parseError.message}`);
+          // SECURITY: Ignore importPath from renderer - always use dialog
+          // This prevents path traversal attacks from compromised renderer
+          // (matches the pattern used by the EXPORT handler)
+          if (importPath) {
+            logger.warn(
+              '[SETTINGS] Import path provided via IPC is ignored for security. Using dialog instead.'
+            );
+          }
+
+          const result = await dialog.showOpenDialog({
+            title: 'Import Settings',
+            filters: [
+              { name: 'JSON Files', extensions: ['json'] },
+              { name: 'All Files', extensions: ['*'] }
+            ],
+            properties: ['openFile']
+          });
+
+          if (result.canceled) {
+            return canceledResponse();
+          }
+
+          // FIX MED-9: Add bounds check before accessing filePaths[0]
+          if (!result.filePaths || result.filePaths.length === 0) {
+            return canceledResponse();
+          }
+          const filePath = result.filePaths[0];
+
+          // SECURITY FIX: Check file size before reading to prevent DoS
+          const MAX_IMPORT_SIZE = 1 * 1024 * 1024; // 1MB limit for settings files
+          const stats = await fs.stat(filePath);
+          if (stats.size > MAX_IMPORT_SIZE) {
+            throw new Error(
+              `Import file too large (${Math.round(stats.size / 1024)}KB). Maximum size is 1MB.`
+            );
+          }
+
+          // Read and parse import file
+          const fileContent = await fs.readFile(filePath, 'utf8');
+
+          // Fixed: Add specific error handling for JSON parsing
+          let importData;
+          try {
+            importData = JSON.parse(fileContent);
+          } catch (parseError) {
+            throw new Error(`Invalid JSON in settings file: ${parseError.message}`);
+          }
+
+          // Validate import data structure
+          if (!importData.settings || typeof importData.settings !== 'object') {
+            throw new Error('Invalid settings file: missing or invalid settings object');
+          }
+
+          // HIGH PRIORITY FIX (HIGH-14): Sanitize and validate imported settings
+          // Prevents prototype pollution, command injection, and data exfiltration
+          let sanitizedSettings = validateImportedSettings(importData.settings, logger);
+
+          // Save sanitized settings
+          const saveResult = await settingsService.save(sanitizedSettings);
+          const merged = saveResult.settings || saveResult;
+          const validationWarnings = saveResult.validationWarnings || [];
+
+          // Apply settings using shared helper
+          await applySettingsToServices(merged, { logger });
+
+          // Notify settings changed
+          if (typeof onSettingsChanged === 'function') {
+            await onSettingsChanged(merged);
+          }
+
+          logger.info('[SETTINGS] Imported settings from:', filePath);
+
+          return successResponse(
+            {
+              settings: merged,
+              importInfo: {
+                version: importData.version,
+                exportDate: importData.exportDate,
+                appVersion: importData.appVersion
+              }
+            },
+            validationWarnings
+          );
+        } catch (error) {
+          logger.error('[SETTINGS] Failed to import settings:', error);
+          return errorResponse(error.message);
         }
-
-        // Validate import data structure
-        if (!importData.settings || typeof importData.settings !== 'object') {
-          throw new Error('Invalid settings file: missing or invalid settings object');
-        }
-
-        // HIGH PRIORITY FIX (HIGH-14): Sanitize and validate imported settings
-        // Prevents prototype pollution, command injection, and data exfiltration
-        let sanitizedSettings = validateImportedSettings(importData.settings, logger);
-
-        // Save sanitized settings
-        const saveResult = await settingsService.save(sanitizedSettings);
-        const merged = saveResult.settings || saveResult;
-        const validationWarnings = saveResult.validationWarnings || [];
-
-        // Apply settings using shared helper
-        await applySettingsToServices(merged, { logger });
-
-        // Notify settings changed
-        if (typeof onSettingsChanged === 'function') {
-          await onSettingsChanged(merged);
-        }
-
-        logger.info('[SETTINGS] Imported settings from:', filePath);
-
-        return successResponse(
-          {
-            settings: merged,
-            importInfo: {
-              version: importData.version,
-              exportDate: importData.exportDate,
-              appVersion: importData.appVersion
-            }
-          },
-          validationWarnings
-        );
-      } catch (error) {
-        logger.error('[SETTINGS] Failed to import settings:', error);
-        return errorResponse(error.message);
       }
     })
   );
@@ -659,17 +681,22 @@ function registerSettingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SETTINGS.CREATE_BACKUP,
-    withErrorLogging(logger, async () => {
-      try {
-        const result = await settingsService.createBackup();
-        if (result.success) {
-          logger.info('[SETTINGS] Backup created:', result.path);
-          return successResponse({ path: result.path, timestamp: result.timestamp });
+    createHandler({
+      logger,
+      context,
+      schema: schemaVoid,
+      handler: async () => {
+        try {
+          const result = await settingsService.createBackup();
+          if (result.success) {
+            logger.info('[SETTINGS] Backup created:', result.path);
+            return successResponse({ path: result.path, timestamp: result.timestamp });
+          }
+          return errorResponse(result.error || 'Unknown backup error');
+        } catch (error) {
+          logger.error('[SETTINGS] Failed to create backup:', error);
+          return errorResponse(error.message);
         }
-        return errorResponse(result.error || 'Unknown backup error');
-      } catch (error) {
-        logger.error('[SETTINGS] Failed to create backup:', error);
-        return errorResponse(error.message);
       }
     })
   );
@@ -677,179 +704,143 @@ function registerSettingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SETTINGS.LIST_BACKUPS,
-    withErrorLogging(logger, async () => {
-      try {
-        const backups = await settingsService.listBackups();
-        return successResponse({ backups });
-      } catch (error) {
-        logger.error('[SETTINGS] Failed to list backups:', error);
-        return errorResponse(error.message, { backups: [] });
+    createHandler({
+      logger,
+      context,
+      schema: schemaVoid,
+      handler: async () => {
+        try {
+          const backups = await settingsService.listBackups();
+          return successResponse({ backups });
+        } catch (error) {
+          logger.error('[SETTINGS] Failed to list backups:', error);
+          return errorResponse(error.message, { backups: [] });
+        }
       }
     })
   );
 
-  // FIX: Apply consistent Zod validation to backup endpoints
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SETTINGS.RESTORE_BACKUP,
-    z && backupPathSchema
-      ? withValidation(logger, backupPathSchema, async (event, backupPath) => {
-          void event;
-          try {
-            // SECURITY: Validate backup path is within backup directory (defense-in-depth)
-            const pathError = validateBackupPathWithinDir(backupPath);
-            if (pathError) {
-              return errorResponse(pathError);
-            }
-
-            const result = await settingsService.restoreFromBackup(backupPath);
-
-            if (result.success) {
-              // Apply restored settings using shared helper
-              const merged = result.settings;
-
-              await applySettingsToServices(merged, { logger });
-
-              // Notify settings changed
-              if (typeof onSettingsChanged === 'function') {
-                await onSettingsChanged(merged);
-              }
-
-              logger.info('[SETTINGS] Restored from backup:', backupPath);
-              return successResponse(
-                { settings: merged, restoredFrom: result.restoredFrom },
-                result.validationWarnings
-              );
-            }
-
-            return errorResponse(result.error || 'Unknown restore error', {
-              validationErrors: result.validationErrors
-            });
-          } catch (error) {
-            logger.error('[SETTINGS] Failed to restore backup:', error);
-            return errorResponse(error.message);
+    createHandler({
+      logger,
+      context,
+      schema: schemaBackupPath,
+      handler: async (event, backupPath) => {
+        void event;
+        try {
+          // SECURITY: Validate backup path is within backup directory (defense-in-depth)
+          const pathError = validateBackupPathWithinDir(backupPath);
+          if (pathError) {
+            return errorResponse(pathError);
           }
-        })
-      : withErrorLogging(logger, async (event, backupPath) => {
-          void event;
-          try {
-            // SECURITY: Validate backup path is within backup directory (defense-in-depth)
-            const pathError = validateBackupPathWithinDir(backupPath);
-            if (pathError) {
-              return errorResponse(pathError);
+
+          const result = await settingsService.restoreFromBackup(backupPath);
+
+          if (result.success) {
+            // Apply restored settings using shared helper
+            const merged = result.settings;
+
+            await applySettingsToServices(merged, { logger });
+
+            // Notify settings changed
+            if (typeof onSettingsChanged === 'function') {
+              await onSettingsChanged(merged);
             }
 
-            const result = await settingsService.restoreFromBackup(backupPath);
-
-            if (result.success) {
-              // Apply restored settings using shared helper
-              const merged = result.settings;
-
-              await applySettingsToServices(merged, { logger });
-
-              // Notify settings changed
-              if (typeof onSettingsChanged === 'function') {
-                await onSettingsChanged(merged);
-              }
-
-              logger.info('[SETTINGS] Restored from backup:', backupPath);
-              return successResponse(
-                { settings: merged, restoredFrom: result.restoredFrom },
-                result.validationWarnings
-              );
-            }
-
-            return errorResponse(result.error || 'Unknown restore error', {
-              validationErrors: result.validationErrors
-            });
-          } catch (error) {
-            logger.error('[SETTINGS] Failed to restore backup:', error);
-            return errorResponse(error.message);
+            logger.info('[SETTINGS] Restored from backup:', backupPath);
+            return successResponse(
+              { settings: merged, restoredFrom: result.restoredFrom },
+              result.validationWarnings
+            );
           }
-        })
+
+          return errorResponse(result.error || 'Unknown restore error', {
+            validationErrors: result.validationErrors
+          });
+        } catch (error) {
+          logger.error('[SETTINGS] Failed to restore backup:', error);
+          return errorResponse(error.message);
+        }
+      }
+    })
   );
 
-  // FIX: Apply consistent Zod validation to backup endpoints
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SETTINGS.DELETE_BACKUP,
-    z && backupPathSchema
-      ? withValidation(logger, backupPathSchema, async (event, backupPath) => {
-          void event;
-          try {
-            // SECURITY: Validate backup path is within backup directory (defense-in-depth)
-            const pathError = validateBackupPathWithinDir(backupPath);
-            if (pathError) {
-              return errorResponse(pathError);
-            }
-
-            const result = await settingsService.deleteBackup(backupPath);
-            if (result.success) {
-              logger.info('[SETTINGS] Deleted backup:', backupPath);
-              return successResponse();
-            }
-            return errorResponse(result.error || 'Unknown delete error');
-          } catch (error) {
-            logger.error('[SETTINGS] Failed to delete backup:', error);
-            return errorResponse(error.message);
+    createHandler({
+      logger,
+      context,
+      schema: schemaBackupPath,
+      handler: async (event, backupPath) => {
+        void event;
+        try {
+          // SECURITY: Validate backup path is within backup directory (defense-in-depth)
+          const pathError = validateBackupPathWithinDir(backupPath);
+          if (pathError) {
+            return errorResponse(pathError);
           }
-        })
-      : withErrorLogging(logger, async (event, backupPath) => {
-          void event;
-          try {
-            // SECURITY: Validate backup path is within backup directory (defense-in-depth)
-            const pathError = validateBackupPathWithinDir(backupPath);
-            if (pathError) {
-              return errorResponse(pathError);
-            }
 
-            const result = await settingsService.deleteBackup(backupPath);
-            if (result.success) {
-              logger.info('[SETTINGS] Deleted backup:', backupPath);
-              return successResponse();
-            }
-            return errorResponse(result.error || 'Unknown delete error');
-          } catch (error) {
-            logger.error('[SETTINGS] Failed to delete backup:', error);
-            return errorResponse(error.message);
+          const result = await settingsService.deleteBackup(backupPath);
+          if (result.success) {
+            logger.info('[SETTINGS] Deleted backup:', backupPath);
+            return successResponse();
           }
-        })
+          return errorResponse(result.error || 'Unknown delete error');
+        } catch (error) {
+          logger.error('[SETTINGS] Failed to delete backup:', error);
+          return errorResponse(error.message);
+        }
+      }
+    })
   );
 
   // ---- Troubleshooting helpers ----
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SETTINGS.GET_LOGS_INFO,
-    withErrorLogging(logger, async () => {
-      const logsDir = path.join(app.getPath('userData'), 'logs');
-      return successResponse({
-        logsDir,
-        appVersion: app.getVersion(),
-        platform: process.platform,
-        arch: process.arch
-      });
+    createHandler({
+      logger,
+      context,
+      schema: schemaVoid,
+      handler: async () => {
+        const logsDir = path.join(app.getPath('userData'), 'logs');
+        return successResponse({
+          logsDir,
+          appVersion: app.getVersion(),
+          platform: process.platform,
+          arch: process.arch
+        });
+      }
     })
   );
 
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SETTINGS.OPEN_LOGS_FOLDER,
-    withErrorLogging(logger, async () => {
-      const logsDir = path.join(app.getPath('userData'), 'logs');
-      try {
-        await fs.mkdir(logsDir, { recursive: true });
-      } catch (mkdirErr) {
-        logger.warn('[SETTINGS] Failed to ensure logs directory exists:', mkdirErr?.message);
-      }
+    createHandler({
+      logger,
+      context,
+      schema: schemaVoid,
+      handler: async () => {
+        const logsDir = path.join(app.getPath('userData'), 'logs');
+        try {
+          await fs.mkdir(logsDir, { recursive: true });
+        } catch (mkdirErr) {
+          logger.warn('[SETTINGS] Failed to ensure logs directory exists:', mkdirErr?.message);
+        }
 
-      const result = await shell.openPath(logsDir);
-      if (typeof result === 'string' && result.length > 0) {
-        logger.warn('[SETTINGS] Failed to open logs folder:', { logsDir, error: result });
-        return errorResponse(`Failed to open logs folder: ${result}`);
-      }
+        const result = await shell.openPath(logsDir);
+        if (typeof result === 'string' && result.length > 0) {
+          logger.warn('[SETTINGS] Failed to open logs folder:', { logsDir, error: result });
+          return errorResponse(`Failed to open logs folder: ${result}`);
+        }
 
-      logger.info('[SETTINGS] Opened logs folder:', logsDir);
-      return successResponse({ logsDir });
+        logger.info('[SETTINGS] Opened logs folder:', logsDir);
+        return successResponse({ logsDir });
+      }
     })
   );
 }

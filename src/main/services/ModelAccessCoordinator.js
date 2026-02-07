@@ -15,7 +15,11 @@ const DEFAULT_INFERENCE_CONCURRENCY = (() => {
 })();
 
 class ModelAccessCoordinator {
-  constructor() {
+  /**
+   * @param {Object} [options={}] - Configuration options
+   * @param {number} [options.inferenceSlots] - Override inference concurrency (from PerformanceService)
+   */
+  constructor(options = {}) {
     // Per-model-type queues for loading (mutex semantics)
     this._loadQueues = {
       text: new PQueue({ concurrency: 1 }),
@@ -23,10 +27,12 @@ class ModelAccessCoordinator {
       embedding: new PQueue({ concurrency: 1 })
     };
 
-    // Queue for concurrent inference (keep low to avoid sequence exhaustion)
-    this._inferenceQueue = new PQueue({ concurrency: DEFAULT_INFERENCE_CONCURRENCY });
+    // Inference concurrency: prefer explicit option, then env var, then default (1)
+    const concurrency = options.inferenceSlots || DEFAULT_INFERENCE_CONCURRENCY;
+    this._inferenceQueue = new PQueue({ concurrency });
     logger.info('[Coordinator] Inference concurrency', {
-      concurrency: DEFAULT_INFERENCE_CONCURRENCY
+      concurrency,
+      source: options.inferenceSlots ? 'PerformanceService' : 'default'
     });
 
     // Track active operations for debugging

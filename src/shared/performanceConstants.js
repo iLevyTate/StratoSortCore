@@ -330,8 +330,8 @@ const LLAMA = {
   MAX_LOADED_MODELS: 2, // Default for <8GB VRAM
   // Parallel requests for embeddings (1 is more stable with in-process inference)
   NUM_PARALLEL_EMBEDDINGS: 1,
-  // GPU layers configuration (-1 = auto-detect)
-  GPU_LAYERS_DEFAULT: -1,
+  // GPU layers configuration ('auto' = offload all layers to GPU when available)
+  GPU_LAYERS_DEFAULT: 'auto',
   // Context window sizes by task type
   CONTEXT_EMBEDDINGS: 512,
   CONTEXT_VISION: 2048,

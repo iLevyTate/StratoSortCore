@@ -10,10 +10,10 @@ const path = require('path');
 const fs = require('fs').promises;
 const { ACTION_TYPES } = require('../../../shared/constants');
 // FIX: Added safeSend import for validated IPC event sending
-const { withErrorLogging, withValidation, safeHandle, safeSend } = require('../ipcWrappers');
+const { createHandler, safeHandle, safeSend, z } = require('../ipcWrappers');
 const { logger: baseLogger, createLogger } = require('../../../shared/logger');
 const { handleBatchOrganize } = require('./batchOrganizeHandler');
-const { z, schemas } = require('../validationSchemas');
+const { schemas } = require('../validationSchemas');
 const { validateFileOperationPath } = require('../../../shared/pathSanitization');
 const {
   isNotFoundError,
@@ -42,6 +42,8 @@ const { crossDeviceMove } = require('../../../shared/atomicFileOperations');
 
 // Alias for backward compatibility
 const operationSchema = schemas?.fileOperation || null;
+const schemaFilePath = z ? z.string().min(1) : null;
+const schemaCopyPaths = z ? z.tuple([z.string().min(1), z.string().min(1)]) : null;
 
 const logger =
   typeof createLogger === 'function' ? createLogger('IPC:Files:Operations') : baseLogger;
@@ -716,12 +718,12 @@ function registerFileOperationHandlers(servicesOrParams) {
     getMainWindow
   });
 
-  // Create handler with or without Zod validation
-  // withValidation signature: (logger, schema, handler, options)
-  const performOperationHandler =
-    z && operationSchema
-      ? withValidation(log, operationSchema, baseHandler)
-      : withErrorLogging(log, baseHandler);
+  const performOperationHandler = createHandler({
+    logger: log,
+    context: 'FileOps',
+    schema: operationSchema,
+    handler: baseHandler
+  });
 
   safeHandle(ipcMain, IPC_CHANNELS.FILES.PERFORM_OPERATION, performOperationHandler);
 
@@ -729,97 +731,102 @@ function registerFileOperationHandlers(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.FILES.DELETE_FILE,
-    withErrorLogging(log, async (event, filePath) => {
-      try {
-        if (!filePath || typeof filePath !== 'string') {
-          return {
-            success: false,
-            error: 'Invalid file path provided',
-            errorCode: 'INVALID_PATH'
-          };
-        }
-
-        // SECURITY FIX: Validate path before any operations
-        const validation = await validateFileOperationPath(filePath, {
-          checkSymlinks: true
-        });
-
-        if (!validation.valid) {
-          log.warn('[FILE-OPS] Delete path validation failed', {
-            filePath,
-            error: validation.error
-          });
-          return {
-            success: false,
-            error: validation.error,
-            errorCode: 'INVALID_PATH'
-          };
-        }
-
-        const validatedPath = validation.normalizedPath;
-
-        // TOCTOU FIX: Get stats in try-catch, handle errors gracefully
-        // Combine stat + unlink - if stat fails, we'll get the error
-        // If file is deleted between stat and unlink, unlink will also fail with ENOENT
-        let fileSize = 0;
+    createHandler({
+      logger: log,
+      context: 'FileOps',
+      schema: schemaFilePath,
+      handler: async (event, filePath) => {
         try {
-          const stats = await fs.stat(validatedPath);
-          fileSize = stats.size;
-        } catch (statError) {
-          if (statError.code === 'ENOENT') {
+          if (!filePath || typeof filePath !== 'string') {
             return {
               success: false,
-              error: 'File not found or inaccessible',
-              errorCode: 'FILE_NOT_FOUND',
-              details: statError.message
+              error: 'Invalid file path provided',
+              errorCode: 'INVALID_PATH'
             };
           }
-          // For other errors, try to proceed with delete anyway
-          log.warn('[FILE-OPS] Could not stat file before delete', {
-            error: statError.message
+
+          // SECURITY FIX: Validate path before any operations
+          const validation = await validateFileOperationPath(filePath, {
+            checkSymlinks: true
           });
+
+          if (!validation.valid) {
+            log.warn('[FILE-OPS] Delete path validation failed', {
+              filePath,
+              error: validation.error
+            });
+            return {
+              success: false,
+              error: validation.error,
+              errorCode: 'INVALID_PATH'
+            };
+          }
+
+          const validatedPath = validation.normalizedPath;
+
+          // TOCTOU FIX: Get stats in try-catch, handle errors gracefully
+          // Combine stat + unlink - if stat fails, we'll get the error
+          // If file is deleted between stat and unlink, unlink will also fail with ENOENT
+          let fileSize = 0;
+          try {
+            const stats = await fs.stat(validatedPath);
+            fileSize = stats.size;
+          } catch (statError) {
+            if (statError.code === 'ENOENT') {
+              return {
+                success: false,
+                error: 'File not found or inaccessible',
+                errorCode: 'FILE_NOT_FOUND',
+                details: statError.message
+              };
+            }
+            // For other errors, try to proceed with delete anyway
+            log.warn('[FILE-OPS] Could not stat file before delete', {
+              error: statError.message
+            });
+          }
+
+          await fs.unlink(validatedPath);
+
+          const dbDeleteWarning = await deleteFromDatabase(validatedPath, log);
+
+          log.info('[FILE-OPS] Deleted file:', validatedPath, `(${fileSize} bytes)`);
+
+          return {
+            success: true,
+            message: 'File deleted successfully',
+            deletedFile: {
+              path: validatedPath,
+              size: fileSize,
+              deletedAt: new Date().toISOString()
+            },
+            ...(dbDeleteWarning && { warning: dbDeleteWarning })
+          };
+        } catch (error) {
+          log.error('[FILE-OPS] Error deleting file:', error);
+
+          let errorCode = 'DELETE_FAILED';
+          let userMessage = 'Failed to delete file';
+
+          if (isNotFoundError(error)) {
+            errorCode = 'FILE_NOT_FOUND';
+            userMessage = 'File not found';
+          } else if (isPermissionError(error)) {
+            errorCode = 'PERMISSION_DENIED';
+            userMessage = 'Permission denied - file may be in use';
+          } else if (getErrorCategory(error) === ErrorCategory.FILE_IN_USE) {
+            errorCode = 'FILE_IN_USE';
+            userMessage = 'File is currently in use';
+          }
+
+          return {
+            success: false,
+            error: userMessage,
+            errorCode,
+            details: error.message,
+            systemError: error.code
+          };
         }
-
-        await fs.unlink(validatedPath);
-
-        const dbDeleteWarning = await deleteFromDatabase(validatedPath, log);
-
-        log.info('[FILE-OPS] Deleted file:', validatedPath, `(${fileSize} bytes)`);
-
-        return {
-          success: true,
-          message: 'File deleted successfully',
-          deletedFile: {
-            path: validatedPath,
-            size: fileSize,
-            deletedAt: new Date().toISOString()
-          },
-          ...(dbDeleteWarning && { warning: dbDeleteWarning })
-        };
-      } catch (error) {
-        log.error('[FILE-OPS] Error deleting file:', error);
-
-        let errorCode = 'DELETE_FAILED';
-        let userMessage = 'Failed to delete file';
-
-        if (isNotFoundError(error)) {
-          errorCode = 'FILE_NOT_FOUND';
-          userMessage = 'File not found';
-        } else if (isPermissionError(error)) {
-          errorCode = 'PERMISSION_DENIED';
-          userMessage = 'Permission denied - file may be in use';
-        } else if (getErrorCategory(error) === ErrorCategory.FILE_IN_USE) {
-          errorCode = 'FILE_IN_USE';
-          userMessage = 'File is currently in use';
-        }
-
-        return {
-          success: false,
-          error: userMessage,
-          errorCode,
-          details: error.message,
-          systemError: error.code
-        };
       }
     })
   );
@@ -828,164 +835,169 @@ function registerFileOperationHandlers(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.FILES.COPY_FILE,
-    withErrorLogging(log, async (event, sourcePath, destinationPath) => {
-      try {
-        if (!sourcePath || !destinationPath) {
-          return {
-            success: false,
-            error: 'Source and destination paths are required',
-            errorCode: 'INVALID_PATHS'
-          };
-        }
-
-        // SECURITY FIX: Validate both paths before any operations
-        const validation = await validateOperationPaths(sourcePath, destinationPath, log);
-
-        if (!validation.valid) {
-          return {
-            success: false,
-            error: validation.error,
-            errorCode: 'INVALID_PATH'
-          };
-        }
-
-        const normalizedSource = validation.source;
-        const normalizedDestination = validation.destination;
-
-        // TOCTOU FIX: Don't pre-check with access(), let copyFile handle errors
-        // Get stats for return value, but don't gate on it
-        let fileSize = 0;
+    createHandler({
+      logger: log,
+      context: 'FileOps',
+      schema: schemaCopyPaths,
+      handler: async (event, sourcePath, destinationPath) => {
         try {
-          const sourceStats = await fs.stat(normalizedSource);
-          fileSize = sourceStats.size;
-        } catch (statError) {
-          if (statError.code === 'ENOENT') {
+          if (!sourcePath || !destinationPath) {
             return {
               success: false,
-              error: 'Source file not found',
-              errorCode: 'SOURCE_NOT_FOUND',
-              details: statError.message
+              error: 'Source and destination paths are required',
+              errorCode: 'INVALID_PATHS'
             };
           }
-          // For other errors, try to proceed anyway
-          log.warn('[FILE-OPS] Could not stat source file before copy', {
-            error: statError.message
-          });
-        }
 
-        const destDir = path.dirname(normalizedDestination);
-        await fs.mkdir(destDir, { recursive: true });
+          // SECURITY FIX: Validate both paths before any operations
+          const validation = await validateOperationPaths(sourcePath, destinationPath, log);
 
-        // PATH-TRACE: Log copy start
-        traceCopyStart(normalizedSource, normalizedDestination, 'fileOperationHandlers');
+          if (!validation.valid) {
+            return {
+              success: false,
+              error: validation.error,
+              errorCode: 'INVALID_PATH'
+            };
+          }
 
-        await fs.copyFile(normalizedSource, normalizedDestination);
+          const normalizedSource = validation.source;
+          const normalizedDestination = validation.destination;
 
-        // PATH-TRACE: Log copy complete (fs operation)
-        traceCopyComplete(normalizedSource, normalizedDestination, 'fileOperationHandlers', true);
-
-        log.info('[FILE-OPS] Copied file:', normalizedSource, 'to', normalizedDestination);
-
-        // Use FilePathCoordinator for atomic copy handling across all systems
-        const coordinator = getFilePathCoordinator();
-        if (coordinator) {
-          log.debug('[FILE-OPS] Using FilePathCoordinator for atomic copy handling');
-          const copyResult = await coordinator.handleFileCopy(
-            normalizedSource,
-            normalizedDestination
-          );
-          if (!copyResult.success && copyResult.errors.length > 0) {
-            log.warn('[FILE-OPS] Some systems failed during copy', {
-              errors: copyResult.errors.map((e) => e.system)
+          // TOCTOU FIX: Don't pre-check with access(), let copyFile handle errors
+          // Get stats for return value, but don't gate on it
+          let fileSize = 0;
+          try {
+            const sourceStats = await fs.stat(normalizedSource);
+            fileSize = sourceStats.size;
+          } catch (statError) {
+            if (statError.code === 'ENOENT') {
+              return {
+                success: false,
+                error: 'Source file not found',
+                errorCode: 'SOURCE_NOT_FOUND',
+                details: statError.message
+              };
+            }
+            // For other errors, try to proceed anyway
+            log.warn('[FILE-OPS] Could not stat source file before copy', {
+              error: statError.message
             });
           }
-        } else {
-          log.warn(
-            '[FILE-OPS] FilePathCoordinator unavailable, copy operations skipped for database/history'
-          );
-        }
 
-        // Invalidate and rebuild search index to include the copy
-        try {
-          const { getSearchServiceInstance } = require('../semantic');
-          const searchService = getSearchServiceInstance?.();
-          if (searchService) {
-            searchService
-              .invalidateAndRebuild({
-                immediate: true,
-                reason: 'file-copy',
-                newPath: normalizedDestination
-              })
-              .catch((rebuildErr) => {
-                log.warn('[FILE-OPS] Background BM25 rebuild failed after copy', {
-                  error: rebuildErr.message
-                });
+          const destDir = path.dirname(normalizedDestination);
+          await fs.mkdir(destDir, { recursive: true });
+
+          // PATH-TRACE: Log copy start
+          traceCopyStart(normalizedSource, normalizedDestination, 'fileOperationHandlers');
+
+          await fs.copyFile(normalizedSource, normalizedDestination);
+
+          // PATH-TRACE: Log copy complete (fs operation)
+          traceCopyComplete(normalizedSource, normalizedDestination, 'fileOperationHandlers', true);
+
+          log.info('[FILE-OPS] Copied file:', normalizedSource, 'to', normalizedDestination);
+
+          // Use FilePathCoordinator for atomic copy handling across all systems
+          const coordinator = getFilePathCoordinator();
+          if (coordinator) {
+            log.debug('[FILE-OPS] Using FilePathCoordinator for atomic copy handling');
+            const copyResult = await coordinator.handleFileCopy(
+              normalizedSource,
+              normalizedDestination
+            );
+            if (!copyResult.success && copyResult.errors.length > 0) {
+              log.warn('[FILE-OPS] Some systems failed during copy', {
+                errors: copyResult.errors.map((e) => e.system)
               });
+            }
+          } else {
+            log.warn(
+              '[FILE-OPS] FilePathCoordinator unavailable, copy operations skipped for database/history'
+            );
           }
-        } catch (invalidateErr) {
-          log.warn('[FILE-OPS] Failed to trigger search index rebuild after copy', {
-            error: invalidateErr.message
+
+          // Invalidate and rebuild search index to include the copy
+          try {
+            const { getSearchServiceInstance } = require('../semantic');
+            const searchService = getSearchServiceInstance?.();
+            if (searchService) {
+              searchService
+                .invalidateAndRebuild({
+                  immediate: true,
+                  reason: 'file-copy',
+                  newPath: normalizedDestination
+                })
+                .catch((rebuildErr) => {
+                  log.warn('[FILE-OPS] Background BM25 rebuild failed after copy', {
+                    error: rebuildErr.message
+                  });
+                });
+            }
+          } catch (invalidateErr) {
+            log.warn('[FILE-OPS] Failed to trigger search index rebuild after copy', {
+              error: invalidateErr.message
+            });
+          }
+
+          // Invalidate clustering cache after file copy
+          try {
+            const { getClusteringServiceInstance } = require('../semantic');
+            const clusteringService = getClusteringServiceInstance?.();
+            if (clusteringService) {
+              clusteringService.invalidateClusters();
+            }
+          } catch (invalidateErr) {
+            log.warn('[FILE-OPS] Failed to invalidate clustering cache after copy', {
+              error: invalidateErr.message
+            });
+          }
+
+          // Ensure embeddings reflect the final smart folder destination (best effort)
+          // Required to update metadata (smartFolder field)
+          await syncEmbeddingsBestEffort({
+            sourcePath: normalizedSource,
+            destPath: normalizedDestination,
+            log,
+            context: 'copy'
           });
-        }
 
-        // Invalidate clustering cache after file copy
-        try {
-          const { getClusteringServiceInstance } = require('../semantic');
-          const clusteringService = getClusteringServiceInstance?.();
-          if (clusteringService) {
-            clusteringService.invalidateClusters();
+          return {
+            success: true,
+            message: 'File copied successfully',
+            operation: {
+              source: normalizedSource,
+              destination: normalizedDestination,
+              size: fileSize,
+              copiedAt: new Date().toISOString()
+            }
+          };
+        } catch (error) {
+          log.error('[FILE-OPS] Error copying file:', error);
+
+          let errorCode = 'COPY_FAILED';
+          let userMessage = 'Failed to copy file';
+
+          if (getErrorCategory(error) === ErrorCategory.DISK_FULL) {
+            errorCode = 'INSUFFICIENT_SPACE';
+            userMessage = 'Insufficient disk space';
+          } else if (isPermissionError(error)) {
+            errorCode = 'PERMISSION_DENIED';
+            userMessage = 'Permission denied';
+          } else if (isExistsError(error)) {
+            errorCode = 'FILE_EXISTS';
+            userMessage = 'Destination file already exists';
+          } else if (isNotFoundError(error)) {
+            errorCode = 'SOURCE_NOT_FOUND';
+            userMessage = 'Source file not found';
           }
-        } catch (invalidateErr) {
-          log.warn('[FILE-OPS] Failed to invalidate clustering cache after copy', {
-            error: invalidateErr.message
-          });
+
+          return {
+            success: false,
+            error: userMessage,
+            errorCode,
+            details: error.message
+          };
         }
-
-        // Ensure embeddings reflect the final smart folder destination (best effort)
-        // Required to update metadata (smartFolder field)
-        await syncEmbeddingsBestEffort({
-          sourcePath: normalizedSource,
-          destPath: normalizedDestination,
-          log,
-          context: 'copy'
-        });
-
-        return {
-          success: true,
-          message: 'File copied successfully',
-          operation: {
-            source: normalizedSource,
-            destination: normalizedDestination,
-            size: fileSize,
-            copiedAt: new Date().toISOString()
-          }
-        };
-      } catch (error) {
-        log.error('[FILE-OPS] Error copying file:', error);
-
-        let errorCode = 'COPY_FAILED';
-        let userMessage = 'Failed to copy file';
-
-        if (getErrorCategory(error) === ErrorCategory.DISK_FULL) {
-          errorCode = 'INSUFFICIENT_SPACE';
-          userMessage = 'Insufficient disk space';
-        } else if (isPermissionError(error)) {
-          errorCode = 'PERMISSION_DENIED';
-          userMessage = 'Permission denied';
-        } else if (isExistsError(error)) {
-          errorCode = 'FILE_EXISTS';
-          userMessage = 'Destination file already exists';
-        } else if (isNotFoundError(error)) {
-          errorCode = 'SOURCE_NOT_FOUND';
-          userMessage = 'Source file not found';
-        }
-
-        return {
-          success: false,
-          error: userMessage,
-          errorCode,
-          details: error.message
-        };
       }
     })
   );
@@ -994,209 +1006,214 @@ function registerFileOperationHandlers(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.FILES.CLEANUP_ANALYSIS,
-    withErrorLogging(log, async (event, filePath) => {
-      try {
-        if (!filePath || typeof filePath !== 'string') {
-          return {
-            success: false,
-            error: 'Invalid file path provided',
-            errorCode: 'INVALID_PATH'
-          };
-        }
+    createHandler({
+      logger: log,
+      context: 'FileOps',
+      schema: schemaFilePath,
+      handler: async (event, filePath) => {
+        try {
+          if (!filePath || typeof filePath !== 'string') {
+            return {
+              success: false,
+              error: 'Invalid file path provided',
+              errorCode: 'INVALID_PATH'
+            };
+          }
 
-        // SECURITY FIX: Validate path before cleanup
-        const validation = await validateFileOperationPath(filePath, {
-          checkSymlinks: false
-        });
-
-        if (!validation.valid) {
-          log.warn('[FILE-OPS] Cleanup path validation failed', {
-            filePath,
-            error: validation.error
+          // SECURITY FIX: Validate path before cleanup
+          const validation = await validateFileOperationPath(filePath, {
+            checkSymlinks: false
           });
-          return {
-            success: false,
-            error: validation.error,
-            errorCode: 'INVALID_PATH'
-          };
-        }
 
-        const validatedPath = validation.normalizedPath;
+          if (!validation.valid) {
+            log.warn('[FILE-OPS] Cleanup path validation failed', {
+              filePath,
+              error: validation.error
+            });
+            return {
+              success: false,
+              error: validation.error,
+              errorCode: 'INVALID_PATH'
+            };
+          }
 
-        // If analysis history shows the file already moved, update paths instead of deleting.
-        const historyService = getAnalysisHistoryService();
-        if (historyService?.getAnalysisByPath) {
-          try {
-            const entry = await historyService.getAnalysisByPath(validatedPath);
-            const actualPath = entry?.organization?.actual;
-            if (actualPath && typeof actualPath === 'string') {
-              let actualExists = false;
-              try {
-                await fs.access(actualPath);
-                actualExists = true;
-              } catch {
-                actualExists = false;
-              }
+          const validatedPath = validation.normalizedPath;
 
-              if (actualExists) {
-                const coordinator = getFilePathCoordinator();
-                if (actualPath !== validatedPath && coordinator) {
-                  const updateResult = await coordinator.atomicPathUpdate(
-                    validatedPath,
-                    actualPath,
-                    {
-                      type: 'move',
-                      skipProcessingState: true
-                    }
-                  );
-
-                  // Rebuild search indexes after alignment (best effort)
-                  try {
-                    const { getSearchServiceInstance } = require('../semantic');
-                    const searchService = getSearchServiceInstance?.();
-                    if (searchService) {
-                      searchService
-                        .invalidateAndRebuild({
-                          immediate: true,
-                          reason: 'analysis-alignment',
-                          oldPath: validatedPath,
-                          newPath: actualPath
-                        })
-                        .catch((rebuildErr) => {
-                          log.warn('[FILE-OPS] Background BM25 rebuild failed', {
-                            error: rebuildErr.message
-                          });
-                        });
-                    }
-                  } catch (invalidateErr) {
-                    log.warn('[FILE-OPS] Failed to trigger search index rebuild', {
-                      error: invalidateErr.message
-                    });
-                  }
-
-                  try {
-                    const { getClusteringServiceInstance } = require('../semantic');
-                    const clusteringService = getClusteringServiceInstance?.();
-                    if (clusteringService) {
-                      clusteringService.invalidateClusters();
-                    }
-                  } catch (invalidateErr) {
-                    log.warn('[FILE-OPS] Failed to invalidate clustering cache', {
-                      error: invalidateErr.message
-                    });
-                  }
-
-                  // Notify renderer about move alignment (best effort)
-                  try {
-                    const mainWindow = getMainWindow();
-                    if (mainWindow && !mainWindow.isDestroyed()) {
-                      safeSend(mainWindow.webContents, 'file-operation-complete', {
-                        operation: 'move',
-                        oldPath: validatedPath,
-                        newPath: actualPath
-                      });
-                    }
-                  } catch (notifyErr) {
-                    log.warn('[FILE-OPS] Failed to notify renderer of move alignment', {
-                      error: notifyErr.message
-                    });
-                  }
-
-                  return {
-                    success: updateResult.success,
-                    updated: updateResult.updated,
-                    errors: updateResult.errors,
-                    ...(updateResult.errors?.length && {
-                      warning: `Some systems failed to update: ${updateResult.errors
-                        .map((e) => e.system)
-                        .join(', ')}`
-                    })
-                  };
+          // If analysis history shows the file already moved, update paths instead of deleting.
+          const historyService = getAnalysisHistoryService();
+          if (historyService?.getAnalysisByPath) {
+            try {
+              const entry = await historyService.getAnalysisByPath(validatedPath);
+              const actualPath = entry?.organization?.actual;
+              if (actualPath && typeof actualPath === 'string') {
+                let actualExists = false;
+                try {
+                  await fs.access(actualPath);
+                  actualExists = true;
+                } catch {
+                  actualExists = false;
                 }
 
-                // Already aligned to actual path; skip cleanup to avoid orphaning organized files.
-                return {
-                  success: true,
-                  skipped: true,
-                  reason: 'already-organized'
-                };
+                if (actualExists) {
+                  const coordinator = getFilePathCoordinator();
+                  if (actualPath !== validatedPath && coordinator) {
+                    const updateResult = await coordinator.atomicPathUpdate(
+                      validatedPath,
+                      actualPath,
+                      {
+                        type: 'move',
+                        skipProcessingState: true
+                      }
+                    );
+
+                    // Rebuild search indexes after alignment (best effort)
+                    try {
+                      const { getSearchServiceInstance } = require('../semantic');
+                      const searchService = getSearchServiceInstance?.();
+                      if (searchService) {
+                        searchService
+                          .invalidateAndRebuild({
+                            immediate: true,
+                            reason: 'analysis-alignment',
+                            oldPath: validatedPath,
+                            newPath: actualPath
+                          })
+                          .catch((rebuildErr) => {
+                            log.warn('[FILE-OPS] Background BM25 rebuild failed', {
+                              error: rebuildErr.message
+                            });
+                          });
+                      }
+                    } catch (invalidateErr) {
+                      log.warn('[FILE-OPS] Failed to trigger search index rebuild', {
+                        error: invalidateErr.message
+                      });
+                    }
+
+                    try {
+                      const { getClusteringServiceInstance } = require('../semantic');
+                      const clusteringService = getClusteringServiceInstance?.();
+                      if (clusteringService) {
+                        clusteringService.invalidateClusters();
+                      }
+                    } catch (invalidateErr) {
+                      log.warn('[FILE-OPS] Failed to invalidate clustering cache', {
+                        error: invalidateErr.message
+                      });
+                    }
+
+                    // Notify renderer about move alignment (best effort)
+                    try {
+                      const mainWindow = getMainWindow();
+                      if (mainWindow && !mainWindow.isDestroyed()) {
+                        safeSend(mainWindow.webContents, 'file-operation-complete', {
+                          operation: 'move',
+                          oldPath: validatedPath,
+                          newPath: actualPath
+                        });
+                      }
+                    } catch (notifyErr) {
+                      log.warn('[FILE-OPS] Failed to notify renderer of move alignment', {
+                        error: notifyErr.message
+                      });
+                    }
+
+                    return {
+                      success: updateResult.success,
+                      updated: updateResult.updated,
+                      errors: updateResult.errors,
+                      ...(updateResult.errors?.length && {
+                        warning: `Some systems failed to update: ${updateResult.errors
+                          .map((e) => e.system)
+                          .join(', ')}`
+                      })
+                    };
+                  }
+
+                  // Already aligned to actual path; skip cleanup to avoid orphaning organized files.
+                  return {
+                    success: true,
+                    skipped: true,
+                    reason: 'already-organized'
+                  };
+                }
               }
-            }
-          } catch (historyErr) {
-            log.debug('[FILE-OPS] Analysis history check failed during cleanup', {
-              error: historyErr.message
-            });
-          }
-        }
-
-        let cleanupResult = null;
-        let cleanupWarning = null;
-
-        const coordinator = getFilePathCoordinator();
-        if (coordinator) {
-          try {
-            cleanupResult = await coordinator.handleFileDeletion(validatedPath);
-            if (!cleanupResult.success && cleanupResult.errors?.length) {
-              cleanupWarning = `Some systems failed to cleanup: ${cleanupResult.errors
-                .map((e) => e.system)
-                .join(', ')}`;
-            }
-          } catch (coordError) {
-            cleanupWarning = `Cleanup failed: ${coordError.message}`;
-            log.warn('[FILE-OPS] FilePathCoordinator cleanup failed', {
-              error: coordError.message
-            });
-          }
-        } else {
-          cleanupWarning = 'Coordinator unavailable for cleanup';
-          log.warn('[FILE-OPS] FilePathCoordinator unavailable for cleanup');
-        }
-
-        // Invalidate and rebuild search index after cleanup
-        try {
-          const { getSearchServiceInstance } = require('../semantic');
-          const searchService = getSearchServiceInstance?.();
-          if (searchService) {
-            searchService
-              .invalidateAndRebuild({
-                immediate: true,
-                reason: 'analysis-remove',
-                oldPath: validatedPath
-              })
-              .catch((rebuildErr) => {
-                log.warn('[FILE-OPS] Background BM25 rebuild failed', {
-                  error: rebuildErr.message
-                });
+            } catch (historyErr) {
+              log.debug('[FILE-OPS] Analysis history check failed during cleanup', {
+                error: historyErr.message
               });
+            }
           }
-        } catch (invalidateErr) {
-          log.warn('[FILE-OPS] Failed to trigger search index rebuild', {
-            error: invalidateErr.message
-          });
-        }
 
-        // Invalidate clustering cache after cleanup
-        try {
-          const { getClusteringServiceInstance } = require('../semantic');
-          const clusteringService = getClusteringServiceInstance?.();
-          if (clusteringService) {
-            clusteringService.invalidateClusters();
+          let cleanupResult = null;
+          let cleanupWarning = null;
+
+          const coordinator = getFilePathCoordinator();
+          if (coordinator) {
+            try {
+              cleanupResult = await coordinator.handleFileDeletion(validatedPath);
+              if (!cleanupResult.success && cleanupResult.errors?.length) {
+                cleanupWarning = `Some systems failed to cleanup: ${cleanupResult.errors
+                  .map((e) => e.system)
+                  .join(', ')}`;
+              }
+            } catch (coordError) {
+              cleanupWarning = `Cleanup failed: ${coordError.message}`;
+              log.warn('[FILE-OPS] FilePathCoordinator cleanup failed', {
+                error: coordError.message
+              });
+            }
+          } else {
+            cleanupWarning = 'Coordinator unavailable for cleanup';
+            log.warn('[FILE-OPS] FilePathCoordinator unavailable for cleanup');
           }
-        } catch (invalidateErr) {
-          log.warn('[FILE-OPS] Failed to invalidate clustering cache', {
-            error: invalidateErr.message
-          });
-        }
 
-        return {
-          success: !cleanupWarning,
-          ...(cleanupResult?.cleaned && { cleaned: cleanupResult.cleaned }),
-          ...(cleanupResult?.errors && { errors: cleanupResult.errors }),
-          ...(cleanupWarning && { warning: cleanupWarning })
-        };
-      } catch (error) {
-        log.error('[FILE-OPS] Cleanup analysis error:', error);
-        return { success: false, error: error.message };
+          // Invalidate and rebuild search index after cleanup
+          try {
+            const { getSearchServiceInstance } = require('../semantic');
+            const searchService = getSearchServiceInstance?.();
+            if (searchService) {
+              searchService
+                .invalidateAndRebuild({
+                  immediate: true,
+                  reason: 'analysis-remove',
+                  oldPath: validatedPath
+                })
+                .catch((rebuildErr) => {
+                  log.warn('[FILE-OPS] Background BM25 rebuild failed', {
+                    error: rebuildErr.message
+                  });
+                });
+            }
+          } catch (invalidateErr) {
+            log.warn('[FILE-OPS] Failed to trigger search index rebuild', {
+              error: invalidateErr.message
+            });
+          }
+
+          // Invalidate clustering cache after cleanup
+          try {
+            const { getClusteringServiceInstance } = require('../semantic');
+            const clusteringService = getClusteringServiceInstance?.();
+            if (clusteringService) {
+              clusteringService.invalidateClusters();
+            }
+          } catch (invalidateErr) {
+            log.warn('[FILE-OPS] Failed to invalidate clustering cache', {
+              error: invalidateErr.message
+            });
+          }
+
+          return {
+            success: !cleanupWarning,
+            ...(cleanupResult?.cleaned && { cleaned: cleanupResult.cleaned }),
+            ...(cleanupResult?.errors && { errors: cleanupResult.errors }),
+            ...(cleanupWarning && { warning: cleanupWarning })
+          };
+        } catch (error) {
+          log.error('[FILE-OPS] Cleanup analysis error:', error);
+          return { success: false, error: error.message };
+        }
       }
     })
   );

@@ -35,6 +35,7 @@ jest.mock('../src/main/ipc/ipcWrappers', () => ({
 
 jest.mock('../src/main/services/OramaVectorService', () => ({
   getInstance: jest.fn(() => ({
+    initialize: jest.fn().mockResolvedValue(),
     getStats: jest.fn(),
     rebuildIndex: jest.fn()
   }))
@@ -42,6 +43,7 @@ jest.mock('../src/main/services/OramaVectorService', () => ({
 
 jest.mock('../src/main/services/FolderMatchingService', () => ({
   getInstance: jest.fn(() => ({
+    initialize: jest.fn().mockResolvedValue(),
     rebuildIndex: jest.fn()
   }))
 }));
@@ -87,6 +89,7 @@ describe('Semantic IPC (Management)', () => {
 
     // Create a stable singleton mock for OramaVectorService
     const mockVectorDbInstance = {
+      initialize: jest.fn().mockResolvedValue(),
       getStats: jest.fn(),
       rebuildIndex: jest.fn(),
       resetFolders: jest.fn(),
@@ -95,6 +98,7 @@ describe('Semantic IPC (Management)', () => {
 
     // Create a stable singleton mock for FolderMatchingService
     const mockFolderMatcherInstance = {
+      initialize: jest.fn().mockResolvedValue(),
       rebuildIndex: jest.fn(),
       embedText: jest.fn(),
       generateFolderId: jest.fn()

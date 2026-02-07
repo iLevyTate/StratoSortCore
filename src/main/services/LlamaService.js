@@ -89,6 +89,7 @@ class LlamaService extends EventEmitter {
     // Llama core
     this._llama = null;
     this._gpuBackend = null;
+    this._detectedGpu = null;
 
     // Managers
     this._gpuMonitor = new GPUMonitor();
@@ -339,8 +340,31 @@ class LlamaService extends EventEmitter {
       // Initialize Llama with GPU detection
       await this._initializeLlama();
 
-      // Initialize Memory Manager (needs llama instance)
-      this._modelMemoryManager = new ModelMemoryManager(this);
+      // Initialize Memory Manager with GPU info for VRAM-aware budgeting
+      this._modelMemoryManager = new ModelMemoryManager(this, {
+        gpuInfo: this._detectedGpu || null
+      });
+
+      // Upgrade coordinator with GPU-aware concurrency from PerformanceService
+      try {
+        const { getRecommendedConcurrency } = require('./PerformanceService');
+        const recs = await getRecommendedConcurrency();
+        if (recs.maxConcurrent > 1) {
+          this._coordinator = new ModelAccessCoordinator({
+            inferenceSlots: recs.maxConcurrent
+          });
+          logger.info('[LlamaService] Coordinator upgraded with GPU-aware concurrency', {
+            maxConcurrent: recs.maxConcurrent,
+            reason: recs.reason,
+            vramMB: recs.vramMB,
+            gpuName: recs.gpuName
+          });
+        }
+      } catch (perfError) {
+        logger.debug('[LlamaService] PerformanceService not available, using default concurrency', {
+          error: perfError?.message
+        });
+      }
 
       // Configuration is loaded via _ensureConfigLoaded()
 
@@ -373,12 +397,14 @@ class LlamaService extends EventEmitter {
     // Detect what GPU the OS sees (independent of node-llama-cpp's own probe)
     try {
       const gpuInfo = await this._gpuMonitor.detectGPU();
+      this._detectedGpu = gpuInfo;
       logger.info('[LlamaService] System GPU detected', {
         type: gpuInfo.type,
         name: gpuInfo.name,
         vramMB: gpuInfo.vramMB || 0
       });
     } catch {
+      this._detectedGpu = null;
       logger.debug('[LlamaService] GPU detection skipped');
     }
 
@@ -521,9 +547,12 @@ class LlamaService extends EventEmitter {
 
   /**
    * ACTUAL model loading logic called by ModelMemoryManager
+   * @param {string} type - Model type ('text', 'vision', 'embedding')
+   * @param {Object} [options={}] - Loading options
+   * @param {number} [options.gpuLayersOverride] - Override GPU layers (e.g., 0 for CPU fallback)
    * @private
    */
-  async _loadModel(type) {
+  async _loadModel(type, options = {}) {
     const modelName = this._selectedModels[type];
     if (!modelName) {
       const noModelError = new Error(`No ${type} model configured`);
@@ -552,9 +581,19 @@ class LlamaService extends EventEmitter {
     try {
       // Resolve gpuLayers: 'auto' or -1 → Infinity (offload all layers to GPU).
       // node-llama-cpp treats -1 as 0 (CPU-only), so we must map it ourselves.
-      const configLayers = this._config.gpuLayers;
-      const gpuLayers =
-        configLayers === 'auto' || configLayers === -1 ? Infinity : (configLayers ?? Infinity);
+      // gpuLayersOverride takes precedence (used by forceCPU fallback).
+      let gpuLayers;
+      if (typeof options.gpuLayersOverride === 'number') {
+        gpuLayers = options.gpuLayersOverride;
+        logger.info(`[LlamaService] GPU layers overridden for ${type}`, {
+          override: gpuLayers,
+          reason: gpuLayers === 0 ? 'CPU fallback' : 'explicit'
+        });
+      } else {
+        const configLayers = this._config.gpuLayers;
+        gpuLayers =
+          configLayers === 'auto' || configLayers === -1 ? Infinity : (configLayers ?? Infinity);
+      }
 
       const model = await this._llama.loadModel({
         modelPath,
@@ -594,6 +633,37 @@ class LlamaService extends EventEmitter {
   }
 
   /**
+   * Force-reload a model in CPU-only mode.
+   * Called by resilience layer when GPU errors are detected.
+   * @param {string} modelType - Model type to reload
+   * @private
+   */
+  async _reloadModelCPU(modelType) {
+    logger.warn(`[LlamaService] Reloading ${modelType} model in CPU-only mode`);
+
+    // Unload existing model first
+    if (this._contexts[modelType]) {
+      try {
+        await this._contexts[modelType].dispose?.();
+      } catch {
+        /* ignore */
+      }
+      this._contexts[modelType] = null;
+    }
+    if (this._models[modelType]) {
+      try {
+        await this._models[modelType].dispose?.();
+      } catch {
+        /* ignore */
+      }
+      this._models[modelType] = null;
+    }
+
+    // Reload with gpuLayers: 0 (CPU only)
+    return this._loadModel(modelType, { gpuLayersOverride: 0 });
+  }
+
+  /**
    * Generate embedding with resilience and metrics
    */
   async generateEmbedding(text, _options = {}) {
@@ -605,15 +675,16 @@ class LlamaService extends EventEmitter {
         this._modelMemoryManager?.acquireRef('embedding');
         try {
           return await withLlamaResilience(
-            async (_retryOptions) => {
+            async (retryOptions) => {
+              // Handle CPU fallback from LlamaResilience when GPU errors occur
+              if (retryOptions?.forceCPU && this._gpuBackend !== 'cpu') {
+                await this._reloadModelCPU('embedding');
+              }
+
               const startTime = Date.now();
 
               try {
                 const context = await this._ensureModelLoaded('embedding');
-
-                // Use retryOptions to handle CPU fallback if needed
-                // Note: node-llama-cpp context might need recreation for CPU fallback,
-                // but for now we rely on LlamaResilience to handle re-attempts
 
                 const embedding = await context.getEmbeddingFor(text);
                 const vector = Array.from(embedding.vector);
@@ -681,7 +752,12 @@ class LlamaService extends EventEmitter {
         this._modelMemoryManager?.acquireRef('text');
         try {
           return await withLlamaResilience(
-            async () => {
+            async (retryOptions) => {
+              // Handle CPU fallback from LlamaResilience when GPU errors occur
+              if (retryOptions?.forceCPU && this._gpuBackend !== 'cpu') {
+                await this._reloadModelCPU('text');
+              }
+
               const startTime = Date.now();
               let session;
               let abortHandler;
@@ -827,7 +903,12 @@ class LlamaService extends EventEmitter {
         this._modelMemoryManager?.acquireRef('vision');
         try {
           return await withLlamaResilience(
-            async () => {
+            async (retryOptions) => {
+              // Handle CPU fallback from LlamaResilience when GPU errors occur
+              if (retryOptions?.forceCPU && this._gpuBackend !== 'cpu') {
+                await this._reloadModelCPU('vision');
+              }
+
               const startTime = Date.now();
               try {
                 const modelName = this._selectedModels.vision || this._config.visionModel;
@@ -935,6 +1016,7 @@ class LlamaService extends EventEmitter {
       healthy: this._initialized,
       initialized: this._initialized,
       gpuBackend: this._gpuBackend,
+      gpuDetected: this._detectedGpu,
       metrics: this._metrics.getMetrics(),
       memory: this._modelMemoryManager?.getMemoryStatus()
     };

@@ -15,12 +15,14 @@ const {
   SUPPORTED_3D_EXTENSIONS,
   SUPPORTED_DESIGN_EXTENSIONS
 } = require('../../../shared/constants');
-const { withErrorLogging, safeHandle } = require('../ipcWrappers');
+const { createHandler, safeHandle, z } = require('../ipcWrappers');
 const { createLogger } = require('../../../shared/logger');
 const { validateFileOperationPath } = require('../../../shared/pathSanitization');
 const SettingsService = require('../../services/SettingsService');
 
 const logger = createLogger('IPC:Files:Selection');
+const schemaVoid = z ? z.void() : null;
+const schemaFilePath = z ? z.string().min(1) : null;
 /**
  * Get the last browsed path from settings, falling back to documents folder
  * @returns {Promise<string|undefined>} The default path for file dialogs
@@ -144,34 +146,39 @@ function registerFileSelectionHandlers(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.FILES.SELECT_DIRECTORY,
-    withErrorLogging(log, async () => {
-      log.debug('[FILE-SELECTION] Select directory handler called');
-      const mainWindow = getMainWindow();
+    createHandler({
+      logger: log,
+      context: 'FileSelection',
+      schema: schemaVoid,
+      handler: async () => {
+        log.debug('[FILE-SELECTION] Select directory handler called');
+        const mainWindow = getMainWindow();
 
-      try {
-        // Get the last browsed path to use as default
-        const defaultPath = await getDefaultBrowsePath();
+        try {
+          // Get the last browsed path to use as default
+          const defaultPath = await getDefaultBrowsePath();
 
-        const result = await dialog.showOpenDialog(mainWindow || null, {
-          properties: ['openDirectory', 'createDirectory'],
-          title: 'Select Folder',
-          buttonLabel: 'Select Folder',
-          defaultPath
-        });
+          const result = await dialog.showOpenDialog(mainWindow || null, {
+            properties: ['openDirectory', 'createDirectory'],
+            title: 'Select Folder',
+            buttonLabel: 'Select Folder',
+            defaultPath
+          });
 
-        if (result.canceled || !result.filePaths.length) {
-          return { success: false, path: null };
+          if (result.canceled || !result.filePaths.length) {
+            return { success: false, path: null };
+          }
+
+          const selectedPath = result.filePaths[0];
+
+          // Save the selected path for future dialogs
+          await saveLastBrowsedPath(selectedPath);
+
+          return { success: true, path: selectedPath };
+        } catch (error) {
+          log.error('[FILE-SELECTION] Error selecting directory:', error);
+          return { success: false, error: error.message, path: null };
         }
-
-        const selectedPath = result.filePaths[0];
-
-        // Save the selected path for future dialogs
-        await saveLastBrowsedPath(selectedPath);
-
-        return { success: true, path: selectedPath };
-      } catch (error) {
-        log.error('[FILE-SELECTION] Error selecting directory:', error);
-        return { success: false, error: error.message, path: null };
       }
     })
   );
@@ -180,14 +187,19 @@ function registerFileSelectionHandlers(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.FILES.GET_DOCUMENTS_PATH,
-    withErrorLogging(log, async () => {
-      log.debug('[FILE-SELECTION] Get documents path handler called');
-      try {
-        const documentsPath = app.getPath('documents');
-        return { success: true, path: documentsPath };
-      } catch (error) {
-        log.error('[FILE-SELECTION] Error getting documents path:', error);
-        return { success: false, error: error.message, path: null };
+    createHandler({
+      logger: log,
+      context: 'FileSelection',
+      schema: schemaVoid,
+      handler: async () => {
+        log.debug('[FILE-SELECTION] Get documents path handler called');
+        try {
+          const documentsPath = app.getPath('documents');
+          return { success: true, path: documentsPath };
+        } catch (error) {
+          log.error('[FILE-SELECTION] Error getting documents path:', error);
+          return { success: false, error: error.message, path: null };
+        }
       }
     })
   );
@@ -196,32 +208,37 @@ function registerFileSelectionHandlers(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.FILES.GET_FILE_STATS,
-    withErrorLogging(log, async (_event, filePath) => {
-      log.debug('[FILE-SELECTION] Get file stats handler called for:', filePath);
-      try {
-        if (!filePath || typeof filePath !== 'string') {
-          return { success: false, error: 'Invalid file path', stats: null };
-        }
-        // SECURITY: Validate path before filesystem access
-        const validation = await validateFileOperationPath(filePath);
-        if (!validation.valid) {
-          return { success: false, error: 'Invalid file path', stats: null };
-        }
-        const stats = await fs.stat(validation.normalizedPath);
-        return {
-          success: true,
-          stats: {
-            size: stats.size,
-            isFile: stats.isFile(),
-            isDirectory: stats.isDirectory(),
-            created: stats.birthtime,
-            modified: stats.mtime,
-            accessed: stats.atime
+    createHandler({
+      logger: log,
+      context: 'FileSelection',
+      schema: schemaFilePath,
+      handler: async (_event, filePath) => {
+        log.debug('[FILE-SELECTION] Get file stats handler called for:', filePath);
+        try {
+          if (!filePath || typeof filePath !== 'string') {
+            return { success: false, error: 'Invalid file path', stats: null };
           }
-        };
-      } catch (error) {
-        log.error('[FILE-SELECTION] Error getting file stats:', error);
-        return { success: false, error: error.message, stats: null };
+          // SECURITY: Validate path before filesystem access
+          const validation = await validateFileOperationPath(filePath);
+          if (!validation.valid) {
+            return { success: false, error: 'Invalid file path', stats: null };
+          }
+          const stats = await fs.stat(validation.normalizedPath);
+          return {
+            success: true,
+            stats: {
+              size: stats.size,
+              isFile: stats.isFile(),
+              isDirectory: stats.isDirectory(),
+              created: stats.birthtime,
+              modified: stats.mtime,
+              accessed: stats.atime
+            }
+          };
+        } catch (error) {
+          log.error('[FILE-SELECTION] Error getting file stats:', error);
+          return { success: false, error: error.message, stats: null };
+        }
       }
     })
   );
@@ -230,29 +247,34 @@ function registerFileSelectionHandlers(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.FILES.GET_FILES_IN_DIRECTORY,
-    withErrorLogging(log, async (_event, dirPath) => {
-      log.debug('[FILE-SELECTION] Get files in directory handler called for:', dirPath);
-      try {
-        if (!dirPath || typeof dirPath !== 'string') {
-          return { success: false, error: 'Invalid directory path', files: [] };
+    createHandler({
+      logger: log,
+      context: 'FileSelection',
+      schema: schemaFilePath,
+      handler: async (_event, dirPath) => {
+        log.debug('[FILE-SELECTION] Get files in directory handler called for:', dirPath);
+        try {
+          if (!dirPath || typeof dirPath !== 'string') {
+            return { success: false, error: 'Invalid directory path', files: [] };
+          }
+          // SECURITY: Validate path before filesystem access
+          const dirValidation = await validateFileOperationPath(dirPath);
+          if (!dirValidation.valid) {
+            return { success: false, error: 'Invalid directory path', files: [] };
+          }
+          const validatedDirPath = dirValidation.normalizedPath;
+          const items = await fs.readdir(validatedDirPath, { withFileTypes: true });
+          const files = items
+            .filter((item) => item.isFile())
+            .map((item) => ({
+              name: item.name,
+              path: path.join(validatedDirPath, item.name)
+            }));
+          return { success: true, files };
+        } catch (error) {
+          log.error('[FILE-SELECTION] Error getting files in directory:', error);
+          return { success: false, error: error.message, files: [] };
         }
-        // SECURITY: Validate path before filesystem access
-        const dirValidation = await validateFileOperationPath(dirPath);
-        if (!dirValidation.valid) {
-          return { success: false, error: 'Invalid directory path', files: [] };
-        }
-        const validatedDirPath = dirValidation.normalizedPath;
-        const items = await fs.readdir(validatedDirPath, { withFileTypes: true });
-        const files = items
-          .filter((item) => item.isFile())
-          .map((item) => ({
-            name: item.name,
-            path: path.join(validatedDirPath, item.name)
-          }));
-        return { success: true, files };
-      } catch (error) {
-        log.error('[FILE-SELECTION] Error getting files in directory:', error);
-        return { success: false, error: error.message, files: [] };
       }
     })
   );
@@ -261,94 +283,99 @@ function registerFileSelectionHandlers(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.FILES.SELECT,
-    withErrorLogging(log, async () => {
-      log.info('[MAIN-FILE-SELECT] ===== FILE SELECTION HANDLER CALLED =====');
+    createHandler({
+      logger: log,
+      context: 'FileSelection',
+      schema: schemaVoid,
+      handler: async () => {
+        log.info('[MAIN-FILE-SELECT] ===== FILE SELECTION HANDLER CALLED =====');
 
-      const mainWindow = getMainWindow();
-      log.info('[MAIN-FILE-SELECT] mainWindow exists?', !!mainWindow);
+        const mainWindow = getMainWindow();
+        log.info('[MAIN-FILE-SELECT] mainWindow exists?', !!mainWindow);
 
-      try {
-        // Focus window before dialog
-        if (mainWindow) {
-          if (!mainWindow.isFocused()) {
-            log.info('[MAIN-FILE-SELECT] Focusing window before dialog...');
-            mainWindow.focus();
-          }
-          if (mainWindow.isMinimized()) mainWindow.restore();
-          if (!mainWindow.isVisible()) mainWindow.show();
-          if (!mainWindow.isFocused()) mainWindow.focus();
-
-          const { TIMEOUTS } = require('../../../shared/performanceConstants');
-          await new Promise((resolve) => {
-            const t = setTimeout(resolve, TIMEOUTS.DELAY_BATCH);
-            try {
-              t.unref();
-            } catch {
-              // Non-fatal
+        try {
+          // Focus window before dialog
+          if (mainWindow) {
+            if (!mainWindow.isFocused()) {
+              log.info('[MAIN-FILE-SELECT] Focusing window before dialog...');
+              mainWindow.focus();
             }
-          });
-        }
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            if (!mainWindow.isVisible()) mainWindow.show();
+            if (!mainWindow.isFocused()) mainWindow.focus();
 
-        // Get the last browsed path to use as default
-        const defaultPath = await getDefaultBrowsePath();
-
-        const result = await dialog.showOpenDialog(mainWindow || null, {
-          properties: ['openFile', 'multiSelections', 'dontAddToRecent'],
-          title: 'Select Files to Organize',
-          buttonLabel: 'Select Files',
-          filters: buildFileFilters(),
-          defaultPath
-        });
-
-        log.info('[MAIN-FILE-SELECT] Dialog closed, result:', result);
-
-        if (result.canceled || !result.filePaths.length) {
-          return { success: false, files: [] };
-        }
-
-        log.info(`[FILE-SELECTION] Selected ${result.filePaths.length} items`);
-
-        const allFiles = [];
-
-        for (const selectedPath of result.filePaths) {
-          const ext = path.extname(selectedPath).toLowerCase();
-          if (!ext) {
-            log.warn('[FILE-SELECTION] Skipping path without extension', selectedPath);
-            continue;
-          }
-          if (supportedExts.includes(ext)) {
-            try {
-              const stats = await fs.stat(selectedPath);
-              if (stats.isFile()) {
-                allFiles.push(selectedPath);
+            const { TIMEOUTS } = require('../../../shared/performanceConstants');
+            await new Promise((resolve) => {
+              const t = setTimeout(resolve, TIMEOUTS.DELAY_BATCH);
+              try {
+                t.unref();
+              } catch {
+                // Non-fatal
               }
-            } catch (statError) {
-              log.warn('[FILE-SELECTION] Skipping path with stat error', {
-                path: selectedPath,
-                error: statError.message
-              });
+            });
+          }
+
+          // Get the last browsed path to use as default
+          const defaultPath = await getDefaultBrowsePath();
+
+          const result = await dialog.showOpenDialog(mainWindow || null, {
+            properties: ['openFile', 'multiSelections', 'dontAddToRecent'],
+            title: 'Select Files to Organize',
+            buttonLabel: 'Select Files',
+            filters: buildFileFilters(),
+            defaultPath
+          });
+
+          log.info('[MAIN-FILE-SELECT] Dialog closed, result:', result);
+
+          if (result.canceled || !result.filePaths.length) {
+            return { success: false, files: [] };
+          }
+
+          log.info(`[FILE-SELECTION] Selected ${result.filePaths.length} items`);
+
+          const allFiles = [];
+
+          for (const selectedPath of result.filePaths) {
+            const ext = path.extname(selectedPath).toLowerCase();
+            if (!ext) {
+              log.warn('[FILE-SELECTION] Skipping path without extension', selectedPath);
+              continue;
+            }
+            if (supportedExts.includes(ext)) {
+              try {
+                const stats = await fs.stat(selectedPath);
+                if (stats.isFile()) {
+                  allFiles.push(selectedPath);
+                }
+              } catch (statError) {
+                log.warn('[FILE-SELECTION] Skipping path with stat error', {
+                  path: selectedPath,
+                  error: statError.message
+                });
+              }
             }
           }
+
+          log.info(`[FILE-SELECTION] Total files after expansion: ${allFiles.length}`);
+
+          // Save the selected path for future dialogs (use first selected path)
+          if (result.filePaths.length > 0) {
+            await saveLastBrowsedPath(result.filePaths[0]);
+          }
+
+          return {
+            success: true,
+            files: allFiles.map((filePath) => ({
+              path: filePath,
+              name: path.basename(filePath)
+            })),
+            count: allFiles.length
+          };
+        } catch (error) {
+          log.error('[FILE-SELECTION] Error in file selection:', error);
+          return { success: false, error: error.message, files: [] };
         }
-
-        log.info(`[FILE-SELECTION] Total files after expansion: ${allFiles.length}`);
-
-        // Save the selected path for future dialogs (use first selected path)
-        if (result.filePaths.length > 0) {
-          await saveLastBrowsedPath(result.filePaths[0]);
-        }
-
-        return {
-          success: true,
-          files: allFiles.map((filePath) => ({
-            path: filePath,
-            name: path.basename(filePath)
-          })),
-          count: allFiles.length
-        };
-      } catch (error) {
-        log.error('[FILE-SELECTION] Error in file selection:', error);
-        return { success: false, error: error.message, files: [] };
       }
     })
   );
