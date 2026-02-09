@@ -168,4 +168,32 @@ describe('SearchService', () => {
       expect(result.success).toBe(true);
     });
   });
+
+  describe('diagnoseSearchIssues', () => {
+    test('reports embedding dimension mismatch', async () => {
+      const service = createService();
+
+      service.vectorDb.getStats = jest
+        .fn()
+        .mockResolvedValue({ files: 5, fileChunks: 0, folders: 0 });
+      service.vectorDb.getCollectionDimension = jest.fn().mockResolvedValue(768);
+      service.getIndexStatus = jest.fn(() => ({
+        hasIndex: true,
+        documentCount: 5,
+        isStale: false
+      }));
+      service.embedding.embedText = jest.fn().mockResolvedValue({
+        vector: new Array(1024).fill(0),
+        model: 'mxbai-embed-large-v1-f16.gguf'
+      });
+      service.history.initialize = jest.fn().mockResolvedValue();
+      service.history.analysisHistory = { entries: { a: {}, b: {} } };
+
+      const diagnostics = await service.diagnoseSearchIssues('test');
+
+      expect(diagnostics.issues).toEqual(
+        expect.arrayContaining([expect.objectContaining({ type: 'DIMENSION_MISMATCH' })])
+      );
+    });
+  });
 });

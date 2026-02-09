@@ -107,6 +107,8 @@ describe('Semantic IPC (Handlers)', () => {
     ParallelEmbeddingService = require('../src/main/services/ParallelEmbeddingService');
     ClusteringService = require('../src/main/services/ClusteringService').ClusteringService;
 
+    const { container, ServiceIds } = require('../src/main/services/ServiceContainer');
+
     // Setup mocks
     const mockVectorDb = {
       initialize: jest.fn().mockResolvedValue(),
@@ -119,18 +121,51 @@ describe('Semantic IPC (Handlers)', () => {
       resetFolders: jest.fn(), // Ensure this is present too
       getStats: jest.fn().mockResolvedValue({ files: 0, folders: 0 }) // For GET_STATS
     };
-    OramaVectorService.getInstance.mockReturnValue(mockVectorDb);
 
     const mockEmbeddingService = {
       reanalyzeAll: jest.fn()
     };
-    ParallelEmbeddingService.getInstance.mockReturnValue(mockEmbeddingService);
 
     const mockFolderMatcher = {
       initialize: jest.fn().mockResolvedValue(),
       embedText: jest.fn().mockResolvedValue({ vector: [], model: 'test' }),
       generateFolderId: jest.fn()
     };
+
+    const mockLlamaService = {
+      getConfig: jest.fn().mockResolvedValue({}),
+      listModels: jest
+        .fn()
+        .mockResolvedValue([
+          { name: 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf' },
+          { name: 'llava-v1.6-mistral-7b-Q4_K_M.gguf' },
+          { name: 'nomic-embed-text-v1.5-Q8_0.gguf' }
+        ])
+    };
+
+    // Mock container resolution
+    container.resolve = jest.fn((id) => {
+      switch (id) {
+        case ServiceIds.ORAMA_VECTOR:
+          return mockVectorDb;
+        case ServiceIds.PARALLEL_EMBEDDING:
+          return mockEmbeddingService;
+        case ServiceIds.FOLDER_MATCHING:
+          return mockFolderMatcher;
+        case ServiceIds.LLAMA_SERVICE:
+          return mockLlamaService;
+        case ServiceIds.SEARCH_SERVICE:
+          return mockSearchService;
+        case ServiceIds.CLUSTERING:
+          return {}; // Mock clustering service
+        default:
+          throw new Error(`Unexpected service resolution: ${id}`);
+      }
+    });
+
+    // Also mock getInstance for test access
+    OramaVectorService.getInstance.mockReturnValue(mockVectorDb);
+    ParallelEmbeddingService.getInstance.mockReturnValue(mockEmbeddingService);
     require('../src/main/services/FolderMatchingService').getInstance.mockReturnValue(
       mockFolderMatcher
     );

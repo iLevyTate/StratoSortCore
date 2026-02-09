@@ -137,6 +137,7 @@ function createMockLlamaService(overrides = {}) {
     testConnection: jest.fn().mockResolvedValue({ success: true }),
     listModels: jest.fn().mockResolvedValue([{ name: 'test-vision-model' }]),
     analyzeImage: jest.fn(),
+    supportsVisionInput: jest.fn().mockResolvedValue(true),
     ...overrides
   };
 }

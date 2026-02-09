@@ -32,7 +32,34 @@ const mockFs = {
   mkdir: jest.fn().mockResolvedValue(undefined),
   stat: jest.fn(),
   unlink: jest.fn().mockResolvedValue(undefined),
-  rename: jest.fn().mockResolvedValue(undefined)
+  rename: jest.fn().mockResolvedValue(undefined),
+  // FIX: The import handler uses fs.open() for TOCTOU-safe size checking.
+  // Provide a mock that returns a file-handle-like object whose stat()/read()
+  // delegates to mockFs.stat/readFile so existing per-test mocks keep working.
+  open: jest.fn().mockImplementation(() => {
+    // Capture the stat mock's pending resolved values at open() time
+    // so both stat() calls in the handler see the same value.
+    let cachedSize = null;
+    return Promise.resolve({
+      stat: jest.fn().mockImplementation(async () => {
+        if (cachedSize !== null) return { size: cachedSize };
+        // Consume the next stat mock result
+        const result = await mockFs.stat();
+        cachedSize = result?.size ?? 500;
+        return { size: cachedSize };
+      }),
+      read: jest.fn().mockImplementation(async (buffer, offset, length) => {
+        // Read content from readFile mock
+        const content = await mockFs.readFile();
+        const contentStr = typeof content === 'string' ? content : String(content || '');
+        const bytes = Buffer.from(contentStr, 'utf8');
+        const toCopy = Math.min(bytes.length, length);
+        bytes.copy(buffer, offset, 0, toCopy);
+        return { bytesRead: toCopy };
+      }),
+      close: jest.fn().mockResolvedValue(undefined)
+    });
+  })
 };
 
 jest.mock('fs', () => ({
@@ -70,11 +97,24 @@ jest.mock('../src/shared/atomicFileOperations', () => ({
 const mockLlamaServiceUpdateConfig = jest
   .fn()
   .mockResolvedValue({ success: true, modelDowngraded: false });
+const mockLlamaServiceInstance = {
+  updateConfig: mockLlamaServiceUpdateConfig,
+  initialize: jest.fn().mockResolvedValue(undefined)
+};
 jest.mock('../src/main/services/LlamaService', () => ({
-  getInstance: () => ({
-    updateConfig: mockLlamaServiceUpdateConfig,
-    initialize: jest.fn().mockResolvedValue(undefined)
-  })
+  getInstance: () => mockLlamaServiceInstance,
+  registerWithContainer: jest.fn()
+}));
+
+// Mock ServiceContainer - settings.js resolves LlamaService via container.resolve()
+jest.mock('../src/main/services/ServiceContainer', () => ({
+  container: {
+    has: jest.fn().mockReturnValue(true),
+    resolve: jest.fn(() => mockLlamaServiceInstance)
+  },
+  ServiceIds: {
+    LLAMA_SERVICE: 'llamaService'
+  }
 }));
 
 // Mock settings validation
@@ -229,6 +269,31 @@ describe('Settings IPC Handlers', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+
+    // FIX: Re-establish the fs.open mock implementation in case a prior test file
+    // called jest.restoreAllMocks() or jest.resetAllMocks(), which clears
+    // mockImplementation globally even across test file boundaries (maxWorkers: 1).
+    mockFs.open.mockImplementation(() => {
+      let cachedSize = null;
+      return Promise.resolve({
+        stat: jest.fn().mockImplementation(async () => {
+          if (cachedSize !== null) return { size: cachedSize };
+          const result = await mockFs.stat();
+          cachedSize = result?.size ?? 500;
+          return { size: cachedSize };
+        }),
+        read: jest.fn().mockImplementation(async (buffer, offset, length) => {
+          const content = await mockFs.readFile();
+          const contentStr = typeof content === 'string' ? content : String(content || '');
+          const bytes = Buffer.from(contentStr, 'utf8');
+          const toCopy = Math.min(bytes.length, length);
+          bytes.copy(buffer, offset, 0, toCopy);
+          return { bytesRead: toCopy };
+        }),
+        close: jest.fn().mockResolvedValue(undefined)
+      });
+    });
+
     handlers = {};
 
     // Capture registered handlers
@@ -857,8 +922,9 @@ describe('Settings IPC Handlers', () => {
         version: '1.0.0',
         settings: { defaultSmartFolderLocation: 'a'.repeat(1001) }
       };
-      mockFs.stat.mockResolvedValueOnce({ size: 500 });
-      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+      const jsonStr = JSON.stringify(importData);
+      mockFs.stat.mockResolvedValueOnce({ size: jsonStr.length });
+      mockFs.readFile.mockResolvedValueOnce(jsonStr);
 
       const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
       const result = await handler({});

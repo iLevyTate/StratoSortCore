@@ -38,7 +38,7 @@ describe('ModelMemoryManager', () => {
 
     expect(result).toBe(context);
     expect(manager._loadedModels.has('embedding')).toBe(true);
-    expect(llamaService._loadModel).toHaveBeenCalledWith('embedding');
+    expect(llamaService._loadModel).toHaveBeenCalledWith('embedding', expect.anything());
   });
 
   test('ensureModelLoaded returns cached context on subsequent calls', async () => {

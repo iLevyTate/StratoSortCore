@@ -95,6 +95,22 @@ describe('failedItemHandler', () => {
       expect(handler.deadLetterQueue[0].itemId).toBe(item.id);
     });
 
+    test('routes dimension mismatch directly to dead letter', () => {
+      const item = { id: 'file:dimension.txt', vector: [0.1, 0.2] };
+
+      handler.trackFailedItem(item, 'dimension_mismatch');
+
+      expect(handler.failedItems.size).toBe(0);
+      expect(handler.deadLetterQueue.length).toBe(1);
+      expect(handler.deadLetterQueue[0]).toEqual(
+        expect.objectContaining({
+          itemId: item.id,
+          requiresRebuild: true,
+          errorCode: 'dimension_mismatch'
+        })
+      );
+    });
+
     test('persists failed items to disk', () => {
       const item = { id: 'file:test.txt', vector: [0.1, 0.2] };
 
@@ -188,7 +204,7 @@ describe('failedItemHandler', () => {
 
       expect(itemsToRetry).toHaveLength(1);
       expect(itemsToRetry[0]).toEqual(item);
-      expect(handler.failedItems.size).toBe(0); // Removed after getting
+      expect(handler.failedItems.size).toBe(1); // Still tracked for retry count
     });
 
     test('does not return items still in backoff', () => {

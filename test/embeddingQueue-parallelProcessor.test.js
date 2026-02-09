@@ -3,14 +3,15 @@
  * Focus: batch success/failure handling and individual fallback behavior.
  */
 
-jest.mock('../src/shared/logger', () => ({
-  logger: {
+jest.mock('../src/shared/logger', () => {
+  const logger = {
     debug: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
     info: jest.fn()
-  }
-}));
+  };
+  return { logger, createLogger: jest.fn(() => logger) };
+});
 
 jest.mock('../src/shared/promiseUtils', () => ({
   withTimeout: jest.fn((p) => p)
@@ -66,7 +67,7 @@ describe('embeddingQueue parallelProcessor', () => {
     expect(Array.from(failedItemIds)).toEqual([]);
   });
 
-  test('treats batchUpsertFiles success:false as failure and falls back to individual upserts', async () => {
+  test('treats batchUpsertFiles dimension_mismatch as fatal and marks all items failed', async () => {
     const vectorDbService = {
       batchUpsertFiles: jest
         .fn()
@@ -95,9 +96,12 @@ describe('embeddingQueue parallelProcessor', () => {
     });
 
     expect(vectorDbService.batchUpsertFiles).toHaveBeenCalled();
-    expect(vectorDbService.upsertFile).toHaveBeenCalledTimes(2);
-    expect(processed).toBe(2);
-    expect(onItemFailed).not.toHaveBeenCalled();
+    // dimension_mismatch is fatal - no individual fallback (entire schema is wrong)
+    expect(vectorDbService.upsertFile).not.toHaveBeenCalled();
+    expect(processed).toBe(0);
+    expect(onItemFailed).toHaveBeenCalledTimes(2);
+    expect(failedItemIds.has('file:a')).toBe(true);
+    expect(failedItemIds.has('file:b')).toBe(true);
   });
 
   test('marks failed items when individual upsert returns success:false', async () => {
@@ -125,6 +129,36 @@ describe('embeddingQueue parallelProcessor', () => {
     expect(processed).toBe(0);
     expect(failedItemIds.has('file:a')).toBe(true);
     expect(onItemFailed).toHaveBeenCalledWith(items[0], expect.stringContaining('bad_vector'));
+  });
+
+  test('marks failed items when individual upsert requires rebuild', async () => {
+    const vectorDbService = {
+      upsertFile: jest.fn().mockResolvedValueOnce({ success: false, requiresRebuild: true })
+    };
+    const onProgress = jest.fn();
+    const onItemFailed = jest.fn();
+    const failedItemIds = new Set();
+
+    const items = [{ id: 'file:a', vector: [1, 2, 3], meta: { path: 'a' } }];
+
+    const processed = await processItemsInParallel({
+      items,
+      type: 'file',
+      vectorDbService,
+      failedItemIds,
+      startProcessedCount: 0,
+      totalBatchSize: 1,
+      concurrency: 1,
+      onProgress,
+      onItemFailed
+    });
+
+    expect(processed).toBe(0);
+    expect(failedItemIds.has('file:a')).toBe(true);
+    expect(onItemFailed).toHaveBeenCalledWith(
+      items[0],
+      expect.stringContaining('dimension_mismatch')
+    );
   });
 
   test('formats folder payloads for batchUpsertFolders', async () => {

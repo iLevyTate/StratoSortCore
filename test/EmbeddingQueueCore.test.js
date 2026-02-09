@@ -124,13 +124,14 @@ describe('EmbeddingQueueCore', () => {
     });
   });
 
-  test('enqueue rejects invalid vector values (NaN)', async () => {
+  test('enqueue sanitizes partial NaN vector values (replaces with 0)', async () => {
     const EmbeddingQueue = require('../src/main/analysis/embeddingQueue/EmbeddingQueueCore');
     const q = new EmbeddingQueue({ flushDelayMs: 0 });
     q.initialized = true;
 
     const res = await q.enqueue({ id: 'file:a', vector: [1, Number.NaN, 2] });
-    expect(res).toEqual({ success: false, reason: 'invalid_vector_values' });
+    // Partial NaN vectors are sanitized (NaN replaced with 0), not rejected
+    expect(res).toEqual({ success: true, warnings: ['vector_sanitized'] });
   });
 
   test('enqueue applies backpressure when queue is full (diverts to failed queue)', async () => {
@@ -208,6 +209,68 @@ describe('EmbeddingQueueCore', () => {
     expect(phases).toEqual(expect.arrayContaining(['offline', 'fatal_error']));
 
     jest.useRealTimers();
+  });
+
+  test('_handleOfflineDatabase removes only batch items when queue mutates', async () => {
+    const EmbeddingQueue = require('../src/main/analysis/embeddingQueue/EmbeddingQueueCore');
+
+    const q = new EmbeddingQueue({ flushDelayMs: 0 });
+    q.initialized = true;
+    q.MAX_RETRY_COUNT = 1;
+
+    q.queue = [
+      { id: 'file:C:\\a.pdf', vector: [1], meta: { path: 'C:\\a.pdf' } },
+      { id: 'file:C:\\b.pdf', vector: [1], meta: { path: 'C:\\b.pdf' } },
+      { id: 'file:C:\\c.pdf', vector: [1], meta: { path: 'C:\\c.pdf' } }
+    ];
+
+    const batch = q.queue.slice(0, 2);
+
+    // Simulate concurrent removal while a flush is in progress
+    q.removeByFilePath('C:\\a.pdf');
+
+    await q._handleOfflineDatabase(batch, batch.length);
+
+    expect(q.queue.map((item) => item.id)).toEqual(['file:C:\\c.pdf']);
+  });
+
+  test('removeByFilePath defers removal while flush is active', async () => {
+    const EmbeddingQueue = require('../src/main/analysis/embeddingQueue/EmbeddingQueueCore');
+    const {
+      processItemsInParallel
+    } = require('../src/main/analysis/embeddingQueue/parallelProcessor');
+
+    processItemsInParallel.mockImplementationOnce(
+      async ({ items, startProcessedCount, onProgress }) => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        const completed = startProcessedCount + items.length;
+        onProgress({
+          phase: 'processing',
+          total: items.length,
+          completed,
+          percent: 100
+        });
+        return completed;
+      }
+    );
+
+    mockContainer.resolve.mockReturnValue({
+      initialize: jest.fn().mockResolvedValue(undefined),
+      isOnline: true
+    });
+
+    const q = new EmbeddingQueue({ flushDelayMs: 0 });
+    q.initialized = true;
+    q.queue = [{ id: 'file:C:\\a.pdf', vector: [1], meta: { path: 'C:\\a.pdf' } }];
+
+    const flushPromise = q.flush();
+    await Promise.resolve();
+
+    const removed = q.removeByFilePath('C:\\a.pdf');
+    expect(removed).toBe(1);
+
+    await flushPromise;
+    expect(q.queue).toHaveLength(0);
   });
 
   test('updateByFilePath updates queued + failed IDs and persists both', async () => {

@@ -194,6 +194,48 @@ describe('semanticFolderMatcher', () => {
     expect(analysis.folderMatchCandidates).toHaveLength(1);
   });
 
+  test('enqueue uses overridden category when embedding override wins', async () => {
+    const vectorDb = { initialize: jest.fn().mockResolvedValue(undefined) };
+    const matcher = {
+      embeddingCache: { initialized: true },
+      initialize: jest.fn(),
+      batchUpsertFolders: jest.fn().mockResolvedValue({ count: 1 }),
+      embedText: jest.fn().mockResolvedValue({ vector: [1, 2, 3], model: 'm' }),
+      matchVectorToFolders: jest
+        .fn()
+        .mockResolvedValue([{ name: 'Financial', path: 'C:\\Sorted\\Financial', score: 0.9 }])
+    };
+    container.tryResolve.mockReturnValueOnce(vectorDb).mockReturnValueOnce(matcher);
+
+    findContainingSmartFolder.mockReturnValue({ name: 'General', path: 'C:\\Sorted\\General' });
+    shouldEmbed.mockResolvedValue({ shouldEmbed: true, timing: 'ok', policy: 'ok' });
+
+    const analysis = { category: 'Documents', confidence: 0.2, keywords: ['a'] };
+    await applySemanticFolderMatching({
+      analysis,
+      filePath: 'C:\\Sorted\\General\\a.pdf',
+      fileName: 'a.pdf',
+      fileExtension: '.pdf',
+      fileSize: 123,
+      extractedText: 'text',
+      smartFolders: [
+        { name: 'General', path: 'C:\\Sorted\\General' },
+        { name: 'Financial', path: 'C:\\Sorted\\Financial' }
+      ]
+    });
+
+    expect(analysis.category).toBe('Financial');
+    expect(analysis.categorySource).toBe('embedding_override');
+    expect(analysisQueue.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          category: 'Financial',
+          smartFolder: 'General'
+        })
+      })
+    );
+  });
+
   test('preserves LLM category when confidence is higher than embedding', async () => {
     const vectorDb = { initialize: jest.fn().mockResolvedValue(undefined) };
     const matcher = {

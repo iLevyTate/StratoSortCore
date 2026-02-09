@@ -28,7 +28,8 @@ jest.mock('../src/main/services/LlamaService', () => {
     }),
     getHealthStatus: jest.fn(() => ({ initialized: true })),
     testConnection: jest.fn().mockResolvedValue({ success: true }),
-    getConfig: jest.fn().mockReturnValue({ embeddingModel: 'mxbai-embed-large' })
+    getConfig: jest.fn().mockReturnValue({ embeddingModel: 'mxbai-embed-large' }),
+    acquireModelLoadLock: jest.fn().mockResolvedValue(() => {})
   };
   return {
     getInstance: jest.fn(() => mockInstance),

@@ -50,6 +50,33 @@ describe('Embeddings/Semantic IPC', () => {
   function registerIpc(
     logger = { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() }
   ) {
+    // Mock container.resolve to return the mocked services
+    const { container, ServiceIds } = require('../src/main/services/ServiceContainer');
+    const OramaVectorService = require('../src/main/services/OramaVectorService');
+    const FolderMatchingService = require('../src/main/services/FolderMatchingService');
+
+    container.resolve = jest.fn((id) => {
+      switch (id) {
+        case ServiceIds.ORAMA_VECTOR:
+          return OramaVectorService.getInstance();
+        case ServiceIds.FOLDER_MATCHING:
+          return FolderMatchingService.getInstance();
+        case ServiceIds.PARALLEL_EMBEDDING:
+          return {};
+        case ServiceIds.SEARCH_SERVICE:
+          return {
+            warmUp: jest.fn().mockResolvedValue(undefined),
+            rebuildIndex: jest.fn().mockResolvedValue({ success: true })
+          };
+        case ServiceIds.LLAMA_SERVICE:
+          return require('../src/main/services/LlamaService').getInstance();
+        case ServiceIds.CLUSTERING:
+          return {};
+        default:
+          return {};
+      }
+    });
+
     const { registerAllIpc } = require('../src/main/ipc');
     const { IPC_CHANNELS } = require('../src/shared/constants');
     registerAllIpc({

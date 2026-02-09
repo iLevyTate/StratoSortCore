@@ -1,3 +1,56 @@
+jest.mock('../src/shared/logger', () => ({
+  createLogger: () => ({
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn()
+  })
+}));
+
+describe('ipcRegistry waitForInFlightOperations', () => {
+  test('waits for in-flight handlers to finish', async () => {
+    jest.useFakeTimers();
+
+    jest.resetModules();
+    const {
+      registerHandler,
+      waitForInFlightOperations,
+      setShuttingDown
+    } = require('../src/main/core/ipcRegistry');
+
+    setShuttingDown(false);
+
+    const handlers = {};
+    const ipcMain = {
+      handle: jest.fn((channel, handler) => {
+        handlers[channel] = handler;
+      }),
+      removeHandler: jest.fn(),
+      on: jest.fn(),
+      removeListener: jest.fn()
+    };
+
+    registerHandler(ipcMain, 'test:delay', async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 30);
+      });
+      return { success: true };
+    });
+
+    const handlerPromise = handlers['test:delay']({}, {});
+
+    const waitPromise = waitForInFlightOperations(20);
+    jest.advanceTimersByTime(60);
+    await expect(waitPromise).resolves.toBe(false);
+
+    jest.advanceTimersByTime(30);
+    await handlerPromise;
+
+    await expect(waitForInFlightOperations(20)).resolves.toBe(true);
+
+    jest.useRealTimers();
+  });
+});
 /**
  * Tests for IPC Channel Registry
  * Tests targeted IPC channel registration and cleanup

@@ -146,7 +146,8 @@ describe('Image Analysis Behavior', () => {
       getConfig: jest.fn().mockResolvedValue({ visionModel: 'test-vision-model' }),
       testConnection: jest.fn().mockResolvedValue({ success: true }),
       listModels: jest.fn().mockResolvedValue([{ name: 'test-vision-model' }]),
-      analyzeImage: jest.fn()
+      analyzeImage: jest.fn(),
+      supportsVisionInput: jest.fn().mockResolvedValue(true)
     };
     require('../src/main/services/LlamaService').getInstance.mockReturnValue(mockLlamaService);
 

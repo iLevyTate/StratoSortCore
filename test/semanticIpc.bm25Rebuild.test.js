@@ -54,6 +54,35 @@ describe('Embeddings IPC (semantic.js) - BM25 rebuild', () => {
     ipcMain._handlers.clear();
     ipcMain.handle.mockClear();
     jest.clearAllMocks();
+
+    // Mock container.resolve to return the mocked services
+    const { container, ServiceIds } = require('../src/main/services/ServiceContainer');
+    const OramaVectorService = require('../src/main/services/OramaVectorService');
+    const FolderMatchingService = require('../src/main/services/FolderMatchingService');
+    const ParallelEmbeddingService = require('../src/main/services/ParallelEmbeddingService');
+    const SearchService = require('../src/main/services/SearchService');
+
+    container.resolve = jest.fn((id) => {
+      switch (id) {
+        case ServiceIds.ORAMA_VECTOR:
+          return OramaVectorService.getInstance();
+        case ServiceIds.FOLDER_MATCHING:
+          return FolderMatchingService.getInstance();
+        case ServiceIds.PARALLEL_EMBEDDING:
+          return ParallelEmbeddingService.getInstance();
+        case ServiceIds.SEARCH_SERVICE:
+          return SearchService.__mockSearchService;
+        case ServiceIds.LLAMA_SERVICE:
+          return {
+            getConfig: jest.fn().mockResolvedValue({}),
+            listModels: jest.fn().mockResolvedValue([])
+          };
+        case ServiceIds.CLUSTERING:
+          return {};
+        default:
+          return {};
+      }
+    });
   });
 
   test('REBUILD_BM25_INDEX initializes, rebuilds index, and returns success', async () => {

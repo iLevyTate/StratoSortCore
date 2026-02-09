@@ -15,6 +15,7 @@ jest.mock('p-queue', () => {
   class MockQueue {
     constructor() {
       this.size = 0;
+      this.pending = 0;
       this.concurrency = 1;
     }
     add(fn) {
@@ -66,7 +67,10 @@ describe('ModelAccessCoordinator', () => {
 
   test('acquireInferenceSlot throws when queue full', async () => {
     const coordinator = new ModelAccessCoordinator();
-    coordinator._inferenceQueue.size = 100;
-    await expect(coordinator.acquireInferenceSlot('op-3')).rejects.toThrow(/queue full/i);
+    // Per-type queues: fill the embedding queue to trigger the full check
+    coordinator._inferenceQueues.embedding.size = 100;
+    await expect(coordinator.acquireInferenceSlot('op-3', 'embedding')).rejects.toThrow(
+      /queue full/i
+    );
   });
 });

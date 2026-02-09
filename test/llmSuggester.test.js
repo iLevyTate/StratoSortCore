@@ -141,7 +141,11 @@ describe('llmSuggester', () => {
     const suggestions = await getLLMAlternativeSuggestions(testFile, testSmartFolders);
     expect(suggestions).toHaveLength(1);
     expect(mockLlamaService.generateText).toHaveBeenCalledWith(
-      expect.objectContaining({ model: AI_DEFAULTS.TEXT.MODEL })
+      expect.objectContaining({
+        prompt: expect.any(String),
+        temperature: 0.7,
+        maxTokens: 500
+      })
     );
   });
 

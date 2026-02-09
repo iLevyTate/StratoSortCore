@@ -244,7 +244,8 @@ describe('llamaUtils', () => {
       llamaUtils.getLlamaService();
 
       await llamaUtils.cleanup();
-      expect(mockShutdown).toHaveBeenCalled();
+      // Cleanup is now a no-op to prevent double-shutdown with ServiceContainer
+      expect(mockShutdown).not.toHaveBeenCalled();
     });
 
     test('handles no service instance gracefully', async () => {

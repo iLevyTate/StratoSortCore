@@ -87,6 +87,8 @@ describe('Semantic IPC (Management)', () => {
     OramaVectorService = require('../src/main/services/OramaVectorService');
     FolderMatchingService = require('../src/main/services/FolderMatchingService');
 
+    const { container, ServiceIds } = require('../src/main/services/ServiceContainer');
+
     // Create a stable singleton mock for OramaVectorService
     const mockVectorDbInstance = {
       initialize: jest.fn().mockResolvedValue(),
@@ -104,6 +106,31 @@ describe('Semantic IPC (Management)', () => {
       generateFolderId: jest.fn()
     };
 
+    const mockLlamaService = {
+      getConfig: jest.fn().mockResolvedValue({})
+    };
+
+    // Mock container resolution
+    container.resolve = jest.fn((id) => {
+      switch (id) {
+        case ServiceIds.ORAMA_VECTOR:
+          return mockVectorDbInstance;
+        case ServiceIds.FOLDER_MATCHING:
+          return mockFolderMatcherInstance;
+        case ServiceIds.LLAMA_SERVICE:
+          return mockLlamaService;
+        case ServiceIds.PARALLEL_EMBEDDING:
+          return {};
+        case ServiceIds.SEARCH_SERVICE:
+          return {};
+        case ServiceIds.CLUSTERING:
+          return {};
+        default:
+          throw new Error(`Unexpected service resolution: ${id}`);
+      }
+    });
+
+    // Also mock getInstance for test access
     OramaVectorService.getInstance.mockReturnValue(mockVectorDbInstance);
     FolderMatchingService.getInstance.mockReturnValue(mockFolderMatcherInstance);
 

@@ -8,9 +8,41 @@ jest.mock('fast-xml-parser', () => ({
   }))
 }));
 
+jest.mock('../src/shared/logger', () => ({
+  createLogger: () => ({
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn()
+  })
+}));
+
+jest.mock('../src/main/analysis/documentLlm', () => ({
+  analyzeTextWithLlama: jest.fn(),
+  normalizeCategoryToSmartFolders: jest.fn((cat) => cat),
+  AppConfig: {
+    ai: {
+      textAnalysis: {
+        defaultModel: 'mock-model'
+      }
+    }
+  }
+}));
+
+jest.mock('../src/main/utils/llmOptimization', () => ({
+  globalDeduplicator: {
+    generateKey: jest.fn(() => 'mock-key'),
+    deduplicate: jest.fn((key, fn) => fn())
+  }
+}));
+
+jest.mock('../src/main/analysis/semanticFolderMatcher', () => ({
+  applySemanticFolderMatching: jest.fn(async () => {}),
+  getServices: jest.fn(() => ({}))
+}));
+
 describe('per-file analysis cache (document)', () => {
   afterEach(() => {
-    jest.resetModules();
     jest.clearAllMocks();
   });
 
@@ -26,24 +58,11 @@ describe('per-file analysis cache (document)', () => {
       suggestedName: 'spy_doc'
     }));
 
-    jest.doMock(
-      '../src/main/analysis/documentLlm',
-      () => ({
-        analyzeTextWithLlama: analyzeSpy,
-        AppConfig: {
-          ai: {
-            textAnalysis: {
-              defaultModel: 'mock-model'
-            }
-          }
-        }
-      }),
-      { virtual: false }
-    );
-
     const { analyzeDocumentFile } = require('../src/main/analysis/documentAnalysis');
+    const documentLlm = require('../src/main/analysis/documentLlm');
+    documentLlm.analyzeTextWithLlama.mockImplementation(analyzeSpy);
 
-    const tmp = path.join(os.tmpdir(), `doc-cache-${Date.now()}.txt`);
+    const tmp = path.posix.join(os.tmpdir(), `doc-cache-${Date.now()}.txt`);
     await fs.writeFile(tmp, 'Sample document contents');
 
     const r1 = await analyzeDocumentFile(tmp, []);
@@ -52,7 +71,36 @@ describe('per-file analysis cache (document)', () => {
     expect(r1).toBeDefined();
     expect(r2).toBeDefined();
     expect(r2.suggestedName).toBeDefined();
-    expect(analyzeSpy).toHaveBeenCalledTimes(1);
+    expect(documentLlm.analyzeTextWithLlama).toHaveBeenCalledTimes(1);
+
+    await fs.unlink(tmp);
+  });
+
+  test('cache signature changes when smart folder descriptions change', async () => {
+    expect.assertions(1);
+    const analyzeSpy = jest.fn(async () => ({
+      project: 'Spy',
+      purpose: 'Spy purpose',
+      category: 'document',
+      keywords: ['k1', 'k2', 'k3'],
+      confidence: 90,
+      suggestedName: 'spy_doc'
+    }));
+
+    const { analyzeDocumentFile } = require('../src/main/analysis/documentAnalysis');
+    const documentLlm = require('../src/main/analysis/documentLlm');
+    documentLlm.analyzeTextWithLlama.mockImplementation(analyzeSpy);
+
+    const tmp = path.posix.join(os.tmpdir(), `doc-cache-desc-${Date.now()}.txt`);
+    await fs.writeFile(tmp, 'Sample document contents');
+
+    const foldersA = [{ name: 'Finance', description: 'Invoices and receipts' }];
+    const foldersB = [{ name: 'Finance', description: 'Budgets and forecasts' }];
+
+    await analyzeDocumentFile(tmp, foldersA);
+    await analyzeDocumentFile(tmp, foldersB);
+
+    expect(documentLlm.analyzeTextWithLlama).toHaveBeenCalledTimes(2);
 
     await fs.unlink(tmp);
   });

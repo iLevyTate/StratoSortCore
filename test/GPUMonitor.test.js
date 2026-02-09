@@ -40,7 +40,13 @@ describe('GPUMonitor', () => {
     monitor._platform = 'win32';
     mockExecFileAsync
       .mockRejectedValueOnce(new Error('no nvidia'))
-      .mockResolvedValueOnce({ stdout: 'AdapterRAM  Name\n2147483648  Intel UHD', stderr: '' });
+      // PowerShell fails
+      .mockResolvedValueOnce({ stdout: '', stderr: 'powershell error' })
+      // WMIC succeeds with CSV format
+      .mockResolvedValueOnce({
+        stdout: 'Node,AdapterRAM,Name\nMYPC,2147483648,Intel UHD',
+        stderr: ''
+      });
 
     const result = await monitor.detectGPU();
     expect(result.type).toBe('vulkan');

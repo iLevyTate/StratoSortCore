@@ -10,6 +10,9 @@ jest.mock('p-queue', () => {
       get size() {
         return this.queue.length;
       }
+      get pending() {
+        return this.active;
+      }
       add(fn) {
         return new Promise((resolve, reject) => {
           this.queue.push({ fn, resolve, reject });
@@ -136,7 +139,9 @@ describe('ModelAccessCoordinator', () => {
 
     // 2. Fill queue (these return Promises that won't resolve yet)
     const pendingPromises = [];
-    for (let i = 0; i < MAX; i++) {
+    // We can only add (MAX - CONCURRENCY) items to the queue before it's full
+    // because total load = size + pending(active)
+    for (let i = 0; i < MAX - CONCURRENCY; i++) {
       pendingPromises.push(coordinator.acquireInferenceSlot(`pending-${i}`));
     }
 

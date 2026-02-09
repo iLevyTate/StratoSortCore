@@ -17,10 +17,12 @@ const mockDownloadManager = {
 };
 
 jest.mock('../src/main/services/GPUMonitor', () => ({
+  getInstance: jest.fn(() => mockGpuMonitor),
   GPUMonitor: jest.fn(() => mockGpuMonitor)
 }));
 
 jest.mock('../src/main/services/ModelDownloadManager', () => ({
+  getInstance: jest.fn(() => mockDownloadManager),
   ModelDownloadManager: jest.fn(() => mockDownloadManager)
 }));
 

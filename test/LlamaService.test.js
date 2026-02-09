@@ -38,7 +38,8 @@ jest.mock('../src/main/services/ModelAccessCoordinator', () => ({
 jest.mock('../src/main/services/PerformanceMetrics', () => ({
   PerformanceMetrics: jest.fn().mockImplementation(() => ({
     recordEmbedding: jest.fn(),
-    recordModelLoad: jest.fn()
+    recordModelLoad: jest.fn(),
+    destroy: jest.fn()
   }))
 }));
 
@@ -55,7 +56,9 @@ jest.mock('../src/main/services/SettingsService', () => ({
 }));
 
 jest.mock('../src/main/services/LlamaResilience', () => ({
-  withLlamaResilience: (fn) => fn({})
+  withLlamaResilience: (fn) => fn({}),
+  cleanupLlamaCircuits: jest.fn(),
+  shouldFallbackToCPU: jest.fn()
 }));
 
 const { LlamaService } = require('../src/main/services/LlamaService');
@@ -217,6 +220,205 @@ describe('LlamaService', () => {
       await expect(service.generateEmbedding('hello')).rejects.toEqual(
         expect.objectContaining({ code: ERROR_CODES.LLAMA_OOM })
       );
+    });
+  });
+
+  describe('embedding fallback chain', () => {
+    function createServiceForFallback(primaryModel = 'missing-embed.gguf') {
+      const service = new LlamaService();
+      service._initialized = true;
+      service._ensureConfigLoaded = jest.fn().mockResolvedValue(undefined);
+      service._metrics = { recordEmbedding: jest.fn() };
+      service._coordinator = { withModel: (_type, fn) => fn() };
+      service._modelMemoryManager = {
+        acquireRef: jest.fn(),
+        releaseRef: jest.fn(),
+        unloadModel: jest.fn().mockResolvedValue(undefined)
+      };
+      service._selectedModels = { embedding: primaryModel };
+      return service;
+    }
+
+    test('tries fallback models when primary fails with MODEL_NOT_FOUND', async () => {
+      const service = createServiceForFallback('missing-embed.gguf');
+
+      const notFoundErr = new Error('Model not found: missing-embed.gguf');
+      notFoundErr.code = ERROR_CODES.LLAMA_MODEL_NOT_FOUND;
+
+      service._executeEmbeddingInference = jest.fn().mockRejectedValue(notFoundErr);
+      service._executeEmbeddingInferenceWithModel = jest.fn().mockResolvedValue({
+        embedding: [1, 2, 3],
+        model: AI_DEFAULTS.EMBEDDING.FALLBACK_MODELS[0]
+      });
+
+      const result = await service.generateEmbedding('hello');
+
+      expect(result.embedding).toEqual([1, 2, 3]);
+      expect(result.model).toBe(AI_DEFAULTS.EMBEDDING.FALLBACK_MODELS[0]);
+      expect(service._selectedModels.embedding).toBe('missing-embed.gguf');
+      expect(service._modelMemoryManager.unloadModel).not.toHaveBeenCalled();
+    });
+
+    test('tries fallback on MODEL_LOAD_FAILED', async () => {
+      const service = createServiceForFallback('corrupt-embed.gguf');
+
+      const loadFailErr = new Error('Model corrupted');
+      loadFailErr.code = ERROR_CODES.LLAMA_MODEL_LOAD_FAILED;
+
+      service._executeEmbeddingInference = jest.fn().mockRejectedValue(loadFailErr);
+      service._executeEmbeddingInferenceWithModel = jest
+        .fn()
+        .mockResolvedValue({ embedding: [4, 5], model: AI_DEFAULTS.EMBEDDING.FALLBACK_MODELS[0] });
+
+      const result = await service.generateEmbedding('world');
+
+      expect(result.embedding).toEqual([4, 5]);
+      expect(service._selectedModels.embedding).toBe('corrupt-embed.gguf');
+    });
+
+    test('does not trigger fallback for LLAMA_INFERENCE_FAILED', async () => {
+      const service = createServiceForFallback(AI_DEFAULTS.EMBEDDING.MODEL);
+
+      const inferenceErr = new Error('inference blew up');
+      inferenceErr.code = ERROR_CODES.LLAMA_INFERENCE_FAILED;
+      service._executeEmbeddingInference = jest.fn().mockRejectedValue(inferenceErr);
+
+      await expect(service.generateEmbedding('hello')).rejects.toEqual(
+        expect.objectContaining({ code: ERROR_CODES.LLAMA_INFERENCE_FAILED })
+      );
+      expect(service._modelMemoryManager.unloadModel).not.toHaveBeenCalled();
+    });
+
+    test('does not trigger fallback for OOM', async () => {
+      const service = createServiceForFallback(AI_DEFAULTS.EMBEDDING.MODEL);
+
+      const oomErr = new Error('out of memory');
+      oomErr.code = ERROR_CODES.LLAMA_OOM;
+      service._executeEmbeddingInference = jest.fn().mockRejectedValue(oomErr);
+
+      await expect(service.generateEmbedding('hello')).rejects.toEqual(
+        expect.objectContaining({ code: ERROR_CODES.LLAMA_OOM })
+      );
+      expect(service._modelMemoryManager.unloadModel).not.toHaveBeenCalled();
+    });
+
+    test('restores original model name when all fallbacks fail', async () => {
+      const primaryModel = 'custom-embed.gguf';
+      const service = createServiceForFallback(primaryModel);
+
+      const notFoundErr = new Error('Model not found');
+      notFoundErr.code = ERROR_CODES.LLAMA_MODEL_NOT_FOUND;
+
+      service._executeEmbeddingInference = jest.fn().mockRejectedValue(notFoundErr);
+      service._executeEmbeddingInferenceWithModel = jest.fn().mockRejectedValue(notFoundErr);
+
+      await expect(service.generateEmbedding('hello')).rejects.toBe(notFoundErr);
+      expect(service._selectedModels.embedding).toBe(primaryModel);
+    });
+
+    test('skips fallback models that match the primary model', async () => {
+      // Primary is the first fallback model — should skip it and try the second
+      const originalFallbacks = [...AI_DEFAULTS.EMBEDDING.FALLBACK_MODELS];
+      AI_DEFAULTS.EMBEDDING.FALLBACK_MODELS = [
+        originalFallbacks[0],
+        'nomic-embed-text-v1.5-Q8_0.gguf'
+      ];
+
+      try {
+        const service = createServiceForFallback(AI_DEFAULTS.EMBEDDING.FALLBACK_MODELS[0]);
+
+        const notFoundErr = new Error('Model not found');
+        notFoundErr.code = ERROR_CODES.LLAMA_MODEL_NOT_FOUND;
+
+        service._executeEmbeddingInference = jest.fn().mockRejectedValue(notFoundErr);
+        service._executeEmbeddingInferenceWithModel = jest.fn().mockResolvedValue({
+          embedding: [7, 8],
+          model: AI_DEFAULTS.EMBEDDING.FALLBACK_MODELS[1]
+        });
+
+        const result = await service.generateEmbedding('hello');
+
+        expect(result.model).toBe(AI_DEFAULTS.EMBEDDING.FALLBACK_MODELS[1]);
+      } finally {
+        AI_DEFAULTS.EMBEDDING.FALLBACK_MODELS = originalFallbacks;
+      }
+    });
+
+    test('handles wrapped errors from resilience layer via originalError.code', async () => {
+      const service = createServiceForFallback('missing-embed.gguf');
+
+      // In production, withLlamaResilience wraps the error AFTER the inner catch.
+      // The wrapped error has no .code but .originalError has the real code.
+      // Mock _executeEmbeddingInference directly to simulate this.
+      const innerErr = new Error('Model not found: missing-embed.gguf');
+      innerErr.code = ERROR_CODES.LLAMA_MODEL_NOT_FOUND;
+      const wrappedErr = new Error(`Llama operation failed: ${innerErr.message}`);
+      wrappedErr.originalError = innerErr;
+
+      service._executeEmbeddingInference = jest.fn().mockRejectedValue(wrappedErr);
+      service._executeEmbeddingInferenceWithModel = jest
+        .fn()
+        .mockResolvedValue({ embedding: [9], model: AI_DEFAULTS.EMBEDDING.FALLBACK_MODELS[0] });
+
+      const result = await service.generateEmbedding('hello');
+
+      expect(result.embedding).toEqual([9]);
+      expect(service._selectedModels.embedding).toBe('missing-embed.gguf');
+    });
+  });
+
+  describe('shutdown', () => {
+    test('skips unload/dispose when operations are still active', async () => {
+      const service = new LlamaService();
+      service._metrics = { destroy: jest.fn() };
+      service._modelMemoryManager = { unloadAll: jest.fn() };
+      const llama = { dispose: jest.fn() };
+      service._llama = llama;
+      service._waitForIdleOperations = jest.fn().mockResolvedValue(false);
+
+      await service.shutdown();
+
+      expect(service._modelMemoryManager.unloadAll).not.toHaveBeenCalled();
+      expect(llama.dispose).not.toHaveBeenCalled();
+    });
+
+    test('unloads and disposes when idle', async () => {
+      const service = new LlamaService();
+      service._metrics = { destroy: jest.fn() };
+      service._modelMemoryManager = { unloadAll: jest.fn() };
+      const llama = { dispose: jest.fn() };
+      service._llama = llama;
+      service._waitForIdleOperations = jest.fn().mockResolvedValue(true);
+
+      await service.shutdown();
+
+      expect(service._modelMemoryManager.unloadAll).toHaveBeenCalled();
+      expect(llama.dispose).toHaveBeenCalled();
+    });
+
+    test('waits for existing config-change gate before unloading', async () => {
+      const service = new LlamaService();
+      service._metrics = { destroy: jest.fn() };
+      service._modelMemoryManager = { unloadAll: jest.fn() };
+      const llama = { dispose: jest.fn() };
+      service._llama = llama;
+      service._waitForIdleOperations = jest.fn().mockResolvedValue(true);
+
+      let resolveGate;
+      const gatePromise = new Promise((resolve) => {
+        resolveGate = resolve;
+      });
+      service._configChangeGate = { promise: gatePromise, resolve: resolveGate };
+
+      const shutdownPromise = service.shutdown();
+      await Promise.resolve();
+
+      expect(service._modelMemoryManager.unloadAll).not.toHaveBeenCalled();
+
+      resolveGate();
+      await shutdownPromise;
+
+      expect(service._modelMemoryManager.unloadAll).toHaveBeenCalled();
     });
   });
 });

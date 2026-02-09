@@ -48,6 +48,14 @@ jest.mock('@orama/plugin-data-persistence', () => ({
   })
 }));
 
+// Mock llama utils for deterministic embedding model selection
+jest.mock('../src/main/llamaUtils', () => ({
+  getEmbeddingModel: jest.fn(() => 'nomic-embed-text-v1.5-Q8_0.gguf'),
+  loadLlamaConfig: jest.fn().mockResolvedValue({
+    selectedEmbeddingModel: 'nomic-embed-text-v1.5-Q8_0.gguf'
+  })
+}));
+
 // Use a temporary directory for tests
 const TEMP_DIR = path.join(__dirname, 'temp-orama-test');
 
@@ -80,6 +88,8 @@ describe('OramaVectorService', () => {
     jest.clearAllMocks();
     app.getPath.mockReturnValue(TEMP_DIR);
     service = new OramaVectorService();
+    const llamaUtils = require('../src/main/llamaUtils');
+    llamaUtils.getEmbeddingModel.mockReturnValue('nomic-embed-text-v1.5-Q8_0.gguf');
   });
 
   afterEach(async () => {
@@ -98,6 +108,16 @@ describe('OramaVectorService', () => {
       await service.initialize();
       const stats = await fs.stat(path.join(TEMP_DIR, 'vector-db'));
       expect(stats.isDirectory()).toBe(true);
+    });
+
+    test('uses active embedding model dimension', async () => {
+      const llamaUtils = require('../src/main/llamaUtils');
+      llamaUtils.getEmbeddingModel.mockReturnValue('mxbai-embed-large-v1-f16.gguf');
+
+      await service.initialize();
+      const stats = await service.getStats();
+
+      expect(stats.dimension).toBe(1024);
     });
   });
 

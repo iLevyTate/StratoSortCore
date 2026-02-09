@@ -97,7 +97,8 @@ describe('platformBehavior', () => {
         setAlwaysOnTop: jest.fn(),
         moveTop: jest.fn(),
         show: jest.fn(),
-        focus: jest.fn()
+        focus: jest.fn(),
+        once: jest.fn()
       };
 
       platformBehavior.bringWindowToForeground(mockWindow);
@@ -141,7 +142,8 @@ describe('platformBehavior', () => {
         setAlwaysOnTop: jest.fn(),
         moveTop: jest.fn(),
         show: jest.fn(),
-        focus: jest.fn()
+        focus: jest.fn(),
+        once: jest.fn()
       };
 
       platformBehavior.bringWindowToForeground(mockWindow);

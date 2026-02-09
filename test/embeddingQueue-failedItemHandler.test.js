@@ -203,7 +203,7 @@ describe('Embedding Queue Failed Item Handler', () => {
       const itemsToRetry = handler.getItemsToRetry();
 
       expect(itemsToRetry).toHaveLength(1);
-      expect(handler.failedItems.has('item1')).toBe(false);
+      expect(handler.failedItems.has('item1')).toBe(true);
     });
 
     test('respects exponential backoff', async () => {
