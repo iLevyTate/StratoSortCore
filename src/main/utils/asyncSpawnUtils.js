@@ -44,6 +44,17 @@ async function asyncSpawn(command, args = [], options = {}) {
         return;
       }
 
+      // FIX: Helper to release child process listeners after resolution
+      const cleanupChild = () => {
+        try {
+          child.stdout?.removeAllListeners();
+          child.stderr?.removeAllListeners();
+          child.removeAllListeners();
+        } catch {
+          // Non-fatal cleanup
+        }
+      };
+
       // Set up timeout
       if (timeout) {
         timeoutId = setTimeout(() => {
@@ -54,6 +65,7 @@ async function asyncSpawn(command, args = [], options = {}) {
             } catch {
               // Process may have already exited
             }
+            cleanupChild();
             resolve({
               status: null,
               stdout,
@@ -92,6 +104,7 @@ async function asyncSpawn(command, args = [], options = {}) {
         if (!resolved) {
           resolved = true;
           if (timeoutId) clearTimeout(timeoutId);
+          cleanupChild();
           resolve({
             status: code,
             stdout,
@@ -106,6 +119,7 @@ async function asyncSpawn(command, args = [], options = {}) {
         if (!resolved) {
           resolved = true;
           if (timeoutId) clearTimeout(timeoutId);
+          cleanupChild();
           resolve({
             status: null,
             stdout,

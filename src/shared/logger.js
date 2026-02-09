@@ -1,3 +1,4 @@
+/* global __non_webpack_require__ */
 /**
  * Unified Logging System for StratoSort
  * Provides structured logging across main and renderer processes using Pino
@@ -27,6 +28,21 @@ const _hasPinoTransport = typeof pino.transport === 'function';
 // the main process, this caused MaxListenersExceededWarning at startup.
 let _sharedDevTransport = null;
 let _transportDead = false;
+const _activeLoggers = new Set();
+const _globalLogConfig = {
+  enableFile: false,
+  logFile: null,
+  enableConsole: undefined,
+  level: undefined
+};
+
+// Use webpack-safe require access (avoids bundling pino-pretty into renderer)
+const _safeRequire =
+  typeof __non_webpack_require__ === 'function'
+    ? __non_webpack_require__
+    : typeof module !== 'undefined' && typeof module.require === 'function'
+      ? module.require.bind(module)
+      : null;
 
 function _getSharedDevTransport() {
   if (_transportDead) return null;
@@ -118,10 +134,26 @@ class Logger {
     this.context = context;
     this.enableFile = false;
     this.logFile = null;
+    this.enableConsole = true;
     this.level = process.env.NODE_ENV === 'development' ? 'debug' : 'info';
 
     // Initialize Pino instance
+    _activeLoggers.add(this);
+    this._applyGlobalConfig();
     this._initPino(options);
+  }
+
+  _applyGlobalConfig() {
+    if (_globalLogConfig.enableFile) {
+      this.enableFile = true;
+      this.logFile = _globalLogConfig.logFile;
+    }
+    if (typeof _globalLogConfig.enableConsole === 'boolean') {
+      this.enableConsole = _globalLogConfig.enableConsole;
+    }
+    if (typeof _globalLogConfig.level === 'string') {
+      this.level = _globalLogConfig.level;
+    }
   }
 
   _initPino(options = {}) {
@@ -180,42 +212,48 @@ class Logger {
     } else {
       // Main process configuration
       let transport;
+      let streams = null;
 
-      if (this.logFile && this.enableFile && _hasPinoTransport) {
-        // Multi-stream: Console + File
-        const targets = [
-          {
-            target: 'pino/file',
-            options: { destination: this.logFile, mkdir: true }
+      if (this.logFile && this.enableFile) {
+        streams = [];
+        try {
+          const fileStream = pino.destination({ dest: this.logFile, sync: false });
+          streams.push({ level: this.level, stream: fileStream });
+        } catch (error) {
+          console.error('[Logger] Failed to open log file stream:', error?.message);
+        }
+
+        if (this.enableConsole !== false) {
+          if (!isRenderer && isDev) {
+            try {
+              const prettyFactory = _safeRequire ? _safeRequire('pino-pretty') : null;
+              if (typeof prettyFactory === 'function') {
+                const pretty = prettyFactory({ colorize: true });
+                streams.push({ level: this.level, stream: pretty });
+              } else {
+                throw new Error('pino-pretty not available');
+              }
+            } catch (error) {
+              console.warn('[Logger] pino-pretty unavailable, using stdout:', error?.message);
+              streams.push({ level: this.level, stream: process.stdout });
+            }
+          } else {
+            streams.push({ level: this.level, stream: process.stdout });
           }
-        ];
-
-        // Add pretty print for console in dev
-        if (isDev && this.enableConsole !== false) {
-          targets.push({
-            target: 'pino-pretty',
-            options: { colorize: true }
-          });
-        } else if (this.enableConsole !== false) {
-          // Basic console in prod (if enabled)
-          targets.push({
-            target: 'pino/file', // stdout (descriptor 1)
-            options: { destination: 1 }
-          });
         }
-
-        transport = pino.transport({ targets });
-      } else {
+      } else if (isDev) {
         // Console only — reuse module-level shared transport in dev
-        if (isDev) {
-          transport = _getSharedDevTransport();
-        }
+        transport = _getSharedDevTransport();
       }
 
-      // FIX: Use the shared transport for the common dev-console-only case
-      // to avoid spawning a separate pino worker per logger instance.
-      // Only custom transports (e.g. file logging) get their own stream.
-      this.pino = pino(pinoOptions, transport || undefined);
+      if (streams && streams.length > 0 && typeof pino.multistream === 'function') {
+        this.pino = pino(pinoOptions, pino.multistream(streams));
+      } else {
+        // FIX: Use the shared transport for the common dev-console-only case
+        // to avoid spawning a separate pino worker per logger instance.
+        // Only custom transports (e.g. file logging) get their own stream.
+        this.pino = pino(pinoOptions, transport || undefined);
+      }
     }
   }
 
@@ -242,15 +280,11 @@ class Logger {
   }
 
   enableFileLogging(logFile, _options = {}) {
-    this.enableFile = true;
-    this.logFile = logFile;
-    // Re-initialize to add file transport
-    this._initPino();
+    configureFileLogging(logFile, _options);
   }
 
   disableConsoleLogging() {
-    this.enableConsole = false;
-    this._initPino();
+    configureConsoleLogging(false);
   }
 
   // API Compatibility methods
@@ -361,6 +395,42 @@ function getLogger(context) {
   return createLogger(context);
 }
 
+function configureFileLogging(logFilePath, options = {}) {
+  _globalLogConfig.enableFile = true;
+  _globalLogConfig.logFile = logFilePath;
+  if (typeof options.enableConsole === 'boolean') {
+    _globalLogConfig.enableConsole = options.enableConsole;
+  }
+  if (typeof options.level === 'string') {
+    _globalLogConfig.level = options.level;
+  }
+
+  for (const instance of _activeLoggers) {
+    instance.enableFile = true;
+    instance.logFile = logFilePath;
+    if (typeof options.enableConsole === 'boolean') {
+      instance.enableConsole = options.enableConsole;
+    }
+    if (typeof options.level === 'string') {
+      instance.level = options.level;
+    }
+    instance._initPino();
+  }
+}
+
+function configureConsoleLogging(enableConsole) {
+  if (typeof enableConsole === 'boolean') {
+    _globalLogConfig.enableConsole = enableConsole;
+  }
+
+  for (const instance of _activeLoggers) {
+    if (typeof enableConsole === 'boolean') {
+      instance.enableConsole = enableConsole;
+    }
+    instance._initPino();
+  }
+}
+
 module.exports = {
   Logger,
   logger,
@@ -368,5 +438,7 @@ module.exports = {
   LOG_LEVEL_NAMES,
   createLogger,
   getLogger,
-  sanitizeLogData
+  sanitizeLogData,
+  configureFileLogging,
+  configureConsoleLogging
 };

@@ -171,7 +171,13 @@ const MODEL_CATALOG = {
     checksum: null,
     recommended: false,
     requiresGpu: false,
-    minRam: 4096
+    minRam: 4096,
+    clipModel: {
+      name: 'llava-phi-3-mini-mmproj-f16.gguf',
+      url: `${HF_BASE_URL}/xtuner/llava-phi-3-mini-gguf/resolve/main/llava-phi-3-mini-mmproj-f16.gguf`,
+      size: 580 * 1024 * 1024, // ~580MB
+      checksum: null
+    }
   }
 };
 

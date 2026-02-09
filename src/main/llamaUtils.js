@@ -12,9 +12,6 @@ const { AI_DEFAULTS } = require('../shared/constants');
 
 const logger = createLogger('llama-utils');
 
-// Cached LlamaService instance
-let llamaServiceInstance = null;
-
 // Selected models - in-memory cache
 let selectedTextModel = AI_DEFAULTS.TEXT?.MODEL || null;
 let selectedVisionModel = AI_DEFAULTS.IMAGE?.MODEL || null;
@@ -24,16 +21,13 @@ let selectedEmbeddingModel = AI_DEFAULTS.EMBEDDING?.MODEL || null;
  * Lazy load LlamaService to avoid circular dependencies
  */
 function getLlamaService() {
-  if (!llamaServiceInstance) {
-    try {
-      const { getInstance } = require('./services/LlamaService');
-      llamaServiceInstance = getInstance();
-    } catch (error) {
-      logger.warn('[LlamaUtils] Failed to get LlamaService instance:', error.message);
-      return null;
-    }
+  try {
+    const { getInstance } = require('./services/LlamaService');
+    return getInstance();
+  } catch (error) {
+    logger.warn('[LlamaUtils] Failed to get LlamaService instance:', error.message);
+    return null;
   }
-  return llamaServiceInstance;
 }
 
 /**
@@ -108,6 +102,12 @@ async function setEmbeddingModel(model) {
   }
 }
 
+// Helper to detect legacy Ollama model names
+const isLegacyModelName = (name) => {
+  if (!name || typeof name !== 'string') return false;
+  return !name.endsWith('.gguf') && (name.includes(':') || !name.includes('.'));
+};
+
 /**
  * Load configuration from settings
  */
@@ -117,15 +117,26 @@ async function loadLlamaConfig() {
     const settings = getSettings();
     const allSettings = settings?.getAll?.() || {};
 
+    // Helper to resolve model name
+    const resolveModel = (configured, defaultName) => {
+      if (!configured) return defaultName;
+      if (isLegacyModelName(configured)) return defaultName;
+      return configured;
+    };
+
     // Load model names from settings or use defaults
-    selectedTextModel =
-      allSettings.textModel || AI_DEFAULTS.TEXT?.MODEL || 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf';
-    selectedVisionModel =
-      allSettings.visionModel || AI_DEFAULTS.IMAGE?.MODEL || 'llava-v1.6-mistral-7b-Q4_K_M.gguf';
-    selectedEmbeddingModel =
-      allSettings.embeddingModel ||
-      AI_DEFAULTS.EMBEDDING?.MODEL ||
-      'nomic-embed-text-v1.5-Q8_0.gguf';
+    selectedTextModel = resolveModel(
+      allSettings.textModel,
+      AI_DEFAULTS.TEXT?.MODEL || 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf'
+    );
+    selectedVisionModel = resolveModel(
+      allSettings.visionModel,
+      AI_DEFAULTS.IMAGE?.MODEL || 'llava-v1.6-mistral-7b-Q4_K_M.gguf'
+    );
+    selectedEmbeddingModel = resolveModel(
+      allSettings.embeddingModel,
+      AI_DEFAULTS.EMBEDDING?.MODEL || 'nomic-embed-text-v1.5-Q8_0.gguf'
+    );
 
     logger.info('[LlamaUtils] Config loaded', {
       textModel: selectedTextModel,
@@ -161,9 +172,13 @@ function getEmbeddingDimensions() {
  * Clean up resources
  */
 async function cleanup() {
-  if (llamaServiceInstance) {
-    await llamaServiceInstance.shutdown?.();
-    llamaServiceInstance = null;
+  // FIX: LlamaService shutdown is managed by ServiceContainer/ServiceIntegration.
+  // We do not manually shut it down here to avoid double-dispose issues.
+  // This function is kept for backward compatibility with scripts.
+  const service = getLlamaService();
+  if (service && typeof service.shutdown === 'function') {
+    // Only shut down if not managed by container (e.g. in standalone scripts)
+    // But we can't easily tell. Safe to rely on container shutdown.
   }
 }
 

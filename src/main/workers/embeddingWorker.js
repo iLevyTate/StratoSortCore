@@ -12,18 +12,22 @@ let context = null;
 
 const isOutOfMemoryError = (error) => {
   const message = String(error?.message || error || '').toLowerCase();
-  return message.includes('out of memory') || message.includes('oom');
+  return (
+    message.includes('out of memory') ||
+    message.includes('oom') ||
+    message.includes('allocate') ||
+    message.includes('buffer')
+  );
 };
 
 /**
  * Resolve gpuLayers value to match LlamaService convention.
- * node-llama-cpp treats -1 as 0 (CPU-only), so we map 'auto' and -1
- * to Infinity (offload all layers to GPU).
+ * Leave undefined for auto so node-llama-cpp can fit to VRAM.
  */
 function resolveGpuLayers(gpuLayers) {
-  if (gpuLayers === 'auto' || gpuLayers === -1) return Infinity;
+  if (gpuLayers === 'auto' || gpuLayers === -1 || gpuLayers == null) return undefined;
   if (typeof gpuLayers === 'number' && gpuLayers >= 0) return gpuLayers;
-  return Infinity; // Default: full GPU offload
+  return undefined;
 }
 
 /**
@@ -34,10 +38,26 @@ async function getLlamaInstance() {
   if (llamaInstance) return llamaInstance;
 
   const { getLlama } = await import(/* webpackIgnore: true */ 'node-llama-cpp');
+  // FIX: Import GPUMonitor dynamically to avoid circular deps or load issues in worker
+  const { GPUMonitor } = require('../services/GPUMonitor');
+  const { initLlamaWithBackend } = require('../utils/llamaBackendSelector');
+  const gpuMonitor = new GPUMonitor();
+
+  let gpuInfo = null;
+  try {
+    gpuInfo = await gpuMonitor.detectGPU();
+  } catch {
+    // Ignore detection error
+  }
 
   try {
-    llamaInstance = await getLlama({ gpu: 'auto' });
-    logger.info('[EmbeddingWorker] Llama initialized', { gpu: llamaInstance.gpu || 'cpu' });
+    const selection = await initLlamaWithBackend({
+      getLlama,
+      gpuInfo,
+      logger,
+      context: 'EmbeddingWorker'
+    });
+    llamaInstance = selection.llama;
   } catch (error) {
     logger.warn('[EmbeddingWorker] GPU init failed, falling back to CPU', {
       error: error?.message
@@ -65,7 +85,7 @@ async function ensureModelLoaded({ modelPath, gpuLayers }) {
   const resolvedPath = path.normalize(modelPath);
   logger.info('[EmbeddingWorker] Loading embedding model', {
     modelPath: resolvedPath,
-    gpuLayers: resolvedLayers === Infinity ? 'all' : resolvedLayers
+    gpuLayers: typeof resolvedLayers === 'number' ? resolvedLayers : 'auto'
   });
 
   // Dispose previous model if exists
@@ -88,13 +108,36 @@ async function ensureModelLoaded({ modelPath, gpuLayers }) {
   }
 
   try {
-    model = await llama.loadModel({ modelPath: resolvedPath, gpuLayers: resolvedLayers });
+    const modelOptions = { modelPath: resolvedPath };
+    if (typeof resolvedLayers === 'number') {
+      modelOptions.gpuLayers = resolvedLayers;
+    }
+    model = await llama.loadModel(modelOptions);
     context = await model.createEmbeddingContext();
     currentModelPath = modelPath;
     currentGpuLayers = resolvedLayers;
     return context;
   } catch (error) {
     logger.error('[EmbeddingWorker] Failed to load embedding model', { error: error.message });
+    // Ensure partially loaded model/context are disposed to avoid leaks
+    if (context?.dispose) {
+      try {
+        await context.dispose();
+      } catch {
+        /* ignore */
+      }
+      context = null;
+    }
+    if (model?.dispose) {
+      try {
+        await model.dispose();
+      } catch {
+        /* ignore */
+      }
+      model = null;
+    }
+    currentModelPath = null;
+    currentGpuLayers = null;
     if (isOutOfMemoryError(error)) {
       error.code = ERROR_CODES.LLAMA_OOM;
     } else if (!error.code) {
@@ -116,7 +159,7 @@ module.exports = async function runEmbeddingTask(payload = {}) {
     const ctx = await ensureModelLoaded({ modelPath, gpuLayers });
     const embedding = await ctx.getEmbeddingFor(text);
     const vector = Array.from(embedding.vector);
-    return { embedding: vector };
+    return { embedding: vector, model: path.basename(modelPath) };
   } catch (error) {
     if (isOutOfMemoryError(error)) {
       error.code = ERROR_CODES.LLAMA_OOM;

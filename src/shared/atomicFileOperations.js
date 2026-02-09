@@ -1012,7 +1012,27 @@ async function crossDeviceMove(source, dest, options = {}) {
     }
 
     // Delete the source file
-    await fs.unlink(normalizedSource);
+    try {
+      await fs.unlink(normalizedSource);
+    } catch (unlinkError) {
+      // Source unlink failed after successful copy: roll back the copy to prevent
+      // data duplication and leave the original file intact.
+      logger.error('[ATOMIC-OPS] Failed to remove source after cross-device copy, rolling back', {
+        source: normalizedSource,
+        destination: normalizedDest,
+        error: unlinkError.message
+      });
+      await fs.unlink(normalizedDest).catch((rollbackError) => {
+        logger.error('[ATOMIC-OPS] Rollback of destination also failed — manual cleanup needed', {
+          destination: normalizedDest,
+          error: rollbackError.message
+        });
+      });
+      throw FileSystemError.fromNodeError(unlinkError, {
+        path: normalizedSource,
+        operation: 'crossDeviceMove'
+      });
+    }
 
     logger.debug('[ATOMIC-OPS] Cross-device move completed:', {
       source: normalizedSource,

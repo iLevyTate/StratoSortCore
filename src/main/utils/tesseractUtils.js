@@ -5,6 +5,7 @@ const path = require('path');
 const { logger: baseLogger, createLogger } = require('../../shared/logger');
 const { resolveRuntimePath } = require('./runtimePaths');
 const { getOcrPool, destroyOcrPool, shouldUsePiscina } = require('./workerPools');
+const { resolveTesseractJsOptions } = require('./tesseractJsPaths');
 
 const execFileAsync = promisify(execFile);
 
@@ -18,10 +19,41 @@ const AVAILABILITY_CACHE_TTL_MS = 30000;
 let availabilityCache = null;
 let availabilityCheck = null;
 let warnedUnavailable = false;
+let warnedJsMissing = false;
+let ocrPoolDisabled = false;
 
 let jsWorkerPromise = null;
 let jsWorkerLang = null;
 let jsWorkerQueue = Promise.resolve();
+
+function canUseTesseractJs() {
+  try {
+    require.resolve('tesseract.js');
+  } catch {
+    if (!warnedJsMissing) {
+      warnedJsMissing = true;
+      logger?.warn?.('[OCR] tesseract.js not installed, OCR JS fallback disabled');
+    }
+    return false;
+  }
+
+  try {
+    const isRenderer = typeof process !== 'undefined' && process.type === 'renderer';
+    if (isRenderer) {
+      require.resolve('tesseract.js/dist/worker.min.js');
+    } else {
+      require.resolve('tesseract.js/src/worker-script/node/index.js');
+    }
+    require.resolve('tesseract.js-core/tesseract-core.wasm.js');
+    return true;
+  } catch {
+    if (!warnedJsMissing) {
+      warnedJsMissing = true;
+      logger?.warn?.('[OCR] tesseract.js assets missing, OCR JS fallback disabled');
+    }
+    return false;
+  }
+}
 
 function getEmbeddedTesseractPath() {
   const exe = process.platform === 'win32' ? 'tesseract.exe' : 'tesseract';
@@ -87,8 +119,12 @@ async function isTesseractAvailable() {
         binaryPath,
         error: error.message
       });
+      if (!canUseTesseractJs()) {
+        availabilityCache = { value: false, checkedAt: Date.now() };
+        return false;
+      }
       try {
-        if (shouldUsePiscina()) {
+        if (shouldUsePiscina() && !ocrPoolDisabled) {
           getOcrPool();
           availabilityCache = { value: true, checkedAt: Date.now() };
           return true;
@@ -157,8 +193,20 @@ async function getJsWorker() {
 
   jsWorkerPromise = (async () => {
     try {
+      if (!canUseTesseractJs()) {
+        throw new Error('tesseract.js assets unavailable');
+      }
       const { createWorker } = require('tesseract.js');
-      const worker = await createWorker('eng');
+      const workerOptions = resolveTesseractJsOptions(logger);
+      if (!workerOptions) {
+        throw new Error('tesseract.js assets unavailable');
+      }
+      const worker = await createWorker('eng', 1, {
+        ...workerOptions,
+        errorHandler: (err) => {
+          logger?.warn?.('[OCR] Worker error', { error: err?.message || String(err) });
+        }
+      });
       jsWorkerLang = 'eng';
       return worker;
     } catch (error) {
@@ -183,20 +231,44 @@ async function ensureJsWorkerLanguage(worker, lang = 'eng') {
 }
 
 async function recognizeWithTesseractJs(input, options = {}) {
-  const pool = getOcrPool();
-  if (pool) {
+  if (!ocrPoolDisabled) {
+    const pool = getOcrPool();
     try {
-      const result = await pool.run({ input, options });
-      // FIX: ocrWorker now returns { text, error? } instead of throwing
-      // to prevent uncaught exceptions in the Piscina thread
-      if (result?.error) {
-        throw new Error(result.error);
+      if (pool) {
+        const result = await pool.run({ input, options });
+        // FIX: ocrWorker now returns { text, error? } instead of throwing
+        // to prevent uncaught exceptions in the Piscina thread
+        if (result?.error) {
+          logger?.warn?.('[OCR] Worker pool failed, falling back to local worker', {
+            error: result.error
+          });
+          if (String(result.error).includes('addEventListener')) {
+            ocrPoolDisabled = true;
+            try {
+              await destroyOcrPool();
+            } catch {
+              // Ignore pool cleanup errors
+            }
+          }
+          // FIX: Fall through to local JS worker instead of returning empty string.
+          // The log says "falling back to local worker" but previously returned ''
+          // and never actually tried the local worker.
+        } else {
+          return result?.text || '';
+        }
       }
-      return result?.text || '';
     } catch (error) {
       logger?.warn?.('[OCR] Worker pool failed, falling back to local worker', {
         error: error.message
       });
+      if (String(error?.message || '').includes('addEventListener')) {
+        ocrPoolDisabled = true;
+        try {
+          await destroyOcrPool();
+        } catch {
+          // Ignore pool cleanup errors
+        }
+      }
     }
   }
 
@@ -219,8 +291,14 @@ async function recognizeWithTesseractJs(input, options = {}) {
 
   // Swallow errors from previous tasks cleanly (queue is just for serialization)
   // so current task's errors propagate correctly to its caller
-  const current = jsWorkerQueue.catch(() => {}).then(task);
-  jsWorkerQueue = current.catch(() => {}); // Keep queue alive even if task fails
+  const current = jsWorkerQueue
+    .catch((err) => {
+      logger?.debug?.('[OCR] Previous task error (swallowed):', { error: err?.message });
+    })
+    .then(task);
+  jsWorkerQueue = current.catch((err) => {
+    logger?.debug?.('[OCR] Current task error (swallowed):', { error: err?.message });
+  }); // Keep queue alive even if task fails
   return current;
 }
 
@@ -266,6 +344,11 @@ async function recognizeIfAvailable(tesseract, input, options = {}) {
  */
 async function terminateJsWorker() {
   await destroyOcrPool();
+  try {
+    await jsWorkerQueue.catch(() => {});
+  } catch {
+    // Ignore errors during queue drain
+  }
   if (!jsWorkerPromise) return;
   try {
     const worker = await jsWorkerPromise;
@@ -277,6 +360,11 @@ async function terminateJsWorker() {
   }
   jsWorkerPromise = null;
   jsWorkerLang = null;
+  try {
+    await jsWorkerQueue.catch(() => {});
+  } catch {
+    // Ignore errors during queue drain
+  }
   jsWorkerQueue = Promise.resolve();
 }
 

@@ -1,4 +1,15 @@
 const { createLogger } = require('../../shared/logger');
+const { resolveTesseractJsOptions } = require('../utils/tesseractJsPaths');
+
+// In Node worker_threads, WorkerGlobalScope may exist and mislead tesseract.js
+// into using browser worker code. Force node mode by clearing it.
+if (typeof WorkerGlobalScope !== 'undefined' && typeof process !== 'undefined') {
+  try {
+    global.WorkerGlobalScope = undefined;
+  } catch {
+    // Best-effort only
+  }
+}
 
 const logger = createLogger('OcrWorker');
 
@@ -16,7 +27,16 @@ async function getWorker() {
   workerPromise = (async () => {
     try {
       const { createWorker } = require('tesseract.js');
-      const worker = await createWorker('eng');
+      const workerOptions = resolveTesseractJsOptions(logger);
+      if (!workerOptions) {
+        throw new Error('tesseract.js assets unavailable');
+      }
+      const worker = await createWorker('eng', 1, {
+        ...workerOptions,
+        errorHandler: (err) => {
+          logger.warn('[OCR] Worker error', { error: err?.message || String(err) });
+        }
+      });
       workerLang = 'eng';
       return worker;
     } catch (error) {

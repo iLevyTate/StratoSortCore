@@ -46,7 +46,7 @@ const TIMEOUTS = {
   DIRECTORY_SCAN: 60000,
   AI_ANALYSIS_SHORT: 30000,
   AI_ANALYSIS_MEDIUM: 60000,
-  AI_ANALYSIS_LONG: 180000, // Increased from 120s to 180s to handle complex image analysis
+  AI_ANALYSIS_LONG: 300000, // Increased to 5 minutes to handle CPU-based vision analysis
   AI_ANALYSIS_BATCH: 300000,
   API_REQUEST: 10000,
   API_REQUEST_SLOW: 30000,
