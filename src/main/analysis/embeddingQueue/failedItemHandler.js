@@ -6,7 +6,8 @@
  * @module embeddingQueue/failedItemHandler
  */
 
-const { logger } = require('../../../shared/logger');
+const { createLogger } = require('../../../shared/logger');
+const logger = createLogger('FailedItemHandler');
 const { RETRY } = require('../../../shared/performanceConstants');
 const { persistFailedItems, persistDeadLetterQueue, SQLITE_KEYS } = require('./persistence');
 
@@ -39,9 +40,34 @@ function createFailedItemHandler(config) {
    * @param {Object} item - The failed embedding item
    * @param {string} errorMessage - The error message
    */
+  function normalizeError(errorMessage) {
+    const message =
+      typeof errorMessage === 'string'
+        ? errorMessage
+        : errorMessage?.error || errorMessage?.message || String(errorMessage || 'unknown_error');
+    const normalized = message.toLowerCase();
+    const isDimensionMismatch =
+      normalized.includes('dimension_mismatch') || normalized.includes('dimension mismatch');
+    return {
+      message,
+      requiresRebuild: isDimensionMismatch,
+      errorCode: isDimensionMismatch ? 'dimension_mismatch' : null
+    };
+  }
+
   function trackFailedItem(item, errorMessage) {
     const existing = failedItems.get(item.id);
     const retryCount = existing ? existing.retryCount + 1 : 1;
+    const normalizedError = normalizeError(errorMessage);
+
+    if (normalizedError.requiresRebuild) {
+      addToDeadLetterQueue(item, normalizedError.message, retryCount, {
+        requiresRebuild: true,
+        errorCode: normalizedError.errorCode
+      });
+      failedItems.delete(item.id);
+      return;
+    }
 
     if (retryCount > itemMaxRetries) {
       addToDeadLetterQueue(item, errorMessage, retryCount);
@@ -80,7 +106,7 @@ function createFailedItemHandler(config) {
       item,
       retryCount,
       lastAttempt: Date.now(),
-      error: errorMessage
+      error: normalizedError.message
     });
 
     // Persist failed items to disk for recovery
@@ -101,10 +127,12 @@ function createFailedItemHandler(config) {
    * @param {string} errorMessage - The error message
    * @param {number} retryCount - Number of retries attempted
    */
-  function addToDeadLetterQueue(item, errorMessage, retryCount) {
+  function addToDeadLetterQueue(item, errorMessage, retryCount, options = {}) {
     const deadLetterEntry = {
       item,
       error: errorMessage,
+      errorCode: options.errorCode || null,
+      requiresRebuild: options.requiresRebuild === true,
       retryCount,
       failedAt: new Date().toISOString(),
       itemId: item.id,
@@ -144,22 +172,16 @@ function createFailedItemHandler(config) {
   function getItemsToRetry() {
     const now = Date.now();
     const itemsToRetry = [];
-    const idsToRemove = [];
 
-    for (const [id, data] of failedItems) {
+    for (const data of failedItems.values()) {
       // Exponential backoff per item: 10s, 20s, 40s
       // Formula: BASE_MS * 2^(retryCount-1) gives 10s, 20s, 40s for retryCount 1, 2, 3
       const backoffMs = RETRY.BACKOFF_BASE_MS * 2 ** (data.retryCount - 1);
 
       if (now - data.lastAttempt >= backoffMs) {
+        data.lastAttempt = now;
         itemsToRetry.push(data.item);
-        idsToRemove.push(id);
       }
-    }
-
-    // Batch delete after iteration to avoid mutating Map during for..of
-    for (const id of idsToRemove) {
-      failedItems.delete(id);
     }
 
     return itemsToRetry;
@@ -174,10 +196,15 @@ function createFailedItemHandler(config) {
     const itemsToRetry = getItemsToRetry();
 
     if (itemsToRetry.length > 0) {
+      const existingIds = new Set(queue.map((item) => item?.id).filter(Boolean));
+      const deduped = itemsToRetry.filter((item) => item?.id && !existingIds.has(item.id));
+      if (deduped.length === 0) {
+        return;
+      }
       logger.info(`[EmbeddingQueue] Re-queuing ${itemsToRetry.length} failed items for retry`);
       // Prepend to queue for priority processing
       // Use splice(0, 0, ...batch) in chunks to avoid stack overflow and O(n*m) unshift loop
-      queue.splice(0, 0, ...itemsToRetry);
+      queue.splice(0, 0, ...deduped);
       await persistQueue();
       await persistFailedItems(failedItemsPath, failedItems, { key: persistenceKeys.failedItems });
     }

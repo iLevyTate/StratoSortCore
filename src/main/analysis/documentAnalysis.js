@@ -150,20 +150,34 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
   const fileName = path.basename(filePath);
   const smartFolderSig = Array.isArray(smartFolders)
     ? smartFolders
-        .map((f) => f?.name || '')
+        .map((f) => {
+          const name = typeof f?.name === 'string' ? f.name.trim() : '';
+          const description = typeof f?.description === 'string' ? f.description.trim() : '';
+          if (!name && !description) return '';
+          return `${name}:${description}`;
+        })
         .filter(Boolean)
         .sort()
         .join('|')
     : '';
 
   // Determine model in advance for cache signatures and deduplication
-  const defaultTextModel = AppConfig?.ai?.textAnalysis?.defaultModel || AI_DEFAULTS.TEXT.MODEL;
+  const defaultTextModel =
+    (AppConfig &&
+      AppConfig.ai &&
+      AppConfig.ai.textAnalysis &&
+      AppConfig.ai.textAnalysis.defaultModel) ||
+    (AI_DEFAULTS && AI_DEFAULTS.TEXT && AI_DEFAULTS.TEXT.MODEL) ||
+    'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf';
 
   let modelName = defaultTextModel;
   try {
     const cfg = await loadLlamaConfig();
-    modelName = getTextModel() || cfg.selectedTextModel || defaultTextModel;
-  } catch {
+    modelName = getTextModel() || cfg?.selectedTextModel || defaultTextModel;
+  } catch (err) {
+    logger.debug('Failed to load llama config for signature, using default', {
+      error: err.message
+    });
     modelName = defaultTextModel;
   }
 
@@ -479,9 +493,6 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
       });
     }
 
-    // FIX MEDIUM-5: Removed dead code block - OCR is already attempted in the PDF extraction block above (lines 271-317)
-    // The redundant OCR fallback was commented out but left in codebase, now fully removed.
-
     if (extractedText && extractedText.trim().length > 0) {
       logger.info(`[CONTENT-ANALYSIS] Processing`, {
         fileName,
@@ -529,10 +540,12 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
 
       // Backend Caching & Deduplication:
       // Generate a content hash to prevent duplicate AI processing
+      // FIX: Ensure modelName is a string to prevent crypto.update() from throwing
+      const safeModelName = String(modelName || 'default-model');
       const contentHash = crypto
         .createHash('md5')
         .update(extractedText)
-        .update(modelName)
+        .update(safeModelName)
         .digest('hex');
 
       // Folders are only relevant if they change the prompt structure, but analyzeTextWithLlama uses
@@ -617,7 +630,9 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
           keywords: Array.isArray(analysis?.keywords)
             ? analysis.keywords
             : ['document', 'analysis_failed'],
-          purpose: 'Text extracted, but AI analysis failed.',
+          purpose: analysis?.error
+            ? `Analysis failed: ${analysis.error}`
+            : 'Text extracted, but AI analysis failed.',
           project: fileName,
           date: fileDate,
           category: 'document',

@@ -6,7 +6,8 @@
  * @module embeddingQueue/parallelProcessor
  */
 
-const { logger } = require('../../../shared/logger');
+const { createLogger } = require('../../../shared/logger');
+const logger = createLogger('ParallelProcessor');
 const { withTimeout } = require('../../../shared/promiseUtils');
 const { TIMEOUTS } = require('../../../shared/performanceConstants');
 const PQueue = require('p-queue').default;
@@ -63,7 +64,39 @@ async function processItemsInParallel({
         // If the service returns success: false (e.g. dimension mismatch), we must treat it as a failure
         // so items go to the failed queue instead of being silently dropped.
         if (result && result.success === false) {
+          const isDimensionMismatch =
+            result.error === 'dimension_mismatch' || result.requiresRebuild === true;
+          if (isDimensionMismatch) {
+            for (const item of items) {
+              failedItemIds.add(item.id);
+              onItemFailed(item, result.error || 'dimension_mismatch');
+            }
+            return processedCount;
+          }
           throw new Error(result.error || 'Batch folder upsert failed');
+        }
+        if (result?.failed && result.failed.length > 0) {
+          const successCount =
+            Number.isFinite(result.count) && result.count >= 0 ? result.count : 0;
+          if (successCount > 0) {
+            processedCount += successCount;
+            onProgress({
+              phase: 'processing',
+              total: totalBatchSize,
+              completed: processedCount,
+              percent: totalBatchSize > 0 ? Math.round((processedCount / totalBatchSize) * 100) : 0,
+              itemType: type
+            });
+          }
+          const itemsById = new Map(items.map((item) => [item.id, item]));
+          for (const failure of result.failed) {
+            const failedItem = itemsById.get(failure.id);
+            if (failedItem) {
+              failedItemIds.add(failedItem.id);
+              onItemFailed(failedItem, failure.error || 'batch_upsert_failed');
+            }
+          }
+          return processedCount;
         }
       } else {
         const result = await withTimeout(
@@ -73,7 +106,39 @@ async function processItemsInParallel({
         );
         // FIX CRITICAL: Check batch operation result for data loss prevention
         if (result && result.success === false) {
+          const isDimensionMismatch =
+            result.error === 'dimension_mismatch' || result.requiresRebuild === true;
+          if (isDimensionMismatch) {
+            for (const item of items) {
+              failedItemIds.add(item.id);
+              onItemFailed(item, result.error || 'dimension_mismatch');
+            }
+            return processedCount;
+          }
           throw new Error(result.error || 'Batch file upsert failed');
+        }
+        if (result?.failed && result.failed.length > 0) {
+          const successCount =
+            Number.isFinite(result.count) && result.count >= 0 ? result.count : 0;
+          if (successCount > 0) {
+            processedCount += successCount;
+            onProgress({
+              phase: 'processing',
+              total: totalBatchSize,
+              completed: processedCount,
+              percent: totalBatchSize > 0 ? Math.round((processedCount / totalBatchSize) * 100) : 0,
+              itemType: type
+            });
+          }
+          const itemsById = new Map(items.map((item) => [item.id, item]));
+          for (const failure of result.failed) {
+            const failedItem = itemsById.get(failure.id);
+            if (failedItem) {
+              failedItemIds.add(failedItem.id);
+              onItemFailed(failedItem, failure.error || 'batch_upsert_failed');
+            }
+          }
+          return processedCount;
         }
       }
 
@@ -132,6 +197,13 @@ async function processItemsInParallel({
 
       // FIX CRITICAL: Check operation result for data loss prevention
       if (result && result.success === false) {
+        const isDimensionMismatch =
+          result.error === 'dimension_mismatch' || result.requiresRebuild === true;
+        if (isDimensionMismatch) {
+          failedItemIds.add(item.id);
+          onItemFailed(item, result.error || 'dimension_mismatch');
+          return;
+        }
         throw new Error(result.error || `Upsert ${type} failed`);
       }
 

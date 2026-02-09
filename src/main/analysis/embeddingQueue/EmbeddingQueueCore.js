@@ -114,6 +114,9 @@ class EmbeddingQueue {
     // Track all outstanding persistence promises (including from remove/update ops)
     this._outstandingPersistence = new Set();
 
+    // Pending removals to apply after flush completes
+    this._pendingRemovals = new Set();
+
     // Track retry timers so they can be cleared on shutdown
     this._retryTimers = new Set();
 
@@ -191,6 +194,29 @@ class EmbeddingQueue {
         logger.error('[EmbeddingQueue] Error completing pending operations:', err.message);
       }
     }
+    if (this._pendingRemovals?.size) {
+      const pending = this._pendingRemovals;
+      this._pendingRemovals = new Set();
+      const beforeCount = this.queue.length;
+      this.queue = this.queue.filter((item) => !pending.has(item.id));
+      for (const id of pending) {
+        this._failedItemHandler.failedItems.delete(id);
+      }
+      const pendingRemoved = beforeCount - this.queue.length;
+      if (pendingRemoved > 0) {
+        logger.debug('[EmbeddingQueue] Applied pending removals before shutdown persist', {
+          removedCount: pendingRemoved
+        });
+      }
+      await this._failedItemHandler
+        .persistAll()
+        .catch((err) =>
+          logger.warn(
+            '[EmbeddingQueue] Failed to persist failed items after pending removals:',
+            err.message
+          )
+        );
+    }
     await this.persistQueue();
   }
 
@@ -235,9 +261,19 @@ class EmbeddingQueue {
         this.failedItemsPath,
         (data) => {
           if (data && typeof data === 'object') {
-            // Handle both object format { id: itemData } and array format [{ id, item, ... }]
+            // Handle object format { id: itemData } and array formats:
+            // - [[id, itemData], ...] (persistMap)
+            // - [{ id, item, ... }, ...]
             const entries = Array.isArray(data)
-              ? data.map((item) => [item?.id || item?.item?.id, item]).filter(([id]) => id)
+              ? data
+                  .map((entry) => {
+                    if (Array.isArray(entry) && entry.length === 2) {
+                      return entry;
+                    }
+                    const id = entry?.id || entry?.item?.id;
+                    return id ? [id, entry] : null;
+                  })
+                  .filter(Boolean)
               : Object.entries(data);
             for (const [id, itemData] of entries) {
               if (id && itemData && itemData.item) {
@@ -301,25 +337,43 @@ class EmbeddingQueue {
         isArray: Array.isArray(item.vector),
         length: item.vector?.length
       });
+      this._failedItemHandler.trackFailedItem(item, 'invalid_vector_format');
       return { success: false, reason: 'invalid_vector_format' };
     }
 
     // FIX HIGH #6: Validate ALL vector values, not just 3 samples
     // NaN/Infinity in any position will corrupt similarity calculations
     // Performance: Typical embedding vectors are 384-4096 dimensions, checking all is fast
+    let vectorSanitized = false;
+    let invalidCount = 0;
     const vectorLength = item.vector.length;
+    const sanitizedVector = new Array(vectorLength);
     for (let idx = 0; idx < vectorLength; idx++) {
       const val = item.vector[idx];
       if (typeof val !== 'number' || !Number.isFinite(val)) {
-        logger.warn('[EmbeddingQueue] Invalid vector - contains non-numeric values', {
+        invalidCount += 1;
+        vectorSanitized = true;
+        sanitizedVector[idx] = 0;
+      } else {
+        sanitizedVector[idx] = val;
+      }
+    }
+    if (vectorSanitized) {
+      if (invalidCount === vectorLength) {
+        logger.warn('[EmbeddingQueue] Invalid vector - all values non-numeric', {
           id: item.id,
-          invalidIndex: idx,
-          invalidValue: val,
-          valueType: typeof val,
+          invalidCount,
           vectorLength
         });
+        this._failedItemHandler.trackFailedItem(item, 'invalid_vector_values');
         return { success: false, reason: 'invalid_vector_values' };
       }
+      item.vector = sanitizedVector;
+      logger.warn('[EmbeddingQueue] Sanitized vector with invalid values', {
+        id: item.id,
+        invalidCount,
+        vectorLength
+      });
     }
 
     if (!this.initialized) {
@@ -327,6 +381,9 @@ class EmbeddingQueue {
     }
 
     const result = { success: true, warnings: [] };
+    if (vectorSanitized) {
+      result.warnings.push('vector_sanitized');
+    }
 
     // Memory monitoring
     if (this.queue.length >= this.MEMORY_WARNING_THRESHOLD && !this.memoryWarningLogged) {
@@ -553,10 +610,36 @@ class EmbeddingQueue {
           });
         }
 
-        // Remove processed items from queue by ID to avoid data loss if
-        // removeByFilePath() modified the queue during concurrent processing
-        const processedIds = new Set(batch.map((item) => item.id));
-        this.queue = this.queue.filter((item) => !processedIds.has(item.id));
+        // Remove only the exact batch items by object identity.
+        // This prevents dropping a newer re-enqueue with the same ID.
+        const processedItems = new Set(batch);
+        this.queue = this.queue.filter((item) => !processedItems.has(item));
+
+        if (this._pendingRemovals?.size) {
+          const pending = this._pendingRemovals;
+          this._pendingRemovals = new Set();
+          const beforeCount = this.queue.length;
+          this.queue = this.queue.filter((item) => !pending.has(item.id));
+          for (const id of pending) {
+            this._failedItemHandler.failedItems.delete(id);
+          }
+          const pendingRemoved = beforeCount - this.queue.length;
+          if (pendingRemoved > 0) {
+            logger.debug('[EmbeddingQueue] Applied pending removals after flush', {
+              removedCount: pendingRemoved
+            });
+          }
+        }
+
+        // Clear failed-item records for items that succeeded in this batch
+        let clearedFailed = 0;
+        for (const item of batch) {
+          if (!failedItemIds.has(item.id)) {
+            if (this._failedItemHandler.failedItems.delete(item.id)) {
+              clearedFailed += 1;
+            }
+          }
+        }
 
         const flushDuration = Date.now() - flushStartTime;
         const successCount = batch.length - failedItemIds.size;
@@ -582,6 +665,13 @@ class EmbeddingQueue {
 
         await this.persistQueue();
         await this._failedItemHandler.retryFailedItems(this.queue, () => this.persistQueue());
+        if (clearedFailed > 0) {
+          await this._failedItemHandler
+            .persistAll()
+            .catch((err) =>
+              logger.warn('[EmbeddingQueue] Failed to persist failed items cleanup:', err.message)
+            );
+        }
 
         if (this.queue.length > 0) {
           this.scheduleFlush();
@@ -613,7 +703,7 @@ class EmbeddingQueue {
   /**
    * Handle offline database scenario
    */
-  async _handleOfflineDatabase(batch, batchSize) {
+  async _handleOfflineDatabase(batch, _batchSize) {
     this.retryCount++;
 
     this._notifyProgress({
@@ -631,7 +721,10 @@ class EmbeddingQueue {
       for (const item of batch) {
         this._failedItemHandler.trackFailedItem(item, 'Database offline');
       }
-      this.queue.splice(0, batchSize);
+      // Remove only the exact batch items by object identity.
+      // Queue may have been mutated while flush was in progress.
+      const batchItems = new Set(batch);
+      this.queue = this.queue.filter((item) => !batchItems.has(item));
       this.retryCount = 0;
       await this.persistQueue();
 
@@ -680,6 +773,24 @@ class EmbeddingQueue {
     ]);
     let removedCount = 0;
 
+    if (this.isFlushing) {
+      for (const item of this.queue) {
+        if (fileIds.has(item.id)) {
+          removedCount++;
+        }
+      }
+      for (const id of fileIds) {
+        this._pendingRemovals.add(id);
+      }
+      if (removedCount > 0) {
+        logger.debug('[EmbeddingQueue] Queued removals for deleted file (flush in progress)', {
+          filePath,
+          removedCount
+        });
+      }
+      return removedCount;
+    }
+
     // Remove from main queue using in-place splice to avoid replacing the array
     // reference while flush() holds a stale batchSize from the same array
     for (let i = this.queue.length - 1; i >= 0; i--) {
@@ -724,6 +835,24 @@ class EmbeddingQueue {
       })
     );
     let removedCount = 0;
+
+    if (this.isFlushing) {
+      for (const item of this.queue) {
+        if (fileIds.has(item.id)) {
+          removedCount++;
+        }
+      }
+      for (const id of fileIds) {
+        this._pendingRemovals.add(id);
+      }
+      if (removedCount > 0) {
+        logger.debug('[EmbeddingQueue] Queued removals for deleted files (flush in progress)', {
+          fileCount: filePaths.length,
+          removedCount
+        });
+      }
+      return removedCount;
+    }
 
     // Remove from main queue using in-place splice to avoid replacing the array
     // reference while flush() holds a stale batchSize from the same array

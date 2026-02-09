@@ -51,12 +51,12 @@ function setImageCache(signature, value) {
 const AppConfig = {
   ai: {
     imageAnalysis: {
-      defaultModel: AI_DEFAULTS.IMAGE.MODEL,
+      defaultModel: AI_DEFAULTS?.IMAGE?.MODEL || 'llava-v1.6-mistral-7b-Q4_K_M.gguf',
       // Keep image analysis aligned with global processing timeouts so the renderer lock
       // doesn't get "stuck" for minutes when vision calls hang.
       timeout: TIMEOUTS.AI_ANALYSIS_LONG,
-      temperature: AI_DEFAULTS.IMAGE.TEMPERATURE,
-      maxTokens: AI_DEFAULTS.IMAGE.MAX_TOKENS
+      temperature: AI_DEFAULTS?.IMAGE?.TEMPERATURE || 0.2,
+      maxTokens: AI_DEFAULTS?.IMAGE?.MAX_TOKENS || 1024
     }
   }
 };
@@ -173,7 +173,7 @@ ${namingContextStr}
 
 Your response MUST be a valid JSON object matching this schema exactly.
 Always include "keyEntities" as an array (use [] if none are found).
-Output ONLY raw JSON. Do NOT include markdown, code fences, or any extra text:
+Output ONLY raw JSON. Do NOT wrap in markdown code fences (no triple backticks). Do NOT include any text before or after the JSON object:
 ${JSON.stringify(IMAGE_ANALYSIS_SCHEMA, null, 2)}
 
 IMPORTANT FOR category:
@@ -194,8 +194,16 @@ IMPORTANT FOR suggestedName:
 If you cannot determine a field with confidence, use null.
 Analyze this image:`;
 
-    const cfg = await getLlamaService().getConfig();
-    const modelToUse = cfg.visionModel || AppConfig.ai.imageAnalysis.defaultModel;
+    let cfg = {};
+    try {
+      cfg = await getLlamaService().getConfig();
+    } catch (e) {
+      logger.warn('[IMAGE] Failed to get Llama config, using defaults', { error: e.message });
+    }
+    const modelToUse =
+      cfg.visionModel ||
+      AppConfig.ai.imageAnalysis.defaultModel ||
+      'llava-v1.6-mistral-7b-Q4_K_M.gguf';
 
     // Use deduplicator to prevent duplicate LLM calls for identical images
     // Include 'type' to prevent cross-file cache contamination with document analysis
@@ -211,7 +219,10 @@ Analyze this image:`;
       imageHash,
       model: modelToUse,
       // FIX: Guard against null/undefined elements in safeFolders array
-      folders: safeFolders.map((f) => f?.name || '').join(',')
+      folders: safeFolders
+        .map((f) => f?.name || '')
+        .filter(Boolean)
+        .join(',')
     });
 
     const llamaService = getLlamaService();
@@ -362,11 +373,14 @@ Analyze this image:`;
       error?.name === 'AbortError' ||
       String(error?.message || '')
         .toLowerCase()
-        .includes('aborted')
+        .includes('aborted') ||
+      String(error?.message || '')
+        .toLowerCase()
+        .includes('timed out')
     ) {
       return {
         error:
-          'Image analysis was aborted (timeout or cancellation). Try again or switch to a smaller/faster vision model.',
+          'Image analysis timed out. The vision model is too slow for your hardware (CPU mode). Try switching to a smaller model or increasing the timeout in settings.',
         keywords: [],
         confidence: 0
       };
@@ -451,7 +465,10 @@ function validateAnalysisConsistency(analysis, fileName, extractedText = null) {
   const suggestedIsLandscape = landscapeTerms.some((term) => suggestedLower.includes(term));
 
   // CRITICAL: Detect financial document → landscape hallucination
-  if (filenameIsFinancial && suggestedIsLandscape) {
+  // FIX Bug #22: Only flag if filename does NOT contain landscape terms (avoid false positives like "financial-district-sunset.jpg")
+  const filenameHasLandscapeContext = landscapeTerms.some((term) => fileNameLower.includes(term));
+
+  if (filenameIsFinancial && suggestedIsLandscape && !filenameHasLandscapeContext) {
     warnings.push('HALLUCINATION DETECTED: Suggested landscape name for financial document');
     analysis.confidence = Math.min(analysis.confidence || 75, 25);
     analysis.hallucination_detected = true;
@@ -699,7 +716,12 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
   let ocrAttempted = false;
   const smartFolderSig = Array.isArray(smartFolders)
     ? smartFolders
-        .map((f) => f?.name || '')
+        .map((f) => {
+          const name = typeof f?.name === 'string' ? f.name.trim() : '';
+          const description = typeof f?.description === 'string' ? f.description.trim() : '';
+          if (!name && !description) return '';
+          return `${name}:${description}`;
+        })
         .filter(Boolean)
         .sort()
         .join('|')
@@ -755,10 +777,14 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
     let visionModelName = AppConfig.ai.imageAnalysis.defaultModel;
     try {
       const cfgModel = await getLlamaService().getConfig();
-      visionModelName = cfgModel.visionModel || AppConfig.ai.imageAnalysis.defaultModel;
+      visionModelName =
+        cfgModel.visionModel ||
+        AppConfig.ai.imageAnalysis.defaultModel ||
+        'llava-v1.6-mistral-7b-Q4_K_M.gguf';
     } catch (err) {
       logger.debug('[IMAGE] Config load failed, using default model:', err.message);
-      visionModelName = AppConfig.ai.imageAnalysis.defaultModel;
+      visionModelName =
+        AppConfig.ai.imageAnalysis.defaultModel || 'llava-v1.6-mistral-7b-Q4_K_M.gguf';
     }
 
     // Verify required vision model is loaded before proceeding
@@ -995,13 +1021,45 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
 
     let analysis;
     try {
-      analysis = await analyzeImageWithLlama(
-        imageBase64,
-        fileName,
-        smartFolders,
-        extractedText,
-        namingContext
-      );
+      const llamaService = getLlamaService();
+      let visionSupported = true;
+      try {
+        visionSupported = await llamaService.supportsVisionInput();
+      } catch {
+        visionSupported = false;
+      }
+
+      if (!visionSupported) {
+        logger.warn('[IMAGE] Vision input unsupported, falling back to OCR/text', {
+          filePath
+        });
+        const fallbackAnalysis = await attemptTextFallback();
+        if (fallbackAnalysis) {
+          analysis = fallbackAnalysis;
+        } else {
+          const fallback = createFallbackAnalysis({
+            fileName,
+            fileExtension,
+            reason: `Vision model '${visionModelName}' not loaded`,
+            smartFolders,
+            confidence: 55,
+            type: 'image'
+          });
+          const extractedTextForStorage = normalizeExtractedTextForStorage(extractedText);
+          if (extractedTextForStorage) {
+            fallback.extractedText = extractedTextForStorage;
+          }
+          return fallback;
+        }
+      } else {
+        analysis = await analyzeImageWithLlama(
+          imageBase64,
+          fileName,
+          smartFolders,
+          extractedText,
+          namingContext
+        );
+      }
     } catch (error) {
       if (isModelNotAvailableError(error)) {
         logger.warn('[IMAGE] Vision analysis unavailable, falling back to OCR/text', {
@@ -1165,9 +1223,13 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
               text: textToEmbed,
               vector,
               meta: {
+                path: filePath,
+                filePath,
+                fileName,
                 name: fileName,
                 fileSize: stats?.size,
                 fileExtension,
+                fileType: 'image',
                 analysis,
                 type: 'image',
                 smartFolder: resolvedSmartFolder?.name || null,
@@ -1247,8 +1309,10 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
       try {
         setImageCache(signature, normalized);
       } catch (cacheError) {
-        // FIX #5: Log cache failures for debugging instead of silent swallowing
-        logger.debug('[IMAGE] Cache write failed (non-fatal):', cacheError?.message);
+        logger.warn('[IMAGE] Cache write failed:', {
+          error: cacheError?.message,
+          filePath
+        });
       }
       return normalized;
     }
@@ -1274,8 +1338,10 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
     try {
       setImageCache(signature, result);
     } catch (cacheError) {
-      // Log cache failures for debugging instead of silent swallowing
-      logger.debug('[IMAGE] Cache write failed (non-fatal):', cacheError?.message);
+      logger.warn('[IMAGE] Cache write failed:', {
+        error: cacheError?.message,
+        filePath
+      });
     }
     return result;
   } catch (error) {
@@ -1368,11 +1434,15 @@ async function extractTextFromImage(filePath, options = {}) {
     }
     const cfg2 = await llamaService2.getConfig();
     const modelToUse2 = cfg2.visionModel || AppConfig.ai.imageAnalysis.defaultModel;
+
+    // FIX Bug #27: Validate OCR timeout environment variable
+    const envOcrTimeout = Number(process.env.AI_OCR_TIMEOUT);
     timeoutMs =
-      Number(process.env.AI_OCR_TIMEOUT) ||
+      (envOcrTimeout > 0 ? envOcrTimeout : 0) ||
       OCR_DEFAULTS.timeoutMs ||
       TIMEOUTS.AI_ANALYSIS_MEDIUM ||
       60000;
+
     logger.debug('[IMAGE-OCR] Using vision model for OCR', {
       model: modelToUse2,
       fileName: path.basename(filePath),

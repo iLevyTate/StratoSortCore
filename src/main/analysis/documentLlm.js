@@ -48,10 +48,14 @@ async function analyzeTextWithLlama(
     const modelToUse =
       cfg.textModel || cfg.selectedTextModel || AppConfig.ai.textAnalysis.defaultModel;
     const contextSize = Number(cfg?.contextSize) || AI_DEFAULTS.TEXT.CONTEXT_SIZE;
-    const maxContentLength = Math.min(AppConfig.ai.textAnalysis.maxContentLength, contextSize * 2);
     const maxTokens = Math.min(
       AppConfig.ai.textAnalysis.maxTokens,
       Math.max(256, Math.floor(contextSize * 0.25))
+    );
+    const PROMPT_OVERHEAD_TOKENS = 1200;
+    const maxContentLength = Math.min(
+      AppConfig.ai.textAnalysis.maxContentLength,
+      Math.max(1000, Math.floor((contextSize - maxTokens - PROMPT_OVERHEAD_TOKENS) * 4))
     );
 
     // Normalize and chunk text to reduce truncation loss
@@ -62,8 +66,7 @@ async function analyzeTextWithLlama(
       maxTotalLength: maxContentLength
     });
     const maxLen = maxContentLength;
-    const truncatedRaw =
-      combinedChunks || normalizeForModel(normalized, AppConfig.ai.textAnalysis.maxContentLength);
+    const truncatedRaw = combinedChunks || normalizeForModel(normalized, maxContentLength);
     // Hard cap the final text to maxLen. chunkTextForAnalysis tries to respect maxTotalLength,
     // but may add small separators/metadata during concatenation; we enforce the contract here.
     const truncated =
@@ -74,7 +77,11 @@ async function analyzeTextWithLlama(
 
     // Fast-path: return cached result if available
     const cacheService = getAnalysisCache();
-    const cacheKey = cacheService.generateKey(truncated, modelToUse, smartFolders);
+    const namingContextKey = Array.isArray(namingContext)
+      ? namingContext.slice(0, 5).join('|')
+      : '';
+    const cacheSeed = `${originalFileName || ''}|${fileDate || ''}|${namingContextKey}|${truncated}`;
+    const cacheKey = cacheService.generateKey(cacheSeed, modelToUse, smartFolders);
     const cachedResult = cacheService.get(cacheKey);
     if (cachedResult) {
       return cachedResult;
@@ -118,7 +125,7 @@ FILENAME CONTEXT: The original filename is "${originalFileName}". Use this as a 
 
 Your response MUST be a valid JSON object matching this schema exactly.
 Always include "keyEntities" as an array (use [] if none are found).
-Output ONLY raw JSON. Do NOT include markdown, code fences, or any extra text:
+Output ONLY raw JSON. Do NOT wrap in markdown code fences (no triple backticks). Do NOT include any text before or after the JSON object:
 ${JSON.stringify(ANALYSIS_SCHEMA_PROMPT, null, 2)}
 
 IMPORTANT FOR keywords:

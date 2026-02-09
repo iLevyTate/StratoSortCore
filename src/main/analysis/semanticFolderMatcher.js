@@ -157,7 +157,6 @@ async function applySemanticFolderMatching(params) {
   }
 
   const resolvedSmartFolder = findContainingSmartFolder(filePath, smartFolders);
-  const embeddingCategory = resolvedSmartFolder?.name || analysis.category || 'Uncategorized';
 
   // Build summary for embedding
   const embeddingSummary = buildEmbeddingSummary(analysis, extractedText, fileExtension, type);
@@ -218,85 +217,6 @@ async function applySemanticFolderMatching(params) {
       type === 'image'
         ? getCanonicalFileId(filePath, true)
         : `file:${normalizePathForIndex(filePath)}`;
-
-    // Calculate confidence percent
-    const rawConfidence = analysis.confidence ?? 0;
-    const confidencePercent =
-      typeof rawConfidence === 'number'
-        ? rawConfidence > 1
-          ? Math.round(rawConfidence)
-          : Math.round(rawConfidence * 100)
-        : 0;
-
-    // Build metadata based on type - comprehensive for chat/search/graph
-    const rawType = typeof analysis.type === 'string' ? analysis.type.trim() : '';
-    const isGenericType = ['image', 'document', 'file', 'unknown'].includes(rawType.toLowerCase());
-    const documentType = analysis.documentType || (!isGenericType && rawType ? rawType : '');
-    const baseMeta = {
-      path: filePath,
-      name: fileName,
-      fileExtension: (fileExtension || '').toLowerCase(),
-      fileSize,
-      category: embeddingCategory,
-      confidence: confidencePercent,
-      type,
-      extractionMethod: analysis.extractionMethod || (extractedText ? 'content' : 'analysis'),
-      summary: (summaryForEmbedding || analysis.summary || analysis.purpose || '').substring(
-        0,
-        2000
-      ),
-      tags: Array.isArray(analysis.keywords) ? analysis.keywords : [],
-      keywords: Array.isArray(analysis.keywords) ? analysis.keywords : [],
-      date: analysis.documentDate || analysis.date || null,
-      suggestedName: analysis.suggestedName,
-      keyEntities: Array.isArray(analysis.keyEntities) ? analysis.keyEntities.slice(0, 20) : [],
-      // Common fields for all file types
-      entity: analysis.entity || '',
-      project: analysis.project || '',
-      purpose: (analysis.purpose || '').substring(0, 1000),
-      reasoning: (analysis.reasoning || '').substring(0, 500),
-      documentType,
-      extractedText: (extractedText || '').substring(0, 5000),
-      smartFolder: resolvedSmartFolder?.name || null,
-      smartFolderPath: resolvedSmartFolder?.path || null
-    };
-
-    // Add image-specific metadata
-    if (type === 'image') {
-      baseMeta.content_type = analysis.content_type || 'unknown';
-      baseMeta.colors = Array.isArray(analysis.colors) ? analysis.colors : [];
-      baseMeta.has_text = analysis.has_text === true;
-    }
-
-    if (resolvedSmartFolder && type !== 'image') {
-      // Queue embedding for batch persistence only once file is in a smart folder,
-      // and only when embedding is enabled for this stage.
-      // Per-file overrides may be set after analysis; during analysis we only apply global settings.
-      const gate = await shouldEmbed({ stage: 'analysis' });
-      if (gate.shouldEmbed) {
-        await analysisQueue.enqueue({
-          id: fileId,
-          vector,
-          model,
-          meta: baseMeta,
-          updatedAt: new Date().toISOString()
-        });
-      } else {
-        logger.debug('[FolderMatcher] Embedding skipped by policy/timing gate', {
-          timing: gate.timing,
-          policy: gate.policy,
-          filePath
-        });
-      }
-    } else if (resolvedSmartFolder && type === 'image') {
-      logger.debug('[FolderMatcher] Skipping image enqueue (handled by image pipeline)', {
-        filePath
-      });
-    } else {
-      logger.debug('[FolderMatcher] Skipping embedding persistence (not in smart folder)', {
-        filePath
-      });
-    }
 
     // Process candidates and potentially override category
     if (Array.isArray(candidates) && candidates.length > 0) {
@@ -382,6 +302,95 @@ async function applySemanticFolderMatching(params) {
       }
     } else {
       logger.debug('[FolderMatcher] No folder matches found', { fileId });
+    }
+
+    // Calculate confidence percent
+    const rawConfidence = analysis.confidence ?? 0;
+    const confidencePercent =
+      typeof rawConfidence === 'number'
+        ? rawConfidence > 1
+          ? Math.round(rawConfidence)
+          : Math.round(rawConfidence * 100)
+        : 0;
+
+    const overrideCategory =
+      analysis.categorySource === 'embedding_override' &&
+      typeof analysis.category === 'string' &&
+      analysis.category.trim().length > 0
+        ? analysis.category
+        : null;
+    const embeddingCategory =
+      overrideCategory || resolvedSmartFolder?.name || analysis.category || 'Uncategorized';
+
+    // Build metadata based on type - comprehensive for chat/search/graph
+    const rawType = typeof analysis.type === 'string' ? analysis.type.trim() : '';
+    const isGenericType = ['image', 'document', 'file', 'unknown'].includes(rawType.toLowerCase());
+    const documentType = analysis.documentType || (!isGenericType && rawType ? rawType : '');
+    const baseMeta = {
+      path: filePath,
+      name: fileName,
+      fileExtension: (fileExtension || '').toLowerCase(),
+      fileSize,
+      category: embeddingCategory,
+      confidence: confidencePercent,
+      type,
+      fileType: type,
+      extractionMethod: analysis.extractionMethod || (extractedText ? 'content' : 'analysis'),
+      summary: (summaryForEmbedding || analysis.summary || analysis.purpose || '').substring(
+        0,
+        2000
+      ),
+      tags: Array.isArray(analysis.keywords) ? analysis.keywords : [],
+      keywords: Array.isArray(analysis.keywords) ? analysis.keywords : [],
+      date: analysis.documentDate || analysis.date || null,
+      suggestedName: analysis.suggestedName,
+      keyEntities: Array.isArray(analysis.keyEntities) ? analysis.keyEntities.slice(0, 20) : [],
+      // Common fields for all file types
+      entity: analysis.entity || '',
+      project: analysis.project || '',
+      purpose: (analysis.purpose || '').substring(0, 1000),
+      reasoning: (analysis.reasoning || '').substring(0, 500),
+      documentType,
+      extractedText: (extractedText || '').substring(0, 5000),
+      smartFolder: resolvedSmartFolder?.name || null,
+      smartFolderPath: resolvedSmartFolder?.path || null
+    };
+
+    // Add image-specific metadata
+    if (type === 'image') {
+      baseMeta.content_type = analysis.content_type || 'unknown';
+      baseMeta.colors = Array.isArray(analysis.colors) ? analysis.colors : [];
+      baseMeta.has_text = analysis.has_text === true;
+    }
+
+    if (resolvedSmartFolder && type !== 'image') {
+      // Queue embedding for batch persistence only once file is in a smart folder,
+      // and only when embedding is enabled for this stage.
+      // Per-file overrides may be set after analysis; during analysis we only apply global settings.
+      const gate = await shouldEmbed({ stage: 'analysis' });
+      if (gate.shouldEmbed) {
+        await analysisQueue.enqueue({
+          id: fileId,
+          vector,
+          model,
+          meta: baseMeta,
+          updatedAt: new Date().toISOString()
+        });
+      } else {
+        logger.debug('[FolderMatcher] Embedding skipped by policy/timing gate', {
+          timing: gate.timing,
+          policy: gate.policy,
+          filePath
+        });
+      }
+    } else if (resolvedSmartFolder && type === 'image') {
+      logger.debug('[FolderMatcher] Skipping image enqueue (handled by image pipeline)', {
+        filePath
+      });
+    } else {
+      logger.debug('[FolderMatcher] Skipping embedding persistence (not in smart folder)', {
+        filePath
+      });
     }
   } catch (matchError) {
     logger.warn('[FolderMatcher] Folder matching error:', matchError.message);
