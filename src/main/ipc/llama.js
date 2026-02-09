@@ -161,7 +161,8 @@ function registerLlamaIpc(servicesOrParams) {
             AI_DEFAULTS.EMBEDDING.MODEL
           );
 
-          // Persist corrected names so the stale value is fixed permanently
+          // Do not auto-persist corrections to avoid mid-operation model switches.
+          // Instead return suggested corrections to the UI so the user can confirm.
           const corrections = {};
           if (resolvedText !== config.textModel) corrections.textModel = resolvedText;
           if (resolvedVision !== config.visionModel) corrections.visionModel = resolvedVision;
@@ -169,12 +170,7 @@ function registerLlamaIpc(servicesOrParams) {
             corrections.embeddingModel = resolvedEmbedding;
 
           if (Object.keys(corrections).length > 0) {
-            logger.info('[IPC:Llama] Auto-resolved stale model names', corrections);
-            try {
-              await service.updateConfig(corrections);
-            } catch (e) {
-              logger.warn('[IPC:Llama] Failed to persist model name corrections:', e?.message);
-            }
+            logger.info('[IPC:Llama] Detected stale model names (not auto-applied)', corrections);
           }
 
           return {
@@ -185,6 +181,8 @@ function registerLlamaIpc(servicesOrParams) {
               visionModel: resolvedVision,
               embeddingModel: resolvedEmbedding
             },
+            corrections,
+            requiresModelConfirmation: Object.keys(corrections).length > 0,
             llamaHealth: systemAnalytics.llamaHealth,
             inProcess: true
           };
@@ -317,6 +315,17 @@ function registerLlamaIpc(servicesOrParams) {
       schema: schemaModelName,
       handler: async (_event, modelName) => {
         try {
+          const normalizedName = typeof modelName === 'string' ? modelName.trim() : '';
+          if (!normalizedName) {
+            return { success: false, error: 'Model name is required' };
+          }
+          if (
+            normalizedName.includes('..') ||
+            normalizedName.includes('/') ||
+            normalizedName.includes('\\')
+          ) {
+            return { success: false, error: 'Invalid model name' };
+          }
           const manager = getModelDownloadManager();
           const win = typeof getMainWindow === 'function' ? getMainWindow() : null;
 
@@ -325,13 +334,13 @@ function registerLlamaIpc(servicesOrParams) {
             if (win && !win.isDestroyed()) {
               safeSend(win.webContents, 'operation-progress', {
                 type: 'model-download',
-                model: modelName,
+                model: normalizedName,
                 progress
               });
             }
           };
 
-          const result = await manager.downloadModel(modelName, { onProgress });
+          const result = await manager.downloadModel(normalizedName, { onProgress });
           return result;
         } catch (error) {
           logger.error('[IPC:Llama] Model download failed:', error);
@@ -351,8 +360,19 @@ function registerLlamaIpc(servicesOrParams) {
       schema: schemaModelName,
       handler: async (_event, modelName) => {
         try {
+          const normalizedName = typeof modelName === 'string' ? modelName.trim() : '';
+          if (!normalizedName) {
+            return { success: false, error: 'Model name is required' };
+          }
+          if (
+            normalizedName.includes('..') ||
+            normalizedName.includes('/') ||
+            normalizedName.includes('\\')
+          ) {
+            return { success: false, error: 'Invalid model name' };
+          }
           const manager = getModelDownloadManager();
-          const result = await manager.deleteModel(modelName);
+          const result = await manager.deleteModel(normalizedName);
           return result;
         } catch (error) {
           logger.error('[IPC:Llama] Model delete failed:', error);

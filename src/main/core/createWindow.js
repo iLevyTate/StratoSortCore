@@ -240,14 +240,20 @@ function createMainWindow() {
   };
 
   // CRITICAL FIX: Ensure webContents is ready before loading
+  // FIX: Store timer ID so it can be cleared if window is destroyed before it fires
+  let _loadTimerId = null;
+  const scheduleLoad = () => {
+    _loadTimerId = setTimeout(loadContent, TIMEOUTS.WINDOW_LOAD_DELAY);
+  };
   if (win.webContents.isLoading()) {
-    win.webContents.once('did-stop-loading', () => {
-      setTimeout(loadContent, TIMEOUTS.WINDOW_LOAD_DELAY);
-    });
+    win.webContents.once('did-stop-loading', scheduleLoad);
   } else {
     // Add a small delay to ensure window is fully initialized
-    setTimeout(loadContent, TIMEOUTS.WINDOW_LOAD_DELAY);
+    scheduleLoad();
   }
+  win.once('closed', () => {
+    if (_loadTimerId) clearTimeout(_loadTimerId);
+  });
 
   win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     // Material-UI requires 'unsafe-inline' for styles to work
@@ -280,47 +286,63 @@ function createMainWindow() {
   });
 
   win.once('ready-to-show', () => {
+    // FIX: Track all nested timer IDs so they can be cleared on window close
+    const pendingTimers = [];
+    const track = (id) => {
+      pendingTimers.push(id);
+      return id;
+    };
+    win.once('closed', () => pendingTimers.forEach(clearTimeout));
+
     // CRITICAL FIX: Add delay before showing window to prevent Mojo interface errors
-    setTimeout(() => {
-      if (!win.isDestroyed()) {
-        win.show();
+    track(
+      setTimeout(() => {
+        if (!win.isDestroyed()) {
+          win.show();
 
-        // Additional delay before focus to ensure window is fully rendered
-        setTimeout(() => {
-          if (!win.isDestroyed()) {
-            win.focus();
-            logger.info('StratoSort window ready and focused');
-            logger.debug('Window state', {
-              isVisible: win.isVisible(),
-              isFocused: win.isFocused(),
-              isMinimized: win.isMinimized()
-            });
+          // Additional delay before focus to ensure window is fully rendered
+          track(
+            setTimeout(() => {
+              if (!win.isDestroyed()) {
+                win.focus();
+                logger.info('StratoSort window ready and focused');
+                logger.debug('Window state', {
+                  isVisible: win.isVisible(),
+                  isFocused: win.isFocused(),
+                  isMinimized: win.isMinimized()
+                });
 
-            // Auto-open DevTools in development mode or when forced via env var
-            // Opened after window is ready to ensure detached window displays properly
-            if (isDev || getEnvBool('FORCE_DEV_TOOLS')) {
-              // FIX: Listen for devtools-opened event to bring main window to foreground
-              // This ensures we act after DevTools has fully opened and stolen focus
-              win.webContents.once('devtools-opened', () => {
-                // Small delay to let DevTools finish rendering
-                setTimeout(() => {
-                  if (!win.isDestroyed()) {
-                    bringWindowToForeground(win);
-                    // Second attempt in case DevTools grabs focus again
-                    setTimeout(() => {
-                      if (!win.isDestroyed()) {
-                        bringWindowToForeground(win);
-                      }
-                    }, 300);
-                  }
-                }, 100);
-              });
-              win.webContents.openDevTools({ mode: 'detach' });
-            }
-          }
-        }, 50);
-      }
-    }, 100);
+                // Auto-open DevTools in development mode or when forced via env var
+                // Opened after window is ready to ensure detached window displays properly
+                if (isDev || getEnvBool('FORCE_DEV_TOOLS')) {
+                  // FIX: Listen for devtools-opened event to bring main window to foreground
+                  // This ensures we act after DevTools has fully opened and stolen focus
+                  win.webContents.once('devtools-opened', () => {
+                    // Small delay to let DevTools finish rendering
+                    track(
+                      setTimeout(() => {
+                        if (!win.isDestroyed()) {
+                          bringWindowToForeground(win);
+                          // Second attempt in case DevTools grabs focus again
+                          track(
+                            setTimeout(() => {
+                              if (!win.isDestroyed()) {
+                                bringWindowToForeground(win);
+                              }
+                            }, 300)
+                          );
+                        }
+                      }, 100)
+                    );
+                  });
+                  win.webContents.openDevTools({ mode: 'detach' });
+                }
+              }
+            }, 50)
+          );
+        }
+      }, 100)
+    );
   });
 
   win.on('closed', () => {
@@ -379,7 +401,8 @@ function createMainWindow() {
       .catch(() => {});
 
     // Delayed health check: verify the app fully rendered after 5s
-    setTimeout(() => {
+    // FIX: Store timer ID for cleanup on window close
+    const _healthCheckTimerId = setTimeout(() => {
       if (win.isDestroyed()) return;
       win.webContents
         .executeJavaScript(
@@ -400,6 +423,7 @@ function createMainWindow() {
         })
         .catch(() => {});
     }, 5000);
+    win.once('closed', () => clearTimeout(_healthCheckTimerId));
   });
 
   // Block navigation attempts within the app (e.g., dropped links or external redirects)

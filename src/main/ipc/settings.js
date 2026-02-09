@@ -69,8 +69,15 @@ async function applySettingsToServices(merged, { logger }) {
   // Use LlamaService.updateConfig() to ensure model change events fire properly
   // This is critical for embedding model changes - FolderMatchingService needs to be notified
   // to clear its cache and reset the vector DB when the embedding model changes
-  const { getInstance: getLlamaService } = require('../services/LlamaService');
-  const llamaService = getLlamaService();
+  const { container, ServiceIds } = require('../services/ServiceContainer');
+
+  // Ensure LlamaService is registered (it should be by now, but safe guard)
+  if (!container.has(ServiceIds.LLAMA_SERVICE)) {
+    const { registerWithContainer } = require('../services/LlamaService');
+    registerWithContainer(container, ServiceIds.LLAMA_SERVICE);
+  }
+
+  const llamaService = container.resolve(ServiceIds.LLAMA_SERVICE);
 
   // Build config object with all model settings
   const llamaConfig = {};
@@ -327,11 +334,13 @@ async function handleSettingsSaveCore(settings, deps) {
     // Invalidate notification service cache to ensure new settings take effect immediately
     // This prevents the 5-second TTL cache from causing stale notification behavior
     try {
-      const NotificationService = require('../services/NotificationService');
-      const notificationService = NotificationService.getInstance?.();
-      if (notificationService?.invalidateCache) {
-        notificationService.invalidateCache();
-        logger.debug('[SETTINGS] Notification service cache invalidated');
+      const { container, ServiceIds } = require('../services/ServiceContainer');
+      if (container.has(ServiceIds.NOTIFICATION_SERVICE)) {
+        const notificationService = container.resolve(ServiceIds.NOTIFICATION_SERVICE);
+        if (notificationService?.invalidateCache) {
+          notificationService.invalidateCache();
+          logger.debug('[SETTINGS] Notification service cache invalidated');
+        }
       }
     } catch (notifyErr) {
       // Non-fatal - notification service may not be initialized yet
@@ -616,15 +625,32 @@ function registerSettingsIpc(servicesOrParams) {
 
           // SECURITY FIX: Check file size before reading to prevent DoS
           const MAX_IMPORT_SIZE = 1 * 1024 * 1024; // 1MB limit for settings files
-          const stats = await fs.stat(filePath);
-          if (stats.size > MAX_IMPORT_SIZE) {
-            throw new Error(
-              `Import file too large (${Math.round(stats.size / 1024)}KB). Maximum size is 1MB.`
-            );
-          }
+          const fileHandle = await fs.open(filePath, 'r');
+          let fileContent;
+          try {
+            const stats = await fileHandle.stat();
+            if (stats.size > MAX_IMPORT_SIZE) {
+              throw new Error(
+                `Import file too large (${Math.round(stats.size / 1024)}KB). Maximum size is 1MB.`
+              );
+            }
 
-          // Read and parse import file
-          const fileContent = await fs.readFile(filePath, 'utf8');
+            const buffer = Buffer.alloc(stats.size);
+            const { bytesRead } = await fileHandle.read(buffer, 0, stats.size, 0);
+            const statsAfter = await fileHandle.stat();
+            if (statsAfter.size > MAX_IMPORT_SIZE || bytesRead > MAX_IMPORT_SIZE) {
+              throw new Error('Import file size changed during read. Please try again.');
+            }
+
+            // Read and parse import file
+            fileContent = buffer.slice(0, bytesRead).toString('utf8');
+          } finally {
+            try {
+              await fileHandle.close();
+            } catch {
+              /* ignore */
+            }
+          }
 
           // Fixed: Add specific error handling for JSON parsing
           let importData;

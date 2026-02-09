@@ -28,6 +28,7 @@ const registry = {
  * Previously, IPC handlers could fire during shutdown and access destroyed services
  */
 let _isShuttingDown = false;
+const _inFlightOperations = new Set();
 
 /**
  * Set shutdown state - called by lifecycle during app shutdown
@@ -86,12 +87,34 @@ function registerHandler(ipcMain, channel, handler) {
         }
       };
     }
-    return handler(event, ...args);
+    const operationId = `${channel}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    _inFlightOperations.add(operationId);
+    try {
+      return await handler(event, ...args);
+    } finally {
+      _inFlightOperations.delete(operationId);
+    }
   };
 
   ipcMain.handle(channel, wrappedHandler);
   registry.handlers.add(channel);
   logger.debug(`[REGISTRY] Handler registered: ${channel}`);
+}
+
+/**
+ * Wait for in-flight IPC handlers to finish.
+ * @param {number} timeoutMs
+ * @returns {Promise<boolean>} True if drained before timeout.
+ */
+async function waitForInFlightOperations(timeoutMs = 5000) {
+  const start = Date.now();
+  while (_inFlightOperations.size > 0 && Date.now() - start < timeoutMs) {
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, 50);
+      if (timer && typeof timer.unref === 'function') timer.unref();
+    });
+  }
+  return _inFlightOperations.size === 0;
 }
 
 /**
@@ -115,7 +138,19 @@ function registerListener(ipcMain, channel, listener) {
       logger.debug(`[REGISTRY] Ignoring IPC listener during shutdown: ${channel}`);
       return;
     }
-    return listener(event, ...args);
+    const operationId = `${channel}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    _inFlightOperations.add(operationId);
+    try {
+      const result = listener(event, ...args);
+      if (result && typeof result.then === 'function') {
+        return Promise.resolve(result).finally(() => _inFlightOperations.delete(operationId));
+      }
+      _inFlightOperations.delete(operationId);
+      return result;
+    } catch (error) {
+      _inFlightOperations.delete(operationId);
+      throw error;
+    }
   };
 
   ipcMain.on(channel, wrappedListener);
@@ -281,5 +316,6 @@ module.exports = {
   hasListeners,
   // FIX: Shutdown gate control
   setShuttingDown,
-  isShuttingDown
+  isShuttingDown,
+  waitForInFlightOperations
 };

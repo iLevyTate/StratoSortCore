@@ -118,11 +118,13 @@ async function openSemanticSearch() {
     // Send message to renderer to open semantic search
     // Small delay to ensure window is ready
     // FIX: Use safeSend for validated IPC event sending
-    setTimeout(() => {
+    // FIX: Store timer ID and clear on window close to prevent stale callback
+    const searchTimerId = setTimeout(() => {
       if (!win.isDestroyed()) {
         safeSend(win.webContents, 'open-semantic-search');
       }
     }, 100);
+    win.once('closed', () => clearTimeout(searchTimerId));
   }
 }
 

@@ -13,7 +13,7 @@ const isDev = process.env.NODE_ENV === 'development';
 // Logging utility
 const fs = require('fs').promises;
 const path = require('path');
-const { createLogger } = require('../shared/logger');
+const { createLogger, configureFileLogging, configureConsoleLogging } = require('../shared/logger');
 const { withTimeout } = require('../shared/promiseUtils');
 
 const logger = createLogger('Main');
@@ -219,6 +219,10 @@ const createMainWindow = require('./core/createWindow');
 let _windowCreationPromise = null;
 
 function createWindow() {
+  if (_shutdownState.shouldClose) {
+    logger.warn('[WINDOW] Ignoring createWindow() during shutdown');
+    return Promise.resolve();
+  }
   // FIX: If window creation is already in progress, return the existing promise
   if (_windowCreationPromise) {
     logger.debug('[WINDOW] createWindow() already in progress, waiting...');
@@ -478,7 +482,9 @@ if (!gotTheLock) {
     logger.info(
       '[STARTUP] Failed to get lock, quitting (set STRATOSORT_FORCE_LAUNCH=1 to override)'
     );
-    app.quit();
+    // app.quit() is async and allows further module-level execution.
+    // Use app.exit() to terminate immediately before startup proceeds.
+    app.exit(0);
   }
 }
 
@@ -549,10 +555,9 @@ app.whenReady().then(async () => {
     await fs.mkdir(logsDir, { recursive: true });
     const logTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const logFilePath = path.join(logsDir, `stratosort-${logTimestamp}.log`);
-    logger.enableFileLogging(logFilePath, { format: 'jsonl' });
-    if (!isDev && process.env.STRATOSORT_CONSOLE_LOGS !== '1') {
-      logger.disableConsoleLogging();
-    }
+    const enableConsole = isDev || process.env.STRATOSORT_CONSOLE_LOGS === '1';
+    configureFileLogging(logFilePath, { enableConsole });
+    configureConsoleLogging(enableConsole);
     logger.info('[LOGGING] File logging enabled', { logFilePath });
     logger.info('[DIAGNOSTICS] Runtime info', {
       appVersion: app.getVersion?.(),

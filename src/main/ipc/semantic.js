@@ -1,13 +1,16 @@
 const { IpcServiceContext, createFromLegacyParams } = require('./IpcServiceContext');
+const { container, ServiceIds } = require('../services/ServiceContainer');
 const path = require('path');
 const fs = require('fs').promises;
-const { getInstance: getOramaService } = require('../services/OramaVectorService');
-const { getInstance: getFolderMatcher } = require('../services/FolderMatchingService');
-const {
-  getInstance: getParallelEmbeddingService
-} = require('../services/ParallelEmbeddingService');
-const { SearchService } = require('../services/SearchService');
-const { ClusteringService } = require('../services/ClusteringService');
+
+// Resolve services via container to ensure shared state
+const getOramaService = () => container.resolve(ServiceIds.ORAMA_VECTOR);
+const getFolderMatcher = () => container.resolve(ServiceIds.FOLDER_MATCHING);
+const getParallelEmbeddingService = () => container.resolve(ServiceIds.PARALLEL_EMBEDDING);
+const getSearchService = () => container.resolve(ServiceIds.SEARCH_SERVICE);
+const getClusteringService = () => container.resolve(ServiceIds.CLUSTERING);
+const getLlamaService = () => container.resolve(ServiceIds.LLAMA_SERVICE);
+
 const { getInstance: getQueryProcessor } = require('../services/QueryProcessor');
 const { SUPPORTED_IMAGE_EXTENSIONS, AI_DEFAULTS } = require('../../shared/constants');
 const {
@@ -21,7 +24,6 @@ const {
 const { createHandler, safeHandle, z } = require('./ipcWrappers');
 const { cosineSimilarity, padOrTruncateVector } = require('../../shared/vectorMath');
 const { validateFileOperationPath } = require('../../shared/pathSanitization');
-const { getInstance: getLlamaService } = require('../services/LlamaService');
 const { chunkText } = require('../utils/textChunking');
 const { normalizeText } = require('../../shared/normalization');
 const { getFileEmbeddingId } = require('../utils/fileIdUtils');
@@ -31,7 +33,16 @@ const {
   writeEmbeddingIndexMetadata
 } = require('../services/vectorDb/embeddingIndexMetadata');
 const { createLogger } = require('../../shared/logger');
+const { ERROR_CODES } = require('../../shared/errorCodes');
 const _moduleLogger = createLogger('semantic-ipc');
+
+const isDimensionMismatchError = (error) => {
+  if (!error) return false;
+  const message = error?.message || error?.error || (typeof error === 'string' ? error : '') || '';
+  return (
+    error?.code === ERROR_CODES.VECTOR_DB_DIMENSION_MISMATCH || /dimension mismatch/i.test(message)
+  );
+};
 
 /**
  * Verify embedding model is available locally
@@ -228,10 +239,8 @@ async function verifyReanalyzeModelsAvailable(logger) {
 }
 
 // Module-level reference to SearchService for cross-module access
-let _searchServiceRef = null;
-
-// Module-level reference to ClusteringService for cross-module access
-let _clusteringServiceRef = null;
+// Module-level reference to SearchService for cross-module access
+// FIX: Use container resolution instead of manual reference
 
 /**
  * Get the SearchService instance (if initialized)
@@ -239,16 +248,7 @@ let _clusteringServiceRef = null;
  * @returns {SearchService|null}
  */
 function getSearchServiceInstance() {
-  return _searchServiceRef;
-}
-
-/**
- * Set the SearchService instance reference
- * Called internally after initialization
- * @param {SearchService} service
- */
-function setSearchServiceInstance(service) {
-  _searchServiceRef = service;
+  return getSearchService();
 }
 
 /**
@@ -257,16 +257,7 @@ function setSearchServiceInstance(service) {
  * @returns {ClusteringService|null}
  */
 function getClusteringServiceInstance() {
-  return _clusteringServiceRef;
-}
-
-/**
- * Set the ClusteringService instance reference
- * Called internally after initialization
- * @param {ClusteringService} service
- */
-function setClusteringServiceInstance(service) {
-  _clusteringServiceRef = service;
+  return getClusteringService();
 }
 
 // FIX P0-2: Rebuild operation lock to prevent concurrent rebuilds
@@ -328,114 +319,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
   const { getCustomFolders } = container.folders;
   const { getServiceIntegration } = container;
 
-  // Use vector DB and FolderMatcher singleton instances
-  // FIX: Use singleton pattern instead of creating duplicate instance
-  const vectorDbService = getOramaService();
-  const folderMatcher = getFolderMatcher();
+  // Use container-resolved services
+  // FIX: Use singleton pattern via ServiceContainer
 
-  // SearchService will be initialized lazily when needed
-  let searchService = null;
-  let clusteringService = null;
-  // FIX P0-1: Promise-based waiting for concurrent initialization
-  // Uses promises to allow concurrent callers to wait instead of throwing
-  let searchServicePromise = null;
-  let clusteringServicePromise = null;
-
-  /**
-   * Gets or initializes the SearchService.
-   * Uses promise-based waiting to handle concurrent initialization requests.
-   * Now includes LlamaService for LLM re-ranking support.
-   * @returns {SearchService|Promise<SearchService>} The service instance or a promise that resolves to it
-   */
-  function getSearchService() {
-    // Fast path: already initialized
-    if (searchService) return searchService;
-
-    // If initialization in progress, return existing promise for concurrent callers to await
-    if (searchServicePromise) {
-      return searchServicePromise;
-    }
-
-    // Start initialization - create promise for concurrent callers
-    searchServicePromise = (async () => {
-      try {
-        // Double-check after acquiring mutex (another call may have completed)
-        if (searchService) {
-          return searchService;
-        }
-
-        const serviceIntegration = getServiceIntegration && getServiceIntegration();
-        const historyService = serviceIntegration?.analysisHistory;
-        const embeddingService = getParallelEmbeddingService();
-        const llamaService = getLlamaService();
-        const relationshipIndexService = serviceIntegration?.relationshipIndex;
-
-        if (!historyService) {
-          throw new Error(
-            'SearchService unavailable: AnalysisHistoryService not initialized (ServiceIntegration missing)'
-          );
-        }
-        if (!embeddingService) {
-          throw new Error('SearchService unavailable: ParallelEmbeddingService not available');
-        }
-
-        searchService = new SearchService({
-          vectorDbService,
-          analysisHistoryService: historyService,
-          parallelEmbeddingService: embeddingService,
-          llamaService, // Pass LlamaService for LLM re-ranking
-          relationshipIndexService
-        });
-
-        // Store reference for cross-module access (e.g., fileOperationHandlers)
-        setSearchServiceInstance(searchService);
-        return searchService;
-      } finally {
-        // Clear promise after completion to allow retry on failure
-        searchServicePromise = null;
-      }
-    })();
-
-    return searchServicePromise;
-  }
-
-  /**
-   * Gets or initializes the ClusteringService.
-   * Uses promise-based waiting to handle concurrent initialization requests.
-   * @returns {ClusteringService|Promise<ClusteringService>} The service instance or a promise that resolves to it
-   */
-  function getClusteringService() {
-    // Fast path: already initialized
-    if (clusteringService) return clusteringService;
-
-    // If initialization in progress, return existing promise for concurrent callers to await
-    if (clusteringServicePromise) {
-      return clusteringServicePromise;
-    }
-
-    // Start initialization - create promise for concurrent callers
-    clusteringServicePromise = (async () => {
-      try {
-        // Double-check after acquiring mutex (another call may have completed)
-        if (clusteringService) {
-          return clusteringService;
-        }
-
-        clusteringService = new ClusteringService({
-          vectorDbService,
-          llamaService: getLlamaService()
-        });
-        // Store reference for cross-module access (e.g., fileOperationHandlers)
-        setClusteringServiceInstance(clusteringService);
-        return clusteringService;
-      } finally {
-        // Clear promise after completion to allow retry on failure
-        clusteringServicePromise = null;
-      }
-    })();
-
-    return clusteringServicePromise;
-  }
+  // SearchService and ClusteringService are resolved lazily via getters defined at module scope
 
   // CRITICAL FIX: Use proper state machine to prevent race conditions
   // State machine prevents concurrent re-initialization attempts
@@ -546,10 +433,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
               `[SEMANTIC] Starting initialization (attempt ${attempt}/${MAX_RETRIES})...`
             );
 
-            await vectorDbService.initialize();
+            await getOramaService().initialize();
 
             // CRITICAL FIX: MUST await FolderMatchingService initialization
-            await folderMatcher.initialize();
+            await getFolderMatcher().initialize();
 
             logger.info('[SEMANTIC] Initialization complete');
             initState = INIT_STATES.COMPLETED;
@@ -608,9 +495,13 @@ function registerEmbeddingsIpc(servicesOrParams) {
   //
   // Start background initialization after a shorter delay to pre-warm the service
   // but handlers will work correctly even if called before this completes.
+  // FIX: Store timer ID so it can be cleared if the module is torn down
+  // before the pre-warm fires (prevents stale callback after shutdown).
+  let _preWarmTimerId = null;
   setImmediate(() => {
     // Use setImmediate to ensure IPC handlers are registered first
-    setTimeout(() => {
+    _preWarmTimerId = setTimeout(() => {
+      _preWarmTimerId = null;
       ensureInitialized().catch((error) => {
         logger.warn('[SEMANTIC] Background pre-warm failed (non-fatal):', error.message);
         // Non-fatal - handlers will retry with proper backoff when called
@@ -693,7 +584,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
           }
 
           // SAFE: resetFolders() only deletes/recreates the collection, not the DB directory
-          await vectorDbService.resetFolders();
+          await getOramaService().resetFolders();
 
           // Track successes and failures
           const results = { success: 0, failed: 0, errors: [] };
@@ -704,8 +595,8 @@ function registerEmbeddingsIpc(servicesOrParams) {
               try {
                 const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
 
-                const { vector, model } = await folderMatcher.embedText(folderText);
-                const folderId = folder.id || folderMatcher.generateFolderId(folder);
+                const { vector, model } = await getFolderMatcher().embedText(folderText);
+                const folderId = folder.id || getFolderMatcher().generateFolderId(folder);
 
                 results.success++;
                 return {
@@ -738,7 +629,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
           // Only upsert if we have valid payloads
           let upsertedCount = 0;
           if (validPayloads.length > 0) {
-            const folderResult = await vectorDbService.batchUpsertFolders(validPayloads);
+            const folderResult = await getOramaService().batchUpsertFolders(validPayloads);
             upsertedCount = folderResult?.count ?? folderResult ?? 0;
           }
 
@@ -878,8 +769,8 @@ function registerEmbeddingsIpc(servicesOrParams) {
                 try {
                   const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
 
-                  const { vector, model } = await folderMatcher.embedText(folderText);
-                  const folderId = folder.id || folderMatcher.generateFolderId(folder);
+                  const { vector, model } = await getFolderMatcher().embedText(folderText);
+                  const folderId = folder.id || getFolderMatcher().generateFolderId(folder);
 
                   folderResults.success++;
                   return {
@@ -901,16 +792,16 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
             const validFolderPayloads = folderPayloads.filter((p) => p !== null);
             if (validFolderPayloads.length > 0) {
-              await vectorDbService.batchUpsertFolders(validFolderPayloads);
+              await getOramaService().batchUpsertFolders(validFolderPayloads);
             }
           }
 
           // SAFE: resetFiles() only deletes/recreates the collection, not the DB directory
           // This rebuilds the search index from analysis history without re-analyzing files
-          await vectorDbService.resetFiles();
+          await getOramaService().resetFiles();
           // SAFE: resetFileChunks() only deletes/recreates the chunk collection.
           // This rebuilds deep semantic recall from extractedText without re-analyzing files.
-          await vectorDbService.resetFileChunks();
+          await getOramaService().resetFileChunks();
 
           // Track results for files
           const fileResults = {
@@ -996,7 +887,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
               }
 
               // Generate embedding
-              const { vector, model } = await folderMatcher.embedText(summary);
+              const { vector, model } = await getFolderMatcher().embedText(summary);
 
               // Use renamed name if available, otherwise fall back to original basename
               const displayName = entry.organization?.newName || path.basename(filePath);
@@ -1100,7 +991,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
           for (let i = 0; i < filePayloads.length; i += BATCH_SIZE) {
             const batch = filePayloads.slice(i, i + BATCH_SIZE);
             try {
-              const result = await vectorDbService.batchUpsertFiles(batch);
+              const result = await getOramaService().batchUpsertFiles(batch);
               rebuilt += result?.count ?? result ?? 0;
             } catch (e) {
               logger.warn('[EMBEDDINGS] Failed to batch upsert files:', e.message);
@@ -1114,7 +1005,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
           for (let i = 0; i < chunkPayloads.length; i += BATCH_SIZE) {
             const batch = chunkPayloads.slice(i, i + BATCH_SIZE);
             try {
-              const count = await vectorDbService.batchUpsertFileChunks(batch);
+              const count = await getOramaService().batchUpsertFileChunks(batch);
               chunkRebuilt += count;
             } catch (e) {
               logger.warn('[EMBEDDINGS] Failed to batch upsert file chunks:', e.message);
@@ -1257,7 +1148,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
           // Step 2: Clear all vector DB collections
           logger.info('[EMBEDDINGS] Clearing all vector DB collections...');
-          await vectorDbService.resetAll();
+          await getOramaService().resetAll();
 
           // Step 3: Rebuild folder embeddings
           logger.info('[EMBEDDINGS] Rebuilding folder embeddings...');
@@ -1270,8 +1161,8 @@ function registerEmbeddingsIpc(servicesOrParams) {
               smartFolders.map(async (folder) => {
                 try {
                   const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
-                  const { vector, model } = await folderMatcher.embedText(folderText);
-                  const folderId = folder.id || folderMatcher.generateFolderId(folder);
+                  const { vector, model } = await getFolderMatcher().embedText(folderText);
+                  const folderId = folder.id || getFolderMatcher().generateFolderId(folder);
 
                   results.folders.success++;
                   return {
@@ -1293,7 +1184,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
             const validFolderPayloads = folderPayloads.filter((p) => p !== null);
             if (validFolderPayloads.length > 0) {
-              await vectorDbService.batchUpsertFolders(validFolderPayloads);
+              await getOramaService().batchUpsertFolders(validFolderPayloads);
             }
           }
 
@@ -1442,7 +1333,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
               for (let i = 0; i < filePayloads.length; i += BATCH_SIZE) {
                 const batch = filePayloads.slice(i, i + BATCH_SIZE);
                 try {
-                  await vectorDbService.batchUpsertFiles(batch);
+                  await getOramaService().batchUpsertFiles(batch);
                 } catch (e) {
                   logger.warn('[EMBEDDINGS] Failed to batch upsert files:', e.message);
                 }
@@ -1452,7 +1343,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
               for (let i = 0; i < chunkPayloads.length; i += BATCH_SIZE) {
                 const batch = chunkPayloads.slice(i, i + BATCH_SIZE);
                 try {
-                  await vectorDbService.batchUpsertFileChunks(batch);
+                  await getOramaService().batchUpsertFileChunks(batch);
                 } catch (e) {
                   logger.warn('[EMBEDDINGS] Failed to batch upsert chunks:', e.message);
                 }
@@ -1592,7 +1483,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
           // Step 6: Clear all embeddings
           logger.info('[EMBEDDINGS] Clearing all embeddings...');
-          await vectorDbService.resetAll();
+          await getOramaService().resetAll();
 
           // Step 7: Queue all files for reanalysis with naming option
           logger.info('[EMBEDDINGS] Queueing all files for reanalysis...');
@@ -1709,7 +1600,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
         const initErr = await safeEnsureInit();
         if (initErr) return initErr;
         try {
-          await vectorDbService.resetAll();
+          await getOramaService().resetAll();
           return { success: true };
         } catch (e) {
           return { success: false, error: e.message };
@@ -1730,7 +1621,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
         const initErr = await safeEnsureInit();
         if (initErr) return initErr;
         try {
-          const stats = await vectorDbService.getStats();
+          const stats = await getOramaService().getStats();
 
           // Provide lightweight context so the UI can explain *why* embeddings are empty.
           // This avoids confusing "rebuild embeddings" prompts when users already have analysis history.
@@ -1872,7 +1763,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
           let similarFiles;
           try {
             similarFiles = await Promise.race([
-              folderMatcher.findSimilarFiles(fileId, topK),
+              getFolderMatcher().findSimilarFiles(fileId, topK),
               timeoutPromise
             ]);
           } finally {
@@ -1882,6 +1773,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
           return { success: true, results: similarFiles };
         } catch (e) {
+          const requiresRebuild = isDimensionMismatchError(e);
           logger.error('[EMBEDDINGS] Find similar failed:', {
             fileId,
             topK,
@@ -1891,6 +1783,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
           return {
             success: false,
             error: e.message,
+            errorCode:
+              e.code || (requiresRebuild ? ERROR_CODES.VECTOR_DB_DIMENSION_MISMATCH : null),
+            requiresRebuild,
             timeout: e.message.includes('timeout')
           };
         }
@@ -2069,6 +1964,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
           const result = await service.hybridSearch(cleanQuery, searchOptions);
 
           if (!result.success) {
+            const requiresRebuild = isDimensionMismatchError({ message: result.error });
             // FIX P1-8: If hybrid/vector search fails, try BM25 fallback
             if (effectiveMode !== 'bm25') {
               logger.warn('[EMBEDDINGS] Search failed, attempting BM25 fallback', {
@@ -2095,7 +1991,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
             }
             return {
               success: false,
-              error: result.error || 'Search failed'
+              error: result.error || 'Search failed',
+              errorCode: requiresRebuild ? ERROR_CODES.VECTOR_DB_DIMENSION_MISMATCH : null,
+              requiresRebuild
             };
           }
 
@@ -2115,6 +2013,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
             }
           };
         } catch (e) {
+          const requiresRebuild = isDimensionMismatchError(e);
           logger.error('[EMBEDDINGS] Search failed:', {
             topK,
             error: e.message,
@@ -2152,6 +2051,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
           return {
             success: false,
             error: e.message,
+            errorCode:
+              e.code || (requiresRebuild ? ERROR_CODES.VECTOR_DB_DIMENSION_MISMATCH : null),
+            requiresRebuild,
             timeout: e.message.includes('timeout')
           };
         }
@@ -2223,10 +2125,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
                   return [];
                 }
 
-                await vectorDbService.initialize();
+                await getOramaService().initialize();
                 const expectedDim =
-                  typeof vectorDbService.getCollectionDimension === 'function'
-                    ? await vectorDbService.getCollectionDimension('files')
+                  typeof getOramaService().getCollectionDimension === 'function'
+                    ? await getOramaService().getCollectionDimension('files')
                     : null;
                 const queryVector = padOrTruncateVector(rawQueryVector, expectedDim);
                 if (!Array.isArray(queryVector) || queryVector.length === 0) {
@@ -2237,7 +2139,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
                 const fileEntries = await Promise.all(
                   normalizedIds.map(async (id) => {
                     try {
-                      const doc = await vectorDbService.getFile(id);
+                      const doc = await getOramaService().getFile(id);
                       return doc ? { id: doc.id, embedding: doc.embedding } : null;
                     } catch {
                       return null;
@@ -2395,7 +2297,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
             decayFactor: options.decay ?? options.decayFactor
           };
 
-          const results = await folderMatcher.findMultiHopNeighbors(validIds, mappedOptions);
+          const results = await getFolderMatcher().findMultiHopNeighbors(validIds, mappedOptions);
           return { success: true, results };
         } catch (e) {
           logger.error('[EMBEDDINGS] Multi-hop expansion failed:', e);
@@ -2665,14 +2567,14 @@ function registerEmbeddingsIpc(servicesOrParams) {
             return { success: true, metadata: {} };
           }
 
-          await vectorDbService.initialize();
+          await getOramaService().initialize();
 
           // Batch-fetch file metadata via OramaVectorService.getFile()
           const metadata = {};
           await Promise.all(
             validIds.map(async (id) => {
               try {
-                const doc = await vectorDbService.getFile(id);
+                const doc = await getOramaService().getFile(id);
                 if (doc) {
                   metadata[id] = {
                     path: doc.filePath,
@@ -2782,15 +2684,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
       }
 
       // FIX: Clear module-level service references to prevent memory leaks
-      _searchServiceRef = null;
-      _clusteringServiceRef = null;
-      searchService = null;
-      clusteringService = null;
-      // Clear promise references (they self-clear via finally, but ensure clean state)
-      searchServicePromise = null;
-      clusteringServicePromise = null;
+      // (No-op: references managed by container)
 
-      await vectorDbService.cleanup();
+      await getOramaService().cleanup();
     } catch (error) {
       logger.error('[VectorDB] Cleanup error:', error);
     }

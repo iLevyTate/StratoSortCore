@@ -113,8 +113,17 @@ async function handleBeforeQuit() {
   // FIX: CRITICAL - Enable IPC shutdown gate immediately to prevent new handler calls
   // This must happen before any cleanup to prevent handlers accessing destroyed services
   try {
-    const { setShuttingDown } = require('./ipcRegistry');
+    const { setShuttingDown, waitForInFlightOperations } = require('./ipcRegistry');
     setShuttingDown(true);
+
+    try {
+      const drained = await waitForInFlightOperations(5000);
+      if (!drained) {
+        logger.warn('[SHUTDOWN] In-flight IPC handlers did not finish before timeout');
+      }
+    } catch (ipcWaitError) {
+      logger.warn('[SHUTDOWN] Failed waiting for IPC handlers to finish:', ipcWaitError.message);
+    }
   } catch (e) {
     logger.warn('[SHUTDOWN] Could not set IPC shutdown gate:', e.message);
   }
@@ -210,8 +219,13 @@ async function handleBeforeQuit() {
 
     // Clean up AI engine resources
     try {
-      const { cleanup } = require('../llamaUtils');
-      await cleanup();
+      // FIX Bug #11: Removed redundant llamaUtils.cleanup() which caused triple model dispose
+      // LlamaService shutdown is handled by ServiceIntegration via the container
+
+      // Clean up worker pools
+      const { destroyPools } = require('../utils/workerPools');
+      await destroyPools();
+
       logger.info('[CLEANUP] AI engine resources cleaned up');
     } catch (error) {
       logger.error('[CLEANUP] Failed to clean up AI engine resources:', error);

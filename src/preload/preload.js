@@ -327,6 +327,7 @@ class SecureIPCManager {
       perfLimits: PERF_LIMITS
     });
     this.channelQueues = new Map();
+    this._channelQueueTimestamps = new Map(); // Track when each queue entry was created
     this.sanitizer = createIpcSanitizer({ log });
     this.validator = createIpcValidator({ log });
   }
@@ -388,8 +389,14 @@ class SecureIPCManager {
 
     try {
       const invokePromise = ipcRenderer.invoke(channel, ...sanitizedArgs);
-      // Attach a no-op catch to prevent unhandled rejection if timeout wins the race
-      invokePromise.catch(() => {});
+      // Absorb rejection if timeout wins the race; log for observability
+      invokePromise.catch((err) => {
+        if (!completed) {
+          log.debug(
+            `[SecureIPC] Swallowed post-timeout rejection for ${channel}: ${err?.message || err}`
+          );
+        }
+      });
       const timeoutPromise = new Promise((_, reject) => {
         timeoutId = setTimeout(() => {
           if (!completed) {
@@ -509,6 +516,16 @@ class SecureIPCManager {
 
   // FIX CRIT-35: Remove async to ensure synchronous execution up to return
   enqueueThrottled(channel, task) {
+    const STALE_QUEUE_TIMEOUT_MS = 30000;
+
+    // Evict stale entries that never resolved (prevents memory leak)
+    const queueTs = this._channelQueueTimestamps.get(channel);
+    if (queueTs && Date.now() - queueTs > STALE_QUEUE_TIMEOUT_MS) {
+      log.debug(`[SecureIPC] Evicting stale queue entry for ${channel}`);
+      this.channelQueues.delete(channel);
+      this._channelQueueTimestamps.delete(channel);
+    }
+
     const delayMs = THROTTLED_CHANNELS.get(channel) || 0;
     const prev = this.channelQueues.get(channel) || Promise.resolve();
     const next = prev
@@ -522,9 +539,11 @@ class SecureIPCManager {
       .finally(() => {
         if (this.channelQueues.get(channel) === next) {
           this.channelQueues.delete(channel);
+          this._channelQueueTimestamps.delete(channel);
         }
       });
     this.channelQueues.set(channel, next);
+    this._channelQueueTimestamps.set(channel, Date.now());
     return next;
   }
 
