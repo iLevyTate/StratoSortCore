@@ -18,10 +18,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const chokidar = require('chokidar');
 const { logger: baseLogger, createLogger } = require('../../shared/logger');
-const {
-  SUPPORTED_IMAGE_EXTENSIONS,
-  ANALYSIS_SUPPORTED_EXTENSIONS
-} = require('../../shared/constants');
+const { ANALYSIS_SUPPORTED_EXTENSIONS } = require('../../shared/constants');
 const { isNotFoundError } = require('../../shared/errorClassifier');
 const { WatcherError } = require('../errors/FileSystemError');
 const { generateSuggestedNameFromAnalysis } = require('./autoOrganize/namingUtils');
@@ -30,10 +27,17 @@ const { deriveWatcherConfidencePercent } = require('./confidence/watcherConfiden
 const { recordAnalysisResult } = require('../ipc/analysisUtils');
 const { chunkText } = require('../utils/textChunking');
 const { buildEmbeddingSummary } = require('../analysis/embeddingSummary');
-const { CHUNKING, TIMEOUTS } = require('../../shared/performanceConstants');
+const {
+  CHUNKING,
+  TIMEOUTS,
+  TEMP_FILE_PATTERNS,
+  isTemporaryFile,
+  RETRY
+} = require('../../shared/performanceConstants');
 const { AI_DEFAULTS } = require('../../shared/constants');
 const { getInstance: getFileOperationTracker } = require('../../shared/fileOperationTracker');
 const { normalizePathForIndex, getCanonicalFileId } = require('../../shared/pathSanitization');
+const { isImagePath } = require('../../shared/fileIdUtils');
 const { isUNCPath } = require('../../shared/crossPlatformUtils');
 const { normalizeKeywords } = require('../../shared/normalization');
 const {
@@ -49,7 +53,7 @@ if (typeof createLogger !== 'function' && logger?.setContext) {
 }
 
 // Limit how many times a file is retried after transient failures (timeouts, embed errors)
-const MAX_ANALYSIS_RETRIES = 3;
+const MAX_ANALYSIS_RETRIES = RETRY.MAX_ATTEMPTS_MEDIUM;
 
 // CRITICAL: Prevent unbounded memory growth under heavy file activity (e.g., large archive extraction).
 // We bound the analysis queue and apply light deduplication by filePath.
@@ -58,55 +62,8 @@ const QUEUE_DROP_LOG_INTERVAL_MS = 10_000;
 const MOVE_DETECTION_WINDOW_MS = 3000;
 const MOVE_MTIME_TOLERANCE_MS = 2000;
 
-// Temporary/incomplete file patterns to ignore
-const TEMP_FILE_PATTERNS = [
-  /\.(tmp|temp)$/i,
-  /\.crdownload$/i,
-  /\.part$/i,
-  /\.!qB$/i,
-  /\.download$/i,
-  /\.partial$/i,
-  /~\$/,
-  /^~/,
-  /\.swp$/i,
-  /\.lock$/i,
-  /\.lck$/i,
-  /\._/,
-  /\.DS_Store$/i,
-  /Thumbs\.db$/i,
-  /desktop\.ini$/i
-];
-
-// Image file extensions (centralized list)
-const IMAGE_EXTENSIONS = new Set(SUPPORTED_IMAGE_EXTENSIONS || []);
-
 // Supported file extensions for analysis (centralized list)
 const SUPPORTED_EXTENSIONS = new Set(ANALYSIS_SUPPORTED_EXTENSIONS || []);
-
-/**
- * Check if file is an image
- * @param {string} filePath - Path to check
- * @returns {boolean} True if image
- */
-function isImageFile(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  return IMAGE_EXTENSIONS.has(ext);
-}
-
-/**
- * Check if a file path is a temporary or incomplete file
- * @param {string} filePath - Path to check
- * @returns {boolean} True if the file appears to be temporary
- */
-function isTemporaryFile(filePath) {
-  const basename = path.basename(filePath);
-  for (const pattern of TEMP_FILE_PATTERNS) {
-    if (pattern.test(basename)) {
-      return true;
-    }
-  }
-  return false;
-}
 
 /**
  * Check if file extension is supported for analysis
@@ -979,7 +936,7 @@ class SmartFolderWatcher {
       if (item.cachedAnalysis) {
         result = item.cachedAnalysis;
         logger.debug('[SMART-FOLDER-WATCHER] Reusing cached LLM analysis for retry:', filePath);
-      } else if (isImageFile(filePath)) {
+      } else if (isImagePath(filePath)) {
         result = await this.analyzeImageFile(filePath, folderCategories, {
           bypassCache: isReanalyze
         });
@@ -1077,7 +1034,7 @@ class SmartFolderWatcher {
               ? analysis.confidence
               : derivedConfidence;
 
-          const isImage = isImageFile(filePath);
+          const isImage = isImagePath(filePath);
           const historyPayload = {
             // The history utility uses suggestedName as the subject fallback.
             // Prefer any naming-convention output; otherwise keep the original basename.
@@ -1109,7 +1066,7 @@ class SmartFolderWatcher {
             filePath,
             result: historyPayload,
             processingTime: Number(result.processingTimeMs || result.processingTime || 0),
-            modelType: isImageFile(filePath) ? 'vision' : 'llm',
+            modelType: isImagePath(filePath) ? 'vision' : 'llm',
             analysisHistory: this.analysisHistoryService,
             logger
           });
@@ -1296,7 +1253,7 @@ class SmartFolderWatcher {
       const documentDate = analysis.documentDate || analysis.date || null;
       const extractedText =
         typeof analysis.extractedText === 'string' ? analysis.extractedText : '';
-      const isImage = isImageFile(filePath);
+      const isImage = isImagePath(filePath);
       const analysisForEmbedding = {
         ...analysis,
         keywords,
@@ -1328,7 +1285,7 @@ class SmartFolderWatcher {
 
       // Prepare metadata for vector DB
       // IMPORTANT: IDs must match the rest of the semantic pipeline.
-      const fileId = getCanonicalFileId(filePath, isImageFile(filePath));
+      const fileId = getCanonicalFileId(filePath, isImagePath(filePath));
       const fileName = path.basename(filePath);
 
       // Build metadata object - shared for documents and images

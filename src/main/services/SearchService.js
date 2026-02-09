@@ -1426,6 +1426,8 @@ class SearchService {
       return { success: false, results: [], error: 'Query too short' };
     }
 
+    logger.info('[SearchService] Search started', { query: query.substring(0, 100), mode, topK });
+
     // FIX P2-1: Normalize query for all search modes (trim, collapse whitespace)
     // BM25 will additionally expand synonyms, but vector search uses this normalized version
     const normalizedQuery = query.trim().replace(/\s+/g, ' ');
@@ -1837,6 +1839,27 @@ class SearchService {
 
       // Detect if vector search effectively failed (dimension mismatch or other issue)
       const vectorSearchFailed = vectorResults.length === 0 && bm25Results.length > 0;
+
+      // Log the complete search journey for operational observability
+      logger.info('[SearchService] Search complete', {
+        query: normalizedQuery.substring(0, 100),
+        mode: reranked ? 'hybrid-reranked' : 'hybrid',
+        resultCount: filteredResults.length,
+        vectorResults: vectorResults.length,
+        bm25Results: bm25Results.length,
+        chunkResults: chunkResults.length,
+        fusedBeforeFilter: fusedResults.length,
+        weights: { vector: +alpha.toFixed(3), bm25: +beta.toFixed(3), chunk: +gamma.toFixed(3) },
+        graphExpanded: graphExpansionResult.meta?.expanded || false,
+        reranked,
+        queryExpanded: processedQuery !== query,
+        topResult: filteredResults[0]
+          ? {
+              id: filteredResults[0].id?.split(/[\\/]/).pop(),
+              score: +filteredResults[0].score?.toFixed(4)
+            }
+          : null
+      });
 
       return {
         success: true,

@@ -56,8 +56,8 @@ const SmartFolderItem = memo(function SmartFolderItem({
   if (compact && !isExpanded && !isEditing) {
     return (
       <Card
-        variant="interactive"
-        className="flex items-center gap-4 p-4"
+        variant="compact"
+        className="flex items-center gap-3 transition-all duration-200 hover:scale-[1.01] hover:shadow-md cursor-pointer active:scale-[0.99]"
         onClick={() => onToggleExpand?.(folder.id)}
         role="button"
         tabIndex={0}
@@ -68,11 +68,11 @@ const SmartFolderItem = memo(function SmartFolderItem({
           }
         }}
       >
-        <div className="h-10 w-10 rounded-xl bg-stratosort-blue/10 text-stratosort-blue flex items-center justify-center shrink-0">
-          <Folder className="w-5 h-5" />
+        <div className="h-8 w-8 rounded-lg bg-stratosort-blue/10 text-stratosort-blue flex items-center justify-center shrink-0">
+          <Folder className="w-4 h-4" />
         </div>
         <div className="flex-1 min-w-0">
-          <Text variant="body" className="font-medium truncate">
+          <Text variant="small" className="font-medium truncate">
             {folder.name}
           </Text>
           <Text variant="tiny" className="truncate">

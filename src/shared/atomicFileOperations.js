@@ -29,12 +29,13 @@ const path = require('path');
 const crypto = require('crypto');
 const { createLogger } = require('./logger');
 const { RETRY, TIMEOUTS } = require('./performanceConstants');
+const { delay } = require('./promiseUtils');
 
-// Normalize paths using the host platform conventions to avoid breaking
-// real filesystem paths (especially on Windows where drive letters matter).
-// Keep the string form produced by path.normalize so tests and actual file
-// operations refer to the same location.
-const normalizePath = (filePath) => {
+// Resolve paths using host platform conventions to avoid breaking real
+// filesystem paths (especially on Windows where drive letters matter).
+// Distinct from the security-oriented sanitizePath in pathSanitization.js
+// and the cross-platform normalizePath in crossPlatformUtils.js.
+const resolveFsPath = (filePath) => {
   if (typeof filePath !== 'string') return filePath;
   return path.normalize(filePath);
 };
@@ -150,12 +151,12 @@ class AtomicFileOperations {
    * Create a backup of a file before modification
    */
   async createBackup(filePath, transactionId) {
-    const normalizedPath = normalizePath(filePath);
+    const normalizedPath = resolveFsPath(filePath);
     await this.initializeBackupDirectory();
 
     const filename = path.basename(normalizedPath);
     const backupPath = path.join(this.backupDirectory, `${transactionId}_${filename}`);
-    const normalizedBackupPath = normalizePath(backupPath);
+    const normalizedBackupPath = resolveFsPath(backupPath);
 
     try {
       await fs.copyFile(normalizedPath, normalizedBackupPath);
@@ -247,7 +248,7 @@ class AtomicFileOperations {
     let backupPath = null;
 
     // Ensure source exists for memfs-based tests to prevent ENOENT
-    const normalizedSource = normalizePath(source);
+    const normalizedSource = resolveFsPath(source);
     if (type === 'move' || type === 'copy') {
       // FIX CRIT-16: Only create placeholders in test environment
       if (process.env.NODE_ENV === 'test') {
@@ -272,7 +273,7 @@ class AtomicFileOperations {
     }
 
     // Execute the operation
-    const normalizedDestination = destination ? normalizePath(destination) : null;
+    const normalizedDestination = destination ? resolveFsPath(destination) : null;
     switch (type) {
       case 'move':
         await this.atomicMove(normalizedSource, normalizedDestination);
@@ -315,8 +316,8 @@ class AtomicFileOperations {
    * Fixed: Added retry logic to prevent race conditions
    */
   async atomicMove(source, destination) {
-    const normalizedSource = normalizePath(source);
-    let finalDestination = normalizePath(destination);
+    const normalizedSource = resolveFsPath(source);
+    let finalDestination = resolveFsPath(destination);
 
     // Ensure destination directory exists
     try {
@@ -440,8 +441,8 @@ class AtomicFileOperations {
    * Fixed: Added retry logic to prevent race conditions
    */
   async atomicCopy(source, destination) {
-    const normalizedSource = normalizePath(source);
-    let finalDestination = normalizePath(destination);
+    const normalizedSource = resolveFsPath(source);
+    let finalDestination = resolveFsPath(destination);
     try {
       await fs.mkdir(path.dirname(finalDestination), { recursive: true });
     } catch (mkdirError) {
@@ -517,7 +518,7 @@ class AtomicFileOperations {
    * This ensures the file is complete before becoming visible
    */
   async atomicCreate(filePath, data) {
-    const normalizedPath = normalizePath(filePath);
+    const normalizedPath = resolveFsPath(filePath);
     try {
       await fs.mkdir(path.dirname(normalizedPath), { recursive: true });
     } catch (mkdirError) {
@@ -552,7 +553,7 @@ class AtomicFileOperations {
 
       // Atomic rename to final destination with retry for Windows EPERM
       let attempts = 0;
-      const maxAttempts = 3;
+      const maxAttempts = RETRY.FILE_OPERATION.maxAttempts;
 
       while (attempts < maxAttempts) {
         try {
@@ -561,7 +562,7 @@ class AtomicFileOperations {
         } catch (renameError) {
           if (renameError.code === 'EPERM' && attempts < maxAttempts - 1) {
             attempts++;
-            await new Promise((resolve) => setTimeout(resolve, 50 * attempts));
+            await delay(50 * attempts);
             continue;
           }
           throw renameError;
@@ -602,7 +603,7 @@ class AtomicFileOperations {
    * Generate unique filename to avoid conflicts
    */
   async generateUniqueFilename(originalPath) {
-    const normalizedOriginal = normalizePath(originalPath);
+    const normalizedOriginal = resolveFsPath(originalPath);
     const dir = path.dirname(normalizedOriginal);
     const ext = path.extname(normalizedOriginal);
     const name = path.basename(normalizedOriginal, ext);
@@ -626,7 +627,7 @@ class AtomicFileOperations {
    * Check if file exists
    */
   async fileExists(filePath) {
-    const normalizedPath = normalizePath(filePath);
+    const normalizedPath = resolveFsPath(filePath);
     try {
       await fs.access(normalizedPath);
       return true;
@@ -960,8 +961,8 @@ AtomicFileOperations.prototype.safeWriteFile = function safeWriteFile(filePath, 
  * @throws {Error} If copy fails or verification fails
  */
 async function crossDeviceMove(source, dest, options = {}) {
-  const normalizedSource = normalizePath(source);
-  const normalizedDest = normalizePath(dest);
+  const normalizedSource = resolveFsPath(source);
+  const normalizedDest = resolveFsPath(dest);
   const { verify = true, checksumFn } = options;
 
   try {

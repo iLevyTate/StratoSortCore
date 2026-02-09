@@ -641,69 +641,10 @@ function createTimeoutRace(timeoutMs, message = 'Operation timed out') {
 // CONCURRENCY PRIMITIVES
 // ============================================================================
 
-/**
- * Semaphore for controlling concurrent access to a resource.
- *
- * @example
- * const sem = new Semaphore(5);
- *
- * async function worker() {
- *   await sem.acquire();
- *   try {
- *     // protected resource access
- *   } finally {
- *     sem.release();
- *   }
- * }
- */
-class Semaphore {
-  /**
-   * @param {number} max - Maximum concurrent slots
-   */
-  constructor(max = 1) {
-    this.max = max;
-    this.counter = 0;
-    this.waiting = [];
-  }
-
-  /**
-   * Acquire a slot. Returns a promise that resolves when a slot is available.
-   * @returns {Promise<void>}
-   */
-  acquire() {
-    if (this.counter < this.max) {
-      this.counter++;
-      return Promise.resolve();
-    }
-
-    return new Promise((resolve) => {
-      this.waiting.push(resolve);
-    });
-  }
-
-  /**
-   * Release a slot, allowing a waiting caller to proceed.
-   */
-  release() {
-    this.counter--;
-    if (this.waiting.length > 0) {
-      this.counter++;
-      const resolve = this.waiting.shift();
-      resolve();
-    }
-  }
-
-  /**
-   * Get current state
-   */
-  getStats() {
-    return {
-      current: this.counter,
-      max: this.max,
-      waiting: this.waiting.length
-    };
-  }
-}
+// Re-export the canonical Semaphore from RateLimiter.
+// Previously a simpler duplicate lived here; now there is one implementation
+// with queue-size limits, timeouts, backpressure retry, and reset().
+const { Semaphore } = require('./RateLimiter');
 
 // ============================================================================
 // BATCH & CONCURRENCY UTILITIES

@@ -35,29 +35,39 @@ describe('documentLlm', () => {
       response: JSON.stringify({
         project: 'Invoices',
         purpose: 'Billing',
-        category: 'financial',
+        category: 'Financial',
         keywords: ['invoice'],
         confidence: 0.9,
         suggestedName: 'invoice_q1'
       })
     });
 
-    const result = await analyzeTextWithLlama('Invoice Q1', 'invoice.txt', []);
-    expect(result.category).toBe('financial');
+    // Pass smart folders so the LLM category can be validated against them.
+    // With no folders, matchCategoryToFolder correctly returns 'Uncategorized'.
+    const smartFolders = [
+      { name: 'Financial', description: 'Financial documents' },
+      { name: 'Uncategorized', description: 'Uncategorized files' }
+    ];
+    const result = await analyzeTextWithLlama('Invoice Q1', 'invoice.txt', smartFolders);
+    expect(result.category).toBe('Financial');
     expect(result.suggestedName).toBe('invoice_q1.txt');
   });
 
   test('uses cache for identical inputs', async () => {
     mockLlamaService.generateText.mockResolvedValue({
       response: JSON.stringify({
-        category: 'documents',
+        category: 'Documents',
         confidence: 0.5,
         suggestedName: 'doc'
       })
     });
 
-    const r1 = await analyzeTextWithLlama('Text', 'doc.txt', []);
-    const r2 = await analyzeTextWithLlama('Text', 'doc.txt', []);
+    const smartFolders = [
+      { name: 'Documents', description: 'General documents' },
+      { name: 'Uncategorized', description: 'Uncategorized files' }
+    ];
+    const r1 = await analyzeTextWithLlama('Text', 'doc.txt', smartFolders);
+    const r2 = await analyzeTextWithLlama('Text', 'doc.txt', smartFolders);
 
     expect(r1.suggestedName).toBe('doc.txt');
     expect(r2.suggestedName).toBe('doc.txt');

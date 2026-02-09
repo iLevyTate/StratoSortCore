@@ -47,7 +47,10 @@ jest.mock('../src/shared/constants', () => ({
 
 jest.mock('../src/shared/performanceConstants', () => ({
   CHUNKING: { MAX_CHUNK_SIZE: 1000, OVERLAP: 100 },
-  TIMEOUTS: { AI_ANALYSIS_LONG: 60000, WATCHER_ANALYSIS: 30000 }
+  TIMEOUTS: { AI_ANALYSIS_LONG: 60000, WATCHER_ANALYSIS: 30000 },
+  RETRY: { MAX_ATTEMPTS_MEDIUM: 3 },
+  TEMP_FILE_PATTERNS: [],
+  isTemporaryFile: () => false
 }));
 
 jest.mock('../src/shared/errorClassifier', () => ({

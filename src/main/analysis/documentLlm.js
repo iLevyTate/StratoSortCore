@@ -5,10 +5,9 @@ const { extractAndParseJSON } = require('../utils/jsonRepair');
 const { attemptJsonRepairWithLlama } = require('../utils/llmJsonRepair');
 const { AI_DEFAULTS } = require('../../shared/constants');
 const { withAbortableTimeout } = require('../../shared/promiseUtils');
-const { TIMEOUTS } = require('../../shared/performanceConstants');
+const { TIMEOUTS, CONTENT_SELECTION } = require('../../shared/performanceConstants');
 const { createLogger } = require('../../shared/logger');
-const { chunkTextForAnalysis } = require('./documentExtractors');
-const { normalizeForModel } = require('./textNormalization');
+const { selectRepresentativeContent, extractDocumentOutline } = require('./contentSelector');
 const FolderMatchingService = require('../services/FolderMatchingService');
 const { getInstance: getAnalysisCache } = require('../services/AnalysisCacheService');
 // FIX HIGH-1: Move import to top of file (was at line 117, but used at line 88)
@@ -30,11 +29,75 @@ const AppConfig = {
 // Re-export for folder matching
 const normalizeCategoryToSmartFolders = FolderMatchingService.matchCategoryToFolder;
 
-// normalizeTextForModel moved to ./textNormalization.js
-// Using normalizeForModel from that module instead
-
 // JSON repair constants and function consolidated to ../utils/llmJsonRepair.js
 // FIX HIGH-1: Import moved to top of file - removed duplicate import here
+
+// Map-phase prompt for the optional deep-analysis (map-reduce) path.
+// Intentionally minimal to generate fast, compact summaries per chunk.
+const MAP_PROMPT =
+  'Extract the key facts, dates, names, topics, and important details from this text. Respond with 3-5 concise bullet points:\n\n';
+
+/**
+ * Summarize document chunks via parallel LLM calls (map phase of map-reduce).
+ *
+ * All chunks are submitted to the ModelAccessCoordinator queue concurrently.
+ * Actual parallelism depends on configured inference concurrency (1-4 based
+ * on GPU/VRAM). If concurrency is 1, chunks process sequentially.
+ *
+ * @param {string} text - Full document text
+ * @param {Object} llamaService - LlamaService instance
+ * @param {Object} [options]
+ * @param {number} [options.chunkSize] - Characters per chunk
+ * @param {number} [options.maxTokens] - Max response tokens per chunk
+ * @param {number} [options.temperature] - Sampling temperature
+ * @param {AbortSignal} [options.signal] - Abort signal for cancellation
+ * @returns {Promise<string>} Combined bullet-point summaries
+ */
+async function summarizeChunks(text, llamaService, options = {}) {
+  const {
+    chunkSize = CONTENT_SELECTION.MAP_CHUNK_SIZE,
+    maxTokens = CONTENT_SELECTION.MAP_MAX_TOKENS,
+    temperature = CONTENT_SELECTION.MAP_TEMPERATURE,
+    signal
+  } = options;
+
+  // Split text into non-overlapping chunks
+  const chunks = [];
+  for (let i = 0; i < text.length; i += chunkSize) {
+    chunks.push(text.slice(i, Math.min(i + chunkSize, text.length)));
+  }
+
+  logger.info('[documentLlm] Map-reduce: starting chunk summarization', {
+    chunkCount: chunks.length,
+    chunkSize,
+    totalLength: text.length
+  });
+
+  // Submit all chunks to the coordinator queue concurrently.
+  // ModelAccessCoordinator handles actual parallelism based on GPU/VRAM.
+  const summaryPromises = chunks.map((chunk, idx) =>
+    llamaService
+      .generateText({ prompt: MAP_PROMPT + chunk, maxTokens, temperature, signal })
+      .then((r) => r.response?.trim() || '')
+      .catch((err) => {
+        logger.warn('[documentLlm] Map-reduce: chunk summary failed', {
+          chunkIndex: idx,
+          error: err.message
+        });
+        return '';
+      })
+  );
+
+  const summaries = await Promise.all(summaryPromises);
+  const combined = summaries.filter(Boolean).join('\n\n');
+
+  logger.info('[documentLlm] Map-reduce: summarization complete', {
+    chunksProcessed: summaries.filter(Boolean).length,
+    combinedLength: combined.length
+  });
+
+  return combined;
+}
 
 async function analyzeTextWithLlama(
   textContent,
@@ -44,36 +107,65 @@ async function analyzeTextWithLlama(
   namingContext = []
 ) {
   try {
-    const cfg = await getLlamaService().getConfig();
+    const llamaSvc = getLlamaService();
+    const cfg = await llamaSvc.getConfig();
     const modelToUse =
       cfg.textModel || cfg.selectedTextModel || AppConfig.ai.textAnalysis.defaultModel;
     const contextSize = Number(cfg?.contextSize) || AI_DEFAULTS.TEXT.CONTEXT_SIZE;
+
+    // Budget calculation: reserve space for the prompt template, schema JSON,
+    // smart-folder descriptions, naming context, and the response tokens.
+    // PROMPT_OVERHEAD_TOKENS covers everything outside the document content:
+    //   ~500 tok prompt template + ~300 tok schema + ~400 tok smart folders
+    //   + ~100 tok naming context + ~100 tok margin = 1400 minimum.
+    // Using 3 chars/token (conservative; mixed English/JSON/code averages ~3.2).
+    const PROMPT_OVERHEAD_TOKENS = 1800;
+    const CHARS_PER_TOKEN = 3;
     const maxTokens = Math.min(
       AppConfig.ai.textAnalysis.maxTokens,
       Math.max(256, Math.floor(contextSize * 0.25))
     );
-    const PROMPT_OVERHEAD_TOKENS = 1200;
     const maxContentLength = Math.min(
       AppConfig.ai.textAnalysis.maxContentLength,
-      Math.max(1000, Math.floor((contextSize - maxTokens - PROMPT_OVERHEAD_TOKENS) * 4))
+      Math.max(
+        1000,
+        Math.floor((contextSize - maxTokens - PROMPT_OVERHEAD_TOKENS) * CHARS_PER_TOKEN)
+      )
     );
 
-    // Normalize and chunk text to reduce truncation loss
-    const normalized = normalizeForModel(textContent, maxContentLength * 4);
-    const { combined: combinedChunks, chunks } = chunkTextForAnalysis(normalized, {
-      chunkSize: Math.min(4000, maxContentLength),
-      overlap: 400,
-      maxTotalLength: maxContentLength
-    });
-    const maxLen = maxContentLength;
-    const truncatedRaw = combinedChunks || normalizeForModel(normalized, maxContentLength);
-    // Hard cap the final text to maxLen. chunkTextForAnalysis tries to respect maxTotalLength,
-    // but may add small separators/metadata during concatenation; we enforce the contract here.
-    const truncated =
-      typeof maxLen === 'number' && maxLen > 0 && truncatedRaw.length > maxLen
-        ? truncatedRaw.slice(0, maxLen)
-        : truncatedRaw;
-    const chunkCount = Array.isArray(chunks) && chunks.length > 0 ? chunks.length : 1;
+    // Smart content selection: sample beginning, middle, and end of the document
+    // for full-document coverage. This replaces naive linear truncation which
+    // only ever saw the first ~20K characters of large documents.
+    const selection = selectRepresentativeContent(textContent, maxContentLength);
+    let truncated = selection.content;
+    let contentMeta = `${truncated.length} chars from ${selection.totalLength} total, ${selection.strategy}`;
+
+    // Optional map-reduce for very large documents (deep analysis mode).
+    // When enabled, each chunk is summarized via a short LLM call, then
+    // the combined summaries replace the sampled content for final analysis.
+    const deepAnalysis = Boolean(cfg.deepAnalysis ?? AI_DEFAULTS.TEXT.DEEP_ANALYSIS);
+    if (deepAnalysis && textContent.length > CONTENT_SELECTION.MAP_REDUCE_THRESHOLD) {
+      try {
+        const combinedSummaries = await summarizeChunks(textContent, getLlamaService());
+        if (combinedSummaries.length > 0) {
+          const outline = extractDocumentOutline(
+            textContent,
+            Math.floor(maxContentLength * CONTENT_SELECTION.OUTLINE_RATIO)
+          );
+          const parts = [];
+          if (outline) parts.push(`[DOCUMENT OUTLINE]\n${outline}`);
+          parts.push(`[SECTION SUMMARIES]\n${combinedSummaries}`);
+          truncated = parts.join('\n\n').slice(0, maxContentLength);
+          contentMeta = `${truncated.length} chars (map-reduce from ${textContent.length} total)`;
+        }
+      } catch (err) {
+        logger.warn('[documentLlm] Map-reduce failed, using smart selection', {
+          error: err.message,
+          fileName: originalFileName
+        });
+        // Fall through — truncated already set from selectRepresentativeContent
+      }
+    }
 
     // Fast-path: return cached result if available
     const cacheService = getAnalysisCache();
@@ -84,6 +176,12 @@ async function analyzeTextWithLlama(
     const cacheKey = cacheService.generateKey(cacheSeed, modelToUse, smartFolders);
     const cachedResult = cacheService.get(cacheKey);
     if (cachedResult) {
+      logger.info('[DocumentLLM] Cache hit', {
+        fileName: originalFileName,
+        category: cachedResult.category,
+        suggestedName: cachedResult.suggestedName,
+        confidence: cachedResult.confidence
+      });
       return cachedResult;
     }
 
@@ -118,7 +216,7 @@ async function analyzeTextWithLlama(
       namingContextStr = `\n\nNAMING PATTERNS FOUND IN SIMILAR FILES:\nThe following filenames are from semantically similar files in the system. If they follow a clear convention (e.g. "Invoice_YYYY-MM", "Project_Name_Type"), TRY to adapt the 'suggestedName' to match their style, but use the current document's date/entity/project:\n${examples}`;
     }
 
-    const prompt = `You are an expert document analyzer. Analyze the TEXT CONTENT below and extract structured information.
+    let prompt = `You are an expert document analyzer. Analyze the TEXT CONTENT below and extract structured information.
 ${fileDateContext}${folderCategoriesStr}${namingContextStr}
 
 FILENAME CONTEXT: The original filename is "${originalFileName}". Use this as a HINT for the document's purpose, but verify against the actual content.
@@ -143,7 +241,7 @@ CRITICAL REQUIREMENTS:
 1. The keywords array MUST contain 3-7 keywords extracted from the document content.
 2. If available Smart Folders are listed above, the 'category' field MUST strictly match one of them.
 
-Document content (${truncated.length} characters, ${chunkCount} chunk(s)):
+Document content (${contentMeta}):
 ${truncated}`;
 
     // Use deduplicator to prevent duplicate LLM calls for identical content
@@ -160,9 +258,31 @@ ${truncated}`;
         .join(',')
     });
 
-    const llamaService = getLlamaService();
-    // Performance tuning handled by LlamaService
-    // const useToolCalling = Boolean(cfg?.useToolCalling); // Not used with basic generateText
+    // Defensive re-check: the model may have reloaded with a smaller context
+    // between our initial getConfig() call and now (sequence exhaustion, OOM, etc.).
+    // If so, re-truncate the prompt to fit the actual available context.
+    const currentCfg = await llamaSvc.getConfig();
+    const effectiveCtx = Number(currentCfg?.contextSize) || contextSize;
+    if (effectiveCtx < contextSize) {
+      const safeMaxTokens = Math.min(maxTokens, Math.max(256, Math.floor(effectiveCtx * 0.25)));
+      const safeContentLen = Math.max(
+        500,
+        Math.floor((effectiveCtx - safeMaxTokens - PROMPT_OVERHEAD_TOKENS) * CHARS_PER_TOKEN)
+      );
+      if (truncated.length > safeContentLen) {
+        logger.warn('[documentLlm] Context shrank after model reload, re-truncating', {
+          fileName: originalFileName,
+          originalCtx: contextSize,
+          effectiveCtx,
+          contentBefore: truncated.length,
+          contentAfter: safeContentLen
+        });
+        truncated = truncated.slice(0, safeContentLen);
+        contentMeta = `${truncated.length} chars (re-truncated for ${effectiveCtx} ctx)`;
+        // Rebuild prompt with truncated content
+        prompt = `${prompt.slice(0, prompt.lastIndexOf('Document content ('))}Document content (${contentMeta}):\n${truncated}`;
+      }
+    }
 
     // FIX MED #11: Reduce retries to prevent exceeding outer timeout
     // With 60s outer timeout and ~20s per LLM call, 2 retries (3 attempts) + delays fits within budget
@@ -171,14 +291,17 @@ ${truncated}`;
       logger.debug('[documentLlm] Using text model', {
         model: modelToUse,
         fileName: originalFileName,
-        timeoutMs: AppConfig.ai.textAnalysis.timeout
+        timeoutMs: AppConfig.ai.textAnalysis.timeout,
+        effectiveContextSize: effectiveCtx,
+        promptChars: prompt.length,
+        maxTokens
       });
       const response = await withAbortableTimeout(
         (abortController) =>
           globalDeduplicator.deduplicate(
             deduplicationKey,
             () =>
-              llamaService.generateText({
+              llamaSvc.generateText({
                 prompt,
                 maxTokens,
                 temperature: AppConfig.ai.textAnalysis.temperature,
@@ -201,15 +324,11 @@ ${truncated}`;
 
           if (!parsedJson) {
             // Attempt JSON repair via LLM using the same pattern as imageAnalysis.js
-            const repairedResponse = await attemptJsonRepairWithLlama(
-              llamaService,
-              response.response,
-              {
-                schema: ANALYSIS_SCHEMA_PROMPT,
-                maxTokens,
-                operation: 'Document analysis'
-              }
-            );
+            const repairedResponse = await attemptJsonRepairWithLlama(llamaSvc, response.response, {
+              schema: ANALYSIS_SCHEMA_PROMPT,
+              maxTokens,
+              operation: 'Document analysis'
+            });
 
             if (repairedResponse) {
               parsedJson = extractAndParseJSON(repairedResponse, null, {
@@ -343,6 +462,26 @@ ${truncated}`;
             confidence: parsedJson.confidence
           };
 
+          // Log the complete extraction result - this is what the model pulled out
+          logger.info('[DocumentLLM] Analysis complete', {
+            fileName: originalFileName,
+            model: modelToUse,
+            contentMeta,
+            cached: false,
+            extraction: {
+              category: result.category,
+              suggestedName: result.suggestedName,
+              purpose: result.purpose,
+              project: result.project,
+              entity: result.entity,
+              type: result.type,
+              date: result.date,
+              keywords: result.keywords,
+              confidence: result.confidence,
+              reasoning: result.reasoning
+            }
+          });
+
           cacheService.set(cacheKey, result);
           return result;
         } catch (e) {
@@ -375,5 +514,6 @@ ${truncated}`;
 module.exports = {
   AppConfig,
   analyzeTextWithLlama,
-  normalizeCategoryToSmartFolders
+  normalizeCategoryToSmartFolders,
+  summarizeChunks
 };

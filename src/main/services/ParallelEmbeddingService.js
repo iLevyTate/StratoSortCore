@@ -232,18 +232,27 @@ class ParallelEmbeddingService {
    * FIX: Clears timeout when resolving queued requests
    */
   _releaseSlot() {
-    this.activeRequests--;
+    // FIX: Guard against underflow. An unmatched _releaseSlot() would push
+    // activeRequests negative, permanently allowing more concurrent requests
+    // than the configured limit for all future _acquireSlot() calls.
+    if (this.activeRequests <= 0 && this.waitQueue.length === 0) {
+      logger.warn(
+        '[ParallelEmbeddingService] _releaseSlot() called without matching acquire, ignoring'
+      );
+      return;
+    }
 
-    // Wake up next waiting request
+    // Wake up next waiting request (hand slot directly, counter stays the same)
     if (this.waitQueue.length > 0) {
       const next = this.waitQueue.shift();
       // FIX: Clear the timeout to prevent memory leak and spurious rejection
       if (next.timeoutId) {
         clearTimeout(next.timeoutId);
       }
-      this.activeRequests++;
       this.stats.peakConcurrency = Math.max(this.stats.peakConcurrency, this.activeRequests);
       next.resolve();
+    } else {
+      this.activeRequests--;
     }
   }
 

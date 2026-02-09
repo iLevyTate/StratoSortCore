@@ -19,9 +19,11 @@ const {
   LIMITS,
   SEARCH,
   THRESHOLDS,
-  CHUNKING
+  CHUNKING,
+  RETRY
 } = require('../../shared/performanceConstants');
 const { createHandler, safeHandle, z } = require('./ipcWrappers');
+const { delay } = require('../../shared/promiseUtils');
 const { cosineSimilarity, padOrTruncateVector } = require('../../shared/vectorMath');
 const { validateFileOperationPath } = require('../../shared/pathSanitization');
 const { chunkText } = require('../utils/textChunking');
@@ -380,7 +382,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
       const maxWaitMs = 30000; // 30 second max wait
       const startWait = Date.now();
       while (initMutexLocked && Date.now() - startWait < maxWaitMs) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await delay(50);
         // Check if initialization completed while waiting
         if (initState === INIT_STATES.COMPLETED) {
           return Promise.resolve();
@@ -424,7 +426,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
       initPromise = (async () => {
         // In-process Orama either works immediately or has a permanent error.
         // No point in long exponential backoff for a local in-memory database.
-        const MAX_RETRIES = 2;
+        const MAX_RETRIES = RETRY.MAX_ATTEMPTS_LOW; // 2
         const RETRY_DELAY_BASE = 500; // 500ms base delay
 
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -446,7 +448,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
             setImmediate(async () => {
               try {
                 const searchSvc = await getSearchService();
-                await searchSvc.warmUp({ buildBM25: true, warmVectorDb: false });
+                await searchSvc.warmUp({ buildBM25: true, warmVectorDb: true });
               } catch (warmErr) {
                 logger.debug('[SEMANTIC] Search warm-up skipped:', warmErr.message);
               }

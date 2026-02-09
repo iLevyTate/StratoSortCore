@@ -72,11 +72,37 @@ jest.mock('../src/shared/pathSanitization', () => ({
   validateFileOperationPath: jest.fn((p) => ({ valid: true, normalizedPath: p }))
 }));
 
-jest.mock('../src/shared/promiseUtils', () => ({
-  withTimeout: jest.fn((promise) => promise),
-  batchProcess: jest.fn().mockResolvedValue(),
-  withAbortableTimeout: jest.fn((fn) => fn({ signal: {} }))
-}));
+jest.mock('../src/shared/promiseUtils', () => {
+  // Minimal Semaphore for tests (no timeout/queue-limit overhead)
+  class MockSemaphore {
+    constructor(max) {
+      this.max = max;
+      this.active = 0;
+      this.queue = [];
+    }
+    async acquire() {
+      if (this.active < this.max) {
+        this.active++;
+        return;
+      }
+      await new Promise((resolve) => this.queue.push(resolve));
+    }
+    release() {
+      if (this.queue.length > 0) {
+        this.queue.shift()();
+      } else if (this.active > 0) {
+        this.active--;
+      }
+    }
+  }
+  return {
+    withTimeout: jest.fn((promise) => promise),
+    batchProcess: jest.fn().mockResolvedValue(),
+    withAbortableTimeout: jest.fn((fn) => fn({ signal: {} })),
+    delay: jest.fn().mockResolvedValue(),
+    Semaphore: MockSemaphore
+  };
+});
 
 jest.mock('../src/shared/correlationId', () => ({
   withCorrelationId: jest.fn((fn) => fn())

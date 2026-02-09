@@ -60,10 +60,25 @@ const isSequenceExhaustedError = (error) => {
 };
 
 let _nodeLlamaModule = null;
+let _nodeLlamaLoadPromise = null;
 async function loadNodeLlamaModule() {
   if (_nodeLlamaModule) return _nodeLlamaModule;
-  _nodeLlamaModule = await import(/* webpackIgnore: true */ 'node-llama-cpp');
-  return _nodeLlamaModule;
+  // FIX: Store the import promise to prevent duplicate imports when two
+  // concurrent callers both see _nodeLlamaModule === null. Without this,
+  // both callers start a separate dynamic import() and the second overwrites
+  // the first's result. Storing the promise ensures all callers await the
+  // same in-flight import.
+  if (!_nodeLlamaLoadPromise) {
+    _nodeLlamaLoadPromise = import(/* webpackIgnore: true */ 'node-llama-cpp');
+  }
+  try {
+    _nodeLlamaModule = await _nodeLlamaLoadPromise;
+    return _nodeLlamaModule;
+  } catch (error) {
+    // Clear promise on failure so a future caller can retry
+    _nodeLlamaLoadPromise = null;
+    throw error;
+  }
 }
 
 // Vision models (LLaVA) encode images into ~4000 tokens. This floor guarantees
@@ -100,6 +115,7 @@ class LlamaService extends EventEmitter {
     this._modelsPath = null;
     this._config = { ...DEFAULT_CONFIG };
     this._configLoaded = false;
+    this._configLoadPromise = null; // Promise gate for _ensureConfigLoaded()
 
     // Llama core
     this._llama = null;
@@ -134,6 +150,7 @@ class LlamaService extends EventEmitter {
       projectorPath: null
     };
     this._visionInputSupported = null;
+    this._visionCheckPromise = null; // Promise gate for _supportsVisionInput()
     this._initPromise = null; // Promise gate to prevent concurrent initialize() calls
 
     // Concurrency gates
@@ -242,9 +259,29 @@ class LlamaService extends EventEmitter {
       }
     }
 
-    if (!this._configLoaded) {
-      await this._loadConfig();
+    if (this._configLoaded) return;
+
+    // FIX: Use a promise gate to prevent concurrent callers from both
+    // triggering _loadConfig(). Without this, two concurrent callers both
+    // see _configLoaded === false, both call _loadConfig(), and the second
+    // may overwrite partially-set state from the first.
+    if (this._configLoadPromise) {
+      return this._configLoadPromise;
+    }
+
+    this._configLoadPromise = this._loadConfig().then(() => {
       this._configLoaded = true;
+    });
+
+    try {
+      await this._configLoadPromise;
+    } catch (error) {
+      // Clear promise on failure so a future caller can retry
+      this._configLoadPromise = null;
+      throw error;
+    } finally {
+      // Clear promise reference after completion (success path keeps _configLoaded = true)
+      this._configLoadPromise = null;
     }
   }
 
@@ -813,23 +850,36 @@ class LlamaService extends EventEmitter {
 
   async _supportsVisionInput() {
     if (this._visionInputSupported != null) return this._visionInputSupported;
+
+    // FIX: Use a promise gate to prevent duplicate vision asset checks when
+    // concurrent callers both see _visionInputSupported === null.
+    if (this._visionCheckPromise) return this._visionCheckPromise;
+
+    this._visionCheckPromise = (async () => {
+      try {
+        await this._ensureConfigLoaded();
+        const modelName = this._selectedModels.vision || this._config.visionModel;
+        if (!modelName) {
+          this._visionInputSupported = false;
+          return this._visionInputSupported;
+        }
+        await this._ensureVisionAssets(modelName);
+        if (this._visionProjectorStatus.required && !this._visionProjectorStatus.available) {
+          this._visionInputSupported = false;
+          return this._visionInputSupported;
+        }
+        this._visionInputSupported = true;
+      } catch {
+        this._visionInputSupported = false;
+      }
+      return this._visionInputSupported;
+    })();
+
     try {
-      await this._ensureConfigLoaded();
-      const modelName = this._selectedModels.vision || this._config.visionModel;
-      if (!modelName) {
-        this._visionInputSupported = false;
-        return this._visionInputSupported;
-      }
-      await this._ensureVisionAssets(modelName);
-      if (this._visionProjectorStatus.required && !this._visionProjectorStatus.available) {
-        this._visionInputSupported = false;
-        return this._visionInputSupported;
-      }
-      this._visionInputSupported = true;
-    } catch {
-      this._visionInputSupported = false;
+      return await this._visionCheckPromise;
+    } finally {
+      this._visionCheckPromise = null;
     }
-    return this._visionInputSupported;
   }
 
   /**
@@ -1192,8 +1242,18 @@ class LlamaService extends EventEmitter {
 
           const embedding = await context.getEmbeddingFor(text);
           const vector = Array.from(embedding.vector);
+          const durationMs = Date.now() - startTime;
 
-          this._metrics.recordEmbedding(Date.now() - startTime, true);
+          this._metrics.recordEmbedding(durationMs, true);
+
+          logger.debug('[LlamaService] Embedding generated', {
+            model: this._selectedModels.embedding,
+            inputChars: text?.length || 0,
+            dimensions: vector.length,
+            durationMs,
+            gpu: this._gpuBackend !== 'cpu'
+          });
+
           return {
             embedding: vector,
             model: this._selectedModels.embedding
@@ -1502,8 +1562,22 @@ class LlamaService extends EventEmitter {
                   }
                 }
 
-                const tokenCount = (response?.length || 0) / 4;
-                this._metrics.recordTextGeneration(Date.now() - startTime, tokenCount, true);
+                const durationMs = Date.now() - startTime;
+                const responseChars = response?.length || 0;
+                const approxTokens = Math.round(responseChars / 4);
+                this._metrics.recordTextGeneration(durationMs, approxTokens, true);
+
+                logger.info('[LlamaService] Text inference complete', {
+                  model: this._selectedModels?.text,
+                  promptChars: prompt?.length || 0,
+                  responseChars,
+                  approxTokens,
+                  durationMs,
+                  maxTokens,
+                  temperature,
+                  gpu: this._gpuBackend !== 'cpu'
+                });
+
                 return { response };
               } catch (error) {
                 this._metrics.recordTextGeneration(Date.now() - startTime, 0, false);
@@ -1648,11 +1722,22 @@ class LlamaService extends EventEmitter {
                   }
                 });
 
+                const visionDuration = Date.now() - startTime;
+                const visionChars = result?.response?.length || 0;
                 this._metrics.recordTextGeneration(
-                  Date.now() - startTime,
-                  result?.response?.length ? result.response.length / 4 : 0,
+                  visionDuration,
+                  visionChars ? visionChars / 4 : 0,
                   true
                 );
+
+                logger.info('[LlamaService] Vision inference complete', {
+                  model: modelName,
+                  promptChars: prompt?.length || 0,
+                  responseChars: visionChars,
+                  durationMs: visionDuration,
+                  gpu: this._gpuBackend !== 'cpu'
+                });
+
                 return { response: result.response };
               } catch (error) {
                 this._metrics.recordTextGeneration(Date.now() - startTime, 0, false);

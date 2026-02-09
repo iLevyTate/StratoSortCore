@@ -63,20 +63,22 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({ index, style, data
     const fileWithEdits = getFileWithEdits(file, fileIndex);
     const rawCategory = editingFiles[fileIndex]?.category || fileWithEdits.analysis?.category;
     const smartFolder = findSmartFolderForCategory(rawCategory);
-    // CRITICAL FIX: Use the matched smart folder's actual name for the Select value
-    // This ensures case-insensitive matching between analysis category and dropdown options
-    const currentCategory = smartFolder?.name || rawCategory;
+    // FIX: Never display a raw LLM category that doesn't match any smart folder.
+    // Fall back to "Uncategorized" to prevent showing/targeting non-existent folders.
+    const uncategorizedFolder = findSmartFolderForCategory('Uncategorized');
+    const resolvedFolder = smartFolder || uncategorizedFolder;
+    const currentCategory = resolvedFolder?.name || 'Uncategorized';
     const isSelected = selectedFiles.has(fileIndex);
     const stateDisplay = getFileStateDisplay(file.path, !!file.analysis);
     // FIX: Validate defaultLocation before joinPath to prevent invalid paths
     // An empty defaultLocation would produce paths like '/Finance' instead of 'C:\Users\...\Finance'
     const safeDefaultLocation = defaultLocation && defaultLocation.trim() ? defaultLocation : null;
-    const destination = smartFolder
-      ? smartFolder.path ||
-        (safeDefaultLocation ? joinPath(safeDefaultLocation, smartFolder.name) : smartFolder.name)
+    // FIX: Always derive destination from a validated smart folder, never from raw category
+    const destination = resolvedFolder?.path
+      ? resolvedFolder.path
       : safeDefaultLocation
-        ? joinPath(safeDefaultLocation, rawCategory || 'Uncategorized')
-        : rawCategory || 'Uncategorized';
+        ? joinPath(safeDefaultLocation, currentCategory)
+        : currentCategory;
 
     rowItems.push(
       <div key={file.path} className="flex-1 min-w-0">
@@ -246,27 +248,26 @@ function VirtualizedFileGrid({
     const fileWithEdits = getFileWithEdits(file, sampleIndex);
     const rawCategory = safeEditingFiles[sampleIndex]?.category || fileWithEdits.analysis?.category;
     const smartFolder = findSmartFolderForCategory(rawCategory);
-    const currentCategory = smartFolder?.name || rawCategory;
+    // FIX: Same validation as row renderer - never use raw LLM category
+    const uncategorizedFolder = findSmartFolderForCategory('Uncategorized');
+    const resolvedFolder = smartFolder || uncategorizedFolder;
+    const currentCategory = resolvedFolder?.name || 'Uncategorized';
     const stateDisplay = getFileStateDisplay(file.path, !!file.analysis);
     // FIX: Validate defaultLocation before joinPath to prevent invalid paths
-    // An empty defaultLocation would produce paths like '/Finance' instead of 'C:\Users\...\Finance'
     const resolvedDefaultLocation =
       safeDefaultLocation && safeDefaultLocation.trim() ? safeDefaultLocation : null;
-    const destination = smartFolder
-      ? smartFolder.path ||
-        (resolvedDefaultLocation
-          ? joinPath(resolvedDefaultLocation, smartFolder.name)
-          : smartFolder.name)
+    const destination = resolvedFolder?.path
+      ? resolvedFolder.path
       : resolvedDefaultLocation
-        ? joinPath(resolvedDefaultLocation, rawCategory || 'Uncategorized')
-        : rawCategory || 'Uncategorized';
+        ? joinPath(resolvedDefaultLocation, currentCategory)
+        : currentCategory;
 
     return {
       file: fileWithEdits,
       index: sampleIndex,
       isSelected: safeSelectedFiles.has(sampleIndex),
       stateDisplay,
-      smartFolder,
+      smartFolder: resolvedFolder,
       currentCategory,
       destination
     };
@@ -405,21 +406,19 @@ function VirtualizedFileGrid({
         const fileWithEdits = getFileWithEdits(file, index);
         const rawCategory = safeEditingFiles[index]?.category || fileWithEdits.analysis?.category;
         const smartFolder = findSmartFolderForCategory(rawCategory);
-        // CRITICAL FIX: Use the matched smart folder's actual name for the Select value
-        // This ensures case-insensitive matching between analysis category and dropdown options
-        const currentCategory = smartFolder?.name || rawCategory;
+        // FIX: Never use raw LLM category - always resolve to an existing smart folder
+        const uncategorizedFolder = findSmartFolderForCategory('Uncategorized');
+        const resolvedFolder = smartFolder || uncategorizedFolder;
+        const currentCategory = resolvedFolder?.name || 'Uncategorized';
         const isSelected = safeSelectedFiles.has(index);
         const stateDisplay = getFileStateDisplay(file.path, !!file.analysis);
         const resolvedDefaultLocation =
           safeDefaultLocation && safeDefaultLocation.trim() ? safeDefaultLocation : null;
-        const destination = smartFolder
-          ? smartFolder.path ||
-            (resolvedDefaultLocation
-              ? joinPath(resolvedDefaultLocation, smartFolder.name)
-              : smartFolder.name)
+        const destination = resolvedFolder?.path
+          ? resolvedFolder.path
           : resolvedDefaultLocation
-            ? joinPath(resolvedDefaultLocation, rawCategory || 'Uncategorized')
-            : rawCategory || 'Uncategorized';
+            ? joinPath(resolvedDefaultLocation, currentCategory)
+            : currentCategory;
         return (
           <ReadyFileItem
             key={file.path}

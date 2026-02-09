@@ -219,7 +219,8 @@ const AI_DEFAULTS = {
     TEMPERATURE: 0.7,
     MAX_TOKENS: 8192,
     CONTEXT_SIZE: 8192,
-    MAX_CONTENT_LENGTH: 32000 // Optimized to match 8k context window
+    MAX_CONTENT_LENGTH: 32000, // Optimized to match 8k context window
+    DEEP_ANALYSIS: false // Enable map-reduce summarization for large documents (slower but thorough)
   },
   IMAGE: {
     MODEL: DEFAULT_AI_MODELS.IMAGE_ANALYSIS,

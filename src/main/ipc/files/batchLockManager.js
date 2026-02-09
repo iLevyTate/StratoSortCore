@@ -5,6 +5,7 @@
  */
 
 const { logger: baseLogger, createLogger } = require('../../../shared/logger');
+const { delay } = require('../../../shared/promiseUtils');
 
 const logger =
   typeof createLogger === 'function' ? createLogger('IPC:Files:BatchLock') : baseLogger;
@@ -125,7 +126,7 @@ async function acquireBatchLock(batchId, timeout = BATCH_LOCK_ACQUIRE_TIMEOUT) {
     if (acquired) return true;
     attempt += 1;
     const backoff = Math.min(BATCH_LOCK_RETRY_BASE_MS * 2 ** attempt, BATCH_LOCK_RETRY_MAX_MS);
-    await new Promise((resolve) => setTimeout(resolve, backoff));
+    await delay(backoff);
   }
   return false;
 }

@@ -9,7 +9,7 @@ const {
   AI_DEFAULTS
 } = require('../../shared/constants');
 const { TRUNCATION, TIMEOUTS } = require('../../shared/performanceConstants');
-const { withTimeout } = require('../../shared/promiseUtils');
+const { withTimeout, delay } = require('../../shared/promiseUtils');
 const { createLogger } = require('../../shared/logger');
 const { getTextModel, loadLlamaConfig } = require('../llamaUtils');
 const { AppConfig } = require('./documentLlm');
@@ -382,7 +382,7 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
         });
 
         try {
-          await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.DELAY_LOCK_RETRY));
+          await delay(TIMEOUTS.DELAY_LOCK_RETRY);
           logExtraction();
           extractedText = await withTimeout(
             extractOfficeContent(),
@@ -592,10 +592,19 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
       extractedText = null;
 
       if (analysis && !analysis.error) {
-        logger.info(`[AI-ANALYSIS-SUCCESS]`, {
+        logger.info(`[AI-ANALYSIS-SUCCESS] Document analyzed`, {
           fileName,
           category: analysis.category,
-          keywords: analysis.keywords
+          suggestedName: analysis.suggestedName,
+          confidence: analysis.confidence,
+          purpose: analysis.purpose,
+          project: analysis.project,
+          entity: analysis.entity,
+          type: analysis.type,
+          date: analysis.date,
+          keywords: analysis.keywords,
+          contentChars: extractedTextLength,
+          extractionMethod: 'content'
         });
         const normalized = normalizeAnalysisResult(
           {

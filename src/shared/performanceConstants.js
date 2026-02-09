@@ -238,6 +238,34 @@ const CHUNKING = {
   MAX_CHUNKS_PER_FILE: 3
 };
 
+/**
+ * Smart Content Selection Constants
+ * Parameters for selecting representative content from large documents
+ * for LLM analysis, replacing naive linear truncation.
+ */
+const CONTENT_SELECTION = {
+  // Fraction of total budget reserved for the document outline (headings)
+  OUTLINE_RATIO: 0.05,
+  // Fraction of body budget (budget minus outline) for the document beginning
+  HEAD_RATIO: 0.37,
+  // Fraction of body budget for the document ending
+  TAIL_RATIO: 0.16,
+  // Remainder (1 - HEAD - TAIL = 0.47) goes to middle samples.
+  // Number of evenly-spaced samples drawn from the middle of the document
+  MIDDLE_SAMPLE_COUNT: 4,
+  // Characters reserved for section markers ([BEGINNING], [END], etc.)
+  MARKER_OVERHEAD: 80,
+  // Map-reduce threshold: documents exceeding this character count
+  // are eligible for the optional deep-analysis summarization path
+  MAP_REDUCE_THRESHOLD: 100000,
+  // Map phase: max response tokens per chunk summary (short = fast)
+  MAP_MAX_TOKENS: 256,
+  // Map phase: temperature (0 = deterministic, fastest generation)
+  MAP_TEMPERATURE: 0,
+  // Map phase: chunk size in characters
+  MAP_CHUNK_SIZE: 8000
+};
+
 const LIMITS = {
   MAX_SEARCH_RESULTS: 100,
   MAX_SUGGESTIONS: 10,
@@ -406,38 +434,59 @@ const VIEWPORT = {
 };
 
 /**
- * Temp file patterns to ignore during file watching
- * Shared between DownloadWatcher and SmartFolderWatcher
+ * Temp file patterns to ignore during file watching.
+ * Canonical superset — used by DownloadWatcher, SmartFolderWatcher, and any
+ * other code that needs to skip transient/system files.
  * @readonly
  * @type {Array<RegExp>}
  */
 const TEMP_FILE_PATTERNS = [
-  /\.tmp$/i,
-  /\.crdownload$/i,
-  /\.part$/i,
-  /\.partial$/i,
-  /^~\$/,
-  /\.swp$/i,
-  /\.swx$/i,
-  /\.swo$/i,
-  /^\.#/,
-  /^#.*#$/,
-  /~$/,
+  // Generic temp / backup files
+  /\.(tmp|temp)$/i,
   /\.bak$/i,
-  /\.temp$/i,
-  /\.download$/i,
-  /^\.DS_Store$/,
+  // Download-manager temp files
+  /\.crdownload$/i, // Chrome
+  /\.part$/i, // Firefox
+  /\.partial$/i, // Generic partial
+  /\.download$/i, // Safari
+  /\.!qB$/i, // qBittorrent
+  // Editor swap / lock files
+  /\.swp$/i, // Vim
+  /\.swx$/i, // Vim
+  /\.swo$/i, // Vim
+  /\.lock$/i, // Generic lock
+  /\.lck$/i, // Alternative lock
+  // Editor / OS temp-file naming conventions
+  /^~\$/, // Microsoft Office temp (~$document.docx)
+  /^\.#/, // Emacs lock files
+  /^#.*#$/, // Emacs auto-save files
+  /~$/, // Backup files ending in tilde
+  // macOS system / resource files
+  /^\._/, // macOS resource forks
+  /^\.DS_Store$/i,
+  // Windows system files
   /^Thumbs\.db$/i,
   /^desktop\.ini$/i
 ];
 
 /**
- * Check if a filename matches temp file patterns
- * @param {string} filename - Filename to check
+ * Check if a **filename** (basename, no directory) matches temp file patterns.
+ * @param {string} filename - Filename to check (must be a basename)
  * @returns {boolean} True if file is a temp file
  */
 function isTempFile(filename) {
   return TEMP_FILE_PATTERNS.some((pattern) => pattern.test(filename));
+}
+
+/**
+ * Check if a **file path** references a temporary or incomplete file.
+ * Convenience wrapper that extracts the basename before testing.
+ * @param {string} filePath - Full or relative file path
+ * @returns {boolean} True if the file appears to be temporary
+ */
+function isTemporaryFile(filePath) {
+  const path = require('path');
+  return isTempFile(path.basename(filePath));
 }
 
 module.exports = {
@@ -454,6 +503,7 @@ module.exports = {
   IMAGE,
   NETWORK,
   DEBOUNCE,
+  CONTENT_SELECTION,
   CONCURRENCY,
   GPU_TUNING,
   LLAMA,
@@ -462,5 +512,6 @@ module.exports = {
   TRUNCATION,
   VIEWPORT,
   TEMP_FILE_PATTERNS,
-  isTempFile
+  isTempFile,
+  isTemporaryFile
 };

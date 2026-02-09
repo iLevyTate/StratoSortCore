@@ -413,7 +413,7 @@ function SetupPhase() {
   }, [updateListOverflow, smartFolders.length]);
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 gap-relaxed lg:gap-spacious pb-6">
+    <div className="flex flex-col flex-1 min-h-0 gap-cozy lg:gap-relaxed pb-3">
       {/* Header */}
       <Stack className="text-center flex-shrink-0" gap="compact">
         <Heading as="h1" variant="display">
@@ -509,13 +509,15 @@ function SetupPhase() {
           ) : (
             <div
               ref={listContainerRef}
-              className={`h-full pb-4 ${
+              className={`h-full pb-2 ${
                 isListScrollable ? 'overflow-y-auto modern-scrollbar' : 'overflow-hidden'
               }`}
             >
               <div
-                className={`grid grid-cols-1 gap-4 lg:gap-5 ${
-                  isCompactMode ? 'md:grid-cols-2' : 'md:grid-cols-2 xl:grid-cols-3'
+                className={`grid grid-cols-1 ${
+                  isCompactMode
+                    ? 'md:grid-cols-2 gap-2.5 lg:gap-3'
+                    : 'md:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-5'
                 }`}
               >
                 {smartFolders.map((folder, index) => (

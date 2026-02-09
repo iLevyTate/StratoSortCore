@@ -81,12 +81,11 @@ npm run dist:win         # Build Windows installer
 
 These are tracked gaps that the project slash commands help address:
 
-1. **No crash reporting** - errors logged locally only, no Sentry/BugSnag
-2. **No code signing** - electron-builder.json has no certificate config
-3. **No macOS notarization** - `@electron/notarize` installed but not configured
-4. **Test coverage unknown** - collection configured but thresholds not enforced
-5. **No remote logging** - all logs stay on device
-6. **Accessibility minimal** - some ARIA present but no audit performed
+1. **No code signing** - electron-builder.json has no certificate config
+2. **No macOS notarization** - `@electron/notarize` installed but not configured
+3. **No remote logging** - all logs stay on device (privacy-first by design; Sentry opt-in via
+   `SENTRY_DSN`)
+4. **Accessibility minimal** - some ARIA present but no formal WCAG audit performed
 
 ### Resolved Gaps
 
@@ -97,6 +96,10 @@ These are tracked gaps that the project slash commands help address:
 - ~~No state schema versioning~~ - Migration framework implemented in
   `src/renderer/store/migrations.js` (`CURRENT_STATE_VERSION = 2`) with version stamping in
   `persistenceMiddleware.js`.
+- ~~No crash reporting~~ - Sentry integration added (`src/main/simple-main.js`); local
+  `electron-crashReporter` fallback writes to `crash-dumps/` when `SENTRY_DSN` is not set.
+- ~~Test coverage unknown~~ - 50% global thresholds (branches/functions/lines/statements) enforced
+  in `test/jest.config.js`; 346 suites / 5,500+ tests passing.
 
 ## Cursor Rules & Commands
 

@@ -5,7 +5,7 @@ const { app } = require('electron');
 const { getInstance: getLlamaService } = require('../services/LlamaService');
 const { getTextModel } = require('../llamaUtils');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
-const { withAbortableTimeout } = require('../../shared/promiseUtils');
+const { withAbortableTimeout, delay } = require('../../shared/promiseUtils');
 const { AI_DEFAULTS } = require('../../shared/constants');
 const { enhanceSmartFolderWithLLM } = require('../services/SmartFoldersLLMService');
 const { createHandler, safeHandle, z } = require('./ipcWrappers');
@@ -1126,17 +1126,17 @@ Now generate a description for "${folderName}":`;
           // Set STRATOSORT_SCAN_STRUCTURE_DELAY_MS=35000 to verify IPC timeout behavior.
           if (process.env.NODE_ENV === 'development' && !process.env.JEST_WORKER_ID) {
             const rawDelayMs = Number.parseInt(process.env.STRATOSORT_SCAN_STRUCTURE_DELAY_MS, 10);
-            const delayMs =
+            const devDelayMs =
               Number.isFinite(rawDelayMs) && rawDelayMs > 0
                 ? Math.min(rawDelayMs, TIMEOUTS.DIRECTORY_SCAN || 60000)
                 : 0;
 
-            if (delayMs > 0) {
+            if (devDelayMs > 0) {
               logger.warn('[FOLDER-SCAN] Dev scan delay enabled', {
-                delayMs,
+                delayMs: devDelayMs,
                 requestedDelayMs: rawDelayMs
               });
-              await new Promise((resolve) => setTimeout(resolve, delayMs));
+              await delay(devDelayMs);
             }
           }
 

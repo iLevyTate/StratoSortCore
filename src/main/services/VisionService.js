@@ -10,6 +10,7 @@ const { createLogger } = require('../../shared/logger');
 const { createSingletonHelpers } = require('../../shared/singletonFactory');
 const { resolveRuntimePath } = require('../utils/runtimePaths');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
+const { delay } = require('../../shared/promiseUtils');
 
 const logger = createLogger('VisionService');
 let loggedRuntimeVariant = false;
@@ -21,8 +22,6 @@ const SERVER_BINARY_NAME = process.platform === 'win32' ? 'llama-server.exe' : '
 // Vision models (4-5GB) can take several minutes to load on CPU-only systems
 const DEFAULT_STARTUP_TIMEOUT_MS = TIMEOUTS.AI_ANALYSIS_LONG || 300000;
 const DEFAULT_REQUEST_TIMEOUT_MS = TIMEOUTS.AI_ANALYSIS_LONG || 300000;
-
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function getRuntimeRoot(tag = LLAMA_CPP_RELEASE_TAG) {
   return path.join(app.getPath('userData'), 'runtime', 'llama.cpp', tag);

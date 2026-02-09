@@ -399,19 +399,9 @@ async function applySemanticFolderMatching(params) {
   return analysis;
 }
 
-/**
- * Reset module singletons
- * Useful for testing or service reconnection
- */
-function resetSingletons() {
-  // No-op as container manages instances
-  logger.debug('[FolderMatcher] Singletons reset (no-op with DI)');
-}
-
 module.exports = {
   applySemanticFolderMatching,
   buildEmbeddingSummary,
-  resetSingletons,
   // For testing
   getServices,
   validateMatcher

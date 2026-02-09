@@ -9,21 +9,22 @@
 
 const path = require('path');
 const { SUPPORTED_IMAGE_EXTENSIONS } = require('./constants');
-const { normalizePathForIndex } = require('./pathSanitization');
+const { getCanonicalFileId } = require('./pathSanitization');
 
 /**
- * Generate a semantic file ID for vector storage
- * Format: "image:{path}" for images, "file:{path}" for other files
+ * Generate a semantic file ID for vector storage.
+ * Auto-detects image type from extension, then delegates to
+ * {@link getCanonicalFileId} — the single source of truth for
+ * the `"file:{path}"` / `"image:{path}"` format.
  *
  * @param {string} filePath - The file path
  * @returns {string} Semantic file ID
  */
 function getSemanticFileId(filePath) {
   const safePath = typeof filePath === 'string' ? filePath : '';
-  const normalizedPath = normalizePathForIndex(safePath);
   const ext = (path.extname(safePath) || '').toLowerCase();
   const isImage = SUPPORTED_IMAGE_EXTENSIONS.includes(ext);
-  return `${isImage ? 'image' : 'file'}:${normalizedPath}`;
+  return getCanonicalFileId(safePath, isImage);
 }
 
 /**

@@ -18,13 +18,16 @@ const {
   getSemanticConceptsForExtension
 } = require('./semanticExtensionMap');
 const FolderMatchingService = require('../services/FolderMatchingService');
+const { createLogger } = require('../../shared/logger');
+const logger = createLogger('FallbackUtils');
 
 const normalizeCategoryToSmartFolders =
   typeof FolderMatchingService?.matchCategoryToFolder === 'function'
     ? FolderMatchingService.matchCategoryToFolder.bind(FolderMatchingService)
     : (category, smartFolders) => {
         const folders = Array.isArray(smartFolders) ? smartFolders : [];
-        if (!folders.length) return category;
+        // FIX: Never return raw LLM category when no folders exist to validate against
+        if (!folders.length) return 'Uncategorized';
         const normalized = String(category || '')
           .trim()
           .toLowerCase();
@@ -34,7 +37,11 @@ const normalizeCategoryToSmartFolders =
               .trim()
               .toLowerCase() === normalized
         );
-        return match?.name || category;
+        // FIX: Fall back to Uncategorized folder or first folder, never the raw category
+        const uncategorized = folders.find(
+          (f) => String(f?.name || '').toLowerCase() === 'uncategorized'
+        );
+        return match?.name || uncategorized?.name || folders[0]?.name || 'Uncategorized';
       };
 
 function getIntelligentCategory(fileName, extension, smartFolders = []) {
@@ -137,7 +144,15 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
     }
     // HIGH PRIORITY FIX (HIGH-6): Only return bestMatch if it's not null
     // This ensures we never return null and fall through to pattern matching
-    if (bestScore >= 5 && bestMatch) return bestMatch;
+    if (bestScore >= 5 && bestMatch) {
+      logger.debug('[FallbackCategory] Smart folder match', {
+        fileName,
+        bestMatch,
+        bestScore,
+        method: 'folder-scoring'
+      });
+      return bestMatch;
+    }
   }
 
   const patterns = {
@@ -608,6 +623,17 @@ function createFallbackAnalysis(params) {
   if (error) {
     result.error = error;
   }
+
+  logger.info('[FallbackAnalysis] Filename-based analysis applied', {
+    fileName,
+    reason,
+    category: result.category,
+    suggestedName: result.suggestedName,
+    confidence: result.confidence,
+    keywords: result.keywords,
+    type,
+    extractionMethod
+  });
 
   return result;
 }

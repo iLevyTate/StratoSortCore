@@ -29,8 +29,7 @@ const { getSemanticFileId } = require('../../shared/fileIdUtils');
 const { shouldEmbed } = require('../services/embedding/embeddingGate');
 const {
   applySemanticFolderMatching: applyUnifiedFolderMatching,
-  getServices,
-  resetSingletons: resetMatcherSingletons
+  getServices
 } = require('./semanticFolderMatcher');
 const { getImageAnalysisCache } = require('../services/AnalysisCacheService');
 
@@ -226,8 +225,6 @@ Analyze this image:`;
     });
 
     const llamaService = getLlamaService();
-    // Performance tuning handled by LlamaService
-    // const useToolCalling = Boolean(cfg?.useToolCalling); // Not used with basic analyzeImage
 
     // IMPORTANT: Vision model calls can hang indefinitely if the model/server gets stuck.
     // Enforce a hard timeout and abort the underlying request (supported by the AI client).
@@ -1306,6 +1303,21 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
         },
         { category: 'image', keywords: [] }
       );
+      logger.info('[AI-ANALYSIS-SUCCESS] Image analyzed', {
+        fileName,
+        category: normalized.category,
+        suggestedName: normalized.suggestedName,
+        confidence: normalized.confidence,
+        purpose: normalized.purpose,
+        project: normalized.project,
+        entity: normalized.entity,
+        contentType: normalized.content_type,
+        date: normalized.date,
+        keywords: normalized.keywords,
+        ocrText: extractedTextForStorage ? `${extractedTextForStorage.length} chars` : 'none',
+        extractionMethod: 'vision'
+      });
+
       try {
         setImageCache(signature, normalized);
       } catch (cacheError) {
@@ -1499,9 +1511,7 @@ async function flushAllEmbeddings() {
  * Useful for hot reload, testing, or reconnecting to services
  */
 function resetSingletons() {
-  // Delegate to unified matcher reset for shared singletons
-  resetMatcherSingletons();
-  // Clear local image analysis cache
+  // Clear local image analysis cache (matcher singletons managed by DI container)
   getImageAnalysisCache().clear();
 }
 

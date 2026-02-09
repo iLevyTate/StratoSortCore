@@ -1,6 +1,6 @@
 const { globalBatchProcessor } = require('../utils/llmOptimization');
 const { createLogger } = require('../../shared/logger');
-const { Semaphore } = require('../../shared/promiseUtils');
+const { Semaphore, delay } = require('../../shared/promiseUtils');
 
 const logger = createLogger('BatchAnalysisService');
 const { analyzeDocumentFile } = require('../analysis/documentAnalysis');
@@ -193,7 +193,7 @@ class BatchAnalysisService {
 
       if (shouldWait) {
         const backpressureStart = Date.now();
-        let delay = BACKPRESSURE_INITIAL_DELAY_MS;
+        let backpressureDelay = BACKPRESSURE_INITIAL_DELAY_MS;
         let iterations = 0;
 
         while (true) {
@@ -205,9 +205,9 @@ class BatchAnalysisService {
             break;
           }
 
-          await new Promise((resolve) => setTimeout(resolve, delay));
+          await delay(backpressureDelay);
           // Exponential backoff with cap
-          delay = Math.min(delay * 1.5, BACKPRESSURE_MAX_DELAY_MS);
+          backpressureDelay = Math.min(backpressureDelay * 1.5, BACKPRESSURE_MAX_DELAY_MS);
           iterations++;
 
           // Check again (acquire lock briefly)

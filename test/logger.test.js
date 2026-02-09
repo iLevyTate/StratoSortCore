@@ -3,6 +3,9 @@
  * Updated for Pino-based logger implementation.
  */
 
+// Opt out of the global logger mock from test-setup.js since we're testing the real logger
+jest.unmock('../src/shared/logger');
+
 jest.mock('pino', () => {
   const pinoMock = jest.fn(() => ({
     error: jest.fn(),

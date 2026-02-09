@@ -48,10 +48,30 @@ class SemanticRenameService {
       // Real file system checks should happen at the point of actual renaming (fs.access),
       // but this helps pre-calculate unique names for UI preview.
       const uniqueName = makeUniqueFileName(baseNewName, this.usedNames);
+      const newPath = path.join(originalDir, uniqueName);
 
-      return path.join(originalDir, uniqueName);
+      // Log rename decision with before/after for full traceability
+      const renamed = uniqueName !== originalName;
+      if (renamed) {
+        logger.info('[SemanticRename] Name generated', {
+          originalName,
+          newName: uniqueName,
+          template,
+          category: analysisResult?.category,
+          entity: analysisResult?.entity,
+          date: analysisResult?.date,
+          project: analysisResult?.project
+        });
+      } else {
+        logger.debug('[SemanticRename] Name unchanged (template produced same name)', {
+          originalName,
+          template
+        });
+      }
+
+      return newPath;
     } catch (error) {
-      logger.error('SemanticRenameService: Failed to generate new name', {
+      logger.error('[SemanticRename] Failed to generate new name', {
         file: filePath,
         error: error.message
       });

@@ -69,6 +69,10 @@ jest.mock('../src/shared/performanceConstants', () => ({
   },
   TIMEOUTS: {
     SERVICE_STARTUP: 250
+  },
+  RETRY: {
+    MAX_ATTEMPTS_MEDIUM: 3,
+    MAX_ATTEMPTS_HIGH: 5
   }
 }));
 

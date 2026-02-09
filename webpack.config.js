@@ -195,7 +195,7 @@ module.exports = (env, argv) => {
               extractComments: false,
               terserOptions: {
                 compress: {
-                  drop_console: false
+                  drop_console: true
                 }
               }
             })

@@ -10,7 +10,9 @@
 const { ipcMain } = require('electron');
 const { isWindows } = require('../../shared/platformUtils');
 const { createLogger } = require('../../shared/logger');
+const { delay } = require('../../shared/promiseUtils');
 const { IPC_CHANNELS } = require('../../shared/constants');
+const { RETRY } = require('../../shared/performanceConstants');
 
 const logger = createLogger('IPC-Verify');
 /**
@@ -122,7 +124,7 @@ function checkHandlers() {
  * @returns {Promise<boolean>} true if all handlers are registered
  */
 async function verifyIpcHandlersRegistered() {
-  const maxRetries = 10;
+  const maxRetries = RETRY.MAX_ATTEMPTS_VERY_HIGH; // 10
   const maxTimeout = 2000; // Reduced to 2 seconds to prevent startup hang
   const initialDelay = 50; // Start with 50ms
   const maxDelay = 500; // Cap at 500ms
@@ -155,11 +157,11 @@ async function verifyIpcHandlersRegistered() {
       return false;
     }
 
-    // Calculate delay with exponential backoff
-    const delay = Math.min(initialDelay * 2 ** attempt, maxDelay);
+    // Calculate backoff with exponential growth
+    const backoffMs = Math.min(initialDelay * 2 ** attempt, maxDelay);
 
     // Wait before retry
-    await new Promise((resolve) => setTimeout(resolve, delay));
+    await delay(backoffMs);
 
     // Re-check handlers
     checkResult = checkHandlers();

@@ -15,7 +15,7 @@ const { LIMITS, TIMEOUTS, BATCH, RETRY } = require('../../../shared/performanceC
 const { logger: baseLogger, createLogger } = require('../../../shared/logger');
 const { crossDeviceMove } = require('../../../shared/atomicFileOperations');
 const { validateFileOperationPath } = require('../../../shared/pathSanitization');
-const { withTimeout, batchProcess } = require('../../../shared/promiseUtils');
+const { withTimeout, batchProcess, delay, Semaphore } = require('../../../shared/promiseUtils');
 const { withCorrelationId } = require('../../../shared/correlationId');
 const { ERROR_CODES } = require('../../../shared/errorHandlingUtils');
 const { acquireBatchLock, releaseBatchLock } = require('./batchLockManager');
@@ -50,44 +50,25 @@ const VERIFY_MAX_DELAY_MS = RETRY?.FILE_OPERATION?.maxDelay ?? 5000;
 const MAX_RESULTS_PER_CHUNK = 100; // Max results per IPC message chunk
 const YIELD_EVERY_N_OPS = 10; // Yield to event loop every N operations
 
-// Simple p-limit implementation to avoid adding dependency
-// FIX: Properly propagate errors instead of silently swallowing them
+/**
+ * Concurrency limiter built on the shared Semaphore (p-limit pattern).
+ * Returns a function `limit(fn)` that queues `fn` behind `concurrency` slots.
+ * @param {number} concurrency - Max concurrent tasks
+ * @returns {(fn: () => Promise<T>) => Promise<T>}
+ */
 const pLimit = (concurrency) => {
-  const queue = [];
-  let activeCount = 0;
-
-  const next = () => {
-    activeCount--;
-    if (queue.length > 0) {
-      queue.shift()();
-    }
-  };
-
-  const run = async (fn, resolve, reject) => {
-    activeCount++;
+  const sem = new Semaphore(concurrency);
+  return async (fn) => {
+    await sem.acquire();
     try {
-      const result = await fn();
-      resolve(result);
-    } catch (error) {
-      reject(error); // FIX: Properly propagate errors
+      return await fn();
     } finally {
-      next();
+      sem.release();
     }
-  };
-
-  return (fn) => {
-    return new Promise((resolve, reject) => {
-      const task = () => run(fn, resolve, reject);
-      if (activeCount < concurrency) {
-        task();
-      } else {
-        queue.push(task);
-      }
-    });
   };
 };
 
-const delayMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Use shared delay() from promiseUtils (supports .unref() for clean shutdown)
 
 /**
  * Verify move operation completed correctly.
@@ -122,8 +103,8 @@ async function verifyMoveCompletion(source, destination, log) {
         maxAttempts: VERIFY_MAX_ATTEMPTS,
         code: error.code
       });
-      const delay = Math.min(VERIFY_BACKOFF_STEP_MS * attempt, VERIFY_MAX_DELAY_MS);
-      await delayMs(delay);
+      const backoffMs = Math.min(VERIFY_BACKOFF_STEP_MS * attempt, VERIFY_MAX_DELAY_MS);
+      await delay(backoffMs);
     }
   }
 
@@ -145,8 +126,8 @@ async function verifyMoveCompletion(source, destination, log) {
           attempt,
           maxAttempts: VERIFY_MAX_ATTEMPTS
         });
-        const delay = Math.min(VERIFY_BACKOFF_STEP_MS * attempt, VERIFY_MAX_DELAY_MS);
-        await delayMs(delay);
+        const backoffMs = Math.min(VERIFY_BACKOFF_STEP_MS * attempt, VERIFY_MAX_DELAY_MS);
+        await delay(backoffMs);
       } catch (sourceCheckErr) {
         // ENOENT is expected (file was moved); any other error should halt processing
         if (sourceCheckErr.code === 'ENOENT') {
@@ -727,16 +708,16 @@ async function renameWithRetry(source, destination, log) {
         throw error;
       }
       attempt += 1;
-      const delayMs = MOVE_LOCK_BACKOFF_STEP_MS * attempt;
+      const lockBackoffMs = MOVE_LOCK_BACKOFF_STEP_MS * attempt;
       log.debug('[FILE-OPS] Rename blocked (likely file lock), retrying', {
         source,
         destination,
         attempt,
         maxAttempts: MOVE_LOCK_MAX_ATTEMPTS,
-        delayMs,
+        delayMs: lockBackoffMs,
         code: error.code
       });
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      await delay(lockBackoffMs);
     }
   }
 }

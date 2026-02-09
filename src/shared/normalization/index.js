@@ -8,7 +8,15 @@ const { nowIso } = require('../timeUtils');
 const { getErrorMessage, ERROR_CODES } = require('../errorHandlingUtils');
 const { normalizeText, normalizeOptionalText } = require('./text');
 
-function normalizePath(value) {
+/**
+ * Sanitize and normalize a path value.
+ * Unlike a plain normalizePath (which only resolves separators/dots), this
+ * runs full security sanitization (null-byte removal, traversal rejection).
+ *
+ * Named distinctly to avoid confusion with the basic normalizePath in
+ * crossPlatformUtils which only calls path.normalize().
+ */
+function sanitizePathValue(value) {
   if (typeof value !== 'string') return '';
   try {
     return sanitizePath(value);
@@ -21,10 +29,22 @@ function normalizePathKey(value) {
   return normalizePathForIndex(value);
 }
 
+/**
+ * @deprecated Use {@link getCanonicalFileId} from pathSanitization or
+ * {@link getSemanticFileId} from fileIdUtils directly.
+ */
 function normalizeFileId(filePath, isImage = false) {
   return getCanonicalFileId(filePath, isImage);
 }
 
+/**
+ * Classify error by message string for the analysis pipeline.
+ * Covers AI-specific categories (MODEL_NOT_FOUND, AI_ENGINE_ERROR, OUT_OF_MEMORY)
+ * that the OS-level errorClassifier.js does not handle.
+ *
+ * For system/OS error classification by error code, use
+ * {@link module:shared/errorClassifier.getErrorCategory} instead.
+ */
 function classifyErrorType(message) {
   if (!message) return 'UNKNOWN';
   const msg = String(message).toLowerCase();
@@ -84,7 +104,7 @@ function normalizeEmbeddingMetadata(meta = {}) {
   if (!meta || typeof meta !== 'object') return {};
   const normalized = {
     ...meta,
-    path: normalizePath(meta.path),
+    path: sanitizePathValue(meta.path),
     name: normalizeText(meta.name, { maxLength: 255 }),
     category: normalizeText(meta.category, { maxLength: 100 }),
     subject: normalizeText(meta.subject, { maxLength: 200 }),
@@ -107,7 +127,7 @@ function normalizeChunkMetadata(meta = {}) {
   const normalized = {
     ...meta,
     fileId: normalizeText(meta.fileId, { maxLength: 2048 }),
-    path: normalizePath(meta.path),
+    path: sanitizePathValue(meta.path),
     name: normalizeText(meta.name, { maxLength: 255 }),
     chunkIndex: Number.isInteger(meta.chunkIndex) ? meta.chunkIndex : undefined,
     charStart: Number.isFinite(meta.charStart) ? meta.charStart : undefined,
@@ -123,7 +143,9 @@ function normalizeChunkMetadata(meta = {}) {
 module.exports = {
   normalizeText,
   normalizeOptionalText,
-  normalizePath,
+  sanitizePathValue,
+  /** @deprecated Use sanitizePathValue — this alias will be removed. */
+  normalizePath: sanitizePathValue,
   normalizePathKey,
   normalizeFileId,
   normalizeError,

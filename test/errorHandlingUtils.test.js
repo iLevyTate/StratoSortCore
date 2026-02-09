@@ -3,6 +3,17 @@
  * Tests error codes, response creators, and retry logic
  */
 
+// Mock logger to prevent pino/sonic-boom EBADF errors.
+// promiseUtils.js (transitive dep via withRetry) calls createLogger at import time.
+jest.mock('../src/shared/logger', () => ({
+  createLogger: jest.fn(() => ({
+    info: jest.fn(),
+    debug: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn()
+  }))
+}));
+
 describe('errorHandlingUtils', () => {
   let ERROR_CODES;
   let createSuccessResponse;

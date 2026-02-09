@@ -35,11 +35,6 @@ function clearAutoAdvanceTimeoutRef(autoAdvanceTimeoutRef) {
   }
 }
 
-// Legacy export for backward compatibility - now a no-op
-export function clearAutoAdvanceTimeout() {
-  // No-op: Auto-advance timeout is now managed per-hook instance via ref
-}
-
 /**
  * Analyze a file with retry logic for transient failures.
  * Extracted from analyzeFiles for better testability.

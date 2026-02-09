@@ -13,6 +13,7 @@ const { destroyTray, getTray, unregisterGlobalShortcuts } = require('./systemTra
 const { getStartupManager } = require('../services/startup');
 const systemAnalytics = require('./systemAnalytics');
 const { withTimeout } = require('../../shared/promiseUtils');
+const { getErrorCategory, ErrorCategory } = require('../../shared/errorClassifier');
 
 const logger = createLogger('Lifecycle');
 // Module-level state (injected via initializeLifecycle)
@@ -341,36 +342,35 @@ let _unhandledExceptionCount = 0;
 let _unhandledRejectionCount = 0;
 
 /**
- * Classify error type for better monitoring and debugging
+ * Classify error type for monitoring and debugging.
+ * Delegates to the central errorClassifier for OS-level categories, then
+ * extends with application-specific categories (MEMORY, VECTOR_DB, LLAMA).
+ *
  * @param {Error|any} error - The error to classify
  * @returns {string} Error classification
  * @private
+ * @see module:shared/errorClassifier
  */
 function _classifyError(error) {
-  const message = (error?.message || String(error)).toLowerCase();
-  const code = error?.code || '';
+  // Delegate standard OS/FS/network categories to the central classifier
+  const category = getErrorCategory(error);
+  if (category !== ErrorCategory.UNKNOWN) {
+    // Map central categories to the labels this module already uses in logs
+    const categoryMap = {
+      [ErrorCategory.NETWORK_ERROR]: 'NETWORK',
+      [ErrorCategory.TIMEOUT]: 'TIMEOUT',
+      [ErrorCategory.FILE_NOT_FOUND]: 'FILE_NOT_FOUND',
+      [ErrorCategory.PERMISSION_DENIED]: 'PERMISSION'
+    };
+    if (categoryMap[category]) return categoryMap[category];
+  }
 
-  if (code === 'ECONNREFUSED' || code === 'ECONNRESET' || code === 'ETIMEDOUT') {
-    return 'NETWORK';
-  }
-  if (message.includes('out of memory') || message.includes('heap')) {
-    return 'MEMORY';
-  }
-  if (message.includes('permission') || message.includes('access denied')) {
-    return 'PERMISSION';
-  }
-  if (code === 'ENOENT' || message.includes('file not found')) {
-    return 'FILE_NOT_FOUND';
-  }
-  if (message.includes('timeout')) {
-    return 'TIMEOUT';
-  }
-  if (message.includes('vector db') || message.includes('orama')) {
-    return 'VECTOR_DB';
-  }
-  if (message.includes('llama')) {
-    return 'LLAMA';
-  }
+  // Application-specific categories not covered by errorClassifier
+  const message = (error?.message || String(error)).toLowerCase();
+  if (message.includes('out of memory') || message.includes('heap')) return 'MEMORY';
+  if (message.includes('vector db') || message.includes('orama')) return 'VECTOR_DB';
+  if (message.includes('llama')) return 'LLAMA';
+
   return 'UNKNOWN';
 }
 

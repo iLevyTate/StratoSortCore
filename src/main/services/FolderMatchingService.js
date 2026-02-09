@@ -537,8 +537,8 @@ class FolderMatchingService {
           /requested resource could not be found/i.test(msg) ||
           /ECONNREFUSED|ENOTFOUND|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH/i.test(msg);
 
-        // Avoid log spam during boot: log at warn once per call, and skip.
-        logger.warn(
+        // Expected during phased startup - use debug to avoid noise
+        logger.debug(
           '[FolderMatchingService] Vector DB not ready; deferring folder embedding upsert',
           {
             reason: msg
@@ -709,7 +709,7 @@ class FolderMatchingService {
 
       // During startup, don't spam error logs; treat as deferred/non-fatal.
       if (isStartupLike) {
-        logger.warn(
+        logger.debug(
           '[FolderMatchingService] Folder embedding upsert deferred (vector DB not ready)',
           {
             error: msg,
@@ -1423,7 +1423,10 @@ class FolderMatchingService {
    */
   static matchCategoryToFolder(category, smartFolders) {
     const folders = Array.isArray(smartFolders) ? smartFolders : [];
-    if (folders.length === 0) return category;
+    // FIX: Never return a raw LLM category when there are no folders to validate
+    // against. Returning the raw string caused non-existent folder names like
+    // "documents" to propagate through the pipeline.
+    if (folders.length === 0) return 'Uncategorized';
 
     const raw = String(category || '').trim();
     const normalizedRaw = raw.toLowerCase();
@@ -1479,7 +1482,14 @@ class FolderMatchingService {
       }
     }
 
-    if (bestLevenshtein) return bestLevenshtein;
+    if (bestLevenshtein) {
+      logger.debug('[FolderMatching] Fuzzy match via Levenshtein', {
+        rawCategory: raw,
+        matchedFolder: bestLevenshtein,
+        editDistance: minDistance
+      });
+      return bestLevenshtein;
+    }
 
     // Token overlap scoring (simple, deterministic)
     const tokens = new Set(rawCanon.split(' ').filter(Boolean));
@@ -1503,8 +1513,22 @@ class FolderMatchingService {
       }
     }
 
-    if (bestScore > 0.5 && best) return best;
-    return uncategorized?.name || folders[0].name;
+    if (bestScore > 0.5 && best) {
+      logger.debug('[FolderMatching] Token overlap match', {
+        rawCategory: raw,
+        matchedFolder: best,
+        overlapScore: +bestScore.toFixed(2)
+      });
+      return best;
+    }
+    const fallbackFolder = uncategorized?.name || folders[0].name;
+    if (raw && raw.toLowerCase() !== fallbackFolder.toLowerCase()) {
+      logger.debug('[FolderMatching] No match found, using fallback', {
+        rawCategory: raw,
+        fallbackFolder
+      });
+    }
+    return fallbackFolder;
   }
 }
 

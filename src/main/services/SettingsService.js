@@ -8,7 +8,8 @@ const { DEFAULT_SETTINGS, mergeWithDefaults } = require('../../shared/defaultSet
 const { logger: baseLogger, createLogger } = require('../../shared/logger');
 const { isNotFoundError } = require('../../shared/errorClassifier');
 const { createSingletonHelpers } = require('../../shared/singletonFactory');
-const { LIMITS, DEBOUNCE, TIMEOUTS } = require('../../shared/performanceConstants');
+const { LIMITS, DEBOUNCE, TIMEOUTS, RETRY } = require('../../shared/performanceConstants');
+const { delay } = require('../../shared/promiseUtils');
 const { SettingsBackupService } = require('./SettingsBackupService');
 // FIX: Import safeSend for validated IPC event sending
 const { safeSend } = require('../ipc/ipcWrappers');
@@ -76,7 +77,7 @@ class SettingsService {
     this._migrationInProgress = false;
     // FIX 1.4: Track migration attempts to prevent infinite retries
     this._migrationAttempts = 0;
-    this._maxMigrationAttempts = 3;
+    this._maxMigrationAttempts = RETRY.MAX_ATTEMPTS_MEDIUM;
   }
 
   async load() {
@@ -198,7 +199,7 @@ class SettingsService {
       }
 
       // FIX 1.1: Limit recovery attempts to prevent slow startup with many corrupted backups
-      const MAX_RECOVERY_ATTEMPTS = 5;
+      const MAX_RECOVERY_ATTEMPTS = RETRY.MAX_ATTEMPTS_HIGH;
       const backupsToTry = backups.slice(0, MAX_RECOVERY_ATTEMPTS);
 
       if (backups.length > MAX_RECOVERY_ATTEMPTS) {
@@ -335,9 +336,9 @@ class SettingsService {
       // CRITICAL: Create backup before saving - mandatory with retry logic
       // createBackup handles directory creation via atomicFileOps
 
-      // Retry backup creation with exponential backoff (3 attempts)
+      // Retry backup creation with exponential backoff
       let backupResult = null;
-      const maxBackupRetries = 3;
+      const maxBackupRetries = RETRY.MAX_ATTEMPTS_MEDIUM;
       const initialBackupDelay = 100; // Start with 100ms
 
       for (let attempt = 0; attempt < maxBackupRetries; attempt++) {
@@ -367,11 +368,11 @@ class SettingsService {
             throw new Error(errorMsg);
           }
           // Wait before retry with exponential backoff
-          const delay = initialBackupDelay * 2 ** attempt;
+          const retryMs = initialBackupDelay * 2 ** attempt;
           logger.warn(
-            `[SettingsService] Retrying backup in ${delay}ms (attempt ${attempt + 2}/${maxBackupRetries})`
+            `[SettingsService] Retrying backup in ${retryMs}ms (attempt ${attempt + 2}/${maxBackupRetries})`
           );
-          await new Promise((resolve) => setTimeout(resolve, delay));
+          await delay(retryMs);
         }
       }
 
@@ -401,7 +402,7 @@ class SettingsService {
 
         // Bug #42: Retry logic for file lock handling with exponential backoff
         // FIX: Increased retry count and delay for Windows antivirus/indexing
-        const maxSaveRetries = 5; // Was 3
+        const maxSaveRetries = RETRY.MAX_ATTEMPTS_HIGH;
         const baseSaveDelay = 200; // Was 100ms - Total window: 200+400+800+1600=3000ms
 
         for (let attempt = 0; attempt < maxSaveRetries; attempt++) {
@@ -425,11 +426,11 @@ class SettingsService {
 
             if (isFileLockError && attempt < maxSaveRetries - 1) {
               // Calculate exponential backoff delay
-              const delay = baseSaveDelay * 2 ** attempt;
+              const retryMs = baseSaveDelay * 2 ** attempt;
               logger.warn(
-                `[SettingsService] File lock error on save attempt ${attempt + 1}/${maxSaveRetries}: ${saveError.code}. Retrying in ${delay}ms...`
+                `[SettingsService] File lock error on save attempt ${attempt + 1}/${maxSaveRetries}: ${saveError.code}. Retrying in ${retryMs}ms...`
               );
-              await new Promise((resolve) => setTimeout(resolve, delay));
+              await delay(retryMs);
             } else if (attempt === maxSaveRetries - 1) {
               // FIX: Rollback cache on complete failure before throwing
               this._cache = previousCache;

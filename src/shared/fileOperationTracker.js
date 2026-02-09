@@ -150,15 +150,15 @@ class FileOperationTracker {
   }
 
   /**
-   * Normalize file path for consistent lookups across platforms
+   * Resolve and normalize a file path for consistent map lookups.
+   * On Windows, lowercases for case-insensitive comparison.
+   * Distinct from the security-oriented sanitizePath in pathSanitization.js.
    * @param {string} filePath - Path to normalize
    * @returns {string} Normalized path
    * @private
    */
-  _normalizePath(filePath) {
-    // Normalize path separators and resolve to absolute
+  _resolveForTracking(filePath) {
     const normalized = path.normalize(filePath);
-    // On Windows, use lowercase for case-insensitive comparison
     return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
   }
 
@@ -173,7 +173,7 @@ class FileOperationTracker {
       return;
     }
 
-    const normalizedPath = this._normalizePath(filePath);
+    const normalizedPath = this._resolveForTracking(filePath);
 
     this.recentOperations.set(normalizedPath, {
       timestamp: Date.now(),
@@ -203,7 +203,7 @@ class FileOperationTracker {
       return false;
     }
 
-    const normalizedPath = this._normalizePath(filePath);
+    const normalizedPath = this._resolveForTracking(filePath);
     const entry = this.recentOperations.get(normalizedPath);
 
     if (!entry) {
@@ -241,7 +241,7 @@ class FileOperationTracker {
    * @returns {object|null} Operation info or null if not found/expired
    */
   getOperationInfo(filePath) {
-    const normalizedPath = this._normalizePath(filePath);
+    const normalizedPath = this._resolveForTracking(filePath);
     const entry = this.recentOperations.get(normalizedPath);
 
     if (!entry) {

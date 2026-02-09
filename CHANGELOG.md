@@ -17,6 +17,62 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [docs/RELEASING.md](docs/RELEASING.md) for versioning, runtime staging, checksums, and release
 notes.
 
+## [2.0.0] - 2026-02-09
+
+### Changed (BREAKING)
+
+- **In-Process AI Engine**: Replaced external Ollama server with **node-llama-cpp** for fully
+  in-process LLM inference. All text, vision, and embedding models now run on-device via GGUF files
+  with automatic GPU acceleration (Metal, CUDA, Vulkan) and CPU fallback. No external services
+  required.
+- **In-Process Vector Database**: Replaced external ChromaDB server with **Orama** for in-process
+  vector storage and hybrid search. BM25 full-text and vector similarity are combined via Reciprocal
+  Rank Fusion (RRF). Indexes persist atomically with LZ4 compression.
+- **Electron 40+**: Upgraded from Electron 35 to Electron 40 with modern security defaults.
+- **Zero External Dependencies**: The application is now fully self-contained. No Ollama, ChromaDB,
+  or any other external server is needed. All processing happens on-device with zero data leaving
+  the machine.
+
+### Removed
+
+- **Ollama Integration**: All Ollama client code, connection management, and configuration removed.
+- **ChromaDB Integration**: All ChromaDB client code, server health checks, and configuration
+  removed.
+- **Deprecated Settings**: Legacy `ollamaUrl`, `chromadbUrl`, and related connection settings are
+  ignored on upgrade (cleaned up by `SettingsMigrator`).
+
+### Added
+
+- **LlamaService**: Centralized in-process LLM inference service with model switching, memory
+  management, and GPU/CPU backend selection.
+- **LlamaResilience**: Circuit breaker, retry, and timeout guard for all AI inference calls.
+- **ModelAccessCoordinator**: Coordinates concurrent model access to prevent conflicts during model
+  switching.
+- **Content Selector**: Intelligent document content selection for LLM analysis with token budget
+  awareness.
+- **Crash Reporting**: Sentry integration (opt-in via `SENTRY_DSN`) with local
+  `electron-crashReporter` fallback.
+- **Test Coverage Enforcement**: 50% global thresholds (branches/functions/lines/statements)
+  enforced in CI.
+
+### Improved
+
+- **Code Quality**: Consolidated 11 categories of duplicate, conflicting, and dead code:
+  - Unified temp-file patterns into single canonical set in `performanceConstants.js`
+  - Unified file-ID generators (`getSemanticFileId` delegates to `getCanonicalFileId`)
+  - Disambiguated path normalization variants (`sanitizePathValue` vs `resolveFsPath`)
+  - Replaced 15+ inline `setTimeout` delays with shared `delay()` utility
+  - Centralized error classifiers (lifecycle delegates to `errorClassifier.js`)
+  - Unified fallback analysis factories (`analysisUtils` delegates to `fallbackUtils`)
+  - Replaced hardcoded RRF constant with `SEARCH.RRF_K` from `performanceConstants`
+  - Replaced hardcoded retry counts with `RETRY.*` constants across 6 files
+  - Consolidated duplicate `Semaphore` classes (single implementation in `RateLimiter.js`)
+  - Removed dead no-op functions and commented-out code
+  - Replaced ad-hoc `pLimit` with `Semaphore`-based concurrency limiter
+- **Production Builds**: Console logs stripped from production bundles via Terser `drop_console`.
+- **Security Documentation**: Updated known production gaps in `CLAUDE.md` to reflect resolved items
+  (crash reporting, test coverage enforcement).
+
 ## [1.2.2] - 2026-01-29
 
 ### Improved
@@ -223,7 +279,8 @@ notes.
 - **Fixed**: Bug fixes
 - **Security**: Security-related changes
 
-[Unreleased]: https://github.com/iLevyTate/elstratosort/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/iLevyTate/elstratosort/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/iLevyTate/elstratosort/compare/v1.2.2...v2.0.0
 [1.2.2]: https://github.com/iLevyTate/elstratosort/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/iLevyTate/elstratosort/releases/tag/v1.2.1
 [1.2.0]: https://github.com/iLevyTate/elstratosort/releases/tag/v1.2.0

@@ -6,6 +6,16 @@
 
 jest.mock('electron', () => jest.requireActual('./mocks/electron'));
 
+// Mock logger to prevent pino/sonic-boom from calling real fs.write
+jest.mock('../src/shared/logger', () => ({
+  createLogger: jest.fn(() => ({
+    info: jest.fn(),
+    debug: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn()
+  }))
+}));
+
 const mockFsStore = new Map();
 const mockFs = {
   readFile: jest.fn(async (filePath) => {

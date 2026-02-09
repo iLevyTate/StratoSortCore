@@ -10,6 +10,7 @@
 const { isWindows, isMacOS } = require('../../shared/platformUtils');
 const { createLogger } = require('../../shared/logger');
 const { WINDOW, PROCESS, TIMEOUTS } = require('../../shared/performanceConstants');
+const { delay } = require('../../shared/promiseUtils');
 
 const logger = createLogger('Platform');
 // taskkill can be slow to terminate process trees on Windows; give it a generous fixed timeout.
@@ -119,7 +120,7 @@ async function killProcessUnix(pid, forceKill) {
       logger.info(`[PLATFORM] Sent SIGTERM to process ${pid}`);
 
       // Wait for graceful shutdown
-      await new Promise((resolve) => setTimeout(resolve, PROCESS.GRACEFUL_SHUTDOWN_WAIT_MS));
+      await delay(PROCESS.GRACEFUL_SHUTDOWN_WAIT_MS);
 
       // Check if process is still alive
       try {
@@ -150,7 +151,7 @@ async function killProcessUnix(pid, forceKill) {
     logger.info(`[PLATFORM] Sent SIGKILL to process ${pid}`);
 
     // Brief wait then verify
-    await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.SIGKILL_VERIFY));
+    await delay(TIMEOUTS.SIGKILL_VERIFY);
 
     try {
       process.kill(pid, 0);

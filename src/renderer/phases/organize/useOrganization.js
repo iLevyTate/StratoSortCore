@@ -290,21 +290,24 @@ function processFileForOrganization({
   const originalCategory = currentCategory;
   let categoryChanged = false;
 
-  // Filter out "document" category if it's not a smart folder
-  if (currentCategory === 'document' || currentCategory === 'image') {
-    const matchingFolder = findSmartFolderForCategory(currentCategory);
-    if (!matchingFolder) {
-      currentCategory = 'Uncategorized';
-      categoryChanged = true;
-    }
-  }
-
+  // FIX: Validate ALL categories against existing smart folders, not just
+  // "document"/"image". The LLM can hallucinate any category name (e.g.
+  // "documents", "Documents", "financial") that doesn't match a smart folder.
+  // When no match is found, fall back to Uncategorized to prevent creating
+  // non-existent destination folders.
   const smartFolder = findSmartFolderForCategory(currentCategory);
 
+  if (!smartFolder && currentCategory) {
+    currentCategory = 'Uncategorized';
+    categoryChanged = true;
+  }
+
   // FIX: Use platform-aware path joining instead of hardcoded slashes
-  const destinationDir = smartFolder
-    ? smartFolder.path || joinPath(defaultLocation, smartFolder.name)
-    : joinPath(defaultLocation, currentCategory || 'Uncategorized');
+  // Always use a validated smart folder path; never build a path from a raw category.
+  const resolvedFolder = smartFolder || findSmartFolderForCategory('Uncategorized');
+  const destinationDir = resolvedFolder
+    ? resolvedFolder.path || joinPath(defaultLocation, resolvedFolder.name)
+    : joinPath(defaultLocation, 'Uncategorized');
 
   const suggestedName = edits.suggestedName || fileWithEdits.analysis?.suggestedName || file.name;
 

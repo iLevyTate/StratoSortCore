@@ -20,6 +20,7 @@
 const fs = require('fs').promises;
 const { RETRY } = require('./performanceConstants');
 const { logger } = require('./logger');
+const { delay } = require('./promiseUtils');
 
 /**
  * Check if error is a Windows file lock error (AV/Indexer/Sync services)
@@ -58,14 +59,14 @@ async function replaceFileWithRetry(tempPath, filePath, options = {}) {
       if (!isWindowsFileLockError(error) || attempt === maxAttempts) {
         break;
       }
-      const delay = baseDelayMs * attempt;
+      const retryMs = baseDelayMs * attempt;
       logger.debug('[atomicFile] Rename blocked (likely file lock), retrying', {
         attempt,
         maxAttempts,
-        delayMs: delay,
+        delayMs: retryMs,
         code: error.code
       });
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      await delay(retryMs);
     }
   }
 

@@ -65,6 +65,11 @@ if (!memfs.promises.mkdtemp) {
   };
 }
 
+// Mock the logger BEFORE mocking fs. Pino's sonic-boom transport calls fs.write()
+// which fails with EBADF when fs is replaced by memfs (no real file descriptors).
+// Tests that need custom logger behavior can override with their own jest.mock().
+jest.mock('../src/shared/logger', () => require('./mocks/logger'));
+
 jest.mock('fs', () => require('memfs').fs);
 jest.mock('fs/promises', () => require('memfs').fs.promises);
 jest.mock('os', () => ({

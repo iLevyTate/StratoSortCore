@@ -227,14 +227,7 @@ const CURRENT_SCHEMA_VERSION = '1.0.0';
  * Key: target version, Value: function to migrate from previous version
  */
 const MIGRATIONS = {
-  // Example migration for future use:
-  // '1.1.0': (history) => {
-  //   // Add new field to all entries
-  //   for (const entry of Object.values(history.entries || {})) {
-  //     entry.newField = entry.newField ?? 'default';
-  //   }
-  //   return history;
-  // }
+  // Add versioned migration functions here: '1.1.0': (history) => { ... return history; }
 };
 
 /**

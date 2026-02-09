@@ -29,7 +29,7 @@ const commonConfig = (isProduction) => ({
         extractComments: false,
         terserOptions: {
           compress: {
-            drop_console: false
+            drop_console: true
           }
         }
       })
@@ -76,7 +76,11 @@ module.exports = (env, argv) => {
         'pino-pretty': 'commonjs pino-pretty',
         // Piscina spawns its internal bootstrap worker via resolve(__dirname, 'worker.js').
         // Bundling moves __dirname to dist/ where piscina's worker.js doesn't exist.
-        piscina: 'commonjs piscina'
+        piscina: 'commonjs piscina',
+        // unpdf bundles pdf.js which contains dynamic import() expressions that
+        // webpack cannot statically analyze. Runs fine as a runtime require in
+        // the Node.js main process.
+        unpdf: 'commonjs unpdf'
       },
       ({ request }, callback) => {
         if (!request) return callback();
@@ -87,6 +91,15 @@ module.exports = (env, argv) => {
           request === '@reflink/reflink' ||
           request.startsWith('@reflink/')
         ) {
+          return callback(null, `commonjs ${request}`);
+        }
+
+        // @sentry/electron imports @sentry/node which re-exports tracing
+        // integrations (postgresjs, prisma) that pull in @opentelemetry and
+        // require-in-the-middle. These use runtime require() hooks that
+        // webpack cannot statically analyze. Keep the entire Sentry tree
+        // external since it runs correctly as runtime-resolved CommonJS.
+        if (request === '@sentry/electron' || request.startsWith('@sentry/electron/')) {
           return callback(null, `commonjs ${request}`);
         }
 

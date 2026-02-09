@@ -12,7 +12,7 @@ const fs = require('fs').promises;
 const { app } = require('electron');
 const { EventEmitter } = require('events');
 const { create, insert, search, remove, update, count, getByID } = require('@orama/orama');
-const { persist, restore } = require('@orama/plugin-data-persistence');
+const { persist, restore: _restore } = require('@orama/plugin-data-persistence');
 const { createLogger } = require('../../shared/logger');
 const { createSingletonHelpers } = require('../../shared/singletonFactory');
 const { AI_DEFAULTS } = require('../../shared/constants');
@@ -23,6 +23,7 @@ const { resolveEmbeddingDimension } = require('../../shared/embeddingDimensions'
 const { getEmbeddingModel, loadLlamaConfig } = require('../llamaUtils');
 const { writeEmbeddingIndexMetadata } = require('./vectorDb/embeddingIndexMetadata');
 const { get: getConfig } = require('../../shared/config/index');
+const { SEARCH } = require('../../shared/performanceConstants');
 
 const logger = createLogger('OramaVectorService');
 
@@ -167,6 +168,10 @@ class OramaVectorService extends EventEmitter {
     this._queryCache = new Map();
     this._queryCacheMaxSize = 200;
     this._queryCacheTtlMs = 120000;
+
+    // Embedding sidecar store – Orama's restore() loses vector data (v3.1.x bug),
+    // so we cache embeddings separately, keyed by collection name → Map<docId, number[]>.
+    this._embeddingStore = {};
   }
 
   /**
@@ -341,7 +346,14 @@ class OramaVectorService extends EventEmitter {
   }
 
   /**
-   * Create or restore a database from persistence
+   * Create or restore a database from persistence.
+   *
+   * IMPORTANT: Orama v3.1.x `restore()` has a bug where vector data is lost
+   * after a persist/restore cycle (getByID returns null embeddings, vector
+   * search returns 0 hits). We work around this by parsing the persisted JSON
+   * ourselves, creating a fresh DB, and inserting documents one-by-one. This
+   * ensures both text indexes and vector indexes are built correctly.
+   *
    * @private
    */
   async _createOrRestoreDatabase(name, schema) {
@@ -349,7 +361,7 @@ class OramaVectorService extends EventEmitter {
     const compressedPath = `${persistPath}.lz4`;
 
     try {
-      // Try to restore from persistence
+      // Try to read persisted data
       let data;
       let usedCompressed = false;
       try {
@@ -368,30 +380,35 @@ class OramaVectorService extends EventEmitter {
         data = await fs.readFile(persistPath, 'utf-8');
       }
 
-      // Restore using Orama's restore function
-      const db = await restore('json', data);
-      logger.debug(`[OramaVectorService] Restored ${name} database`);
+      // Parse the persisted JSON to extract raw documents.
+      let parsed;
+      try {
+        parsed = JSON.parse(data);
+      } catch (parseError) {
+        logger.warn(`[OramaVectorService] Failed to parse ${name} persistence`, {
+          error: parseError.message
+        });
+        return await create({ schema });
+      }
 
-      // Update dimension cache from restored data
-      const existingCount = await count(db);
+      const rawDocs = parsed?.docs?.docs;
+      if (!rawDocs || typeof rawDocs !== 'object') {
+        logger.debug(`[OramaVectorService] No documents in ${name} persistence, creating fresh DB`);
+        return await create({ schema });
+      }
+
+      const docList = Object.values(rawDocs).filter((d) => d && d.id);
+
+      // Detect embedding dimension from the first doc that has a vector
       let restoredDim = null;
-      if (existingCount > 0) {
-        // Orama search() returns null for vector fields, so we get the first
-        // document's ID from search then use getByID() for the full document.
-        try {
-          const results = await search(db, { term: '', limit: 1 });
-          if (results.hits.length > 0 && results.hits[0].document?.id) {
-            const fullDoc = await getByID(db, results.hits[0].document.id);
-            if (fullDoc && Array.isArray(fullDoc.embedding)) {
-              restoredDim = fullDoc.embedding.length;
-              this._collectionDimensions[name] = restoredDim;
-            }
-          }
-        } catch {
-          // If dimension detection fails, we'll proceed with current config dimension
+      for (const doc of docList) {
+        if (doc.embedding && doc.embedding.length > 0) {
+          restoredDim = doc.embedding.length;
+          break;
         }
       }
 
+      // Check for dimension mismatch
       if (restoredDim && restoredDim !== this._dimension) {
         logger.warn(
           `[OramaVectorService] Dimension changed (${restoredDim} → ${this._dimension}) for ${name}. Wiping collection.`
@@ -406,10 +423,60 @@ class OramaVectorService extends EventEmitter {
             `[OramaVectorService] Failed to remove stale ${name} persistence file: ${unlinkError.message}`
           );
         }
-        // FIX Bug #35: Return the newly created database instead of falling through
         return await create({ schema });
       }
 
+      if (restoredDim) {
+        this._collectionDimensions[name] = restoredDim;
+      }
+
+      // Create a fresh DB and insert all documents (bypasses broken restore())
+      const db = await create({ schema });
+      const embeddingStore = new Map();
+      let insertedCount = 0;
+      let failedCount = 0;
+
+      for (const doc of docList) {
+        try {
+          // Null / missing embeddings cause Orama insert to throw because the
+          // vector schema expects an array. Provide a zero-filled placeholder
+          // so the document's text fields are still searchable via BM25.
+          if (!doc.embedding || !doc.embedding.length) {
+            doc.embedding = new Array(this._dimension).fill(0);
+          } else if (!Array.isArray(doc.embedding)) {
+            // Ensure embedding is a plain Array (not TypedArray) for Orama insert
+            doc.embedding = Array.from(doc.embedding);
+          }
+
+          await insert(db, doc);
+
+          // Only cache real embeddings (non-zero placeholder) in sidecar for clustering.
+          // A zero-filled placeholder has every element === 0; real embeddings never do.
+          const isZeroPlaceholder = doc.embedding.every((v) => v === 0);
+          if (!isZeroPlaceholder) {
+            embeddingStore.set(doc.id, doc.embedding);
+          }
+          insertedCount++;
+        } catch (insertError) {
+          failedCount++;
+          logger.debug(`[OramaVectorService] Failed to restore doc in ${name}`, {
+            id: doc.id,
+            error: insertError.message
+          });
+        }
+      }
+
+      this._embeddingStore[name] = embeddingStore;
+
+      logger.info(`[OramaVectorService] Restored ${name} database`, {
+        method: 'insert',
+        total: docList.length,
+        inserted: insertedCount,
+        failed: failedCount,
+        embeddingsCached: embeddingStore.size
+      });
+
+      // Handle compression format migration
       if (!PERSIST_COMPRESSION_ENABLED && usedCompressed) {
         try {
           const json = await persist(db, 'json');
@@ -781,6 +848,12 @@ class OramaVectorService extends EventEmitter {
       }
     }
 
+    // Update embedding sidecar store
+    if (doc.embedding && doc.embedding.length > 0) {
+      if (!this._embeddingStore.files) this._embeddingStore.files = new Map();
+      this._embeddingStore.files.set(file.id, doc.embedding);
+    }
+
     this._invalidateCacheForFile(file.id);
     this._schedulePersist();
 
@@ -894,6 +967,7 @@ class OramaVectorService extends EventEmitter {
 
     try {
       await remove(this._databases.files, fileId);
+      this._embeddingStore?.files?.delete(fileId);
       this._invalidateCacheForFile(fileId);
 
       // Cascade-delete associated chunks
@@ -941,6 +1015,7 @@ class OramaVectorService extends EventEmitter {
     for (const id of fileIds) {
       try {
         await remove(this._databases.files, id);
+        this._embeddingStore?.files?.delete(id);
         this._invalidateCacheForFile(id);
         deleted++;
 
@@ -977,6 +1052,7 @@ class OramaVectorService extends EventEmitter {
     await this.initialize();
     this._databases.files = await create({ schema: this._schemas.files });
     this._collectionDimensions.files = null;
+    this._embeddingStore.files = new Map();
     this._clearQueryCache();
     await this.persistAll();
     logger.info('[OramaVectorService] Files collection reset');
@@ -1019,6 +1095,15 @@ class OramaVectorService extends EventEmitter {
             filePath: newPath || existing.filePath,
             fileName: newName || existing.fileName
           });
+          // Migrate embedding in sidecar store
+          const embStore = this._embeddingStore?.files;
+          if (embStore) {
+            const emb = embStore.get(oldId);
+            if (emb) {
+              embStore.set(newId, emb);
+            }
+            embStore.delete(oldId);
+          }
         } else {
           // Just update the path
           await update(this._databases.files, oldId, {
@@ -1166,6 +1251,13 @@ class OramaVectorService extends EventEmitter {
         fileName: newMeta.fileName || source.fileName
       });
 
+      // Clone embedding in sidecar store
+      const sourceEmb = this._embeddingStore?.files?.get(sourceId);
+      if (sourceEmb) {
+        if (!this._embeddingStore.files) this._embeddingStore.files = new Map();
+        this._embeddingStore.files.set(destId, sourceEmb);
+      }
+
       this._schedulePersist();
       return { success: true, cloned: true };
     } catch (error) {
@@ -1244,6 +1336,12 @@ class OramaVectorService extends EventEmitter {
       } catch {
         await update(this._databases.folders, folder.id, doc);
       }
+    }
+
+    // Update sidecar embedding store for folders
+    if (doc.embedding && doc.embedding.length > 0) {
+      if (!this._embeddingStore.folders) this._embeddingStore.folders = new Map();
+      this._embeddingStore.folders.set(folder.id, doc.embedding);
     }
 
     this._invalidateCacheForFolder();
@@ -1407,6 +1505,7 @@ class OramaVectorService extends EventEmitter {
 
     try {
       await remove(this._databases.folders, folderId);
+      this._embeddingStore?.folders?.delete(folderId);
       this._invalidateCacheForFolder();
       this._schedulePersist();
       return { queued: false, success: true };
@@ -1429,6 +1528,7 @@ class OramaVectorService extends EventEmitter {
     for (const id of folderIds) {
       try {
         await remove(this._databases.folders, id);
+        this._embeddingStore?.folders?.delete(id);
         deleted++;
       } catch {
         // Continue
@@ -1447,6 +1547,7 @@ class OramaVectorService extends EventEmitter {
     await this.initialize();
     this._databases.folders = await create({ schema: this._schemas.folders });
     this._collectionDimensions.folders = null;
+    this._embeddingStore.folders = new Map();
     this._invalidateCacheForFolder();
     await this.persistAll();
     logger.info('[OramaVectorService] Folders collection reset');
@@ -1896,9 +1997,9 @@ class OramaVectorService extends EventEmitter {
       throw attachErrorCode(error, ERROR_CODES.VECTOR_DB_QUERY_FAILED);
     }
 
-    // Reciprocal Rank Fusion
+    // Reciprocal Rank Fusion (use centralized constant to stay in sync with SearchService)
     const scores = new Map();
-    const k = 60; // RRF constant
+    const k = SEARCH.RRF_K;
 
     vectorResults.hits.forEach((hit, rank) => {
       const current = scores.get(hit.document.id) || { doc: hit.document, score: 0 };
@@ -1942,6 +2043,8 @@ class OramaVectorService extends EventEmitter {
     await this.resetFolders();
     await this.resetFeedbackMemory();
     await this.resetLearningPatterns();
+    // Clear all sidecar embedding stores
+    this._embeddingStore = {};
     logger.info('[OramaVectorService] All collections reset');
   }
 
@@ -1977,7 +2080,12 @@ class OramaVectorService extends EventEmitter {
   }
 
   /**
-   * Peek a sample of file embeddings for diagnostics
+   * Peek a sample of file embeddings for diagnostics and clustering.
+   *
+   * Uses the in-memory embedding sidecar store for vectors because Orama's
+   * getByID() does not reliably return vector fields after a persist/restore
+   * cycle. Text search with term='' enumerates documents.
+   *
    * @param {number} [limit=50] - Max number of documents to return
    * @returns {Promise<{ids: string[], embeddings: number[][], metadatas: Object[]}>}
    */
@@ -1985,29 +2093,25 @@ class OramaVectorService extends EventEmitter {
     await this.initialize();
 
     try {
+      const effectiveLimit = Math.max(1, Math.min(Number(limit) || 50, 10000));
       const result = await search(this._databases.files, {
         term: '',
-        limit: Math.max(1, Math.min(Number(limit) || 50, 10000))
+        limit: effectiveLimit
       });
 
       const ids = [];
       const embeddings = [];
       const metadatas = [];
+      const embStore = this._embeddingStore?.files;
 
       for (const hit of result.hits || []) {
-        const searchDoc = hit.document || {};
-        // Orama search() returns null for vector fields; use getByID() to get actual embeddings
-        let doc = searchDoc;
-        if (searchDoc.id && !Array.isArray(searchDoc.embedding)) {
-          try {
-            const fullDoc = await getByID(this._databases.files, searchDoc.id);
-            if (fullDoc) doc = fullDoc;
-          } catch {
-            /* fall back to search result */
-          }
-        }
+        const doc = hit.document || {};
         ids.push(doc.id);
-        embeddings.push(Array.isArray(doc.embedding) ? doc.embedding : []);
+
+        // Use sidecar embedding store (reliable) instead of getByID (broken for vectors)
+        const cachedEmb = embStore?.get(doc.id);
+        embeddings.push(cachedEmb && cachedEmb.length > 0 ? cachedEmb : []);
+
         metadatas.push({
           path: doc.filePath,
           filePath: doc.filePath,
@@ -2035,25 +2139,9 @@ class OramaVectorService extends EventEmitter {
     return true;
   }
 
-  // Circuit breaker compatibility (no-op for in-process)
-  getCircuitState() {
-    return 'CLOSED';
-  }
-
+  // Circuit breaker compatibility stub — required by SearchService diagnostics
   getCircuitStats() {
     return { state: 'CLOSED', failures: 0, successes: 0 };
-  }
-
-  getQueueStats() {
-    return { size: 0, processed: 0, failed: 0 };
-  }
-
-  isServiceAvailable() {
-    return true;
-  }
-
-  forceRecovery() {
-    // No-op
   }
 
   // ==================== QUERY CACHE ====================

@@ -21,6 +21,8 @@ const { findContainingSmartFolder } = require('../../shared/folderUtils');
 const { normalizePathForIndex } = require('../../shared/pathSanitization');
 const { getInstance: getFileOperationTracker } = require('../../shared/fileOperationTracker');
 const { isUNCPath } = require('../../shared/crossPlatformUtils');
+const { isTemporaryFile, RETRY } = require('../../shared/performanceConstants');
+const { delay } = require('../../shared/promiseUtils');
 const { shouldEmbed } = require('./embedding/embeddingGate');
 const { computeFileChecksum, handleDuplicateMove } = require('../utils/fileDedup');
 const { removeEmbeddingsForPathBestEffort } = require('../ipc/files/embeddingSync');
@@ -28,43 +30,6 @@ const { removeEmbeddingsForPathBestEffort } = require('../ipc/files/embeddingSyn
 const logger = typeof createLogger === 'function' ? createLogger('DownloadWatcher') : baseLogger;
 if (typeof createLogger !== 'function' && logger?.setContext) {
   logger.setContext('DownloadWatcher');
-}
-
-// Temporary/incomplete file patterns to ignore
-const TEMP_FILE_PATTERNS = [
-  /\.(tmp|temp)$/i, // Generic temp files
-  /\.crdownload$/i, // Chrome download temp
-  /\.part$/i, // Firefox/partial downloads
-  /\.!qB$/i, // qBittorrent temp
-  /\.download$/i, // Safari temp
-  /\.partial$/i, // Generic partial
-  /~\$/, // Microsoft Office temp files
-  /^~/, // Unix temp files starting with ~
-  /\.swp$/i, // Vim swap files
-  /\.lock$/i, // Lock files
-  /\.lck$/i, // Alternative lock files
-  /\._/, // macOS resource forks
-  /\.DS_Store$/i, // macOS directory settings
-  /Thumbs\.db$/i, // Windows thumbnails
-  /desktop\.ini$/i // Windows desktop settings
-];
-
-/**
- * Check if a file path is a temporary or incomplete file
- * @param {string} filePath - Path to check
- * @returns {boolean} True if the file appears to be temporary
- */
-function isTemporaryFile(filePath) {
-  const basename = path.basename(filePath);
-
-  // Check against temp file patterns
-  for (const pattern of TEMP_FILE_PATTERNS) {
-    if (pattern.test(basename)) {
-      return true;
-    }
-  }
-
-  return false;
 }
 
 class DownloadWatcher {
@@ -93,7 +58,7 @@ class DownloadWatcher {
     this.isStarting = false;
     this._startPromise = null; // Mutex: concurrent start() callers await the same promise
     this.restartAttempts = 0;
-    this.maxRestartAttempts = 3;
+    this.maxRestartAttempts = RETRY.MAX_ATTEMPTS_MEDIUM;
     this.restartDelay = 5000; // 5 seconds between restart attempts
     this.lastError = null;
     this.processingFiles = new Set(); // Track files being processed to avoid duplicates
@@ -648,14 +613,7 @@ class DownloadWatcher {
           if (suggestedName && suggestedName !== path.basename(filePath, path.extname(filePath))) {
             const dir = path.dirname(filePath);
             const ext = path.extname(filePath);
-            // Ensure suggestedName handles extension if needed, though usually it's name only
-            // Old code: newName = suggestedExt ? result.suggestedName : `${result.suggestedName}${extname}`;
-            // But generateSuggestedNameFromAnalysis usually returns name WITHOUT extension?
-            // Test expects "NewName.pdf" in the call?
-            // Test mocks generateSuggestedNameFromAnalysis to return 'NewName.pdf'.
-            // So if it returns 'NewName.pdf', and we append 'ext' (.pdf), we get 'NewName.pdf.pdf'.
-
-            // Let's handle extension logic correctly.
+            // Preserve the original extension unless the suggested name already includes one
             const suggestedExt = path.extname(suggestedName);
             const finalName = suggestedExt ? suggestedName : suggestedName + ext;
 
@@ -922,7 +880,7 @@ class DownloadWatcher {
    * @throws {FileSystemError} On move failure after retries
    */
   async _moveFile(source, destination, retryCount = 0) {
-    const MAX_RETRIES = 5;
+    const MAX_RETRIES = RETRY.MAX_ATTEMPTS_HIGH;
     const RETRY_DELAY_MS = 2000; // 2 seconds between retries
 
     try {
@@ -972,7 +930,7 @@ class DownloadWatcher {
           });
 
           // Wait before retrying
-          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+          await delay(RETRY_DELAY_MS);
 
           // FIX C-3: Use stat for atomic existence check before retry
           try {

@@ -192,13 +192,23 @@ describe('failedItemHandler', () => {
   });
 
   describe('getItemsToRetry', () => {
-    test('returns items ready for retry based on backoff', async () => {
+    // Use fake timers for deterministic backoff testing.
+    // Real setTimeout can overshoot under load, making tight-margin checks flaky.
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    test('returns items ready for retry based on backoff', () => {
       const item = { id: 'file:test.txt', vector: [0.1, 0.2] };
 
       handler.trackFailedItem(item, 'Error');
 
-      // Wait for backoff (100ms * 2 * 2^0 = 200ms)
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      // Advance past backoff: retryCount=1 -> 100 * 2^0 = 100ms
+      jest.advanceTimersByTime(150);
 
       const itemsToRetry = handler.getItemsToRetry();
 
@@ -219,21 +229,20 @@ describe('failedItemHandler', () => {
       expect(handler.failedItems.size).toBe(1); // Still tracked
     });
 
-    test('uses exponential backoff based on retry count', async () => {
+    test('uses exponential backoff based on retry count', () => {
       const item = { id: 'file:test.txt', vector: [0.1, 0.2] };
 
       handler.trackFailedItem(item, 'Error 1');
       handler.trackFailedItem(item, 'Error 2'); // retryCount = 2
 
-      // FIX: Updated to match corrected backoff formula (no extra *2 multiplier)
       // Formula: BASE_MS * 2^(retryCount-1)
       // For retryCount=2: 100 * 2^1 = 200ms
 
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      expect(handler.getItemsToRetry()).toHaveLength(0); // Still waiting (200ms not elapsed)
+      jest.advanceTimersByTime(150);
+      expect(handler.getItemsToRetry()).toHaveLength(0); // 150ms < 200ms backoff
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(handler.getItemsToRetry()).toHaveLength(1); // Now ready (250ms > 200ms)
+      jest.advanceTimersByTime(100);
+      expect(handler.getItemsToRetry()).toHaveLength(1); // 250ms > 200ms backoff
     });
   });
 

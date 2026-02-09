@@ -17,6 +17,21 @@ const {
   normalizeKeywords
 } = require('../../shared/normalization');
 
+// Lazy-loaded to avoid pulling in the heavy FolderMatchingService -> LlamaService
+// -> VisionService chain at module-load time (breaks test mocks that mock fs).
+// Falls back gracefully if the chain can't resolve (e.g., in test environments).
+let _createFallbackAnalysis;
+function getFallbackFactory() {
+  if (_createFallbackAnalysis === undefined) {
+    try {
+      _createFallbackAnalysis = require('../analysis/fallbackUtils').createFallbackAnalysis;
+    } catch {
+      _createFallbackAnalysis = null; // Mark as unavailable
+    }
+  }
+  return _createFallbackAnalysis;
+}
+
 /**
  * Wrapper for processing state lifecycle management.
  * Handles markAnalysisStart, markAnalysisComplete/markAnalysisError, and cleanup.
@@ -114,7 +129,10 @@ function buildErrorContext({ operation, filePath, error }) {
 
 /**
  * Create a standardized fallback response for failed analysis.
- * FIX: Enhanced with error context for better debugging and retry logic
+ *
+ * Delegates to {@link createFallbackAnalysis} from fallbackUtils for rich
+ * filename-derived keywords/category, then overlays error metadata for
+ * debugging and retry logic.
  *
  * @param {string} filePath - File path
  * @param {string} category - Default category ('documents' or 'images')
@@ -126,6 +144,11 @@ function buildErrorContext({ operation, filePath, error }) {
  * @returns {Object} Fallback analysis result with error context
  */
 function createAnalysisFallback(filePath, category, errorMessage, errorContext = {}) {
+  const fileName = path.basename(filePath);
+  const fileExtension = path.extname(filePath);
+  const isImage = category === 'images';
+
+  // Overlay structured error metadata for debugging/retry decisions
   const normalized = normalizeError(
     { message: errorMessage, code: errorContext.code },
     {
@@ -134,12 +157,36 @@ function createAnalysisFallback(filePath, category, errorMessage, errorContext =
     }
   );
 
+  // Try to get rich fallback (intelligent keywords, category matching, suggested name).
+  // Falls back to minimal result if the analysis pipeline isn't loadable (e.g., test env).
+  const factory = getFallbackFactory();
+  if (factory) {
+    const richFallback = factory({
+      fileName,
+      fileExtension,
+      reason: errorMessage,
+      confidence: 0,
+      type: isImage ? 'image' : 'document',
+      options: { error: errorMessage }
+    });
+
+    return {
+      ...richFallback,
+      error: normalized.message,
+      errorType: normalized.errorType,
+      isRetryable: normalized.isRetryable,
+      errorCode: normalized.code,
+      suggestedName: richFallback.suggestedName || fileName
+    };
+  }
+
+  // Minimal fallback when the rich factory is unavailable
   return {
     error: normalized.message,
     errorType: normalized.errorType,
     isRetryable: normalized.isRetryable,
     errorCode: normalized.code,
-    suggestedName: path.basename(filePath), // Keep extension to prevent unopenable files
+    suggestedName: fileName,
     category,
     keywords: [],
     confidence: 0
