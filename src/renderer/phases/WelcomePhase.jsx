@@ -49,6 +49,14 @@ function WelcomePhase() {
         ].filter(Boolean);
         const missing = required.filter((name) => !available.has(name));
         setModelCheckState(missing.length > 0 ? 'missing' : 'ready');
+        if (modelsResponse?.requiresModelConfirmation) {
+          addNotification(
+            'Some saved AI model names are outdated. Review model selections in Settings.',
+            'warning',
+            6000,
+            'model-corrections'
+          );
+        }
       } catch {
         // If the IPC call fails (service not ready), treat as ready and let
         // backgroundSetup handle downloads. Don't block the user.
@@ -59,7 +67,7 @@ function WelcomePhase() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [addNotification]);
 
   const handleModelSetupComplete = useCallback(() => {
     setModelCheckState('ready');

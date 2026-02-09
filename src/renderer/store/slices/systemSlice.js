@@ -150,20 +150,17 @@ const systemSlice = createSlice({
         dismissedAt: null
       };
       state.notifications.push(notification);
-      // Increment unread count
-      state.unreadNotificationCount += 1;
+      // Derive unread count from array to prevent drift under concurrent operations
+      state.unreadNotificationCount = state.notifications.filter(
+        (n) => n.status !== NotificationStatus.SEEN && n.status !== NotificationStatus.DISMISSED
+      ).length;
     },
     removeNotification: (state, action) => {
-      const notification = state.notifications.find((n) => n.id === action.payload);
-      // Decrement unread count if notification was not yet seen
-      if (
-        notification &&
-        notification.status !== NotificationStatus.SEEN &&
-        notification.status !== NotificationStatus.DISMISSED
-      ) {
-        state.unreadNotificationCount = Math.max(0, state.unreadNotificationCount - 1);
-      }
       state.notifications = state.notifications.filter((n) => n.id !== action.payload);
+      // Derive unread count from array to prevent drift under concurrent operations
+      state.unreadNotificationCount = state.notifications.filter(
+        (n) => n.status !== NotificationStatus.SEEN && n.status !== NotificationStatus.DISMISSED
+      ).length;
     },
     clearNotifications: (state) => {
       state.notifications = [];
@@ -181,7 +178,10 @@ const systemSlice = createSlice({
       ) {
         notification.status = NotificationStatus.SEEN;
         notification.seenAt = new Date().toISOString();
-        state.unreadNotificationCount = Math.max(0, state.unreadNotificationCount - 1);
+        // FIX Bug #37: Recalculate unread count to prevent drift
+        state.unreadNotificationCount = state.notifications.filter(
+          (n) => n.status !== NotificationStatus.SEEN && n.status !== NotificationStatus.DISMISSED
+        ).length;
       }
     },
     /**
@@ -190,15 +190,12 @@ const systemSlice = createSlice({
     markNotificationDismissed: (state, action) => {
       const notification = state.notifications.find((n) => n.id === action.payload);
       if (notification) {
-        // If not already seen, decrement unread count
-        if (
-          notification.status !== NotificationStatus.SEEN &&
-          notification.status !== NotificationStatus.DISMISSED
-        ) {
-          state.unreadNotificationCount = Math.max(0, state.unreadNotificationCount - 1);
-        }
         notification.status = NotificationStatus.DISMISSED;
         notification.dismissedAt = new Date().toISOString();
+        // FIX Bug #37: Recalculate unread count to prevent drift
+        state.unreadNotificationCount = state.notifications.filter(
+          (n) => n.status !== NotificationStatus.SEEN && n.status !== NotificationStatus.DISMISSED
+        ).length;
       }
     },
     /**

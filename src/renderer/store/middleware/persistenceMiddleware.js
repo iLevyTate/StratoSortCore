@@ -249,7 +249,9 @@ const persistenceMiddleware = (store) => {
       const delay = shouldForceImmediate ? 0 : SAVE_DEBOUNCE_MS;
 
       saveTimeout = setTimeout(() => {
-        // FIX: Set re-entry guard before save
+        // FIX: Set re-entry guard before save.
+        // Double-check: another timeout may have set this flag if clearTimeout raced
+        if (isSaving) return;
         isSaving = true;
 
         try {

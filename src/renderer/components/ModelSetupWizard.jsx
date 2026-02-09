@@ -1,6 +1,6 @@
 // src/renderer/components/ModelSetupWizard.jsx
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Download,
   HardDrive,
@@ -27,6 +27,13 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
   const [initError, setInitError] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasApi, setHasApi] = useState(true);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const availableSet = useMemo(() => new Set(availableModels || []), [availableModels]);
 
@@ -43,7 +50,7 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
 
   useEffect(() => {
     void checkSystem();
-  }, []);
+  }, [checkSystem]);
 
   useEffect(() => {
     // Subscribe to download progress
@@ -71,15 +78,17 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
         unsubscribe();
       }
     };
-  }, []);
+  }, [updateDownloadState]);
 
   const checkSystem = useCallback(async () => {
+    if (!isMountedRef.current) return;
     setIsRefreshing(true);
     setInitError(null);
 
     const llamaApi = window?.electronAPI?.llama;
     const hasLlamaApi =
       typeof llamaApi?.getModels === 'function' && typeof llamaApi?.getConfig === 'function';
+    if (!isMountedRef.current) return;
     setHasApi(hasLlamaApi);
 
     const fallbackDefaults = {
@@ -89,6 +98,7 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     };
 
     if (!hasLlamaApi) {
+      if (!isMountedRef.current) return;
       setRecommendations(fallbackDefaults);
       setSelectedModels(fallbackDefaults);
       setSystemInfo({ gpuBackend: null, modelsPath: null });
@@ -99,11 +109,12 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     }
 
     try {
-      const [config, models, downloadStatus] = await Promise.all([
+      const [config, modelsResponse, downloadStatus] = await Promise.all([
         llamaApi.getConfig(),
         llamaApi.getModels(),
         typeof llamaApi.getDownloadStatus === 'function' ? llamaApi.getDownloadStatus() : null
       ]);
+      if (!isMountedRef.current) return;
 
       const defaults = {
         embedding: config?.embeddingModel || fallbackDefaults.embedding,
@@ -111,9 +122,12 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
         vision: config?.visionModel || fallbackDefaults.vision
       };
 
-      const available = Array.isArray(models)
-        ? models.map((m) => m.name || m.filename || '').filter(Boolean)
-        : [];
+      const modelList = Array.isArray(modelsResponse)
+        ? modelsResponse
+        : Array.isArray(modelsResponse?.models)
+          ? modelsResponse.models
+          : [];
+      const available = modelList.map((m) => m.name || m.filename || m).filter(Boolean);
       const availableNow = new Set(available);
 
       setRecommendations(defaults);
@@ -153,10 +167,13 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
         setStep(missingRequired.length === 0 ? 'complete' : 'select');
       }
     } catch (error) {
+      if (!isMountedRef.current) return;
       setInitError(error?.message || 'Failed to load AI model status.');
       setStep('select');
     } finally {
-      setIsRefreshing(false);
+      if (isMountedRef.current) {
+        setIsRefreshing(false);
+      }
     }
   }, []);
 

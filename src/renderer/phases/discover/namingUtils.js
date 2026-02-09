@@ -114,18 +114,20 @@ export function getFileStateDisplayInfo(state, hasAnalysis) {
       color: 'text-blue-600',
       spinning: true
     };
+  // Files with usable analysis data are actionable even if analysis hit an error
+  // (fallback analysis provides name/category).
+  if (hasAnalysis)
+    return {
+      icon: <CheckCircleIcon className="w-4 h-4" />,
+      label: 'Ready',
+      color: 'text-green-600',
+      spinning: false
+    };
   if (state === 'error')
     return {
       icon: <XCircleIcon className="w-4 h-4" />,
       label: 'Error',
       color: 'text-red-600',
-      spinning: false
-    };
-  if (hasAnalysis && state === 'ready')
-    return {
-      icon: <CheckCircleIcon className="w-4 h-4" />,
-      label: 'Ready',
-      color: 'text-green-600',
       spinning: false
     };
   if (state === 'pending')
@@ -325,13 +327,18 @@ export function generateSuggestedNameFromAnalysis({
   const project = sanitizeToken(rawProject) || 'Project';
   const category = sanitizeToken(rawCategory) || 'Category';
 
+  // FIX: Consolidated switch -- date-based cases were previously empty with logic
+  // duplicated as if-checks after the switch. Now all cases set `base` directly.
   let base;
   switch (convention) {
     case 'subject-date':
+      base = `${subject}${separator}${formattedDate}`;
       break;
     case 'date-subject':
+      base = `${formattedDate}${separator}${subject}`;
       break;
     case 'project-subject-date':
+      base = `${project}${separator}${subject}${separator}${formattedDate}`;
       break;
     case 'category-subject':
       base = `${category}${separator}${subject}`;
@@ -344,12 +351,6 @@ export function generateSuggestedNameFromAnalysis({
       base = subject;
       break;
   }
-
-  // Now that subject/project/category are computed, fill in date-based conventions.
-  if (convention === 'subject-date') base = `${subject}${separator}${formattedDate}`;
-  if (convention === 'date-subject') base = `${formattedDate}${separator}${subject}`;
-  if (convention === 'project-subject-date')
-    base = `${project}${separator}${subject}${separator}${formattedDate}`;
 
   const finalBase = caseConvention ? applyCaseConvention(base, caseConvention) : base;
   return `${finalBase}${extension}`;

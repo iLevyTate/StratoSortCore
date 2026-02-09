@@ -230,7 +230,15 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         all: installedModels.slice().sort()
       });
       if (response?.llamaHealth) setLlamaHealth(response.llamaHealth);
-      if (response?.selected) {
+      if (response?.requiresModelConfirmation) {
+        addNotification(
+          'Some saved AI model names are outdated. Review and confirm model selections in Settings.',
+          'warning',
+          6000,
+          'model-corrections'
+        );
+      }
+      if (response?.selected && !response?.requiresModelConfirmation) {
         skipAutoSaveRef.current += 1;
         applySettingsUpdate((prev) => {
           const desiredEmbed = response.selected.embeddingModel || prev.embeddingModel;

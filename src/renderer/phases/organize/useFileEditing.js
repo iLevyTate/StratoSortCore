@@ -122,20 +122,22 @@ export function useFileStateDisplay(fileStates) {
           color: 'text-blue-600',
           spinning: true
         };
+      // Files with usable analysis data are actionable in the organize phase,
+      // even if the analysis hit an error (fallback analysis provides name/category).
+      if (hasAnalysis)
+        return {
+          icon: <FolderOpenIcon className="w-4 h-4" />,
+          iconSymbol: '📂',
+          label: 'Ready',
+          color: 'text-stratosort-blue',
+          spinning: false
+        };
       if (state === 'error')
         return {
           icon: <XCircleIcon className="w-4 h-4" />,
           iconSymbol: '❌',
           label: 'Error',
           color: 'text-red-600',
-          spinning: false
-        };
-      if (hasAnalysis && state === 'ready')
-        return {
-          icon: <FolderOpenIcon className="w-4 h-4" />,
-          iconSymbol: '📂',
-          label: 'Ready',
-          color: 'text-stratosort-blue',
           spinning: false
         };
       if (state === 'pending')
