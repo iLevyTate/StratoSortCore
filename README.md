@@ -94,6 +94,9 @@ npm run dev
 **First Launch:** The app automatically downloads required AI models (GGUF format) on first run. GPU
 acceleration is auto-detected.
 
+**Default Models:** Mistral 7B (text), LLaVA 1.6 Mistral 7B (vision), nomic-embed-text v1.5
+(embeddings). See [docs/CONFIG.md](docs/CONFIG.md#default-ai-models) for details.
+
 ## Advanced Capabilities
 
 ### Smart Folders and Watchers
@@ -171,4 +174,8 @@ See **[LICENSE](LICENSE)** for details.
 
 <p align="center">
   Built with <a href="https://github.com/withcatai/node-llama-cpp">node-llama-cpp</a> and <a href="https://orama.com">Orama</a>
+</p>
+
+<p align="center">
+  © 2026 StratoSort Team
 </p>

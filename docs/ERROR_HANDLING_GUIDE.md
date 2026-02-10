@@ -670,5 +670,5 @@ All success responses follow this structure:
 
 ---
 
-**Last Updated:** 2025-01-16  
+**Last Updated:** 2026-02-09  
 **Version:** 1.0

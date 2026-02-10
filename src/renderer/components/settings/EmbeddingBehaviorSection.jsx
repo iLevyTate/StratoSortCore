@@ -1,9 +1,8 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import Card from '../ui/Card';
 import Select from '../ui/Select';
 import SettingRow from './SettingRow';
-import { Text } from '../ui/Typography';
+import SettingsCard from './SettingsCard';
 
 function EmbeddingBehaviorSection({ settings, setSettings }) {
   const timing = settings?.embeddingTiming || 'during_analysis';
@@ -11,16 +10,10 @@ function EmbeddingBehaviorSection({ settings, setSettings }) {
   const scope = settings?.embeddingScope || 'all_analyzed';
 
   return (
-    <Card variant="default" className="space-y-5">
-      <div>
-        <Text variant="tiny" className="font-semibold uppercase tracking-wide text-system-gray-500">
-          Embedding behavior
-        </Text>
-        <Text variant="small" className="text-system-gray-600">
-          Control when and which files get local embeddings for search, graph, and similarity.
-        </Text>
-      </div>
-
+    <SettingsCard
+      title="Embedding behavior"
+      description="Control when and which files get local embeddings for search, graph, and similarity."
+    >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <SettingRow
           layout="col"
@@ -30,6 +23,7 @@ function EmbeddingBehaviorSection({ settings, setSettings }) {
           <Select
             value={scope}
             onChange={(e) => setSettings((prev) => ({ ...prev, embeddingScope: e.target.value }))}
+            className="w-full"
           >
             <option value="all_analyzed">All analyzed files (recommended)</option>
             <option value="smart_folders_only">Smart folder files only</option>
@@ -44,6 +38,7 @@ function EmbeddingBehaviorSection({ settings, setSettings }) {
           <Select
             value={timing}
             onChange={(e) => setSettings((prev) => ({ ...prev, embeddingTiming: e.target.value }))}
+            className="w-full"
           >
             <option value="during_analysis">During analysis (default)</option>
             <option value="after_organize">After organize/move</option>
@@ -61,6 +56,7 @@ function EmbeddingBehaviorSection({ settings, setSettings }) {
             onChange={(e) =>
               setSettings((prev) => ({ ...prev, defaultEmbeddingPolicy: e.target.value }))
             }
+            className="w-full"
           >
             <option value="embed">Embed locally</option>
             <option value="web_only">Web-only (do not embed locally)</option>
@@ -68,7 +64,7 @@ function EmbeddingBehaviorSection({ settings, setSettings }) {
           </Select>
         </SettingRow>
       </div>
-    </Card>
+    </SettingsCard>
   );
 }
 

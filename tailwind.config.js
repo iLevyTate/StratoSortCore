@@ -52,6 +52,7 @@ const BRAND_COLORS = {
     blue: '#2563EB',
     'blue-soft': '#3B82F6',
     indigo: '#4C1D95',
+    purple: '#8B5CF6',
     accent: '#F59E0B',
     coral: '#FB7185',
     success: '#10B981',

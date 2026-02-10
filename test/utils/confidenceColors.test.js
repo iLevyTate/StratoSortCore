@@ -18,6 +18,7 @@ describe('confidenceColors', () => {
       expect(high).toHaveProperty('text');
       expect(high).toHaveProperty('border');
       expect(high).toHaveProperty('dot');
+      expect(high).toHaveProperty('dotBg');
       expect(high).toHaveProperty('label');
       expect(high).toHaveProperty('desc');
       expect(high).toHaveProperty('combined');
@@ -29,6 +30,7 @@ describe('confidenceColors', () => {
       expect(medium).toHaveProperty('text');
       expect(medium).toHaveProperty('border');
       expect(medium).toHaveProperty('dot');
+      expect(medium).toHaveProperty('dotBg');
       expect(medium).toHaveProperty('label');
       expect(medium).toHaveProperty('desc');
       expect(medium).toHaveProperty('combined');
@@ -40,21 +42,22 @@ describe('confidenceColors', () => {
       expect(low).toHaveProperty('text');
       expect(low).toHaveProperty('border');
       expect(low).toHaveProperty('dot');
+      expect(low).toHaveProperty('dotBg');
       expect(low).toHaveProperty('label');
       expect(low).toHaveProperty('desc');
       expect(low).toHaveProperty('combined');
     });
 
-    it('should have emerald colors for high confidence', () => {
-      expect(CONFIDENCE_COLORS.high.bg).toContain('emerald');
-      expect(CONFIDENCE_COLORS.high.text).toContain('emerald');
-      expect(CONFIDENCE_COLORS.high.border).toContain('emerald');
+    it('should use design-system success colors for high confidence', () => {
+      expect(CONFIDENCE_COLORS.high.bg).toContain('stratosort-success');
+      expect(CONFIDENCE_COLORS.high.text).toContain('stratosort-success');
+      expect(CONFIDENCE_COLORS.high.border).toContain('stratosort-success');
     });
 
-    it('should have blue colors for medium confidence', () => {
-      expect(CONFIDENCE_COLORS.medium.bg).toContain('blue');
-      expect(CONFIDENCE_COLORS.medium.text).toContain('blue');
-      expect(CONFIDENCE_COLORS.medium.border).toContain('blue');
+    it('should use design-system blue colors for medium confidence', () => {
+      expect(CONFIDENCE_COLORS.medium.bg).toContain('stratosort-blue');
+      expect(CONFIDENCE_COLORS.medium.text).toContain('stratosort-blue');
+      expect(CONFIDENCE_COLORS.medium.border).toContain('stratosort-blue');
     });
 
     it('should have gray colors for low confidence', () => {
@@ -73,12 +76,14 @@ describe('confidenceColors', () => {
   describe('getConfidenceColor', () => {
     it('should return correct classes for high confidence', () => {
       const result = getConfidenceColor('high');
-      expect(result).toBe('bg-emerald-100 text-emerald-700 border-emerald-200');
+      expect(result).toBe(
+        'bg-stratosort-success/10 text-stratosort-success border-stratosort-success/30'
+      );
     });
 
     it('should return correct classes for medium confidence', () => {
       const result = getConfidenceColor('medium');
-      expect(result).toBe('bg-blue-100 text-blue-700 border-blue-200');
+      expect(result).toBe('bg-stratosort-blue/10 text-stratosort-blue border-stratosort-blue/30');
     });
 
     it('should return correct classes for low confidence', () => {

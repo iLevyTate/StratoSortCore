@@ -7,28 +7,31 @@
 
 export const CONFIDENCE_COLORS = {
   high: {
-    bg: 'bg-emerald-100',
-    text: 'text-emerald-700',
-    border: 'border-emerald-200',
+    bg: 'bg-stratosort-success/10',
+    text: 'text-stratosort-success',
+    border: 'border-stratosort-success/30',
     dot: '●',
+    dotBg: 'bg-stratosort-success',
     label: 'high',
     desc: 'Strong match',
-    combined: 'bg-emerald-100 text-emerald-700 border-emerald-200'
+    combined: 'bg-stratosort-success/10 text-stratosort-success border-stratosort-success/30'
   },
   medium: {
-    bg: 'bg-blue-100',
-    text: 'text-blue-700',
-    border: 'border-blue-200',
+    bg: 'bg-stratosort-blue/10',
+    text: 'text-stratosort-blue',
+    border: 'border-stratosort-blue/30',
     dot: '◐',
+    dotBg: 'bg-stratosort-blue',
     label: 'medium',
     desc: 'Partial match',
-    combined: 'bg-blue-100 text-blue-700 border-blue-200'
+    combined: 'bg-stratosort-blue/10 text-stratosort-blue border-stratosort-blue/30'
   },
   low: {
     bg: 'bg-system-gray-100',
     text: 'text-system-gray-600',
     border: 'border-system-gray-200',
     dot: '○',
+    dotBg: 'bg-system-gray-400',
     label: 'low',
     desc: 'Fallback',
     combined: 'bg-system-gray-100 text-system-gray-600 border-system-gray-200'

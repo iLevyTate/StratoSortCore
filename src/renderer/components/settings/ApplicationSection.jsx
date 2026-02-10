@@ -3,10 +3,8 @@ import PropTypes from 'prop-types';
 import Switch from '../ui/Switch';
 import SettingRow from './SettingRow';
 import Button from '../ui/Button';
-import Card from '../ui/Card';
+import SettingsCard from './SettingsCard';
 import { logger } from '../../../shared/logger';
-import { Stack } from '../layout';
-import { Text } from '../ui/Typography';
 
 /**
  * Application settings section (launch on startup, etc.)
@@ -49,61 +47,51 @@ function ApplicationSection({ settings, setSettings }) {
   }, [isExportingLogs]);
 
   return (
-    <Card variant="default" className="space-y-5">
-      <div>
-        <Text variant="tiny" className="font-semibold uppercase tracking-wide text-system-gray-500">
-          Application preferences
-        </Text>
-        <Text variant="small" className="text-system-gray-600">
-          Startup behavior and diagnostic access.
-        </Text>
-      </div>
+    <SettingsCard
+      title="Application preferences"
+      description="Startup behavior and diagnostic access."
+    >
+      <SettingRow
+        label="Launch on Startup"
+        description="Automatically start StratoSort when you log in to your computer."
+      >
+        <Switch
+          checked={!!settings.launchOnStartup}
+          onChange={(checked) =>
+            setSettings((prev) => ({
+              ...prev,
+              launchOnStartup: checked
+            }))
+          }
+        />
+      </SettingRow>
 
-      <Stack gap="relaxed">
-        {/* Launch on Startup */}
-        <SettingRow
-          label="Launch on Startup"
-          description="Automatically start StratoSort when you log in to your computer."
-        >
-          <Switch
-            checked={!!settings.launchOnStartup}
-            onChange={(checked) =>
-              setSettings((prev) => ({
-                ...prev,
-                launchOnStartup: checked
-              }))
-            }
-          />
-        </SettingRow>
-
-        {/* Logs */}
-        <SettingRow
-          label="Troubleshooting Logs"
-          description="Manage application logs for debugging and support."
-        >
-          <div className="flex gap-2">
-            <Button
-              variant="subtle"
-              size="sm"
-              onClick={handleOpenLogsFolder}
-              disabled={!window?.electronAPI?.settings?.openLogsFolder}
-              isLoading={isOpeningLogs}
-            >
-              Open Folder
-            </Button>
-            <Button
-              variant="subtle"
-              size="sm"
-              onClick={handleExportLogs}
-              disabled={!window?.electronAPI?.system?.exportLogs}
-              isLoading={isExportingLogs}
-            >
-              Export Logs
-            </Button>
-          </div>
-        </SettingRow>
-      </Stack>
-    </Card>
+      <SettingRow
+        label="Troubleshooting Logs"
+        description="Manage application logs for debugging and support."
+      >
+        <div className="flex gap-2">
+          <Button
+            variant="subtle"
+            size="sm"
+            onClick={handleOpenLogsFolder}
+            disabled={!window?.electronAPI?.settings?.openLogsFolder}
+            isLoading={isOpeningLogs}
+          >
+            Open Folder
+          </Button>
+          <Button
+            variant="subtle"
+            size="sm"
+            onClick={handleExportLogs}
+            disabled={!window?.electronAPI?.system?.exportLogs}
+            isLoading={isExportingLogs}
+          >
+            Export Logs
+          </Button>
+        </div>
+      </SettingRow>
+    </SettingsCard>
   );
 }
 

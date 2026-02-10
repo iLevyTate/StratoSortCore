@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useKeyboardShortcuts } from '../hooks';
 import { useAppSelector } from '../store/hooks';
 import PhaseErrorBoundary from './PhaseErrorBoundary';
@@ -28,26 +28,29 @@ const preloadPhases = () => {
 };
 
 // Optimized page transitions with GPU acceleration
-// Using smooth opacity transitions for refined feel
-const pageVariants = {
+// Subtle slide + opacity for refined phase transitions (no slide when reduced motion preferred)
+const pageVariants = (reducedMotion) => ({
   initial: {
-    opacity: 0
+    opacity: 0,
+    y: reducedMotion ? 0 : 6
   },
   in: {
     opacity: 1,
+    y: 0,
     transition: {
-      duration: 0.2, // Smooth entry
-      ease: [0.16, 1, 0.3, 1] // Snappy easing (same as modal-enter)
+      duration: reducedMotion ? 0.1 : 0.22,
+      ease: [0.16, 1, 0.3, 1]
     }
   },
   out: {
     opacity: 0,
+    y: reducedMotion ? 0 : -4,
     transition: {
-      duration: 0.15, // Smooth exit (not too fast, not too slow)
-      ease: [0.4, 0, 0.2, 1] // Smooth easing
+      duration: reducedMotion ? 0.08 : 0.15,
+      ease: [0.4, 0, 0.2, 1]
     }
   }
-};
+});
 
 const pageTransition = {
   type: 'tween',
@@ -58,6 +61,7 @@ const pageTransition = {
 function PhaseRenderer() {
   const currentPhase = useAppSelector((state) => state.ui.currentPhase);
   const showSettings = useAppSelector((state) => state.ui.showSettings);
+  const shouldReduceMotion = useReducedMotion();
   useKeyboardShortcuts();
 
   // Preload phases on mount
@@ -127,13 +131,12 @@ function PhaseRenderer() {
               initial="initial"
               animate="in"
               exit="out"
-              variants={pageVariants}
+              variants={pageVariants(Boolean(shouldReduceMotion))}
               transition={pageTransition}
               className="w-full flex-1 flex flex-col"
               style={{
-                willChange: 'opacity',
-                backfaceVisibility: 'hidden',
-                transform: 'translate3d(0, 0, 0)'
+                willChange: 'opacity, transform',
+                backfaceVisibility: 'hidden'
               }}
             >
               {renderCurrentPhase()}

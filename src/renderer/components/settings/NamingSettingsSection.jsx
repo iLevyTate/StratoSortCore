@@ -2,9 +2,8 @@ import React, { useCallback } from 'react';
 import PropTypes from 'prop-types';
 import Select from '../ui/Select';
 import Input from '../ui/Input';
-import Card from '../ui/Card';
 import SettingRow from './SettingRow';
-import { Text } from '../ui/Typography';
+import SettingsCard from './SettingsCard';
 
 // Characters that could break file paths - used for separator validation
 const UNSAFE_SEPARATOR_CHARS = /[/\\:*?"<>|]/;
@@ -51,17 +50,10 @@ function NamingSettingsSection({ settings, setSettings }) {
   );
 
   return (
-    <Card variant="default" className="space-y-5">
-      <div>
-        <Text variant="tiny" className="font-semibold uppercase tracking-wide text-system-gray-500">
-          File naming defaults
-        </Text>
-        <Text variant="small" className="text-system-gray-600">
-          Configure how files are renamed by Download Watcher, Smart Folder Watcher, and Reanalyze
-          All Files. These settings do not affect the Discover phase.
-        </Text>
-      </div>
-
+    <SettingsCard
+      title="File naming defaults"
+      description="Configure how files are renamed by Download Watcher, Smart Folder Watcher, and Reanalyze All Files. These settings do not affect the Discover phase."
+    >
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <SettingRow layout="col" label="Convention" className="h-full">
           <Select
@@ -127,7 +119,7 @@ function NamingSettingsSection({ settings, setSettings }) {
           />
         </SettingRow>
       </div>
-    </Card>
+    </SettingsCard>
   );
 }
 

@@ -263,7 +263,7 @@ const FileNode = memo(({ data, selected }) => {
         <div
           className={`
             absolute -top-2 -right-2 text-[9px] font-bold rounded-full px-1.5 h-5 min-w-[28px] flex items-center justify-center shadow-md border border-white z-10
-            ${hasHighScore ? 'bg-stratosort-blue-600 text-white' : 'bg-system-gray-100 text-system-gray-600 border-system-gray-200'}
+            ${hasHighScore ? 'bg-stratosort-blue text-white' : 'bg-system-gray-100 text-system-gray-600 border-system-gray-200'}
           `}
           title={`Relevance: ${Math.round(displayScore * 100)}%`}
         >

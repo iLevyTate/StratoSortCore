@@ -1,5 +1,6 @@
 import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
+import { motion, useReducedMotion } from 'framer-motion';
 import { CheckCircle2, Check, RotateCcw, ArrowLeft } from 'lucide-react';
 import { PHASES } from '../../shared/constants';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
@@ -48,6 +49,7 @@ function CompletePhase() {
   const dispatch = useAppDispatch();
   const organizedFiles = useAppSelector((state) => state.files.organizedFiles);
   const redactPaths = useAppSelector((state) => Boolean(state?.system?.redactPaths));
+  const shouldReduceMotion = useReducedMotion();
 
   const { filesToRender, overflowCount, destinationCount, totalFiles } = useMemo(() => {
     const safeFiles = Array.isArray(organizedFiles) ? organizedFiles : [];
@@ -87,35 +89,67 @@ function CompletePhase() {
     [dispatch]
   );
 
+  const showCelebration = totalFiles > 0 && !shouldReduceMotion;
+
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-relaxed lg:gap-spacious pb-6">
-      {/* Header */}
+      {/* Header with optional celebration animation */}
       <Stack className="text-center flex-shrink-0" gap="compact">
-        <Heading as="h1" variant="display">
-          Organization <span className="text-gradient">Complete</span>
-        </Heading>
-        <Text variant="lead" className="max-w-xl mx-auto">
-          {totalFiles > 0
-            ? `Successfully organized ${totalFiles} file${totalFiles !== 1 ? 's' : ''} using AI-powered analysis.`
-            : 'No files were organized in this session.'}
-        </Text>
+        <motion.div
+          initial={showCelebration ? { opacity: 0, scale: 0.96 } : false}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{
+            duration: 0.35,
+            ease: [0.16, 1, 0.3, 1]
+          }}
+        >
+          <Heading as="h1" variant="display">
+            Organization <span className="text-gradient">Complete</span>
+          </Heading>
+        </motion.div>
+        <motion.div
+          initial={showCelebration ? { opacity: 0, y: 4 } : false}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{
+            duration: 0.3,
+            delay: showCelebration ? 0.1 : 0,
+            ease: [0.16, 1, 0.3, 1]
+          }}
+          className="max-w-xl mx-auto"
+        >
+          <Text variant="lead">
+            {totalFiles > 0
+              ? `Successfully organized ${totalFiles} file${totalFiles !== 1 ? 's' : ''} using AI-powered analysis.`
+              : 'No files were organized in this session.'}
+          </Text>
+        </motion.div>
       </Stack>
 
-      {/* Toolbar */}
-      <Inline className="justify-between pt-2" gap="cozy">
-        <Inline gap="relaxed">
-          {totalFiles > 0 && (
-            <StatusBadge variant="success">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              {totalFiles} file{totalFiles !== 1 ? 's' : ''} moved
-            </StatusBadge>
-          )}
-          {destinationCount > 1 && (
-            <StatusBadge variant="info">{destinationCount} destinations</StatusBadge>
-          )}
+      {/* Toolbar with success badge animation */}
+      <motion.div
+        initial={showCelebration ? { opacity: 0, y: 6 } : false}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{
+          duration: 0.3,
+          delay: showCelebration ? 0.18 : 0,
+          ease: [0.16, 1, 0.3, 1]
+        }}
+      >
+        <Inline className="justify-between pt-2" gap="cozy">
+          <Inline gap="relaxed">
+            {totalFiles > 0 && (
+              <StatusBadge variant="success">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                {totalFiles} file{totalFiles !== 1 ? 's' : ''} moved
+              </StatusBadge>
+            )}
+            {destinationCount > 1 && (
+              <StatusBadge variant="info">{destinationCount} destinations</StatusBadge>
+            )}
+          </Inline>
+          <UndoRedoToolbar className="flex-shrink-0" />
         </Inline>
-        <UndoRedoToolbar className="flex-shrink-0" />
-      </Inline>
+      </motion.div>
 
       {/* Main Content */}
       <Stack className="flex-1 min-h-0" gap="relaxed">

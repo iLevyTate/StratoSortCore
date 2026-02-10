@@ -24,8 +24,8 @@ import { toggleSettings, updateSettings } from '../store/slices/uiSlice';
 import { useDebouncedCallback } from '../hooks/usePerformance';
 import Button from './ui/Button';
 import IconButton from './ui/IconButton';
-import Card from './ui/Card';
 import Collapsible from './ui/Collapsible';
+import SettingsCard from './settings/SettingsCard';
 import { ModalLoadingOverlay } from './ui/LoadingSkeleton';
 import { Heading, Text } from './ui/Typography';
 import { Stack } from './layout';
@@ -630,7 +630,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 Electron API not available. Please restart the application.
               </Text>
             </div>
-            <div className="px-6 py-4 border-t border-system-gray-100 bg-system-gray-50 flex items-center justify-end gap-cozy flex-shrink-0 rounded-b-2xl">
+            <div className="px-6 py-4 border-t border-border-soft bg-surface-muted flex items-center justify-end gap-cozy flex-shrink-0 rounded-b-2xl">
               <Button
                 onClick={handleToggleSettings}
                 variant="secondary"
@@ -800,11 +800,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 defaultOpen={false}
                 persistKey="settings-history"
               >
-                <Card variant="default" className="space-y-3">
-                  <Text variant="small" className="text-system-gray-600">
-                    View and manage your file analysis history, including past results and
-                    statistics.
-                  </Text>
+                <SettingsCard
+                  title="Analysis History"
+                  description="View and manage your file analysis history, including past results and statistics."
+                >
                   <Button
                     onClick={() => setShowAnalysisHistory(true)}
                     variant="secondary"
@@ -813,7 +812,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                   >
                     View Analysis History
                   </Button>
-                </Card>
+                </SettingsCard>
               </Collapsible>
 
               <Collapsible
@@ -830,7 +829,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
               </Collapsible>
             </div>
 
-            <div className="px-6 py-4 border-t border-system-gray-100 bg-system-gray-50 flex items-center justify-end gap-cozy flex-shrink-0 rounded-b-2xl">
+            <div className="px-6 py-4 border-t border-border-soft bg-surface-muted flex items-center justify-end gap-cozy flex-shrink-0 rounded-b-2xl">
               <Button
                 onClick={handleToggleSettings}
                 variant="secondary"

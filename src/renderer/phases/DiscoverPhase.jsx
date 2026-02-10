@@ -579,7 +579,7 @@ function DiscoverPhase() {
         {/* Bottom Section - Results (or skeleton while analyzing) */}
         {(visibleAnalysisResults.length > 0 || (isAnalyzing && unorganizedSelectedCount > 0)) && (
           <Card className="flex-1 min-h-[400px] flex flex-col overflow-hidden p-0">
-            <div className="border-b border-border-soft/70 bg-white/50 px-6 py-4 flex justify-between items-center">
+            <div className="border-b border-border-soft/70 bg-white/50 px-6 py-4 flex items-center justify-between flex-shrink-0">
               <Heading as="h3" variant="h5">
                 Analysis Results
               </Heading>

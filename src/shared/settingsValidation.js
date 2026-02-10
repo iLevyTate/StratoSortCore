@@ -286,6 +286,11 @@ const VALIDATION_RULES = {
     enum: ['embed', 'skip', 'web_only'],
     required: false
   },
+  embeddingScope: {
+    type: 'string',
+    enum: ['all_analyzed', 'smart_folders_only'],
+    required: false
+  },
   chatPersona: {
     type: 'string',
     enum: CHAT_PERSONA_IDS,

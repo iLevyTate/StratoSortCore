@@ -3,10 +3,10 @@ import PropTypes from 'prop-types';
 import Switch from '../ui/Switch';
 import Input from '../ui/Input';
 import Button from '../ui/Button';
-import Card from '../ui/Card';
 import SettingRow from './SettingRow';
+import SettingsCard from './SettingsCard';
+import SettingsGroup from './SettingsGroup';
 import { Text } from '../ui/Typography';
-import { Stack } from '../layout';
 import { logger } from '../../../shared/logger';
 
 const DEFAULT_WEIGHT = 0.2;
@@ -137,156 +137,150 @@ function GraphRetrievalSection({ settings, setSettings }) {
   }, [refreshStats]);
 
   return (
-    <Card variant="default" className="space-y-5">
-      <div>
-        <Text variant="tiny" className="font-semibold uppercase tracking-wide text-system-gray-500">
-          Graph retrieval
-        </Text>
-        <Text variant="small" className="text-system-gray-600">
-          Configure GraphRAG-lite expansion and contextual chunk retrieval.
-        </Text>
-      </div>
+    <SettingsCard
+      title="Graph retrieval"
+      description="Configure GraphRAG-lite expansion and contextual chunk retrieval."
+    >
+      <SettingRow
+        label="Enable graph expansion"
+        description="Use relationship edges to pull related files into search results."
+      >
+        <Switch
+          checked={settings.graphExpansionEnabled !== false}
+          onChange={(checked) => updateSetting('graphExpansionEnabled', checked)}
+        />
+      </SettingRow>
 
-      <Stack gap="relaxed">
-        <SettingRow
-          label="Enable graph expansion"
-          description="Use relationship edges to pull related files into search results."
-        >
-          <Switch
-            checked={settings.graphExpansionEnabled !== false}
-            onChange={(checked) => updateSetting('graphExpansionEnabled', checked)}
-          />
-        </SettingRow>
-
-        <SettingRow
-          label="Graph expansion weight"
-          description="How much graph neighbors can influence ranking."
-        >
-          <div className="w-full space-y-2">
-            <div className="flex items-center justify-between">
-              <Text variant="tiny" className="text-system-gray-500">
-                Weight
-              </Text>
-              <Text variant="tiny" className="font-medium text-stratosort-blue">
-                {weightPercent}%
-              </Text>
-            </div>
-            <input
-              type="range"
-              min={Math.round(WEIGHT_MIN * 100)}
-              max={Math.round(WEIGHT_MAX * 100)}
-              step="1"
-              value={weightPercent}
-              onChange={(e) => {
-                const next = clampNumber(
-                  Number(e.target.value) / 100,
-                  WEIGHT_MIN,
-                  WEIGHT_MAX,
-                  weight
-                );
-                updateSetting('graphExpansionWeight', next);
-              }}
-              aria-label="Graph expansion weight"
-              className="w-full accent-stratosort-blue"
-            />
-          </div>
-        </SettingRow>
-
-        <SettingRow
-          label="Graph neighbors limit"
-          description="Maximum number of neighbor files added per query."
-          layout="col"
-        >
-          <Input
-            type="number"
-            min={NEIGHBORS_MIN}
-            max={NEIGHBORS_MAX}
-            value={neighbors}
-            onChange={(e) => {
-              const next = clampNumber(
-                Number(e.target.value),
-                NEIGHBORS_MIN,
-                NEIGHBORS_MAX,
-                neighbors
-              );
-              updateSetting('graphExpansionMaxNeighbors', Math.round(next));
-            }}
-          />
-        </SettingRow>
-
-        <SettingRow
-          label="Contextual chunk expansion"
-          description="Include adjacent chunks around the best chunk match."
-        >
-          <Switch
-            checked={settings.chunkContextEnabled !== false}
-            onChange={(checked) => updateSetting('chunkContextEnabled', checked)}
-          />
-        </SettingRow>
-
-        <SettingRow
-          label="Adjacent chunks"
-          description="How many neighboring chunks to include on each side."
-          layout="col"
-        >
-          <Input
-            type="number"
-            min={CONTEXT_NEIGHBORS_MIN}
-            max={CONTEXT_NEIGHBORS_MAX}
-            value={contextNeighbors}
-            onChange={(e) => {
-              const next = clampNumber(
-                Number(e.target.value),
-                CONTEXT_NEIGHBORS_MIN,
-                CONTEXT_NEIGHBORS_MAX,
-                contextNeighbors
-              );
-              updateSetting('chunkContextMaxNeighbors', Math.round(next));
-            }}
-          />
-        </SettingRow>
-
-        <SettingRow
-          label="Knowledge graph status"
-          description="Shows the local relationship index status built from analysis history."
-          layout="col"
-        >
-          <div className="rounded-lg border border-system-gray-100 bg-system-gray-50 p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <Text variant="small" className="text-system-gray-700">
-                {stats?.edgeCount != null ? `${stats.edgeCount} edges (max 2000)` : 'No index yet'}
-              </Text>
-              <Button
-                variant="ghost"
-                size="xs"
-                onClick={refreshStats}
-                disabled={isLoading || !window?.electronAPI?.knowledge?.getRelationshipStats}
-              >
-                {isLoading ? 'Refreshing…' : 'Refresh'}
-              </Button>
-            </div>
+      <SettingRow
+        label="Graph expansion weight"
+        description="How much graph neighbors can influence ranking."
+      >
+        <div className="w-full space-y-2">
+          <div className="flex items-center justify-between">
             <Text variant="tiny" className="text-system-gray-500">
-              Concepts: {stats?.conceptCount ?? '—'} • Graph documents: {stats?.docCount ?? '—'}
+              Weight
             </Text>
-            <Text variant="tiny" className="text-system-gray-500">
-              Searchable files: {embeddingStats?.files ?? '—'} • Analysis history:{' '}
-              {historyStats?.totalFiles ?? '—'} • Updated: {formattedHistoryUpdatedAt}
-            </Text>
-            <Text variant="tiny" className="text-system-gray-500">
-              Graph documents count only includes files with extracted concepts (tags, keywords,
-              entities). Searchable files are stored in the vector database for search and graph
-              visualization.
-            </Text>
-            <Text variant="tiny" className="text-system-gray-500">
-              Last built: {formattedUpdatedAt}
-            </Text>
-            <Text variant="tiny" className="text-system-gray-500">
-              Source data: Analysis history updated {formattedSourceUpdatedAt}
+            <Text variant="tiny" className="font-medium text-stratosort-blue">
+              {weightPercent}%
             </Text>
           </div>
-        </SettingRow>
-      </Stack>
-    </Card>
+          <input
+            type="range"
+            min={Math.round(WEIGHT_MIN * 100)}
+            max={Math.round(WEIGHT_MAX * 100)}
+            step="1"
+            value={weightPercent}
+            onChange={(e) => {
+              const next = clampNumber(
+                Number(e.target.value) / 100,
+                WEIGHT_MIN,
+                WEIGHT_MAX,
+                weight
+              );
+              updateSetting('graphExpansionWeight', next);
+            }}
+            aria-label="Graph expansion weight"
+            className="w-full accent-stratosort-blue"
+          />
+        </div>
+      </SettingRow>
+
+      <SettingRow
+        label="Graph neighbors limit"
+        description="Maximum number of neighbor files added per query."
+        layout="col"
+      >
+        <Input
+          type="number"
+          min={NEIGHBORS_MIN}
+          max={NEIGHBORS_MAX}
+          value={neighbors}
+          className="w-full"
+          onChange={(e) => {
+            const next = clampNumber(
+              Number(e.target.value),
+              NEIGHBORS_MIN,
+              NEIGHBORS_MAX,
+              neighbors
+            );
+            updateSetting('graphExpansionMaxNeighbors', Math.round(next));
+          }}
+        />
+      </SettingRow>
+
+      <SettingRow
+        label="Contextual chunk expansion"
+        description="Include adjacent chunks around the best chunk match."
+      >
+        <Switch
+          checked={settings.chunkContextEnabled !== false}
+          onChange={(checked) => updateSetting('chunkContextEnabled', checked)}
+        />
+      </SettingRow>
+
+      <SettingRow
+        label="Adjacent chunks"
+        description="How many neighboring chunks to include on each side."
+        layout="col"
+      >
+        <Input
+          type="number"
+          min={CONTEXT_NEIGHBORS_MIN}
+          max={CONTEXT_NEIGHBORS_MAX}
+          value={contextNeighbors}
+          className="w-full"
+          onChange={(e) => {
+            const next = clampNumber(
+              Number(e.target.value),
+              CONTEXT_NEIGHBORS_MIN,
+              CONTEXT_NEIGHBORS_MAX,
+              contextNeighbors
+            );
+            updateSetting('chunkContextMaxNeighbors', Math.round(next));
+          }}
+        />
+      </SettingRow>
+
+      <SettingRow
+        label="Knowledge graph status"
+        description="Shows the local relationship index status built from analysis history."
+        layout="col"
+      >
+        <SettingsGroup gap="compact">
+          <div className="flex items-center justify-between">
+            <Text variant="small" className="text-system-gray-700">
+              {stats?.edgeCount != null ? `${stats.edgeCount} edges (max 2000)` : 'No index yet'}
+            </Text>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={refreshStats}
+              disabled={isLoading || !window?.electronAPI?.knowledge?.getRelationshipStats}
+            >
+              {isLoading ? 'Refreshing…' : 'Refresh'}
+            </Button>
+          </div>
+          <Text variant="tiny" className="text-system-gray-500">
+            Concepts: {stats?.conceptCount ?? '—'} • Graph documents: {stats?.docCount ?? '—'}
+          </Text>
+          <Text variant="tiny" className="text-system-gray-500">
+            Searchable files: {embeddingStats?.files ?? '—'} • Analysis history:{' '}
+            {historyStats?.totalFiles ?? '—'} • Updated: {formattedHistoryUpdatedAt}
+          </Text>
+          <Text variant="tiny" className="text-system-gray-500">
+            Graph documents count only includes files with extracted concepts (tags, keywords,
+            entities). Searchable files are stored in the vector database for search and graph
+            visualization.
+          </Text>
+          <Text variant="tiny" className="text-system-gray-500">
+            Last built: {formattedUpdatedAt}
+          </Text>
+          <Text variant="tiny" className="text-system-gray-500">
+            Source data: Analysis history updated {formattedSourceUpdatedAt}
+          </Text>
+        </SettingsGroup>
+      </SettingRow>
+    </SettingsCard>
   );
 }
 

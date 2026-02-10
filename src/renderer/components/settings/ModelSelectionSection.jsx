@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { AlertTriangle, Database, Info, FileText } from 'lucide-react';
 import Select from '../ui/Select';
-import Card from '../ui/Card';
 import StatusBadge from '../ui/StatusBadge';
 import SettingRow from './SettingRow';
+import SettingsCard from './SettingsCard';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import StateMessage from '../ui/StateMessage';
@@ -134,27 +134,18 @@ function ModelSelectionSection({
   const hasEmbeddingModels = embeddingModelOptions.length > 0;
 
   return (
-    <Card variant="default" className="space-y-5">
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div>
-          <Text
-            variant="tiny"
-            className="font-semibold uppercase tracking-wide text-system-gray-500"
-          >
-            Default AI models
-          </Text>
-          <Text variant="small" className="text-system-gray-600">
-            Choose which GGUF models StratoSort uses for analysis, vision, and embeddings.
-          </Text>
-        </div>
+    <SettingsCard
+      title="Default AI models"
+      description="Choose which GGUF models StratoSort uses for analysis, vision, and embeddings."
+      headerAction={
         <StatusBadge variant="info" className="whitespace-nowrap">
           <span className="flex items-center gap-2">
             <Database className="w-4 h-4" />
             Loaded locally
           </span>
         </StatusBadge>
-      </div>
-
+      }
+    >
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {/* Text Model Selection */}
         <SettingRow
@@ -188,7 +179,7 @@ function ModelSelectionSection({
               align="left"
               title="No text models found"
               description="Download a text model from the Models tab."
-              className="p-3 bg-system-gray-50 rounded-lg border border-system-gray-100"
+              className="p-4 bg-surface-muted rounded-xl border border-border-soft"
               contentClassName="max-w-xs"
             />
           )}
@@ -226,7 +217,7 @@ function ModelSelectionSection({
               align="left"
               title="No vision models found"
               description="Download a vision model from the Models tab for image analysis."
-              className="p-3 bg-system-gray-50 rounded-lg border border-system-gray-100"
+              className="p-4 bg-surface-muted rounded-xl border border-border-soft"
               contentClassName="max-w-xs"
             />
           )}
@@ -254,7 +245,7 @@ function ModelSelectionSection({
               </Select>
 
               <div className="flex items-start gap-2 p-2 bg-stratosort-blue/5 rounded-md border border-stratosort-blue/10">
-                <Info className="w-3.5 h-3.5 text-stratosort-blue/70 mt-0.5 flex-shrink-0" />
+                <Info className="w-4 h-4 text-stratosort-blue/70 mt-0.5 flex-shrink-0" />
                 <Text variant="tiny" className="text-system-gray-600 leading-tight">
                   Different models use different vector dimensions. Changing the model requires
                   rebuilding your embeddings database.
@@ -279,7 +270,7 @@ function ModelSelectionSection({
               align="left"
               title="No embedding models available"
               description="Pull embeddinggemma (recommended) or mxbai-embed-large."
-              className="p-3 bg-system-gray-50 rounded-lg border border-system-gray-100"
+              className="p-4 bg-surface-muted rounded-xl border border-border-soft"
               contentClassName="max-w-xs"
             />
           )}
@@ -310,7 +301,7 @@ function ModelSelectionSection({
 
           {stats &&
             (stats.files > 0 || stats.fileChunks > 0 || stats.analysisHistory?.totalFiles > 0) && (
-              <div className="flex items-center gap-2 p-3 bg-system-gray-50 rounded-lg border border-system-gray-100">
+              <div className="flex items-center gap-2 p-3 bg-surface-muted rounded-lg border border-border-soft">
                 <FileText className="w-4 h-4" />
                 <Text as="span" variant="small" className="text-system-gray-600">
                   {stats.files || 0} files ({stats.fileChunks || 0} chunks) currently indexed.
@@ -325,6 +316,7 @@ function ModelSelectionSection({
               onClick={confirmChangeAndRebuild}
               disabled={isRebuilding}
               variant="primary"
+              size="sm"
               className="w-full justify-center"
             >
               {isRebuilding ? 'Starting Rebuild...' : 'Change & Rebuild Now'}
@@ -334,6 +326,7 @@ function ModelSelectionSection({
               onClick={confirmChangeOnly}
               disabled={isRebuilding}
               variant="secondary"
+              size="sm"
               className="w-full justify-center"
             >
               Change Only (Rebuild Later)
@@ -343,6 +336,7 @@ function ModelSelectionSection({
               onClick={cancelChange}
               disabled={isRebuilding}
               variant="ghost"
+              size="sm"
               className="w-full justify-center"
             >
               Cancel
@@ -350,7 +344,7 @@ function ModelSelectionSection({
           </div>
         </div>
       </Modal>
-    </Card>
+    </SettingsCard>
   );
 }
 

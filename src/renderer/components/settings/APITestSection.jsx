@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { CheckCircle, XCircle } from 'lucide-react';
 import Button from '../ui/Button';
-import Card from '../ui/Card';
+import SettingsCard from './SettingsCard';
 import { Text } from '../ui/Typography';
 
 /**
@@ -113,50 +113,46 @@ function APITestSection({ addNotification }) {
   }, [addNotification]);
 
   return (
-    <Card variant="default" className="space-y-5">
-      <div>
-        <Text variant="tiny" className="font-semibold uppercase tracking-wide text-system-gray-500">
-          Backend API test
-        </Text>
-        <Text variant="small" className="text-system-gray-600">
-          Run a quick connectivity check against all core services.
-        </Text>
+    <SettingsCard
+      title="Backend API test"
+      description="Run a quick connectivity check against all core services."
+    >
+      <div className="space-y-6">
+        <Button
+          onClick={runAPITests}
+          disabled={isTestingApi}
+          variant="primary"
+          size="sm"
+          className="w-full sm:w-auto"
+        >
+          {isTestingApi ? 'Testing APIs...' : 'Test All APIs'}
+        </Button>
+
+        {Object.keys(testResults).length > 0 && (
+          <div className="rounded-xl border border-border-soft bg-surface-muted divide-y divide-border-soft overflow-hidden">
+            {Object.entries(testResults).map(([service, result]) => (
+              <div key={service} className="flex flex-col sm:flex-row sm:items-center gap-2 p-3">
+                <Text variant="small" className="font-medium text-system-gray-700 capitalize">
+                  {service.replace(/([A-Z])/g, ' $1').trim()}
+                </Text>
+                <Text
+                  as="span"
+                  variant="tiny"
+                  className="font-mono flex items-center gap-1 text-system-gray-600"
+                >
+                  {result.success ? (
+                    <CheckCircle className="w-4 h-4 text-stratosort-success" />
+                  ) : (
+                    <XCircle className="w-4 h-4 text-stratosort-danger" />
+                  )}
+                  {result.success ? result.message : `Error: ${result.message}`}
+                </Text>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-
-      <Button
-        onClick={runAPITests}
-        disabled={isTestingApi}
-        variant="primary"
-        size="sm"
-        className="w-full sm:w-auto"
-      >
-        {isTestingApi ? 'Testing APIs...' : 'Test All APIs'}
-      </Button>
-
-      {Object.keys(testResults).length > 0 && (
-        <div className="rounded-lg border border-system-gray-100 bg-system-gray-50 divide-y divide-system-gray-100">
-          {Object.entries(testResults).map(([service, result]) => (
-            <div key={service} className="flex flex-col sm:flex-row sm:items-center gap-2 p-3">
-              <Text variant="small" className="font-medium text-system-gray-700 capitalize">
-                {service.replace(/([A-Z])/g, ' $1').trim()}
-              </Text>
-              <Text
-                as="span"
-                variant="tiny"
-                className="font-mono flex items-center gap-1 text-system-gray-600"
-              >
-                {result.success ? (
-                  <CheckCircle className="w-4 h-4 text-stratosort-success" />
-                ) : (
-                  <XCircle className="w-4 h-4 text-stratosort-danger" />
-                )}
-                {result.success ? result.message : `Error: ${result.message}`}
-              </Text>
-            </div>
-          ))}
-        </div>
-      )}
-    </Card>
+    </SettingsCard>
   );
 }
 

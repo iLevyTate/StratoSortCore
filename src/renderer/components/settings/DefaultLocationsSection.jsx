@@ -4,9 +4,8 @@ import { useSelector } from 'react-redux';
 import { FolderOpen } from 'lucide-react';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
-import Card from '../ui/Card';
 import SettingRow from './SettingRow';
-import { Text } from '../ui/Typography';
+import SettingsCard from './SettingsCard';
 import { selectRedactPaths } from '../../store/selectors';
 
 /**
@@ -32,22 +31,16 @@ function DefaultLocationsSection({ settings, setSettings }) {
   }, [setSettings]);
 
   return (
-    <Card variant="default" className="space-y-5">
-      <div>
-        <Text variant="tiny" className="font-semibold uppercase tracking-wide text-system-gray-500">
-          Default locations
-        </Text>
-        <Text variant="small" className="text-system-gray-600">
-          Choose where StratoSort creates new smart folders by default.
-        </Text>
-      </div>
-
+    <SettingsCard
+      title="Default locations"
+      description="Choose where StratoSort creates new smart folders by default."
+    >
       <SettingRow
         layout="col"
         label="Default Smart Folder Location"
         description="Where new smart folders will be created by default."
       >
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="settings-input-group">
           <Input
             type={redactPaths ? 'password' : 'text'}
             value={settings.defaultSmartFolderLocation || ''}
@@ -67,14 +60,14 @@ function DefaultLocationsSection({ settings, setSettings }) {
             title="Browse"
             aria-label="Browse for default folder"
             leftIcon={<FolderOpen className="w-4 h-4" />}
-            size="md"
-            className="w-full sm:w-auto justify-center"
+            size="sm"
+            className="w-full sm:w-auto justify-center min-w-[9rem]"
           >
             Browse
           </Button>
         </div>
       </SettingRow>
-    </Card>
+    </SettingsCard>
   );
 }
 

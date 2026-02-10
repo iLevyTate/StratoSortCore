@@ -1,6 +1,7 @@
 {
   "productName": "StratoSort",
   "appId": "com.stratosort.app",
+  "copyright": "Copyright © 2026 StratoSort Team",
   "publish": [
     {
       "provider": "github",

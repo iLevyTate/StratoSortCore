@@ -3,11 +3,11 @@ import PropTypes from 'prop-types';
 import { ChevronDown } from 'lucide-react';
 import Button from '../ui/Button';
 import Switch from '../ui/Switch';
-import Card from '../ui/Card';
+import SettingsCard from './SettingsCard';
+import SettingsGroup from './SettingsGroup';
 import { createLogger } from '../../../shared/logger';
 import { useAppSelector } from '../../store/hooks';
 import { Text } from '../ui/Typography';
-import { Stack } from '../layout';
 
 const { DEFAULT_AI_MODELS } = require('../../../shared/constants');
 const logger = createLogger('EmbeddingRebuildSection');
@@ -249,17 +249,11 @@ function EmbeddingRebuildSection({ addNotification }) {
   const analysisTotal = Number.isFinite(analysisProgress?.total) ? analysisProgress.total : 0;
 
   return (
-    <Card variant="default" className="space-y-5">
-      <div>
-        <Text variant="tiny" className="font-semibold uppercase tracking-wide text-system-gray-500">
-          Embeddings maintenance
-        </Text>
-        <Text variant="small" className="text-system-gray-600">
-          Rebuild embeddings and reanalyze files when models or indexing needs change.
-        </Text>
-      </div>
-
-      <Stack gap="default">
+    <SettingsCard
+      title="Embeddings maintenance"
+      description="Rebuild embeddings and reanalyze files when models or indexing needs change."
+    >
+      <div className="space-y-6">
         <div>
           <Text variant="small" className="font-medium text-system-gray-700">
             Embeddings status
@@ -299,14 +293,14 @@ function EmbeddingRebuildSection({ addNotification }) {
         </div>
 
         {/* Advanced Options Toggle */}
-        <div className="pt-4 border-t border-system-gray-100">
+        <div className="pt-4 border-t border-border-soft">
           <Button
             onClick={() => setShowAdvanced(!showAdvanced)}
             variant="ghost"
             size="sm"
             rightIcon={
               <ChevronDown
-                className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
+                className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
               />
             }
             className="text-stratosort-blue hover:text-stratosort-blue/80"
@@ -315,7 +309,7 @@ function EmbeddingRebuildSection({ addNotification }) {
           </Button>
 
           {showAdvanced && (
-            <div className="mt-4 space-y-4 rounded-lg border border-system-gray-100 bg-system-gray-50 p-4">
+            <SettingsGroup className="mt-4">
               {/* Reanalyze All (Destructive) */}
               <div>
                 <Text
@@ -369,11 +363,11 @@ function EmbeddingRebuildSection({ addNotification }) {
                       : 'Reanalyze All Files (Slow)'}
                 </Button>
               </div>
-            </div>
+            </SettingsGroup>
           )}
         </div>
-      </Stack>
-    </Card>
+      </div>
+    </SettingsCard>
   );
 }
 

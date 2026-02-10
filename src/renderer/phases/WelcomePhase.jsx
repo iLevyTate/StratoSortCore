@@ -156,7 +156,7 @@ function WelcomePhase() {
         <Card variant="hero" role="navigation" aria-label="Primary actions">
           <div className="flex flex-col">
             {/* Primary Action - Organize */}
-            <div className="flex flex-col gap-3 items-center pb-8 border-b border-system-gray-100">
+            <div className="flex flex-col gap-3 items-center pb-8 border-b border-border-soft">
               <Button
                 onClick={() => actions.advancePhase(PHASES?.DISCOVER ?? 'discover')}
                 variant="primary"

@@ -24,6 +24,19 @@ These variables affect setup scripts and `postinstall` behavior:
 | `SKIP_TESSERACT_SETUP` | `0`     | Skip Tesseract setup (used by setup scripts and background setup)     |
 | `MINIMAL_SETUP`        | `0`     | Skip optional model downloads during setup (`setup:models --minimal`) |
 
+### Default AI Models
+
+StratoSort uses these GGUF models out of the box (configurable in Settings → AI Configuration):
+
+| Role          | Default Model                          | Purpose                                |
+| ------------- | -------------------------------------- | -------------------------------------- |
+| **Text**      | `Mistral-7B-Instruct-v0.3-Q4_K_M.gguf` | Document analysis, chat, smart folders |
+| **Vision**    | `llava-v1.6-mistral-7b-Q4_K_M.gguf`    | Image understanding and OCR            |
+| **Embedding** | `nomic-embed-text-v1.5-Q8_0.gguf`      | Semantic search (768 dimensions)       |
+
+Fallbacks are used if primary models are unavailable. See `src/shared/constants.js` for the full
+list.
+
 ## Environment Variables
 
 ### OCR (Tesseract)

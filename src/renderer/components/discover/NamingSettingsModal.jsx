@@ -52,7 +52,7 @@ const NamingSettingsModal = memo(function NamingSettingsModal({
         <div className="border-t border-border-soft/70 pt-4 mt-2">
           <Text variant="tiny" className="text-system-gray-500 mb-4">
             <strong>Preview:</strong>{' '}
-            <span className="font-mono bg-system-gray-100 px-2 py-1 rounded">
+            <span className="font-mono bg-surface-muted border border-border-soft px-3 py-1.5 rounded-lg">
               {namingConvention === 'keep-original'
                 ? 'original-filename.ext'
                 : `${namingConvention.replace(/-/g, separator || '-')}.ext`}

@@ -2,8 +2,9 @@ import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { AlertCircle, CheckCircle2, Cpu, Download, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import Button from '../ui/Button';
-import Card from '../ui/Card';
 import StatusBadge from '../ui/StatusBadge';
+import SettingsCard from './SettingsCard';
+import SettingsGroup from './SettingsGroup';
 import StateMessage from '../ui/StateMessage';
 import { Text } from '../ui/Typography';
 import SettingRow from './SettingRow';
@@ -82,19 +83,10 @@ function LlamaConfigSection({
     !llamaHealth?.gpuBackend;
 
   return (
-    <Card variant="default" className="space-y-5">
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div>
-          <Text
-            variant="tiny"
-            className="font-semibold uppercase tracking-wide text-system-gray-500"
-          >
-            Local AI Engine
-          </Text>
-          <Text variant="small" className="text-system-gray-600">
-            StratoSort uses on-device AI for complete privacy. No data leaves your computer.
-          </Text>
-        </div>
+    <SettingsCard
+      title="Local AI Engine"
+      description="StratoSort uses on-device AI for complete privacy. No data leaves your computer."
+      headerAction={
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge variant={healthBadge.variant} className="whitespace-nowrap">
             <span className="flex items-center gap-2">
@@ -105,13 +97,13 @@ function LlamaConfigSection({
           <Text
             as="div"
             variant="tiny"
-            className="text-system-gray-500 px-3 py-1 rounded-full bg-system-gray-100 border border-system-gray-200 whitespace-nowrap"
+            className="text-system-gray-500 px-3 py-1 rounded-full bg-surface-muted border border-border-soft whitespace-nowrap"
           >
             {modelCountLabel}
           </Text>
         </div>
-      </div>
-
+      }
+    >
       {(gpuInfo || detectedGpu) && (
         <SettingRow
           layout="col"
@@ -119,7 +111,7 @@ function LlamaConfigSection({
           description="AI processing is accelerated using your device's GPU when available."
           className="space-y-2"
         >
-          <div className="flex flex-col gap-2 px-3 py-2 rounded-lg bg-system-gray-50 border border-system-gray-200">
+          <SettingsGroup gap="compact">
             <div className="flex items-center gap-2">
               <Cpu className="w-5 h-5 text-system-gray-500" />
               <Text variant="small" className="font-medium">
@@ -138,7 +130,7 @@ function LlamaConfigSection({
                 Vulkan/CUDA runtimes are installed.
               </Text>
             )}
-          </div>
+          </SettingsGroup>
         </SettingRow>
       )}
 
@@ -194,7 +186,7 @@ function LlamaConfigSection({
       </div>
 
       {showAllModels && (
-        <div className="p-4 bg-system-gray-50 rounded-lg border border-system-gray-200 space-y-2">
+        <SettingsGroup gap="compact">
           <div className="flex items-center justify-between gap-2">
             <Text variant="small" className="font-medium text-system-gray-700">
               Downloaded Models
@@ -219,7 +211,7 @@ function LlamaConfigSection({
               {modelList.map((model) => (
                 <li
                   key={model.name || model.filename}
-                  className="flex items-center justify-between gap-2 px-3 py-2 rounded border border-system-gray-200 bg-white shadow-sm"
+                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-border-soft bg-white shadow-sm"
                 >
                   <div className="flex-1 min-w-0">
                     <Text variant="small" className="font-mono truncate block">
@@ -235,7 +227,7 @@ function LlamaConfigSection({
                       variant="ghost"
                       size="sm"
                       title="Delete model"
-                      className="text-red-500 hover:text-red-700"
+                      className="text-stratosort-danger hover:opacity-90"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -245,7 +237,7 @@ function LlamaConfigSection({
             </ul>
           )}
           {onDownloadModel && (
-            <div className="pt-3 border-t border-system-gray-200">
+            <div className="pt-3 border-t border-border-soft">
               <Button
                 onClick={onDownloadModel}
                 variant="secondary"
@@ -256,9 +248,9 @@ function LlamaConfigSection({
               </Button>
             </div>
           )}
-        </div>
+        </SettingsGroup>
       )}
-    </Card>
+    </SettingsCard>
   );
 }
 

@@ -123,7 +123,7 @@ const ClusterNode = memo(({ data, selected }) => {
               onClick={() => handleMenuAction(onOpenAllFiles)}
               size="sm"
               variant="ghost"
-              className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning-50"
+              className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning/10"
               title="Open All Files"
               aria-label="Open All Files"
               icon={<ExternalLink className="w-4 h-4 text-blue-600" />}
@@ -134,7 +134,7 @@ const ClusterNode = memo(({ data, selected }) => {
               onClick={() => handleMenuAction(onSearchWithinCluster)}
               size="sm"
               variant="ghost"
-              className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning-50"
+              className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning/10"
               title="Search Within"
               aria-label="Search Within"
               icon={<Search className="w-4 h-4 text-indigo-600" />}
@@ -145,7 +145,7 @@ const ClusterNode = memo(({ data, selected }) => {
               onClick={() => handleMenuAction(onCreateSmartFolder)}
               size="sm"
               variant="ghost"
-              className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning-50"
+              className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning/10"
               title="Create Smart Folder"
               aria-label="Create Smart Folder"
               icon={<FolderPlus className="w-4 h-4 text-amber-600" />}
@@ -156,7 +156,7 @@ const ClusterNode = memo(({ data, selected }) => {
               onClick={() => handleMenuAction(onMoveAllToFolder)}
               size="sm"
               variant="ghost"
-              className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning-50"
+              className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning/10"
               title="Move All"
               aria-label="Move All"
               icon={<FolderInput className="w-4 h-4 text-blue-600" />}
@@ -167,7 +167,7 @@ const ClusterNode = memo(({ data, selected }) => {
               onClick={() => handleMenuAction(onExportFileList)}
               size="sm"
               variant="ghost"
-              className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning-50"
+              className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning/10"
               title="Export List"
               aria-label="Export List"
               icon={<Download className="w-4 h-4 text-green-600" />}
@@ -178,7 +178,7 @@ const ClusterNode = memo(({ data, selected }) => {
               onClick={handleStartEditLabel}
               size="sm"
               variant="ghost"
-              className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning-50"
+              className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning/10"
               title="Rename"
               aria-label="Rename"
               icon={<Pencil className="w-4 h-4 text-system-gray-500" />}

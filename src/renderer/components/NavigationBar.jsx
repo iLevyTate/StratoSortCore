@@ -9,7 +9,8 @@ import {
   Loader2,
   Minus,
   Square,
-  X
+  X,
+  ShieldCheck
 } from 'lucide-react';
 import { PHASES, PHASE_TRANSITIONS, PHASE_METADATA, PHASE_ORDER } from '../../shared/constants';
 import { createLogger } from '../../shared/logger';
@@ -124,6 +125,23 @@ ConnectionIndicator.propTypes = {
 };
 
 /**
+ * Local privacy badge - communicates air-gapped / 100% on-device positioning
+ */
+const LocalPrivacyBadge = memo(function LocalPrivacyBadge() {
+  return (
+    <div
+      className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-wide uppercase border border-stratosort-success/40 bg-stratosort-success/10 text-stratosort-success select-none shadow-sm"
+      title="Your data never leaves this device. All AI runs on your machine."
+      role="status"
+      aria-label="100% Local - Your data never leaves this device"
+    >
+      <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2.5} aria-hidden="true" />
+      <span>100% Local</span>
+    </div>
+  );
+});
+
+/**
  * Brand logo and name
  */
 const Brand = memo(function Brand({ status }) {
@@ -138,13 +156,16 @@ const Brand = memo(function Brand({ status }) {
           <ConnectionIndicator status={status} />
         </div>
       </div>
-      <div className="hidden sm:block leading-tight">
-        <Text as="p" variant="small" className="font-semibold text-system-gray-900">
-          StratoSort
-        </Text>
-        <Text as="p" variant="tiny" className="text-system-gray-500">
-          Cognitive file flow
-        </Text>
+      <div className="hidden sm:flex sm:items-center sm:gap-3 leading-tight">
+        <div>
+          <Text as="p" variant="small" className="font-semibold text-system-gray-900">
+            StratoSort
+          </Text>
+          <Text as="p" variant="tiny" className="text-system-gray-500">
+            Cognitive file flow
+          </Text>
+        </div>
+        <LocalPrivacyBadge />
       </div>
     </div>
   );

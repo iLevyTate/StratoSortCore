@@ -19,6 +19,7 @@ find the right documentation for your needs.
 > See [CONFIG.md](./CONFIG.md#model--ocr-setup) for details.
 
 - **[CONFIG.md](./CONFIG.md)** - Complete setup guide including:
+  - Default AI models (text, vision, embedding)
   - Model download and OCR setup
   - Environment variable reference
   - Troubleshooting tips

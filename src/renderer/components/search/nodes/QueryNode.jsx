@@ -92,7 +92,7 @@ const QueryNode = memo(({ data, selected }) => {
               e.stopPropagation();
               handleMenuAction(handleCopyQuery);
             }}
-            className="w-full justify-start px-3 py-2 text-system-gray-700 hover:bg-stratosort-indigo-50 rounded-none"
+            className="w-full justify-start px-3 py-2 text-system-gray-700 hover:bg-stratosort-indigo/10 rounded-none"
           >
             Copy Query
           </Button>
@@ -105,7 +105,7 @@ const QueryNode = memo(({ data, selected }) => {
               e.stopPropagation();
               handleMenuAction(handleSearchAgain);
             }}
-            className="w-full justify-start px-3 py-2 text-system-gray-700 hover:bg-stratosort-indigo-50 rounded-none"
+            className="w-full justify-start px-3 py-2 text-system-gray-700 hover:bg-stratosort-indigo/10 rounded-none"
           >
             Search Again
           </Button>

@@ -1,8 +1,8 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import Card from '../ui/Card';
 import Select from '../ui/Select';
 import SettingRow from './SettingRow';
+import SettingsCard from './SettingsCard';
 import { Text } from '../ui/Typography';
 import { CHAT_PERSONAS, DEFAULT_CHAT_PERSONA_ID } from '../../../shared/chatPersonas';
 
@@ -10,16 +10,10 @@ function ChatPersonaSection({ settings, setSettings }) {
   const currentValue = settings.chatPersona || DEFAULT_CHAT_PERSONA_ID;
 
   return (
-    <Card variant="default" className="space-y-5">
-      <div>
-        <Text variant="tiny" className="font-semibold uppercase tracking-wide text-system-gray-500">
-          Chat persona
-        </Text>
-        <Text variant="small" className="text-system-gray-600">
-          Choose the default tone and interaction style for chat responses.
-        </Text>
-      </div>
-
+    <SettingsCard
+      title="Chat persona"
+      description="Choose the default tone and interaction style for chat responses."
+    >
       <SettingRow
         layout="col"
         label="Persona preset"
@@ -45,7 +39,7 @@ function ChatPersonaSection({ settings, setSettings }) {
           {CHAT_PERSONAS.find((persona) => persona.id === currentValue)?.description || ''}
         </Text>
       </SettingRow>
-    </Card>
+    </SettingsCard>
   );
 }
 

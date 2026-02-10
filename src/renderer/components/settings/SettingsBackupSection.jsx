@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import { RefreshCw, Download, Upload, Trash2, RotateCcw, Clock } from 'lucide-react';
 import Button from '../ui/Button';
 import IconButton from '../ui/IconButton';
-import Card from '../ui/Card';
+import SettingsCard from './SettingsCard';
 import StateMessage from '../ui/StateMessage';
 import { createLogger } from '../../../shared/logger';
 import { Text } from '../ui/Typography';
@@ -152,19 +152,10 @@ function SettingsBackupSection({ addNotification }) {
   };
 
   return (
-    <Card variant="default" className="space-y-5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <Text
-            variant="tiny"
-            className="font-semibold uppercase tracking-wide text-system-gray-500"
-          >
-            Settings backup &amp; restore
-          </Text>
-          <Text variant="small" className="text-system-gray-600">
-            Create backups or export/import settings across devices.
-          </Text>
-        </div>
+    <SettingsCard
+      title="Settings backup & restore"
+      description="Create backups or export/import settings across devices."
+      headerAction={
         <IconButton
           icon={<RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />}
           size="sm"
@@ -174,8 +165,8 @@ function SettingsBackupSection({ addNotification }) {
           title="Refresh"
           disabled={isLoading}
         />
-      </div>
-
+      }
+    >
       {/* Quick Actions */}
       <div className="flex flex-wrap gap-2">
         <Button
@@ -185,7 +176,7 @@ function SettingsBackupSection({ addNotification }) {
           size="sm"
           className="flex items-center gap-1.5"
         >
-          <Clock className="w-3.5 h-3.5" />
+          <Clock className="w-4 h-4" />
           {isCreating ? 'Creating...' : 'Create Backup'}
         </Button>
         <Button
@@ -195,7 +186,7 @@ function SettingsBackupSection({ addNotification }) {
           size="sm"
           className="flex items-center gap-1.5"
         >
-          <Download className="w-3.5 h-3.5" />
+          <Download className="w-4 h-4" />
           {isExporting ? 'Exporting...' : 'Export to File'}
         </Button>
         <Button
@@ -205,7 +196,7 @@ function SettingsBackupSection({ addNotification }) {
           size="sm"
           className="flex items-center gap-1.5"
         >
-          <Upload className="w-3.5 h-3.5" />
+          <Upload className="w-4 h-4" />
           {isImporting ? 'Importing...' : 'Import from File'}
         </Button>
       </div>
@@ -216,11 +207,11 @@ function SettingsBackupSection({ addNotification }) {
           <Text as="label" variant="tiny" className="block font-medium text-system-gray-600">
             Available Backups ({backups.length})
           </Text>
-          <div className="max-h-40 overflow-y-auto space-y-1.5 border border-system-gray-200 rounded-lg p-2 bg-system-gray-50">
+          <div className="max-h-40 overflow-y-auto space-y-1.5 border border-border-soft rounded-xl p-3 bg-surface-muted">
             {backups.map((backup) => (
               <div
                 key={backup.path || backup.name}
-                className="flex items-center justify-between gap-2 p-2 bg-white rounded border border-system-gray-100"
+                className="flex items-center justify-between gap-2 p-2 rounded-lg border border-border-soft bg-white"
               >
                 <div className="min-w-0 flex-1">
                   <Text variant="small" className="font-medium text-system-gray-700 truncate">
@@ -232,7 +223,7 @@ function SettingsBackupSection({ addNotification }) {
                 </div>
                 <div className="flex items-center gap-1">
                   <IconButton
-                    icon={<RotateCcw className="w-3.5 h-3.5" />}
+                    icon={<RotateCcw className="w-4 h-4" />}
                     size="sm"
                     variant="ghost"
                     onClick={() => handleRestoreBackup(backup.path)}
@@ -241,7 +232,7 @@ function SettingsBackupSection({ addNotification }) {
                     disabled={isRestoring === backup.path}
                   />
                   <IconButton
-                    icon={<Trash2 className="w-3.5 h-3.5" />}
+                    icon={<Trash2 className="w-4 h-4" />}
                     size="sm"
                     variant="ghost"
                     onClick={() => handleDeleteBackup(backup.path)}
@@ -269,7 +260,7 @@ function SettingsBackupSection({ addNotification }) {
           contentClassName="max-w-sm"
         />
       )}
-    </Card>
+    </SettingsCard>
   );
 }
 

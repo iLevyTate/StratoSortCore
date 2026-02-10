@@ -51,15 +51,11 @@ const ClusterLegend = memo(
           </div>
           <div className="flex items-center gap-3 text-[10px]">
             <div className="flex items-center gap-1">
-              <span
-                className={`w-2 h-2 rounded-full ${CONFIDENCE_COLORS.high.bg.replace('100', '500')}`}
-              />
+              <span className={`w-2 h-2 rounded-full ${CONFIDENCE_COLORS.high.dotBg}`} />
               <span>High</span>
             </div>
             <div className="flex items-center gap-1">
-              <span
-                className={`w-2 h-2 rounded-full ${CONFIDENCE_COLORS.medium.bg.replace('100', '500')}`}
-              />
+              <span className={`w-2 h-2 rounded-full ${CONFIDENCE_COLORS.medium.dotBg}`} />
               <span>Med</span>
             </div>
             <div className="flex items-center gap-1">

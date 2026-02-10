@@ -2,8 +2,9 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import { Monitor, Smartphone, MessageSquare, AlertTriangle } from 'lucide-react';
 import Switch from '../ui/Switch';
-import Card from '../ui/Card';
 import SettingRow from './SettingRow';
+import SettingsCard from './SettingsCard';
+import SettingsGroup from './SettingsGroup';
 import { Text, Heading } from '../ui/Typography';
 
 /**
@@ -21,16 +22,10 @@ function NotificationSettingsSection({ settings, setSettings }) {
   const notificationMode = settings.notificationMode || 'both';
 
   return (
-    <Card variant="default" className="space-y-5">
-      <div>
-        <Text variant="tiny" className="font-semibold uppercase tracking-wide text-system-gray-500">
-          Notifications
-        </Text>
-        <Text variant="small" className="text-system-gray-600">
-          Control where notifications appear and which events trigger them.
-        </Text>
-      </div>
-
+    <SettingsCard
+      title="Notifications"
+      description="Control where notifications appear and which events trigger them."
+    >
       {/* Master notifications toggle */}
       <SettingRow
         label="Enable Notifications"
@@ -44,7 +39,7 @@ function NotificationSettingsSection({ settings, setSettings }) {
 
       {/* Notification mode selection */}
       {settings.notifications !== false && (
-        <div className="rounded-lg border border-system-gray-100 bg-system-gray-50 p-4 space-y-6">
+        <SettingsGroup gap="spacious">
           <SettingRow
             layout="col"
             label="Display Mode"
@@ -54,7 +49,7 @@ function NotificationSettingsSection({ settings, setSettings }) {
               <label
                 className={`
                 flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors
-                ${notificationMode === 'both' ? 'bg-stratosort-blue/5 border-stratosort-blue' : 'bg-white border-system-gray-200 hover:border-stratosort-blue/50'}
+                ${notificationMode === 'both' ? 'bg-stratosort-blue/5 border-stratosort-blue' : 'bg-white border-border-soft hover:border-stratosort-blue/50'}
               `}
               >
                 <input
@@ -81,7 +76,7 @@ function NotificationSettingsSection({ settings, setSettings }) {
               <label
                 className={`
                 flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors
-                ${notificationMode === 'ui' ? 'bg-stratosort-blue/5 border-stratosort-blue' : 'bg-white border-system-gray-200 hover:border-stratosort-blue/50'}
+                ${notificationMode === 'ui' ? 'bg-stratosort-blue/5 border-stratosort-blue' : 'bg-white border-border-soft hover:border-stratosort-blue/50'}
               `}
               >
                 <input
@@ -105,7 +100,7 @@ function NotificationSettingsSection({ settings, setSettings }) {
               <label
                 className={`
                 flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors
-                ${notificationMode === 'tray' ? 'bg-stratosort-blue/5 border-stratosort-blue' : 'bg-white border-system-gray-200 hover:border-stratosort-blue/50'}
+                ${notificationMode === 'tray' ? 'bg-stratosort-blue/5 border-stratosort-blue' : 'bg-white border-border-soft hover:border-stratosort-blue/50'}
               `}
               >
                 <input
@@ -128,7 +123,7 @@ function NotificationSettingsSection({ settings, setSettings }) {
             </div>
           </SettingRow>
 
-          <div className="pt-4 border-t border-system-gray-200/70">
+          <div className="pt-4 border-t border-border-soft">
             <Heading as="h4" variant="h6" className="mb-4">
               Notification Events
             </Heading>
@@ -164,9 +159,9 @@ function NotificationSettingsSection({ settings, setSettings }) {
               </SettingRow>
             </div>
           </div>
-        </div>
+        </SettingsGroup>
       )}
-    </Card>
+    </SettingsCard>
   );
 }
 
