@@ -84,7 +84,12 @@ class ModelAccessCoordinator {
     }
 
     const timeoutMs = options.timeoutMs || LOAD_LOCK_TIMEOUT_MS;
-    let release;
+    let releaseHeld;
+    let timer = null;
+    let startedRunning = false;
+    let cancelledBeforeStart = false;
+    let released = false;
+    let startedSettled = false;
     let startResolve;
     let startReject;
     const started = new Promise((resolve, reject) => {
@@ -92,36 +97,69 @@ class ModelAccessCoordinator {
       startReject = reject;
     });
     const held = new Promise((resolve) => {
-      release = resolve;
+      releaseHeld = resolve;
     });
 
+    const releaseLock = (reason = 'caller') => {
+      if (released) return false;
+      released = true;
+      try {
+        releaseHeld();
+      } catch {
+        // No-op: releasing a held promise should not throw, but never break callers
+      }
+      logger.debug(`[Coordinator] Released load lock for ${modelType}`, { reason });
+      return true;
+    };
+
     queue.add(async () => {
-      startResolve();
+      startedRunning = true;
+      if (!startedSettled) {
+        startedSettled = true;
+        startResolve();
+      }
+      if (cancelledBeforeStart) {
+        releaseLock('queue-wait-timeout');
+        return;
+      }
       await held;
     });
 
-    // FIX: Add timeout to prevent indefinite blocking if the lock holder hangs.
-    // CRITICAL: Also release the held promise so the PQueue task completes.
-    // Without this, the queue task awaits `held` forever, permanently jamming
-    // the load queue for this model type.
-    const timer = setTimeout(() => {
-      release(); // Unblock the PQueue task so the queue can continue
+    timer = setTimeout(() => {
+      // Phase 1: waiting in queue; reject caller and let queued task auto-release on dequeue.
+      if (!startedRunning) {
+        cancelledBeforeStart = true;
+        if (!startedSettled) {
+          startedSettled = true;
+          const error = new Error(`Load lock timeout for ${modelType} after ${timeoutMs}ms`);
+          error.code = 'LOAD_LOCK_TIMEOUT';
+          startReject(error);
+        }
+        return;
+      }
+      // Phase 2: lock acquired but never released; force release to unblock queue.
+      releaseLock('forced-timeout');
       const error = new Error(`Load lock timeout for ${modelType} after ${timeoutMs}ms`);
       error.code = 'LOAD_LOCK_TIMEOUT';
-      startReject(error);
+      logger.warn('[Coordinator] Force-released load lock after timeout', {
+        modelType,
+        timeoutMs,
+        code: error.code
+      });
     }, timeoutMs);
 
     try {
       await started;
-    } finally {
+    } catch (error) {
       clearTimeout(timer);
+      throw error;
     }
 
     logger.debug(`[Coordinator] Acquired load lock for ${modelType}`);
 
     return () => {
-      release();
-      logger.debug(`[Coordinator] Released load lock for ${modelType}`);
+      releaseLock('caller');
+      clearTimeout(timer);
     };
   }
 
@@ -157,7 +195,12 @@ class ModelAccessCoordinator {
     }
 
     const timeoutMs = options.timeoutMs || INFERENCE_SLOT_TIMEOUT_MS;
-    let release;
+    let releaseHeld;
+    let timer = null;
+    let startedRunning = false;
+    let cancelledBeforeStart = false;
+    let released = false;
+    let startedSettled = false;
     let startResolve;
     let startReject;
     const started = new Promise((resolve, reject) => {
@@ -165,30 +208,63 @@ class ModelAccessCoordinator {
       startReject = reject;
     });
     const held = new Promise((resolve) => {
-      release = resolve;
+      releaseHeld = resolve;
     });
 
+    const releaseSlot = (reason = 'caller') => {
+      if (released) return false;
+      released = true;
+      try {
+        releaseHeld();
+      } catch {
+        // No-op: releasing a held promise should not throw, but never break callers
+      }
+      this._activeOperations.delete(operationId);
+      logger.debug(`[Coordinator] Released inference slot`, { operationId, reason });
+      return true;
+    };
+
     queue.add(async () => {
-      startResolve();
+      startedRunning = true;
+      if (!startedSettled) {
+        startedSettled = true;
+        startResolve();
+      }
+      if (cancelledBeforeStart) {
+        releaseSlot('queue-wait-timeout');
+        return;
+      }
       await held;
     });
 
-    // FIX: Add timeout to prevent indefinite blocking if a slot is never freed.
-    // Also release the held promise so the PQueue task completes (same pattern
-    // as acquireLoadLock).
-    const timer = setTimeout(() => {
-      release(); // Unblock the PQueue task so the queue can continue
-      const error = new Error(
-        `Inference slot timeout for ${modelType || 'unknown'} (op: ${operationId}) after ${timeoutMs}ms`
-      );
-      error.code = 'INFERENCE_SLOT_TIMEOUT';
-      startReject(error);
+    timer = setTimeout(() => {
+      // Phase 1: waiting in queue
+      if (!startedRunning) {
+        cancelledBeforeStart = true;
+        if (!startedSettled) {
+          startedSettled = true;
+          const error = new Error(
+            `Inference slot timeout for ${modelType || 'unknown'} (op: ${operationId}) after ${timeoutMs}ms`
+          );
+          error.code = 'INFERENCE_SLOT_TIMEOUT';
+          startReject(error);
+        }
+        return;
+      }
+      // Phase 2: slot acquired but not released
+      releaseSlot('forced-timeout');
+      logger.warn('[Coordinator] Force-released inference slot after timeout', {
+        operationId,
+        modelType,
+        timeoutMs
+      });
     }, timeoutMs);
 
     try {
       await started;
-    } finally {
+    } catch (error) {
       clearTimeout(timer);
+      throw error;
     }
 
     this._activeOperations.set(operationId, {
@@ -204,9 +280,8 @@ class ModelAccessCoordinator {
     });
 
     return () => {
-      release();
-      this._activeOperations.delete(operationId);
-      logger.debug(`[Coordinator] Released inference slot`, { operationId });
+      releaseSlot('caller');
+      clearTimeout(timer);
     };
   }
 

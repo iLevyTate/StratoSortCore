@@ -653,10 +653,10 @@ class SearchService {
    * @param {number} topK - Number of results to return
    * @returns {Promise<Array>} Search results with scores
    */
-  async vectorSearch(query, topK = 20) {
+  async vectorSearch(query, topK = 20, options = {}) {
     try {
-      // Generate query embedding
-      const embedResult = await this.embedding.embedText(query);
+      // Reuse precomputed embedding if provided (avoids redundant LLM call in hybrid mode)
+      const embedResult = options.precomputedEmbedding || (await this.embedding.embedText(query));
       if (!embedResult || !embedResult.vector) {
         logger.warn('[SearchService] Failed to generate query embedding');
         return [];
@@ -753,7 +753,8 @@ class SearchService {
       chunkContext = DEFAULT_OPTIONS.chunkContext,
       chunkContextMaxNeighbors = DEFAULT_OPTIONS.chunkContextMaxNeighbors,
       chunkContextMaxFiles = DEFAULT_OPTIONS.chunkContextMaxFiles,
-      chunkContextMaxChars = DEFAULT_OPTIONS.chunkContextMaxChars
+      chunkContextMaxChars = DEFAULT_OPTIONS.chunkContextMaxChars,
+      precomputedEmbedding = null
     } = options;
     try {
       // Inspect chunk collection availability and count
@@ -772,7 +773,8 @@ class SearchService {
         });
       }
 
-      const embedResult = await this.embedding.embedText(query);
+      // Reuse precomputed embedding if provided (avoids redundant LLM call in hybrid mode)
+      const embedResult = precomputedEmbedding || (await this.embedding.embedText(query));
       if (!embedResult || !embedResult.vector) {
         logger.warn('[SearchService] Failed to generate query embedding for chunk search');
         return [];
@@ -1241,11 +1243,11 @@ class SearchService {
    * @param {number} timeout - Timeout in milliseconds
    * @returns {Promise<{results: Array, timedOut: boolean}>}
    */
-  async _vectorSearchWithTimeout(query, topK, timeout = VECTOR_SEARCH_TIMEOUT) {
+  async _vectorSearchWithTimeout(query, topK, timeout = VECTOR_SEARCH_TIMEOUT, options = {}) {
     let timeoutId = null;
 
     try {
-      const searchPromise = this.vectorSearch(query, topK).then((results) => {
+      const searchPromise = this.vectorSearch(query, topK, options).then((results) => {
         // Clear timeout immediately when search completes to prevent leak
         if (timeoutId) clearTimeout(timeoutId);
         return { results, timedOut: false };
@@ -1354,18 +1356,22 @@ class SearchService {
 
     // Trigger async cleanup of ghost entries (don't block search response)
     if (triggerCleanup && ghostIds.length > 0 && this.vectorDb) {
-      setImmediate(async () => {
-        try {
-          // Delete ghost entries from vector DB
-          if (typeof this.vectorDb.batchDeleteFileEmbeddings === 'function') {
-            await this.vectorDb.batchDeleteFileEmbeddings(ghostIds);
-            logger.info('[SearchService] Cleaned up ghost entries from search results', {
-              count: ghostIds.length
-            });
+      setImmediate(() => {
+        (async () => {
+          try {
+            // Delete ghost entries from vector DB
+            if (typeof this.vectorDb.batchDeleteFileEmbeddings === 'function') {
+              await this.vectorDb.batchDeleteFileEmbeddings(ghostIds);
+              logger.info('[SearchService] Cleaned up ghost entries from search results', {
+                count: ghostIds.length
+              });
+            }
+          } catch (cleanupErr) {
+            logger.warn('[SearchService] Failed to cleanup ghost entries:', cleanupErr.message);
           }
-        } catch (cleanupErr) {
-          logger.warn('[SearchService] Failed to cleanup ghost entries:', cleanupErr.message);
-        }
+        })().catch((err) =>
+          logger.error('[SearchService] Ghost cleanup unhandled error:', err.message)
+        );
       });
     }
 
@@ -1520,10 +1526,23 @@ class SearchService {
 
       // Hybrid mode: combine both search types with timeout protection
       // FIX P2-1: Use expanded query for BM25, normalized for vector (consistent preprocessing)
+      // FIX: Precompute embedding once and share between vector + chunk search to avoid
+      // generating the same query embedding twice (saves one LLM inference call per search)
+      let precomputedEmbedding = null;
+      try {
+        precomputedEmbedding = await this.embedding.embedText(normalizedQuery);
+      } catch (embedErr) {
+        logger.warn('[SearchService] Failed to precompute query embedding', {
+          error: embedErr?.message
+        });
+      }
+
       const bm25Results = await this.bm25Search(processedQuery, topK * 2);
       const { results: vectorResults, timedOut } = await this._vectorSearchWithTimeout(
         normalizedQuery,
-        topK * 2
+        topK * 2,
+        undefined,
+        { precomputedEmbedding }
       );
       const chunkResults =
         safeChunkWeight > 0 && resolvedChunkTopK > 0
@@ -1531,7 +1550,8 @@ class SearchService {
               chunkContext,
               chunkContextMaxNeighbors,
               chunkContextMaxFiles,
-              chunkContextMaxChars
+              chunkContextMaxChars,
+              precomputedEmbedding
             })
           : [];
 
@@ -2595,12 +2615,10 @@ class SearchService {
     logger.terminal('warn', '[SearchService] Auto-running diagnostics due to: ' + trigger);
 
     // Run in next tick to not block
-    setImmediate(async () => {
-      try {
-        await this.diagnoseSearchIssues('auto-diagnostic');
-      } catch (err) {
+    setImmediate(() => {
+      this.diagnoseSearchIssues('auto-diagnostic').catch((err) => {
         logger.error('[SearchService] Auto-diagnostics failed:', err.message);
-      }
+      });
     });
   }
 

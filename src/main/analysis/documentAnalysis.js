@@ -550,17 +550,26 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
 
       // Folders are only relevant if they change the prompt structure, but analyzeTextWithLlama uses
       // folders in the prompt. So we SHOULD include folders. But model is in contentHash.
-      const deduplicationKey = globalDeduplicator.generateKey({
-        contentHash,
-        fileName,
-        task: 'analyzeTextWithLlama',
-        // model: modelName, // Redundant, in contentHash
-        folders: Array.isArray(smartFolders) ? smartFolders.map((f) => f?.name || '').join(',') : ''
-      });
+      const analysisFn = () =>
+        analyzeTextWithLlama(extractedText, fileName, smartFolders, fileDate, namingContext, {
+          bypassCache
+        });
 
-      const analysis = await globalDeduplicator.deduplicate(deduplicationKey, () =>
-        analyzeTextWithLlama(extractedText, fileName, smartFolders, fileDate, namingContext)
-      );
+      // Skip in-flight deduplication during forced reanalysis — we explicitly want fresh results
+      let analysis;
+      if (bypassCache) {
+        analysis = await analysisFn();
+      } else {
+        const deduplicationKey = globalDeduplicator.generateKey({
+          contentHash,
+          fileName,
+          task: 'analyzeTextWithLlama',
+          folders: Array.isArray(smartFolders)
+            ? smartFolders.map((f) => f?.name || '').join(',')
+            : ''
+        });
+        analysis = await globalDeduplicator.deduplicate(deduplicationKey, analysisFn);
+      }
 
       // Semantic folder refinement using embeddings
       if (analysis && typeof analysis === 'object' && !analysis.error) {
@@ -615,6 +624,10 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
           },
           { category: 'document', keywords: [], confidence: 0 }
         );
+        // Pass precomputed embedding so SmartFolderWatcher can reuse instead of re-embedding
+        if (analysis._embeddingForPersistence) {
+          normalized._embeddingForPersistence = analysis._embeddingForPersistence;
+        }
         // Use pre-computed signature if available, otherwise skip caching
         if (fileSignature) {
           const cached = await setFileCacheIfUnchanged(
@@ -678,6 +691,16 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
     }
     return result;
   } catch (error) {
+    // Re-throw programming errors (TypeError, ReferenceError, SyntaxError, RangeError)
+    // so they surface in logs and tests instead of being silently swallowed as fallback results.
+    if (
+      error instanceof TypeError ||
+      error instanceof ReferenceError ||
+      error instanceof SyntaxError ||
+      error instanceof RangeError
+    ) {
+      throw error;
+    }
     logger.error(`Error processing document`, {
       path: filePath,
       error: error.message
@@ -689,7 +712,7 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
       smartFolders,
       confidence: 60,
       type: 'document',
-      options: { date: fileDate, error: error.message }
+      options: { date: fileDate, error: error.message, extractionMethod: 'failed' }
     });
   }
 }

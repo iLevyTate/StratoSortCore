@@ -92,6 +92,20 @@ describe('llama IPC – extended handlers', () => {
       expect(result.success).toBe(false);
       expect(result.error).toBe('config invalid');
     });
+
+    test('maps legacy llama* config keys to canonical service keys', async () => {
+      const handler = getHandler('update-config');
+      await handler({}, { llamaGpuLayers: 42, llamaContextSize: 16384 });
+
+      expect(mockLlamaService.updateConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          llamaGpuLayers: 42,
+          llamaContextSize: 16384,
+          gpuLayers: 42,
+          contextSize: 16384
+        })
+      );
+    });
   });
 
   describe('TEST_CONNECTION', () => {

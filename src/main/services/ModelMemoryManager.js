@@ -32,7 +32,7 @@ class ModelMemoryManager {
 
     // Model size estimates (in bytes)
     this._modelSizeEstimates = {
-      embedding: 500 * 1024 * 1024, // ~500MB
+      embedding: 200 * 1024 * 1024, // ~200MB (nomic-embed ~140MB + KV/runtime overhead)
       text: 4 * 1024 * 1024 * 1024, // ~4GB
       vision: 5 * 1024 * 1024 * 1024 // ~5GB
     };
@@ -230,7 +230,7 @@ class ModelMemoryManager {
     }
 
     if (oldest) {
-      await this._unloadModel(oldest);
+      await this.unloadModel(oldest);
     } else {
       logger.warn('[Memory] Cannot evict any model -- all loaded models are in active use');
     }
@@ -275,15 +275,35 @@ class ModelMemoryManager {
     // Snapshot keys to avoid mutating Map during iteration
     const types = [...this._loadedModels.keys()];
     for (const type of types) {
-      await this._unloadModel(type);
+      const unloaded = await this.unloadModel(type); // Use public method with ref drain
+      if (!unloaded) {
+        logger.warn('[Memory] Skipped unloadAll entry due to active refs', { type });
+      }
     }
   }
 
   /**
-   * Unload a specific model (public helper)
+   * Unload a specific model (public helper).
+   * Waits for active references to drain before unloading (max 5s).
    */
   async unloadModel(modelType) {
+    const refs = this._activeRefs.get(modelType) || 0;
+    if (refs > 0) {
+      logger.info('[Memory] Waiting for active refs before unload', { type: modelType, refs });
+      const deadline = Date.now() + 5000;
+      while ((this._activeRefs.get(modelType) || 0) > 0 && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      if ((this._activeRefs.get(modelType) || 0) > 0) {
+        logger.warn('[Memory] Unload timeout — keeping model loaded due to active refs', {
+          type: modelType,
+          remainingRefs: this._activeRefs.get(modelType)
+        });
+        return false;
+      }
+    }
     await this._unloadModel(modelType);
+    return true;
   }
 }
 

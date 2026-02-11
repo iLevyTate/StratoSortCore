@@ -22,6 +22,9 @@ jest.mock('../src/main/ipc/ipcWrappers', () => mockIpcWrappers);
 jest.mock('../src/main/utils/safeAccess', () => ({
   safeFilePath: jest.fn((path) => path)
 }));
+jest.mock('../src/shared/pathSanitization', () => ({
+  validateFileOperationPath: jest.fn(async (path) => ({ valid: true, normalizedPath: path }))
+}));
 
 jest.mock('../src/shared/folderUtils', () => ({
   mapFoldersToCategories: jest.fn().mockReturnValue(['cat1']),
@@ -57,6 +60,7 @@ const mockSystemAnalytics = {
 };
 
 const registerAnalysisIpc = require('../src/main/ipc/analysis');
+const { validateFileOperationPath } = require('../src/shared/pathSanitization');
 
 describe('Analysis IPC Handlers', () => {
   let mockIpcMain;
@@ -133,6 +137,13 @@ describe('Analysis IPC Handlers', () => {
 
       const result = await handler({}, '/path/to/doc.pdf');
 
+      expect(validateFileOperationPath).toHaveBeenCalledWith(
+        '/path/to/doc.pdf',
+        expect.objectContaining({
+          requireExists: true,
+          checkSymlinks: true
+        })
+      );
       expect(mockAnalysisUtils.withProcessingState).toHaveBeenCalled();
       expect(mockAnalysisUtils.getFolderCategories).toHaveBeenCalled();
       expect(mockAnalyzeDocumentFile).toHaveBeenCalledWith('/path/to/doc.pdf', ['cat1']);
@@ -158,7 +169,11 @@ describe('Analysis IPC Handlers', () => {
 
     test('handles invalid file path', async () => {
       const handler = registeredHandlers[IPC_CHANNELS.ANALYSIS.ANALYZE_DOCUMENT];
-      require('../src/main/utils/safeAccess').safeFilePath.mockReturnValueOnce(null);
+      validateFileOperationPath.mockResolvedValueOnce({
+        valid: false,
+        normalizedPath: '',
+        error: 'Invalid path: access to system directories is not allowed'
+      });
 
       // Should be caught by the catch block inside performDocumentAnalysis because it throws Error
       // But since we are calling handler directly which is performDocumentAnalysis wrapped, we need to see how it behaves
@@ -170,7 +185,9 @@ describe('Analysis IPC Handlers', () => {
       // In production, withErrorLogging catches it. Here our mock just returns the handler.
       // So we expect rejection.
 
-      await expect(handler({}, '/invalid/path')).rejects.toThrow('Invalid file path provided');
+      await expect(handler({}, '/invalid/path')).rejects.toThrow(
+        'Invalid path: access to system directories is not allowed'
+      );
     });
   });
 

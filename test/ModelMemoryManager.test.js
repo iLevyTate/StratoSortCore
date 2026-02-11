@@ -80,4 +80,30 @@ describe('ModelMemoryManager', () => {
     expect(llamaService._models.embedding).toBeNull();
     expect(llamaService._contexts.embedding).toBeNull();
   });
+
+  test('unloadModel does not unload when active refs remain after timeout', async () => {
+    const context = { dispose: jest.fn() };
+    const llamaService = {
+      _models: { embedding: context },
+      _contexts: { embedding: context },
+      _loadModel: jest.fn()
+    };
+    const manager = new ModelMemoryManager(llamaService);
+    manager._loadedModels.set('embedding', {
+      context,
+      lastUsed: Date.now(),
+      sizeBytes: manager._modelSizeEstimates.embedding
+    });
+    manager._activeRefs.set('embedding', 1);
+
+    const nowSpy = jest.spyOn(Date, 'now');
+    nowSpy.mockReturnValueOnce(0).mockReturnValueOnce(6000);
+
+    const unloaded = await manager.unloadModel('embedding');
+
+    expect(unloaded).toBe(false);
+    expect(context.dispose).not.toHaveBeenCalled();
+    expect(manager._loadedModels.has('embedding')).toBe(true);
+    nowSpy.mockRestore();
+  });
 });

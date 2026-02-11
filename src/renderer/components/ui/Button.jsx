@@ -75,7 +75,6 @@ const Button = memo(function Button({
       type={type}
       className={classes}
       disabled={disabled || isLoading}
-      role="button"
       aria-busy={isLoading}
       aria-disabled={disabled || isLoading}
       aria-label={accessibleLabel}

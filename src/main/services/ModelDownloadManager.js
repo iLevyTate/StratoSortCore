@@ -67,25 +67,10 @@ class ModelDownloadManager {
         return { available: freeSpace, sufficient: freeSpace > requiredBytes * 1.1 };
       }
 
-      // Fallback for older Node versions (though Electron 40+ has Node 20+)
-      const { execSync } = require('child_process');
-      if (process.platform === 'win32') {
-        const drive = this._modelPath.charAt(0);
-        // Still vulnerable to drive letter injection if path is user-controlled,
-        // but fs.statfs is the primary path now.
-        const output = execSync(
-          `wmic logicaldisk where "DeviceID='${drive}:'" get FreeSpace`
-        ).toString();
-        const freeSpace = parseInt(output.split('\n')[1].trim());
-        return { available: freeSpace, sufficient: freeSpace > requiredBytes * 1.1 };
-      } else {
-        // Still vulnerable to path injection, but fs.statfs is primary.
-        const output = execSync(`df -k "${this._modelPath}"`).toString();
-        const lines = output.trim().split('\n');
-        const parts = lines[1].split(/\s+/);
-        const freeSpace = parseInt(parts[3]) * 1024;
-        return { available: freeSpace, sufficient: freeSpace > requiredBytes * 1.1 };
-      }
+      // fs.statfs is available since Node 18.15+; Electron 40 ships Node 20+.
+      // If somehow unavailable, assume sufficient space and warn.
+      logger.warn('[Download] fs.statfs not available, skipping disk space check');
+      return { available: Infinity, sufficient: true };
     } catch (error) {
       logger.warn('[Download] Could not check disk space', error);
       return { available: null, sufficient: true }; // Assume OK if check fails
@@ -459,6 +444,25 @@ class ModelDownloadManager {
     if (speed === 0) return Infinity;
     const remaining = state.totalBytes - state.downloadedBytes;
     return Math.round(remaining / speed);
+  }
+
+  /**
+   * Cancel all active downloads and clean up resources.
+   * Called during app shutdown by ServiceContainer.
+   */
+  shutdown() {
+    for (const [filename, download] of this._downloads) {
+      try {
+        if (download.abortController) {
+          download.abortController.abort();
+        }
+      } catch {
+        /* ignore — already aborted */
+      }
+      logger.debug(`[Download] Cancelled active download on shutdown: ${filename}`);
+    }
+    this._downloads.clear();
+    this._progressCallbacks.clear();
   }
 
   async _verifyChecksum(filePath, expectedHash) {

@@ -125,6 +125,18 @@ describe('ModelAccessCoordinator timeout behavior', () => {
         release();
       }
     });
+
+    test('force-releases held load lock after timeout', async () => {
+      const coordinator = new ModelAccessCoordinator();
+      await coordinator.acquireLoadLock('text', { timeoutMs: 80 });
+
+      // Wait until watchdog forces release
+      await new Promise((resolve) => setTimeout(resolve, 130));
+
+      const releaseNext = await coordinator.acquireLoadLock('text', { timeoutMs: 500 });
+      expect(typeof releaseNext).toBe('function');
+      releaseNext();
+    });
   });
 
   describe('acquireInferenceSlot timeout', () => {
@@ -178,6 +190,20 @@ describe('ModelAccessCoordinator timeout behavior', () => {
       const release3 = await coordinator.acquireInferenceSlot('op-3', 'text', { timeoutMs: 2000 });
       expect(typeof release3).toBe('function');
       release3();
+    });
+
+    test('force-releases held inference slot after timeout', async () => {
+      const coordinator = new ModelAccessCoordinator({ inferenceSlots: 1 });
+      await coordinator.acquireInferenceSlot('op-held-timeout', 'vision', { timeoutMs: 80 });
+
+      // Wait until watchdog forces release
+      await new Promise((resolve) => setTimeout(resolve, 130));
+
+      const releaseNext = await coordinator.acquireInferenceSlot('op-next', 'vision', {
+        timeoutMs: 500
+      });
+      expect(typeof releaseNext).toBe('function');
+      releaseNext();
     });
   });
 

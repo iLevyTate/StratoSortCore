@@ -28,9 +28,15 @@ jest.mock('fs', () => ({
     stat: jest.fn().mockResolvedValue({
       size: 1024,
       mtimeMs: Date.now()
-    })
+    }),
+    lstat: jest.fn().mockResolvedValue({
+      isSymbolicLink: jest.fn().mockReturnValue(false),
+      size: 1024,
+      mtimeMs: Date.now()
+    }),
+    access: jest.fn().mockResolvedValue(undefined)
   },
-  existsSync: jest.fn().mockReturnValue(false)
+  existsSync: jest.fn().mockReturnValue(true)
 }));
 
 // Mock perf_hooks
@@ -160,7 +166,10 @@ describe('registerAnalysisIpc', () => {
     test('analyzes document successfully', async () => {
       const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT]({}, '/test/doc.pdf');
 
-      expect(mockAnalyzeDocumentFile).toHaveBeenCalledWith('/test/doc.pdf', expect.any(Array));
+      expect(mockAnalyzeDocumentFile).toHaveBeenCalledWith(
+        expect.stringContaining('doc.pdf'),
+        expect.any(Array)
+      );
       expect(result.suggestedName).toBe('analyzed-document.pdf');
       expect(result.category).toBe('documents');
     });
@@ -249,7 +258,10 @@ describe('registerAnalysisIpc', () => {
     test('analyzes image successfully', async () => {
       const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_IMAGE]({}, '/test/image.jpg');
 
-      expect(mockAnalyzeImageFile).toHaveBeenCalledWith('/test/image.jpg', expect.any(Array));
+      expect(mockAnalyzeImageFile).toHaveBeenCalledWith(
+        expect.stringContaining('image.jpg'),
+        expect.any(Array)
+      );
       expect(result.suggestedName).toBe('analyzed-image.jpg');
       expect(result.category).toBe('images');
     });
@@ -285,7 +297,7 @@ describe('registerAnalysisIpc', () => {
 
       expect(mockRecognizeIfAvailable).toHaveBeenCalledWith(
         null,
-        '/test/scan.png',
+        expect.stringContaining('scan.png'),
         expect.objectContaining({
           lang: 'eng',
           oem: 1,

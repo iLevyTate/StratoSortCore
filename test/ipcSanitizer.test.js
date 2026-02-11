@@ -9,11 +9,11 @@ describe('ipcSanitizer', () => {
     expect(sanitized).toBe('hello\nworld');
   });
 
-  test('sanitizes path traversal segments', () => {
+  test('rejects path traversal segments with empty string', () => {
     const log = { warn: jest.fn() };
     const { sanitizeArguments } = createIpcSanitizer({ log });
     const [sanitized] = sanitizeArguments(['C:\\safe\\..\\evil.txt']);
-    expect(sanitized).toMatch(/safe\\evil\.txt/i);
+    expect(sanitized).toBe('');
     expect(log.warn).toHaveBeenCalled();
   });
 

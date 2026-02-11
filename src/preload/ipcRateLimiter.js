@@ -30,10 +30,9 @@ class IpcRateLimiter {
       channelData.count++;
     }
 
-    // Check limit BEFORE saving the incremented count so rejected requests
-    // don't inflate the counter
+    // Increment first, then check. If over limit, roll back the increment
+    // so rejected requests don't inflate the counter.
     if (channelData.count > this.maxRequestsPerSecond) {
-      // Don't save the inflated count for rejected requests
       channelData.count--;
       const resetIn = Math.ceil((channelData.resetTime - now) / 1000);
       throw new Error(

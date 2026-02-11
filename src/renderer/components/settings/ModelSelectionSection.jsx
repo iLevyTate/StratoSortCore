@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { AlertTriangle, Database, Info, FileText } from 'lucide-react';
 import Select from '../ui/Select';
@@ -59,6 +59,7 @@ function ModelSelectionSection({
   const [stats, setStats] = useState(null);
   const [isRebuilding, setIsRebuilding] = useState(false);
   const isMountedRef = React.useRef(true);
+  const statsRequestIdRef = React.useRef(0);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -67,34 +68,33 @@ function ModelSelectionSection({
     };
   }, []);
 
+  const fetchStats = useCallback(() => {
+    if (!window.electronAPI?.embeddings?.getStats) return;
+    const requestId = ++statsRequestIdRef.current;
+    window.electronAPI.embeddings
+      .getStats()
+      .then((s) => {
+        if (isMountedRef.current && requestId === statsRequestIdRef.current) {
+          setStats(s);
+        }
+      })
+      .catch((err) => {
+        if (isMountedRef.current && requestId === statsRequestIdRef.current) {
+          logger.error('Failed to fetch stats', err);
+        }
+      });
+  }, []);
+
   useEffect(() => {
-    if (window.electronAPI?.embeddings?.getStats) {
-      window.electronAPI.embeddings
-        .getStats()
-        .then((s) => {
-          if (isMountedRef.current) setStats(s);
-        })
-        .catch((err) => {
-          if (isMountedRef.current) logger.error('Failed to fetch stats', err);
-        });
-    }
-  }, [settings.embeddingModel]);
+    fetchStats();
+  }, [settings.embeddingModel, fetchStats]);
 
   const handleEmbeddingModelChange = (e) => {
     const newModel = e.target.value;
     if (newModel !== settings.embeddingModel) {
       setPendingModel(newModel);
       setShowConfirmDialog(true);
-      if (window.electronAPI?.embeddings?.getStats) {
-        window.electronAPI.embeddings
-          .getStats()
-          .then((s) => {
-            if (isMountedRef.current) setStats(s);
-          })
-          .catch((err) => {
-            if (isMountedRef.current) logger.error('Failed to fetch stats', err);
-          });
-      }
+      fetchStats();
     }
   };
 

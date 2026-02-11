@@ -156,6 +156,9 @@ class LlamaService extends EventEmitter {
     // Concurrency gates
     this._configChangeGate = null;
     this._modelReloadGates = new Map();
+
+    // Vision batch mode — keeps vision server alive across multiple images
+    this._visionBatchMode = false;
   }
 
   _createGate() {
@@ -381,6 +384,12 @@ class LlamaService extends EventEmitter {
 
     const prev = { ...this._selectedModels };
     let modelDowngraded = false;
+    // Backward-compatible key mapping:
+    // IPC/settings historically used llamaGpuLayers/llamaContextSize,
+    // while internal code uses gpuLayers/contextSize.
+    const resolvedGpuLayers =
+      partial.gpuLayers ?? partial.llamaGpuLayers ?? partial.llamaGPULayers ?? undefined;
+    const resolvedContextSize = partial.contextSize ?? partial.llamaContextSize ?? undefined;
 
     if (partial.textModel) this._selectedModels.text = String(partial.textModel);
     if (partial.visionModel) this._selectedModels.vision = String(partial.visionModel);
@@ -394,9 +403,9 @@ class LlamaService extends EventEmitter {
       }
     }
 
-    if (typeof partial.gpuLayers === 'number') this._config.gpuLayers = partial.gpuLayers;
-    if (typeof partial.contextSize === 'number') {
-      this._config.contextSize = partial.contextSize;
+    if (typeof resolvedGpuLayers === 'number') this._config.gpuLayers = resolvedGpuLayers;
+    if (typeof resolvedContextSize === 'number') {
+      this._config.contextSize = resolvedContextSize;
       this._preferredContextSize.text = null;
       this._preferredContextSize.vision = null;
       this._preferredContextSequences.text = null;
@@ -464,6 +473,15 @@ class LlamaService extends EventEmitter {
     } finally {
       if (needsGate) {
         this._endConfigChangeGate();
+      }
+    }
+
+    // Reset circuit breakers for changed model types — the old breaker state
+    // reflects failures from the previous model, not the newly selected one.
+    if (changedTypes.length > 0) {
+      const { resetLlamaCircuit: resetCircuit } = require('./LlamaResilience');
+      for (const type of changedTypes) {
+        resetCircuit(type);
       }
     }
 
@@ -721,28 +739,24 @@ class LlamaService extends EventEmitter {
    * Ensure a model is loaded and ready.
    * Uses ModelMemoryManager to handle swapping and OOM prevention.
    *
-   * Fast-path: if the model is already loaded, returns its context immediately
-   * without acquiring the coordinator load lock. This prevents deadlock when
-   * called from within a batch operation (e.g. ParallelEmbeddingService) that
-   * already holds the same non-reentrant load lock via pinModel().
+   * Always acquires the coordinator load lock to prevent use-after-dispose
+   * races where a concurrent updateConfig() or enterVisionBatchMode() could
+   * dispose the context between the fast-path return and the caller's first await.
+   * The lock is fast when the model is already loaded (ensureModelLoaded returns
+   * immediately with the existing context).
+   *
+   * Note: ParallelEmbeddingService uses pinModel()/unpinModel() instead of
+   * acquireModelLoadLock() to avoid deadlock with this non-reentrant lock.
    */
   async _ensureModelLoaded(modelType) {
     if (!this._initialized) await this.initialize();
 
-    // Fast path: model already resident — no lock needed.
-    // Safe in single-threaded Node.js: between this synchronous check and the
-    // return, no other code can run to unload the model.
-    const existing = this._modelMemoryManager?.getLoadedContext(modelType);
-    if (existing) return existing;
-
-    // Slow path: model not loaded — acquire lock to serialize loading
     const releaseLock = await this._coordinator.acquireLoadLock(modelType);
 
     try {
-      // Re-check after acquiring lock (another caller may have loaded it)
       return await this._modelMemoryManager.ensureModelLoaded(modelType);
     } catch (error) {
-      // Handle degradation (e.g., model file corruption)
+      // Handle degradation (e.g., model file corruption, OOM, disk full)
       const resolution = await this._degradationManager.handleError(error, { modelType });
       if (resolution.action === 'redownload_model') {
         const redownloadError = new Error(
@@ -750,6 +764,20 @@ class LlamaService extends EventEmitter {
         );
         redownloadError.code = ERROR_CODES.LLAMA_MODEL_LOAD_FAILED;
         throw redownloadError;
+      }
+      if (resolution.action === 'retry_with_cpu') {
+        logger.warn(
+          `[LlamaService] GPU OOM loading ${modelType} — DegradationManager suggests CPU fallback`
+        );
+        // Surface the action so withLlamaResilience can trigger CPU fallback
+        error._degradationAction = 'retry_with_cpu';
+      }
+      if (resolution.action === 'cleanup_disk') {
+        const diskError = new Error(
+          `Disk full, cannot load ${modelType} model. Please free up space.`
+        );
+        diskError.code = ERROR_CODES.LLAMA_MODEL_LOAD_FAILED;
+        throw diskError;
       }
       throw error;
     } finally {
@@ -1296,6 +1324,11 @@ class LlamaService extends EventEmitter {
         }
       }
 
+      // Reset circuit breaker before CPU reload — the GPU failures that triggered
+      // this fallback are not indicative of the CPU path's health.
+      const { resetLlamaCircuit: resetCircuitCPU } = require('./LlamaResilience');
+      resetCircuitCPU(modelType);
+
       // Reload with gpuLayers: 0 (CPU only)
       if (this._modelMemoryManager) {
         return this._modelMemoryManager.ensureModelLoaded(modelType, { gpuLayersOverride: 0 });
@@ -1603,6 +1636,23 @@ class LlamaService extends EventEmitter {
    */
   async generateText(options) {
     const { prompt, systemPrompt, maxTokens = 2048, temperature = 0.7, signal } = options;
+    const requestedMaxTokens = Number.isFinite(Number(maxTokens))
+      ? Math.max(1, Math.floor(Number(maxTokens)))
+      : 2048;
+    const effectiveContextSize = this._getEffectiveContextSize('text');
+    const RESPONSE_TOKEN_RESERVE = 1024;
+    const contextBoundMaxTokens = Math.max(
+      128,
+      Math.floor(Math.max(256, effectiveContextSize - RESPONSE_TOKEN_RESERVE) * 0.5)
+    );
+    const safeMaxTokens = Math.min(requestedMaxTokens, contextBoundMaxTokens);
+    if (safeMaxTokens !== requestedMaxTokens) {
+      logger.warn('[LlamaService] Clamped maxTokens to fit context budget', {
+        requestedMaxTokens,
+        clampedMaxTokens: safeMaxTokens,
+        effectiveContextSize
+      });
+    }
     const operationId = `text-${Date.now()}`;
     await this._awaitModelReady('text');
 
@@ -1630,10 +1680,23 @@ class LlamaService extends EventEmitter {
                 }
 
                 const context = await this._ensureModelLoaded('text');
+
+                // node-llama-cpp reclaims disposed sequence IDs asynchronously
+                // (via withLock). After a previous session.dispose(), the slot
+                // may not be immediately available. Yield briefly to let any
+                // pending reclaim complete before allocating a new sequence.
+                if (typeof context.sequencesLeft === 'number' && context.sequencesLeft === 0) {
+                  for (let _wait = 0; _wait < 50; _wait++) {
+                    await delay(10);
+                    if (context.sequencesLeft > 0) break;
+                  }
+                }
+
                 const { LlamaChatSession } = await loadNodeLlamaModule();
                 session = new LlamaChatSession({
                   contextSequence: context.getSequence(),
-                  systemPrompt: systemPrompt || 'You are a helpful assistant.'
+                  systemPrompt: systemPrompt || 'You are a helpful assistant.',
+                  autoDisposeSequence: true
                 });
 
                 if (signal) {
@@ -1649,7 +1712,7 @@ class LlamaService extends EventEmitter {
                   signal.addEventListener('abort', abortHandler, { once: true });
                 }
 
-                const promptOptions = { maxTokens, temperature };
+                const promptOptions = { maxTokens: safeMaxTokens, temperature };
                 if (signal) promptOptions.signal = signal;
                 return await session.prompt(prompt, promptOptions);
               };
@@ -1690,7 +1753,8 @@ class LlamaService extends EventEmitter {
                   responseChars,
                   approxTokens,
                   durationMs,
-                  maxTokens,
+                  maxTokens: safeMaxTokens,
+                  requestedMaxTokens,
                   temperature,
                   gpu: this._gpuBackend !== 'cpu'
                 });
@@ -1749,8 +1813,53 @@ class LlamaService extends EventEmitter {
       });
       return { success: true, response: result.response };
     } catch (error) {
-      return { success: false, response: null, error: error.message || 'Text analysis failed' };
+      return {
+        success: false,
+        response: null,
+        error: error.message || 'Text analysis failed',
+        code: error.code || null
+      };
     }
+  }
+
+  /**
+   * Enter vision batch mode — unloads text/embedding models once, keeps vision
+   * server alive across multiple analyzeImage() calls. Call exitVisionBatchMode()
+   * when the batch is done.
+   */
+  async enterVisionBatchMode() {
+    this._visionBatchMode = true;
+    if (this._modelMemoryManager) {
+      await this._modelMemoryManager.unloadModel('text');
+      await this._modelMemoryManager.unloadModel('embedding');
+      // Brief delay for CUDA driver to release VRAM back to the OS
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    logger.info('[LlamaService] Entered vision batch mode');
+  }
+
+  /**
+   * Exit vision batch mode — shuts down vision server, waits for VRAM release,
+   * then pre-loads text model for subsequent inference.
+   */
+  async exitVisionBatchMode() {
+    this._visionBatchMode = false;
+    try {
+      const visionService = getVisionService();
+      await visionService.shutdown();
+    } catch {
+      /* ignore — server may already be gone */
+    }
+    // Wait for CUDA VRAM release before reloading text model
+    await new Promise((r) => setTimeout(r, 500));
+    // Reset embedding circuit breaker — fire-and-forget embeddings that hit the
+    // unloaded model during vision batch are expected failures, not real faults.
+    const { resetLlamaCircuit: resetCircuit } = require('./LlamaResilience');
+    resetCircuit('embedding');
+    this._ensureModelLoaded('text').catch((err) => {
+      logger.warn('[LlamaService] Text model preload after vision batch failed:', err?.message);
+    });
+    logger.info('[LlamaService] Exited vision batch mode');
   }
 
   /**
@@ -1818,6 +1927,15 @@ class LlamaService extends EventEmitter {
                   throw missingError;
                 }
 
+                // Free VRAM for vision server (it runs out-of-process, no shared memory)
+                // In batch mode, enterVisionBatchMode() already handled this
+                if (!this._visionBatchMode && this._modelMemoryManager) {
+                  await this._modelMemoryManager.unloadModel('text');
+                  await this._modelMemoryManager.unloadModel('embedding');
+                  // Brief delay for CUDA driver to release VRAM back to the OS
+                  await new Promise((r) => setTimeout(r, 500));
+                }
+
                 const visionService = getVisionService();
                 logger.info('[LlamaService] Using local vision runtime for image analysis');
                 const result = await visionService.analyzeImage({
@@ -1855,13 +1973,42 @@ class LlamaService extends EventEmitter {
                   gpu: this._gpuBackend !== 'cpu'
                 });
 
+                // In batch mode, exitVisionBatchMode() handles shutdown + reload
+                if (!this._visionBatchMode) {
+                  // Shut down vision server to release VRAM before reloading text model
+                  try {
+                    await visionService.shutdown();
+                  } catch {
+                    /* ignore — server may already be gone */
+                  }
+                  // Wait for CUDA VRAM release before reloading text model
+                  await new Promise((r) => setTimeout(r, 500));
+                  // Reset text and embedding circuit breakers — fire-and-forget
+                  // operations that hit unloaded models during vision are expected failures.
+                  const { resetLlamaCircuit: resetCircuitSingle } = require('./LlamaResilience');
+                  resetCircuitSingle('text');
+                  resetCircuitSingle('embedding');
+                  // Vision done — pre-load text model for next inference
+                  this._ensureModelLoaded('text').catch((err) => {
+                    logger.warn(
+                      '[LlamaService] Text model preload after single-image vision failed:',
+                      err?.message
+                    );
+                  });
+                }
+
                 return { response: result.response };
               } catch (error) {
                 this._metrics.recordTextGeneration(Date.now() - startTime, 0, false);
                 if (isOutOfMemoryError(error)) {
                   throw attachErrorCode(error, ERROR_CODES.LLAMA_OOM);
                 }
-                throw attachErrorCode(error, ERROR_CODES.LLAMA_INFERENCE_FAILED);
+                // Preserve existing error codes (e.g., LLAMA_MODEL_NOT_FOUND from _ensureModelLoaded)
+                // instead of unconditionally overwriting with INFERENCE_FAILED
+                if (!error.code) {
+                  throw attachErrorCode(error, ERROR_CODES.LLAMA_INFERENCE_FAILED);
+                }
+                throw error;
               }
             },
             { modelType: 'vision' }
@@ -1901,7 +2048,13 @@ class LlamaService extends EventEmitter {
           }
           return { name: f, path: path.join(this._modelsPath, f), type };
         });
-    } catch {
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        logger.warn('[LlamaService] Failed to list models', {
+          error: error.message,
+          code: error.code
+        });
+      }
       return [];
     }
   }
@@ -1922,6 +2075,12 @@ class LlamaService extends EventEmitter {
   }
 
   async shutdown() {
+    // Re-entrance guard: prevent double shutdown from StartupManager + ServiceContainer
+    if (this._isShuttingDown) {
+      logger.debug('[LlamaService] Shutdown already in progress, skipping');
+      return;
+    }
+    this._isShuttingDown = true;
     logger.info('[LlamaService] Shutting down...');
 
     const gateWasNotSet = !this._configChangeGate;
@@ -2018,12 +2177,15 @@ class LlamaService extends EventEmitter {
     this._initialized = false;
     this._initPromise = null;
     this._configLoaded = false; // FIX: Reset so re-initialization loads fresh config
+    this._modelsPath = null; // Reset so re-initialization discovers fresh path
     this._llama = null;
     this._models = { text: null, vision: null, embedding: null };
     this._contexts = { text: null, vision: null, embedding: null };
     this._modelChangeCallbacks.clear();
-    this._coordinator = null;
+    // Note: _coordinator is intentionally NOT nulled — it has no resources to leak,
+    // and fire-and-forget operations may still reference it after shutdown.
     this._degradationManager = null;
+    this._isShuttingDown = false; // Reset so re-initialization can call shutdown again
 
     if (this._configChangeGate && (gateWasNotSet || configGateTimedOut)) {
       this._endConfigChangeGate();

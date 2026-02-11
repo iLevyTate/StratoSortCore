@@ -88,7 +88,9 @@ const TIMEOUTS = {
   // FIX: Centralized UI timing constants (previously hardcoded)
   WIDGET_AUTO_SHOW: 1500, // Delay before auto-showing floating widgets
   EMBEDDING_CHECK: 1000, // Delay before checking embeddings status
-  STUCK_ANALYSIS_CHECK: 2 * 60 * 1000 // 2 minutes - analysis considered stuck
+  STUCK_ANALYSIS_CHECK: 2 * 60 * 1000, // 2 minutes - analysis considered stuck
+  VISION_STARTUP: 120000, // 2 min — vision model loading can be slow
+  VISION_REQUEST: 90000 // 90s — most images complete in 30-60s; cuts timeout from 5min
 };
 
 const RETRY = {

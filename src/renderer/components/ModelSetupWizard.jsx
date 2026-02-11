@@ -48,38 +48,6 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     }));
   }, []);
 
-  useEffect(() => {
-    void checkSystem();
-  }, [checkSystem]);
-
-  useEffect(() => {
-    // Subscribe to download progress
-    // Note: Assuming window.electronAPI.events.onOperationProgress handles this
-    const subscribe = window?.electronAPI?.events?.onOperationProgress;
-    if (typeof subscribe !== 'function') return undefined;
-    const unsubscribe = subscribe((data) => {
-      if (!data || data.type !== 'model-download') return;
-
-      const payload = data.progress || data;
-      const modelName = data.model || payload.model || payload.filename;
-      if (!modelName) return;
-
-      updateDownloadState(modelName, {
-        status: 'downloading',
-        percent: payload.percent ?? payload.percentage ?? 0,
-        downloadedBytes: payload.downloadedBytes,
-        totalBytes: payload.totalBytes,
-        speedBps: payload.speedBps,
-        etaSeconds: payload.etaSeconds
-      });
-    });
-    return () => {
-      if (typeof unsubscribe === 'function') {
-        unsubscribe();
-      }
-    };
-  }, [updateDownloadState]);
-
   const checkSystem = useCallback(async () => {
     if (!isMountedRef.current) return;
     setIsRefreshing(true);
@@ -176,6 +144,38 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
       }
     }
   }, []);
+
+  useEffect(() => {
+    void checkSystem();
+  }, [checkSystem]);
+
+  useEffect(() => {
+    // Subscribe to download progress
+    // Note: Assuming window.electronAPI.events.onOperationProgress handles this
+    const subscribe = window?.electronAPI?.events?.onOperationProgress;
+    if (typeof subscribe !== 'function') return undefined;
+    const unsubscribe = subscribe((data) => {
+      if (!data || data.type !== 'model-download') return;
+
+      const payload = data.progress || data;
+      const modelName = data.model || payload.model || payload.filename;
+      if (!modelName) return;
+
+      updateDownloadState(modelName, {
+        status: 'downloading',
+        percent: payload.percent ?? payload.percentage ?? 0,
+        downloadedBytes: payload.downloadedBytes,
+        totalBytes: payload.totalBytes,
+        speedBps: payload.speedBps,
+        etaSeconds: payload.etaSeconds
+      });
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [updateDownloadState]);
 
   async function startDownloads() {
     const modelsToDownload = Object.values(selectedModels)

@@ -372,20 +372,25 @@ function createMainWindow() {
     const prefix = '[RENDERER]';
     const meta = { line, sourceId: sourceId ? sourceId.split('/').pop() : '' };
 
+    const normalizedMessage =
+      typeof message === 'string'
+        ? message.trim().replace(/^['"](.*)['"]$/, '$1')
+        : String(message);
+
     // Pino's browser logger calls console.* with structured objects which serialise
-    // as "[object Object]" through Electron's console-message event. The real
-    // structured data is already forwarded via window.electronAPI.system.log, so
-    // these duplicates are pure noise — drop them silently.
-    if (message === '[object Object]') {
+    // as "[object Object]" through Electron's console-message event. Chromium may
+    // wrap the literal value in quotes, so normalize first and drop both forms.
+    // Structured log payloads are already forwarded via window.electronAPI.system.log.
+    if (normalizedMessage === '[object Object]') {
       return;
     }
 
     if (level >= 3) {
-      logger.error(`${prefix} ${message}`, meta);
+      logger.error(`${prefix} ${normalizedMessage}`, meta);
     } else if (level >= 2) {
-      logger.warn(`${prefix} ${message}`, meta);
+      logger.warn(`${prefix} ${normalizedMessage}`, meta);
     } else {
-      logger.info(`${prefix} ${message}`, meta);
+      logger.info(`${prefix} ${normalizedMessage}`, meta);
     }
   });
 

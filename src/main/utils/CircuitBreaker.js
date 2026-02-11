@@ -248,7 +248,13 @@ class CircuitBreaker extends EventEmitter {
       this.recordSuccess();
       return result;
     } catch (error) {
-      this.recordFailure(error);
+      // Non-transient errors (e.g., model-not-found) are tagged with
+      // _skipCircuitBreakerCount by the resilience layer. These represent
+      // expected business failures, not service health degradation, and
+      // should not count toward opening the circuit.
+      if (!error._skipCircuitBreakerCount) {
+        this.recordFailure(error);
+      }
       throw error;
     } finally {
       // FIX: Single point of decrement for halfOpenInFlight

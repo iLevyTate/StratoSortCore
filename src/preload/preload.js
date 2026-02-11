@@ -251,8 +251,8 @@ const buildEmbeddingSearchPayload = (query, options = {}) => {
     topK,
     mode,
     // Optional numerical/boolean parameters
-    ...(typeof minScore === 'number' && { minScore }),
-    ...(typeof chunkWeight === 'number' && { chunkWeight }),
+    ...(Number.isFinite(minScore) && { minScore }),
+    ...(Number.isFinite(chunkWeight) && { chunkWeight }),
     ...(Number.isInteger(chunkTopK) && { chunkTopK }),
     ...(typeof correctSpelling === 'boolean' && { correctSpelling }),
     ...(typeof expandSynonyms === 'boolean' && { expandSynonyms }),
@@ -284,11 +284,7 @@ const ALLOWED_CHANNELS = {
 
 // FIX: Use centralized security config to prevent drift between preload and main process
 // FIX: Use IPC_CHANNELS constant instead of hardcoded string
-const ALLOWED_RECEIVE_CHANNELS = [
-  ...SECURITY_RECEIVE_CHANNELS,
-  IPC_CHANNELS.VECTOR_DB.STATUS_CHANGED, // VectorDB status events
-  'open-semantic-search' // Global shortcut trigger from tray
-];
+const ALLOWED_RECEIVE_CHANNELS = [...SECURITY_RECEIVE_CHANNELS];
 
 // Allowed send channels (for ipcRenderer.send, not invoke)
 // FIX: Use centralized security config
@@ -680,8 +676,8 @@ const LISTENER_AUDIT_INTERVAL_MS = 10 * 60 * 1000;
 const listenerAuditIntervalId = setInterval(() => {
   try {
     secureIPC.auditStaleListeners();
-  } catch {
-    // Silently ignore audit errors
+  } catch (e) {
+    log.debug('[Preload] Listener audit error:', e?.message);
   }
 }, LISTENER_AUDIT_INTERVAL_MS);
 
@@ -1076,7 +1072,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
         if (!errorData || typeof errorData !== 'object' || !errorData.message) return;
         const channel = IPC_CHANNELS.SYSTEM.RENDERER_ERROR_REPORT;
         if (!ALLOWED_SEND_CHANNELS.includes(channel)) return;
-        ipcRenderer.send(channel, errorData);
+        const sanitized = {
+          ...(typeof errorData.message === 'string' && {
+            message: errorData.message.slice(0, 2048)
+          }),
+          ...(typeof errorData.stack === 'string' && { stack: errorData.stack.slice(0, 4096) }),
+          ...(typeof errorData.componentStack === 'string' && {
+            componentStack: errorData.componentStack.slice(0, 4096)
+          })
+        };
+        ipcRenderer.send(channel, sanitized);
       } catch (error) {
         log.error('[events.sendError] Failed to send error report:', error);
       }

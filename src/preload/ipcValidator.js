@@ -5,6 +5,12 @@
  */
 
 function createIpcValidator({ log: _log } = {}) {
+  const MAX_RESULT_DEPTH = 24;
+  const MAX_RESULT_NODES = 20000;
+  const MAX_ARRAY_LENGTH = 10000;
+  const MAX_OBJECT_KEYS = 5000;
+  const MAX_STRING_LENGTH = 500000; // ~500KB per string payload
+
   /**
    * Validate event source to prevent spoofing.
    *
@@ -50,9 +56,75 @@ function createIpcValidator({ log: _log } = {}) {
   };
 
   /**
+   * Generic payload guard to prevent oversized/deep IPC responses
+   * from destabilizing the renderer.
+   */
+  const isSafePayload = (value) => {
+    if (value === null || value === undefined) return true;
+    const valueType = typeof value;
+    if (valueType === 'string') return value.length <= MAX_STRING_LENGTH;
+    if (valueType === 'number' || valueType === 'boolean') return true;
+    if (valueType !== 'object') return false;
+
+    const seen = new WeakSet();
+    const stack = [{ node: value, depth: 0 }];
+    let visitedNodes = 0;
+
+    while (stack.length > 0) {
+      const current = stack.pop();
+      const { node, depth } = current;
+
+      if (node === null || node === undefined) continue;
+      const nodeType = typeof node;
+
+      if (nodeType === 'string') {
+        if (node.length > MAX_STRING_LENGTH) return false;
+        continue;
+      }
+      if (nodeType === 'number' || nodeType === 'boolean') continue;
+      if (nodeType !== 'object') return false;
+
+      if (depth > MAX_RESULT_DEPTH) return false;
+      if (seen.has(node)) continue;
+      seen.add(node);
+
+      visitedNodes += 1;
+      if (visitedNodes > MAX_RESULT_NODES) return false;
+
+      if (Array.isArray(node)) {
+        if (node.length > MAX_ARRAY_LENGTH) return false;
+        for (let i = 0; i < node.length; i += 1) {
+          stack.push({ node: node[i], depth: depth + 1 });
+        }
+        continue;
+      }
+
+      const keys = Object.keys(node);
+      if (keys.length > MAX_OBJECT_KEYS) return false;
+      for (let i = 0; i < keys.length; i += 1) {
+        stack.push({ node: node[keys[i]], depth: depth + 1 });
+      }
+    }
+
+    return true;
+  };
+
+  /**
    * Validate IPC results
    */
   const validateResult = (result, channel) => {
+    if (!isSafePayload(result)) {
+      _log?.warn?.('[SecureIPC] Rejected oversized/deep IPC response payload', { channel });
+      switch (channel) {
+        case 'files:select-directory':
+          return { success: false, path: null };
+        case 'smart-folders:get-custom':
+          return [];
+        default:
+          return null;
+      }
+    }
+
     switch (channel) {
       case 'system:get-metrics':
         return isValidSystemMetrics(result) ? result : null;

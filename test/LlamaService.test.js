@@ -58,6 +58,7 @@ jest.mock('../src/main/services/SettingsService', () => ({
 jest.mock('../src/main/services/LlamaResilience', () => ({
   withLlamaResilience: (fn) => fn({}),
   cleanupLlamaCircuits: jest.fn(),
+  resetLlamaCircuit: jest.fn(),
   shouldFallbackToCPU: jest.fn()
 }));
 
@@ -182,6 +183,22 @@ describe('LlamaService', () => {
           newModel: 'mxbai-embed-large-v1-f16.gguf'
         })
       );
+    });
+
+    test('accepts legacy llama* keys for gpu/context settings', async () => {
+      const service = new LlamaService();
+      service._ensureConfigLoaded = jest.fn().mockResolvedValue(undefined);
+
+      await service.updateConfig(
+        {
+          llamaGpuLayers: 21,
+          llamaContextSize: 12288
+        },
+        { skipSave: true }
+      );
+
+      expect(service._config.gpuLayers).toBe(21);
+      expect(service._config.contextSize).toBe(12288);
     });
   });
 

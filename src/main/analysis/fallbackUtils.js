@@ -619,6 +619,9 @@ function createFallbackAnalysis(params) {
     fallbackReason: reason || 'fallback analysis'
   };
 
+  // Build a summary from existing fields so embeddings are meaningful for fallbacks
+  result.summary = `${result.suggestedName} - ${result.category}. ${(result.keywords || []).join(', ')}`;
+
   // Add error if provided
   if (error) {
     result.error = error;

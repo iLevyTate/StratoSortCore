@@ -19,7 +19,7 @@ function normalizeText(value, options = {}) {
   }
   if (trim) text = text.trim();
   if (Number.isFinite(maxLength) && maxLength > 0 && text.length > maxLength) {
-    return text.slice(0, maxLength);
+    return Array.from(text).slice(0, maxLength).join('');
   }
   return text;
 }

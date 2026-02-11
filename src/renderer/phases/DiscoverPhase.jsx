@@ -75,6 +75,7 @@ function DiscoverPhase() {
   const [showEmbeddingPrompt, setShowEmbeddingPrompt] = useState(false);
   const [isRebuildingEmbeddings, setIsRebuildingEmbeddings] = useState(false);
   const isMountedRef = useRef(true);
+  const analysisTriggeredRef = useRef(false);
 
   const prevAnalyzingRef = useRef(isAnalyzing);
   const hasShownEmbeddingPromptRef = useRef(
@@ -182,6 +183,11 @@ function DiscoverPhase() {
   useEffect(() => {
     const wasAnalyzing = prevAnalyzingRef.current;
     prevAnalyzingRef.current = isAnalyzing;
+
+    // Reset double-click guard when analysis finishes
+    if (!isAnalyzing) {
+      analysisTriggeredRef.current = false;
+    }
 
     if (!wasAnalyzing || isAnalyzing) return undefined;
     if (hasShownEmbeddingPromptRef.current) return undefined;
@@ -541,7 +547,11 @@ function DiscoverPhase() {
                     <>
                       {pendingAnalysisCount > 0 && (
                         <Button
-                          onClick={() => analyzeFiles?.(pendingAnalysisFiles)}
+                          onClick={() => {
+                            if (analysisTriggeredRef.current) return;
+                            analysisTriggeredRef.current = true;
+                            analyzeFiles?.(pendingAnalysisFiles);
+                          }}
                           variant="primary"
                           size="sm"
                           className="shadow-md shadow-stratosort-blue/20"

@@ -7,6 +7,7 @@
  */
 
 const { validateServiceUrl } = require('../configDefaults');
+const { safeParse } = require('../safeJsonOps');
 
 /**
  * Configuration validation errors
@@ -44,15 +45,14 @@ function parseEnvValue(value, schemaDef) {
       const enumVal = String(value).toLowerCase().trim();
       return schemaDef.values.includes(enumVal) ? enumVal : undefined;
     }
-    case 'array':
-      try {
-        return JSON.parse(value);
-      } catch {
-        return value
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean);
-      }
+    case 'array': {
+      const parsed = safeParse(value);
+      if (Array.isArray(parsed)) return parsed;
+      return value
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
     case 'string':
     default:
       return String(value).trim();

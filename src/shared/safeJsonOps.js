@@ -83,7 +83,7 @@ function parseJsonLines(text) {
     .filter((line) => line.trim())
     .map((line) => {
       try {
-        return JSON.parse(line);
+        return JSON.parse(line, _safeReviver);
       } catch {
         return PARSE_FAILED;
       }

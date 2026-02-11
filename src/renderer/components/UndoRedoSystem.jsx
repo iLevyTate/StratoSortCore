@@ -360,13 +360,15 @@ export function UndoRedoProvider({ children }) {
   const { showSuccess, showError, showInfo } = useNotification();
 
   const isMountedRef = React.useRef(true);
+  const syncRequestIdRef = React.useRef(0);
 
   // Sync with main process state
   const syncFromMainProcess = useCallback(async () => {
+    const requestId = ++syncRequestIdRef.current;
     let state = null;
     try {
       state = await window.electronAPI?.undoRedo?.getState?.();
-      if (state && isMountedRef.current) {
+      if (state && isMountedRef.current && requestId === syncRequestIdRef.current) {
         // Update our local stack with main process state
         if (Array.isArray(state.stack) && state.stack.length > 0) {
           const rehydratedStack = state.stack
@@ -405,6 +407,7 @@ export function UndoRedoProvider({ children }) {
 
     // First, try to sync from main process (source of truth)
     syncFromMainProcess().then((state) => {
+      if (!isMountedRef.current) return;
       // If main process not reachable, fall back to localStorage
       if (!state && undoStack.getFullStack().length === 0) {
         try {
@@ -999,6 +1002,7 @@ export function UndoRedoToolbar({ className = '' }) {
         disabled={!canUndo}
         variant="secondary"
         size="sm"
+        aria-label="Undo"
         className={
           isImportantOperation
             ? 'text-stratosort-warning hover:bg-stratosort-warning/10 border-stratosort-warning/20'
@@ -1025,6 +1029,7 @@ export function UndoRedoToolbar({ className = '' }) {
         disabled={!canRedo}
         variant="secondary"
         size="sm"
+        aria-label="Redo"
         title={nextAction ? `Redo: ${getActionDescription(nextAction)}` : 'Nothing to redo'}
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

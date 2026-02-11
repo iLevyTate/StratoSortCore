@@ -470,14 +470,41 @@ class OramaVectorService extends EventEmitter {
 
       this._embeddingStore[name] = embeddingStore;
 
-      // Warn if many documents had zero-placeholder embeddings that couldn't be cached.
-      // This indicates the Orama v3.1.x vector-loss bug affected these documents;
-      // they won't appear in clustering/diagnostics until re-embedded.
+      // Attempt to repair zero-placeholder embeddings from persisted sidecar file.
+      // The sidecar contains real embeddings saved during prior sessions.
       const lostEmbeddings = insertedCount - embeddingStore.size;
       if (lostEmbeddings > 0) {
-        logger.warn(
-          `[OramaVectorService] ${name}: ${lostEmbeddings} document(s) restored with zero-placeholder embeddings (Orama v3.1.x vector-loss). Re-embed to restore vector search.`
-        );
+        let repaired = 0;
+        try {
+          const sidecarPath = path.join(this._dataPath, `${name}.sidecar.json`);
+          const sidecarRaw = await fs.readFile(sidecarPath, 'utf-8');
+          const sidecarData = JSON.parse(sidecarRaw);
+          for (const [docId, emb] of Object.entries(sidecarData)) {
+            if (!embeddingStore.has(docId) && Array.isArray(emb) && emb.length > 0) {
+              try {
+                await update(db, docId, { embedding: emb });
+                embeddingStore.set(docId, emb);
+                repaired++;
+              } catch {
+                // doc may not exist in this restore -- skip
+              }
+            }
+          }
+          if (repaired > 0) {
+            logger.info(
+              `[OramaVectorService] ${name}: repaired ${repaired} embeddings from sidecar`
+            );
+          }
+        } catch {
+          // No sidecar file or parse error -- not critical
+        }
+
+        const stillLost = lostEmbeddings - repaired;
+        if (stillLost > 0) {
+          logger.warn(
+            `[OramaVectorService] ${name}: ${stillLost} document(s) still have zero-placeholder embeddings (Orama v3.1.x vector-loss). Re-embed to restore vector search.`
+          );
+        }
       }
 
       logger.info(`[OramaVectorService] Restored ${name} database`, {
@@ -600,8 +627,26 @@ class OramaVectorService extends EventEmitter {
           await writeFileAtomic(persistPath, data);
         }
       }
+      // Persist embedding sidecar maps alongside the Orama databases.
+      // These survive the Orama v3.1.x vector-loss bug on restore.
+      for (const [name, embMap] of Object.entries(this._embeddingStore)) {
+        if (embMap && embMap.size > 0) {
+          try {
+            const sidecarPath = path.join(this._dataPath, `${name}.sidecar.json`);
+            const sidecarData = JSON.stringify(Object.fromEntries(embMap));
+            await writeFileAtomic(sidecarPath, sidecarData);
+          } catch (sidecarError) {
+            logger.debug('[OramaVectorService] Failed to persist sidecar', {
+              collection: name,
+              error: sidecarError.message
+            });
+          }
+        }
+      }
+
       logger.debug('[OramaVectorService] Persisted all databases');
     } catch (error) {
+      this._persistPending = true;
       logger.error(
         '[OramaVectorService] Persistence failed:',
         attachErrorCode(error, ERROR_CODES.VECTOR_DB_PERSIST_FAILED)
@@ -674,6 +719,19 @@ class OramaVectorService extends EventEmitter {
     if (expectedDim === null) {
       this._collectionDimensions[collectionType] = embedding.length;
     }
+  }
+
+  /**
+   * Check if a hit has a zero-placeholder embedding (all zeros).
+   * These are inserted during restore when Orama loses vector data.
+   * Returns false (keep the hit) if the embedding field is absent from the result.
+   * @private
+   */
+  _isZeroPlaceholderHit(hit) {
+    const emb = hit.document?.embedding;
+    // If embedding is not present in search result, assume it's valid
+    if (!Array.isArray(emb) || emb.length === 0) return false;
+    return emb[0] === 0 && emb.every((v) => v === 0);
   }
 
   /**
@@ -951,21 +1009,23 @@ class OramaVectorService extends EventEmitter {
         where: { isOrphaned: false }
       });
 
-      return result.hits.map((hit) => ({
-        id: hit.document.id,
-        score: hit.score,
-        distance: 1 - hit.score, // Convert similarity to distance
-        metadata: {
-          path: hit.document.filePath,
-          filePath: hit.document.filePath,
-          fileName: hit.document.fileName,
-          fileType: hit.document.fileType,
-          analyzedAt: hit.document.analyzedAt,
-          suggestedName: hit.document.suggestedName,
-          keywords: hit.document.keywords,
-          tags: hit.document.tags
-        }
-      }));
+      return result.hits
+        .filter((hit) => !this._isZeroPlaceholderHit(hit))
+        .map((hit) => ({
+          id: hit.document.id,
+          score: hit.score,
+          distance: 1 - hit.score, // Convert similarity to distance
+          metadata: {
+            path: hit.document.filePath,
+            filePath: hit.document.filePath,
+            fileName: hit.document.fileName,
+            fileType: hit.document.fileType,
+            analyzedAt: hit.document.analyzedAt,
+            suggestedName: hit.document.suggestedName,
+            keywords: hit.document.keywords,
+            tags: hit.document.tags
+          }
+        }));
     } catch (error) {
       throw attachErrorCode(error, ERROR_CODES.VECTOR_DB_QUERY_FAILED);
     }
@@ -1429,18 +1489,20 @@ class OramaVectorService extends EventEmitter {
         limit: topK
       });
 
-      return result.hits.map((hit) => ({
-        id: hit.document.id,
-        score: hit.score,
-        distance: 1 - hit.score,
-        metadata: {
-          path: hit.document.folderPath,
-          folderPath: hit.document.folderPath,
-          folderName: hit.document.folderName,
-          description: hit.document.description,
-          patterns: hit.document.patterns
-        }
-      }));
+      return result.hits
+        .filter((hit) => !this._isZeroPlaceholderHit(hit))
+        .map((hit) => ({
+          id: hit.document.id,
+          score: hit.score,
+          distance: 1 - hit.score,
+          metadata: {
+            path: hit.document.folderPath,
+            folderPath: hit.document.folderPath,
+            folderName: hit.document.folderName,
+            description: hit.document.description,
+            patterns: hit.document.patterns
+          }
+        }));
     } catch (error) {
       throw attachErrorCode(error, ERROR_CODES.VECTOR_DB_QUERY_FAILED);
     }
@@ -1457,13 +1519,19 @@ class OramaVectorService extends EventEmitter {
     const cached = this._getCachedQuery(cacheKey);
     if (cached) return cached;
 
-    // Get file embedding
+    // Get file embedding — prefer sidecar (reliable) over getByID (may be zero-placeholder)
+    const sidecarEmb = this._embeddingStore?.files?.get(fileId);
     const file = await getByID(this._databases.files, fileId);
-    if (!file || !file.embedding) {
+    const embedding = sidecarEmb || file?.embedding;
+    if (
+      !embedding ||
+      embedding.length === 0 ||
+      (embedding[0] === 0 && embedding.every((v) => v === 0))
+    ) {
       return [];
     }
 
-    const results = await this.queryFoldersByEmbedding(file.embedding, topK);
+    const results = await this.queryFoldersByEmbedding(embedding, topK);
     this._setCachedQuery(cacheKey, results);
     return results;
   }
@@ -1631,18 +1699,20 @@ class OramaVectorService extends EventEmitter {
         limit: topK
       });
 
-      return result.hits.map((hit) => ({
-        id: hit.document.id,
-        score: hit.score,
-        distance: 1 - hit.score,
-        metadata: {
-          fileId: hit.document.fileId,
-          chunkIndex: hit.document.chunkIndex,
-          content: hit.document.content,
-          startOffset: hit.document.startOffset,
-          endOffset: hit.document.endOffset
-        }
-      }));
+      return result.hits
+        .filter((hit) => !this._isZeroPlaceholderHit(hit))
+        .map((hit) => ({
+          id: hit.document.id,
+          score: hit.score,
+          distance: 1 - hit.score,
+          metadata: {
+            fileId: hit.document.fileId,
+            chunkIndex: hit.document.chunkIndex,
+            content: hit.document.content,
+            startOffset: hit.document.startOffset,
+            endOffset: hit.document.endOffset
+          }
+        }));
     } catch (error) {
       throw attachErrorCode(error, ERROR_CODES.VECTOR_DB_QUERY_FAILED);
     }
@@ -1829,23 +1899,25 @@ class OramaVectorService extends EventEmitter {
         limit: topK
       });
 
-      return result.hits.map((hit) => {
-        let metadata = {};
-        try {
-          metadata = JSON.parse(hit.document.metadata || '{}');
-        } catch (parseError) {
-          logger.debug('[OramaVectorService] Malformed feedback metadata', {
+      return result.hits
+        .filter((hit) => !this._isZeroPlaceholderHit(hit))
+        .map((hit) => {
+          let metadata = {};
+          try {
+            metadata = JSON.parse(hit.document.metadata || '{}');
+          } catch (parseError) {
+            logger.debug('[OramaVectorService] Malformed feedback metadata', {
+              id: hit.document.id,
+              error: parseError.message
+            });
+          }
+          return {
             id: hit.document.id,
-            error: parseError.message
-          });
-        }
-        return {
-          id: hit.document.id,
-          score: hit.score,
-          metadata,
-          document: hit.document.text
-        };
-      });
+            score: hit.score,
+            metadata,
+            document: hit.document.text
+          };
+        });
     } catch (error) {
       throw attachErrorCode(error, ERROR_CODES.VECTOR_DB_QUERY_FAILED);
     }
@@ -2006,11 +2078,13 @@ class OramaVectorService extends EventEmitter {
     const scores = new Map();
     const k = SEARCH.RRF_K;
 
-    vectorResults.hits.forEach((hit, rank) => {
-      const current = scores.get(hit.document.id) || { doc: hit.document, score: 0 };
-      current.score += vectorWeight / (k + rank + 1);
-      scores.set(hit.document.id, current);
-    });
+    vectorResults.hits
+      .filter((hit) => !this._isZeroPlaceholderHit(hit))
+      .forEach((hit, rank) => {
+        const current = scores.get(hit.document.id) || { doc: hit.document, score: 0 };
+        current.score += vectorWeight / (k + rank + 1);
+        scores.set(hit.document.id, current);
+      });
 
     bm25Results.hits.forEach((hit, rank) => {
       const current = scores.get(hit.document.id) || { doc: hit.document, score: 0 };
@@ -2217,6 +2291,13 @@ class OramaVectorService extends EventEmitter {
    * Cleanup and shutdown
    */
   async cleanup() {
+    // Re-entrance guard: prevent double cleanup from StartupManager + ServiceContainer
+    if (this._cleanupInProgress) {
+      logger.debug('[OramaVectorService] Cleanup already in progress, skipping');
+      return;
+    }
+    this._cleanupInProgress = true;
+
     // Clear timers first to prevent new debounced persists
     if (this._persistTimer) {
       clearTimeout(this._persistTimer);
@@ -2254,6 +2335,7 @@ class OramaVectorService extends EventEmitter {
     this._initPromise = null;
 
     this.removeAllListeners();
+    this._cleanupInProgress = false; // Reset so re-initialization can call cleanup again
     logger.info('[OramaVectorService] Cleanup complete');
   }
 

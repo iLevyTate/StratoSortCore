@@ -74,7 +74,28 @@ function registerLlamaIpc(servicesOrParams) {
   const context = 'Llama';
   const schemaVoid = z ? z.void() : null;
   const schemaModelName = z ? z.string().min(1) : null;
-  const schemaUpdateConfig = z ? z.object({}).passthrough() : null;
+  // Restrict update-config to known config fields instead of allowing arbitrary passthrough
+  const ALLOWED_CONFIG_FIELDS = new Set([
+    'textModel',
+    'visionModel',
+    'embeddingModel',
+    // Canonical internal field names
+    'gpuLayers',
+    'contextSize',
+    'threads',
+    // Backward-compatible field names used in settings payloads
+    'llamaGpuLayers',
+    'llamaContextSize',
+    'vectorDbPersistPath'
+  ]);
+  const schemaUpdateConfig = z
+    ? z
+        .object({})
+        .passthrough()
+        .refine((obj) => Object.keys(obj).every((k) => ALLOWED_CONFIG_FIELDS.has(k)), {
+          message: 'Unknown config fields provided'
+        })
+    : null;
 
   // Get available models
   safeHandle(
@@ -241,7 +262,12 @@ function registerLlamaIpc(servicesOrParams) {
         try {
           const service = getLlamaService();
           await service.initialize();
-          await service.updateConfig(config);
+          const mappedConfig = {
+            ...config,
+            gpuLayers: config?.gpuLayers ?? config?.llamaGpuLayers,
+            contextSize: config?.contextSize ?? config?.llamaContextSize
+          };
+          await service.updateConfig(mappedConfig);
           return { success: true };
         } catch (error) {
           logger.error('[IPC:Llama] Error updating config:', error);

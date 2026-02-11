@@ -37,6 +37,15 @@ const normalizeCategoryToSmartFolders = FolderMatchingService.matchCategoryToFol
 const MAP_PROMPT =
   'Extract the key facts, dates, names, topics, and important details from this text. Respond with 3-5 concise bullet points:\n\n';
 
+function isPromptOverflowError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    message.includes('compress chat history') ||
+    message.includes('too long prompt') ||
+    message.includes('cannot be compressed')
+  );
+}
+
 /**
  * Summarize document chunks via parallel LLM calls (map phase of map-reduce).
  *
@@ -104,8 +113,10 @@ async function analyzeTextWithLlama(
   originalFileName,
   smartFolders = [],
   fileDate = null,
-  namingContext = []
+  namingContext = [],
+  options = {}
 ) {
+  const bypassCache = Boolean(options?.bypassCache);
   try {
     const llamaSvc = getLlamaService();
     const cfg = await llamaSvc.getConfig();
@@ -167,22 +178,50 @@ async function analyzeTextWithLlama(
       }
     }
 
-    // Fast-path: return cached result if available
+    // Defensive re-check: the model may have reloaded with a smaller context
+    // between our initial getConfig() call and now (sequence exhaustion, OOM, etc.).
+    // Re-truncate content before deriving any cache/dedup keys so keys always
+    // match the effective request payload.
+    const currentCfg = await llamaSvc.getConfig();
+    const effectiveCtx = Number(currentCfg?.contextSize) || contextSize;
+    if (effectiveCtx < contextSize) {
+      const safeMaxTokens = Math.min(maxTokens, Math.max(256, Math.floor(effectiveCtx * 0.25)));
+      const safeContentLen = Math.max(
+        500,
+        Math.floor((effectiveCtx - safeMaxTokens - PROMPT_OVERHEAD_TOKENS) * CHARS_PER_TOKEN)
+      );
+      if (truncated.length > safeContentLen) {
+        logger.warn('[documentLlm] Context shrank after model reload, re-truncating', {
+          fileName: originalFileName,
+          originalCtx: contextSize,
+          effectiveCtx,
+          contentBefore: truncated.length,
+          contentAfter: safeContentLen
+        });
+        truncated = truncated.slice(0, safeContentLen);
+        contentMeta = `${truncated.length} chars (re-truncated for ${effectiveCtx} ctx)`;
+      }
+    }
+
+    // Fast-path: return cached result if available.
+    // Cache key must be derived from the finalized pre-inference content.
     const cacheService = getAnalysisCache();
     const namingContextKey = Array.isArray(namingContext)
       ? namingContext.slice(0, 5).join('|')
       : '';
     const cacheSeed = `${originalFileName || ''}|${fileDate || ''}|${namingContextKey}|${truncated}`;
     const cacheKey = cacheService.generateKey(cacheSeed, modelToUse, smartFolders);
-    const cachedResult = cacheService.get(cacheKey);
-    if (cachedResult) {
-      logger.info('[DocumentLLM] Cache hit', {
-        fileName: originalFileName,
-        category: cachedResult.category,
-        suggestedName: cachedResult.suggestedName,
-        confidence: cachedResult.confidence
-      });
-      return cachedResult;
+    if (!bypassCache) {
+      const cachedResult = cacheService.get(cacheKey);
+      if (cachedResult) {
+        logger.info('[DocumentLLM] Cache hit', {
+          fileName: originalFileName,
+          category: cachedResult.category,
+          suggestedName: cachedResult.suggestedName,
+          confidence: cachedResult.confidence
+        });
+        return cachedResult;
+      }
     }
 
     // FIXED Bug #29: Use array join instead of string concatenation
@@ -216,7 +255,8 @@ async function analyzeTextWithLlama(
       namingContextStr = `\n\nNAMING PATTERNS FOUND IN SIMILAR FILES:\nThe following filenames are from semantically similar files in the system. If they follow a clear convention (e.g. "Invoice_YYYY-MM", "Project_Name_Type"), TRY to adapt the 'suggestedName' to match their style, but use the current document's date/entity/project:\n${examples}`;
     }
 
-    let prompt = `You are an expert document analyzer. Analyze the TEXT CONTENT below and extract structured information.
+    const buildAnalysisPrompt =
+      () => `You are an expert document analyzer. Analyze the TEXT CONTENT below and extract structured information.
 ${fileDateContext}${folderCategoriesStr}${namingContextStr}
 
 FILENAME CONTEXT: The original filename is "${originalFileName}". Use this as a HINT for the document's purpose, but verify against the actual content.
@@ -243,6 +283,7 @@ CRITICAL REQUIREMENTS:
 
 Document content (${contentMeta}):
 ${truncated}`;
+    let prompt = buildAnalysisPrompt();
 
     // Use deduplicator to prevent duplicate LLM calls for identical content
     // CRITICAL: Include 'type' and 'fileName' to prevent cross-file cache contamination
@@ -258,71 +299,87 @@ ${truncated}`;
         .join(',')
     });
 
-    // Defensive re-check: the model may have reloaded with a smaller context
-    // between our initial getConfig() call and now (sequence exhaustion, OOM, etc.).
-    // If so, re-truncate the prompt to fit the actual available context.
-    const currentCfg = await llamaSvc.getConfig();
-    const effectiveCtx = Number(currentCfg?.contextSize) || contextSize;
-    if (effectiveCtx < contextSize) {
-      const safeMaxTokens = Math.min(maxTokens, Math.max(256, Math.floor(effectiveCtx * 0.25)));
-      const safeContentLen = Math.max(
-        500,
-        Math.floor((effectiveCtx - safeMaxTokens - PROMPT_OVERHEAD_TOKENS) * CHARS_PER_TOKEN)
-      );
-      if (truncated.length > safeContentLen) {
-        logger.warn('[documentLlm] Context shrank after model reload, re-truncating', {
-          fileName: originalFileName,
-          originalCtx: contextSize,
-          effectiveCtx,
-          contentBefore: truncated.length,
-          contentAfter: safeContentLen
-        });
-        truncated = truncated.slice(0, safeContentLen);
-        contentMeta = `${truncated.length} chars (re-truncated for ${effectiveCtx} ctx)`;
-        // Rebuild prompt with truncated content (guard against missing marker)
-        const insertionPoint = prompt.lastIndexOf('Document content (');
-        if (insertionPoint !== -1) {
-          prompt = `${prompt.slice(0, insertionPoint)}Document content (${contentMeta}):\n${truncated}`;
-        } else {
-          logger.warn(
-            '[documentLlm] Could not find content insertion point for re-truncation; using truncated content as-is',
-            {
-              fileName: originalFileName,
-              promptLength: prompt.length
-            }
-          );
-        }
-      }
-    }
-
     // FIX MED #11: Reduce retries to prevent exceeding outer timeout
     // With 60s outer timeout and ~20s per LLM call, 2 retries (3 attempts) + delays fits within budget
     // Previous: 3 retries with 4s max delay could exceed 60s (4 attempts × 20s + 7s delays = 87s)
     try {
+      const generateDocumentText = (promptText, requestedMaxTokens, dedupeKey = null) =>
+        withAbortableTimeout(
+          (abortController) => {
+            const inference = () =>
+              llamaSvc.generateText({
+                prompt: promptText,
+                maxTokens: requestedMaxTokens,
+                temperature: AppConfig.ai.textAnalysis.temperature,
+                signal: abortController.signal
+              });
+
+            if (!dedupeKey) {
+              return inference();
+            }
+
+            return globalDeduplicator.deduplicate(
+              dedupeKey,
+              inference,
+              { type: 'document', fileName: originalFileName } // Metadata for debugging cache hits
+            );
+          },
+          AppConfig.ai.textAnalysis.timeout,
+          `Document analysis for ${originalFileName}`
+        );
+
+      let usedMaxTokens = maxTokens;
       logger.debug('[documentLlm] Using text model', {
         model: modelToUse,
         fileName: originalFileName,
         timeoutMs: AppConfig.ai.textAnalysis.timeout,
         effectiveContextSize: effectiveCtx,
         promptChars: prompt.length,
-        maxTokens
+        maxTokens: usedMaxTokens
       });
-      const response = await withAbortableTimeout(
-        (abortController) =>
-          globalDeduplicator.deduplicate(
-            deduplicationKey,
-            () =>
-              llamaSvc.generateText({
-                prompt,
-                maxTokens,
-                temperature: AppConfig.ai.textAnalysis.temperature,
-                signal: abortController.signal
-              }),
-            { type: 'document', fileName: originalFileName } // Metadata for debugging cache hits
-          ),
-        AppConfig.ai.textAnalysis.timeout,
-        `Document analysis for ${originalFileName}`
-      );
+      let response;
+      try {
+        response = await generateDocumentText(prompt, usedMaxTokens, deduplicationKey);
+      } catch (error) {
+        if (isPromptOverflowError(error)) {
+          // Context-shift compression can fail when combined prompt/system text is too large.
+          // Retry once with smaller content and a tighter generation budget.
+          const previousPromptChars = prompt.length;
+          usedMaxTokens = Math.max(256, Math.floor(maxTokens * 0.6));
+          const retryContentLength = Math.max(800, Math.floor(truncated.length * 0.55));
+          if (retryContentLength < truncated.length) {
+            truncated = selectRepresentativeContent(textContent, retryContentLength).content;
+          }
+          contentMeta = `${truncated.length} chars (retry after context overflow from ${textContent.length} total)`;
+          prompt = buildAnalysisPrompt();
+          const retryDeduplicationKey = globalDeduplicator.generateKey({
+            type: 'document',
+            fileName: originalFileName,
+            contentLength: truncated.length,
+            text: truncated,
+            model: modelToUse,
+            retry: 'prompt-overflow',
+            retryMaxTokens: usedMaxTokens,
+            folders: smartFolders
+              .map((f) => f?.name || '')
+              .filter(Boolean)
+              .join(',')
+          });
+
+          logger.warn('[documentLlm] Retrying with smaller prompt after context overflow', {
+            fileName: originalFileName,
+            model: modelToUse,
+            previousPromptChars,
+            retryPromptChars: prompt.length,
+            retryMaxTokens: usedMaxTokens,
+            retryContentLength
+          });
+
+          response = await generateDocumentText(prompt, usedMaxTokens, retryDeduplicationKey);
+        } else {
+          throw error;
+        }
+      }
 
       if (response.response) {
         try {
@@ -337,7 +394,7 @@ ${truncated}`;
             // Attempt JSON repair via LLM using the same pattern as imageAnalysis.js
             const repairedResponse = await attemptJsonRepairWithLlama(llamaSvc, response.response, {
               schema: ANALYSIS_SCHEMA_PROMPT,
-              maxTokens,
+              maxTokens: usedMaxTokens,
               operation: 'Document analysis'
             });
 

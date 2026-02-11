@@ -484,7 +484,7 @@ class StartupManager {
       clearInterval(this.healthMonitor);
     }
 
-    // Simple health check polling
+    // Simple health check polling (unref'd so it doesn't prevent process exit)
     this.healthMonitor = setInterval(async () => {
       try {
         const llamaService = this._getLlamaService();
@@ -502,6 +502,11 @@ class StartupManager {
         logger.warn('[Health] Health check failed', error);
       }
     }, this.config.healthCheckInterval);
+
+    // Allow process to exit even if health monitor is still running
+    if (this.healthMonitor.unref) {
+      this.healthMonitor.unref();
+    }
   }
 
   getServiceStatus() {
@@ -515,6 +520,9 @@ class StartupManager {
   }
 
   async shutdown() {
+    if (this._isShuttingDown) return;
+    this._isShuttingDown = true;
+
     if (this.healthMonitor) {
       clearInterval(this.healthMonitor);
       this.healthMonitor = null;
@@ -522,11 +530,17 @@ class StartupManager {
 
     logger.info('[StartupManager] Shutting down services...');
 
+    // Note: LlamaService and OramaVectorService have their own re-entrance guards,
+    // so calling shutdown here is safe even if ServiceContainer also calls it.
     try {
       await this._getLlamaService().shutdown();
+    } catch (error) {
+      logger.error('[StartupManager] Error shutting down LlamaService:', error);
+    }
+    try {
       await this._getOramaService().shutdown();
     } catch (error) {
-      logger.error('[StartupManager] Error during service shutdown:', error);
+      logger.error('[StartupManager] Error shutting down OramaVectorService:', error);
     }
   }
 

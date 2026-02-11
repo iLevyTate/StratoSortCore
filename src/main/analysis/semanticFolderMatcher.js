@@ -384,11 +384,25 @@ async function applySemanticFolderMatching(params) {
           filePath
         });
       }
+      // Attach precomputed embedding so SmartFolderWatcher can reuse instead of re-embedding
+      analysis._embeddingForPersistence = {
+        vector,
+        model,
+        meta: baseMeta,
+        wasEnqueued: gate.shouldEmbed
+      };
     } else {
       // Images handle their own embedding in the image analysis pipeline
       logger.debug('[FolderMatcher] Skipping image enqueue (handled by image pipeline)', {
         filePath
       });
+      // Attach precomputed embedding so SmartFolderWatcher can reuse instead of re-embedding
+      analysis._embeddingForPersistence = {
+        vector,
+        model,
+        meta: baseMeta,
+        wasEnqueued: false
+      };
     }
   } catch (matchError) {
     logger.warn('[FolderMatcher] Folder matching error:', matchError.message);

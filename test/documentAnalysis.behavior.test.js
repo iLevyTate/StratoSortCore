@@ -159,7 +159,8 @@ describe('documentAnalysis (behavior)', () => {
       expect.any(String), // fileName
       expect.any(Array), // smartFolders
       expect.any(String), // date
-      expect.any(Array) // namingContext
+      expect.any(Array), // namingContext
+      expect.any(Object) // options (bypassCache)
     );
   });
 

@@ -34,6 +34,41 @@ function _getCircuitBreaker(modelType) {
 }
 
 /**
+ * Non-transient error codes/patterns that should NOT trip the circuit breaker.
+ * These represent expected business failures (model not downloaded, file corrupted,
+ * input validation), not service health degradation. Allowing them to count as
+ * circuit breaker failures causes 5-minute blackouts after harmless scenarios like
+ * a user not having downloaded the model yet.
+ */
+const NON_TRANSIENT_ERROR_PATTERNS = [
+  'model not found',
+  'model file not found',
+  'not found',
+  'invalid gguf',
+  'corrupted',
+  'bad magic',
+  'no model',
+  'download'
+];
+
+const NON_TRANSIENT_ERROR_CODES = new Set([
+  'LLAMA_001', // LLAMA_MODEL_LOAD_FAILED
+  'LLAMA_002' // LLAMA_MODEL_NOT_FOUND
+]);
+
+/**
+ * Check if an error is non-transient (should NOT count against circuit breaker)
+ */
+function isNonTransientError(error) {
+  // Check error code first (most reliable)
+  const code = error?.code || error?.originalError?.code;
+  if (code && NON_TRANSIENT_ERROR_CODES.has(code)) return true;
+
+  const message = (error?.message || '').toLowerCase();
+  return NON_TRANSIENT_ERROR_PATTERNS.some((pattern) => message.includes(pattern));
+}
+
+/**
  * Errors that indicate we should retry
  */
 const RETRYABLE_LLAMA_ERRORS = [
@@ -166,8 +201,26 @@ async function withLlamaResilience(operation, options = {}) {
 
   if (modelType) {
     const breaker = _getCircuitBreaker(modelType);
-    // CircuitBreaker.execute() checks isAllowed(), records success/failure
-    return breaker.execute(() => _executeWithRetries(operation, retryOptions));
+    // Wrap the retry logic so non-transient errors (model-not-found, etc.) bypass
+    // the circuit breaker's failure recording. These are expected business failures,
+    // not service health degradation. Without this, 5 "model not found" errors
+    // open the circuit for 5 minutes, blocking operations even after the model is
+    // downloaded.
+    return breaker.execute(async () => {
+      try {
+        return await _executeWithRetries(operation, retryOptions);
+      } catch (error) {
+        if (isNonTransientError(error)) {
+          // Tag the error so CircuitBreaker.execute() still throws it, but
+          // we record a success to prevent the breaker from tripping.
+          // This is safe because the breaker's recordFailure() has already been
+          // called by execute()'s catch block — we need to undo that.
+          // Simpler approach: throw a wrapper that CircuitBreaker won't count.
+          error._skipCircuitBreakerCount = true;
+        }
+        throw error;
+      }
+    });
   }
 
   // Backward-compatible: no circuit breaker when modelType is omitted

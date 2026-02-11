@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { RefreshCw, Download, Upload, Trash2, RotateCcw, Clock } from 'lucide-react';
 import Button from '../ui/Button';
@@ -19,13 +19,23 @@ function SettingsBackupSection({ addNotification }) {
   const [isDeleting, setIsDeleting] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const isMountedRef = useRef(false);
 
   const logger = useMemo(() => createLogger('SettingsBackupSection'), []);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const loadBackups = useCallback(async () => {
     if (!window?.electronAPI?.settings?.listBackups) return;
+    if (!isMountedRef.current) return;
     setIsLoading(true);
     try {
       const res = await window.electronAPI.settings.listBackups();
+      if (!isMountedRef.current) return;
       if (res?.success && Array.isArray(res.backups)) {
         setBackups(res.backups);
       } else {
@@ -33,9 +43,12 @@ function SettingsBackupSection({ addNotification }) {
       }
     } catch (e) {
       logger.debug('[SettingsBackupSection] listBackups failed', { error: e?.message });
+      if (!isMountedRef.current) return;
       setBackups([]);
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [logger]);
 
@@ -45,9 +58,11 @@ function SettingsBackupSection({ addNotification }) {
 
   const handleCreateBackup = useCallback(async () => {
     if (!window?.electronAPI?.settings?.createBackup) return;
+    if (!isMountedRef.current) return;
     setIsCreating(true);
     try {
       const res = await window.electronAPI.settings.createBackup();
+      if (!isMountedRef.current) return;
       if (res?.success) {
         addNotification('Backup created successfully', 'success');
         loadBackups();
@@ -57,16 +72,20 @@ function SettingsBackupSection({ addNotification }) {
     } catch {
       addNotification('Failed to create backup', 'error');
     } finally {
-      setIsCreating(false);
+      if (isMountedRef.current) {
+        setIsCreating(false);
+      }
     }
   }, [addNotification, loadBackups]);
 
   const handleRestoreBackup = useCallback(
     async (backupPath) => {
       if (!window?.electronAPI?.settings?.restoreBackup) return;
+      if (!isMountedRef.current) return;
       setIsRestoring(backupPath);
       try {
         const res = await window.electronAPI.settings.restoreBackup(backupPath);
+        if (!isMountedRef.current) return;
         if (res?.success) {
           addNotification('Backup restored. Reload to apply changes.', 'success');
         } else {
@@ -75,7 +94,9 @@ function SettingsBackupSection({ addNotification }) {
       } catch {
         addNotification('Failed to restore backup', 'error');
       } finally {
-        setIsRestoring(null);
+        if (isMountedRef.current) {
+          setIsRestoring(null);
+        }
       }
     },
     [addNotification]
@@ -84,9 +105,11 @@ function SettingsBackupSection({ addNotification }) {
   const handleDeleteBackup = useCallback(
     async (backupPath) => {
       if (!window?.electronAPI?.settings?.deleteBackup) return;
+      if (!isMountedRef.current) return;
       setIsDeleting(backupPath);
       try {
         const res = await window.electronAPI.settings.deleteBackup(backupPath);
+        if (!isMountedRef.current) return;
         if (res?.success) {
           addNotification('Backup deleted', 'success');
           loadBackups();
@@ -96,7 +119,9 @@ function SettingsBackupSection({ addNotification }) {
       } catch {
         addNotification('Failed to delete backup', 'error');
       } finally {
-        setIsDeleting(null);
+        if (isMountedRef.current) {
+          setIsDeleting(null);
+        }
       }
     },
     [addNotification, loadBackups]
@@ -104,9 +129,11 @@ function SettingsBackupSection({ addNotification }) {
 
   const handleExport = useCallback(async () => {
     if (!window?.electronAPI?.settings?.export) return;
+    if (!isMountedRef.current) return;
     setIsExporting(true);
     try {
       const res = await window.electronAPI.settings.export();
+      if (!isMountedRef.current) return;
       if (res?.success) {
         addNotification('Settings exported successfully', 'success');
       } else if (res?.canceled) {
@@ -117,15 +144,19 @@ function SettingsBackupSection({ addNotification }) {
     } catch {
       addNotification('Failed to export settings', 'error');
     } finally {
-      setIsExporting(false);
+      if (isMountedRef.current) {
+        setIsExporting(false);
+      }
     }
   }, [addNotification]);
 
   const handleImport = useCallback(async () => {
     if (!window?.electronAPI?.settings?.import) return;
+    if (!isMountedRef.current) return;
     setIsImporting(true);
     try {
       const res = await window.electronAPI.settings.import();
+      if (!isMountedRef.current) return;
       if (res?.success) {
         addNotification('Settings imported. Reload to apply changes.', 'success');
       } else if (res?.canceled) {
@@ -136,7 +167,9 @@ function SettingsBackupSection({ addNotification }) {
     } catch {
       addNotification('Failed to import settings', 'error');
     } finally {
-      setIsImporting(false);
+      if (isMountedRef.current) {
+        setIsImporting(false);
+      }
     }
   }, [addNotification]);
 

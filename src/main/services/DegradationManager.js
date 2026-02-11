@@ -95,7 +95,9 @@ class DegradationManager {
     // GPU memory error
     if (
       message.includes('cuda out of memory') ||
-      message.includes('metal') ||
+      message.includes('metal error') ||
+      message.includes('metal device') ||
+      message.includes('no metal') ||
       message.includes('vram')
     ) {
       logger.warn('[Degradation] GPU memory error, attempting recovery');

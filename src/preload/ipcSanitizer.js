@@ -29,20 +29,24 @@ function createIpcSanitizer({ log }) {
   const looksLikeFilePath = (str) => {
     if (typeof str !== 'string' || str.length === 0) return false;
 
-    // Check for HTML tags first - if it contains < or >, it's likely HTML, not a file path
-    if (str.includes('<') || str.includes('>')) {
-      return false;
-    }
+    // Check absolute path patterns FIRST — these are definitive path indicators
+    // regardless of whether the string also contains HTML-like characters.
+    // This prevents a path like "C:\Users\..\Windows<tag>" from bypassing
+    // path traversal checks by falling through to HTML sanitization.
 
     // Windows path: C:\ or C:/ (drive letter can be any letter)
     if (/^[A-Za-z]:[\\/]/.test(str)) return true;
 
     // Unix absolute path: starts with /
-
     if (/^\/[\p{L}\p{N}\p{M}\s._-]/u.test(str)) return true;
 
     // UNC paths: \\server\share or //server/share
     if (/^[\\/]{2}[\p{L}\p{N}\p{M}\s._-]/u.test(str)) return true;
+
+    // For non-absolute patterns, HTML tags indicate non-path strings
+    if (str.includes('<') || str.includes('>')) {
+      return false;
+    }
 
     // Relative path with typical file extensions
     if (/^[\p{L}\p{N}\p{M}\s_.-]+\/[\p{L}\p{N}\p{M}\s_./-]+\.[\p{L}\p{N}]+$/u.test(str)) {
@@ -117,7 +121,20 @@ function createIpcSanitizer({ log }) {
    * Fixed: Added prototype pollution protection
    * Fixed: File paths should NOT be HTML sanitized (breaks file system operations)
    */
-  const sanitizeObject = (obj, isFilePath = false) => {
+  const MAX_SANITIZE_DEPTH = 32;
+  const depthLimitedFallback = (value) => {
+    if (typeof value === 'string') return stripControlChars(value);
+    if (Array.isArray(value)) return [];
+    if (value && typeof value === 'object') return {};
+    return value;
+  };
+
+  const sanitizeObject = (obj, isFilePath = false, _depth = 0) => {
+    if (_depth > MAX_SANITIZE_DEPTH) {
+      log.warn('[SecureIPC] Sanitization depth limit reached, returning safe fallback value');
+      return depthLimitedFallback(obj);
+    }
+
     if (typeof obj === 'string') {
       if (isFilePath || looksLikeFilePath(obj)) {
         // Only strip ? and * on Windows where they are invalid in filenames.
@@ -131,23 +148,10 @@ function createIpcSanitizer({ log }) {
         const parts = sanitized.split(/[\\/]+/).filter((segment) => segment.length > 0);
         const hasTraversal = parts.some((segment) => segment === '..');
         if (hasTraversal) {
-          log.warn('[SecureIPC] Blocked path traversal attempt in file path');
-          // Detect the original path separator to preserve it
-          const isWindowsPath = obj.includes('\\') || /^[a-zA-Z]:/.test(obj);
-          const sep = isWindowsPath ? '\\' : '/';
-          const hasLeadingSlash = sanitized.startsWith('/') || sanitized.startsWith('\\\\');
-          const filtered = parts.filter((segment) => segment !== '..');
-          sanitized = filtered.join(sep);
-          if (hasLeadingSlash && !/^[a-zA-Z]:/.test(sanitized)) {
-            sanitized = `${sep}${sanitized}`;
-          }
-          // Collapse duplicate separators but preserve UNC prefix
-          if (isWindowsPath && sanitized.startsWith('\\\\')) {
-            sanitized = '\\\\' + sanitized.slice(2).replace(/\\+/g, '\\');
-          } else {
-            const sepPattern = isWindowsPath ? /\\+/g : /\/+/g;
-            sanitized = sanitized.replace(sepPattern, sep);
-          }
+          log.warn('[SecureIPC] Blocked path traversal attempt in file path:', {
+            originalLength: obj.length
+          });
+          return '';
         }
         return sanitized;
       }
@@ -158,7 +162,7 @@ function createIpcSanitizer({ log }) {
     }
 
     if (Array.isArray(obj)) {
-      return obj.map((item) => sanitizeObject(item, isFilePath));
+      return obj.map((item) => sanitizeObject(item, isFilePath, _depth + 1));
     }
 
     if (obj && typeof obj === 'object') {
@@ -179,7 +183,7 @@ function createIpcSanitizer({ log }) {
           continue;
         }
 
-        sanitized[cleanKey] = sanitizeObject(value, isPathKey);
+        sanitized[cleanKey] = sanitizeObject(value, isPathKey, _depth + 1);
       }
       return sanitized;
     }

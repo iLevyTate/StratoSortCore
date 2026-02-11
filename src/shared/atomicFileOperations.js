@@ -373,7 +373,7 @@ class AtomicFileOperations {
           // Destination exists, generate unique name and retry
           attempts++;
           // Use reserve=true for atomicMove since fs.rename overwrites
-          finalDestination = await this.generateUniqueFilename(finalDestination, true);
+          finalDestination = await this.generateUniqueFilename(finalDestination);
           continue;
         } else if (error.code === 'EXDEV') {
           // Cross-device move: copy then delete with verification
@@ -401,7 +401,32 @@ class AtomicFileOperations {
               });
             }
 
-            await fs.unlink(normalizedSource);
+            // Delete the source file, rolling back the copy on failure to prevent data duplication
+            try {
+              await fs.unlink(normalizedSource);
+            } catch (unlinkError) {
+              logger.error(
+                '[ATOMIC-OPS] Failed to remove source after cross-device copy, rolling back',
+                {
+                  source: normalizedSource,
+                  destination: finalDestination,
+                  error: unlinkError.message
+                }
+              );
+              await fs.unlink(finalDestination).catch((rollbackError) => {
+                logger.error(
+                  '[ATOMIC-OPS] Rollback of destination also failed — manual cleanup needed',
+                  {
+                    destination: finalDestination,
+                    error: rollbackError.message
+                  }
+                );
+              });
+              throw FileSystemError.fromNodeError(unlinkError, {
+                path: normalizedSource,
+                operation: 'crossDeviceMove'
+              });
+            }
             logger.debug('[ATOMIC-OPS] Cross-device move completed:', {
               source: normalizedSource,
               destination: finalDestination
@@ -967,7 +992,7 @@ async function crossDeviceMove(source, dest, options = {}) {
 
   try {
     // Copy the file
-    await fs.copyFile(normalizedSource, normalizedDest);
+    await fs.copyFile(normalizedSource, normalizedDest, fsConstants.COPYFILE_EXCL);
 
     // Verify copy succeeded if requested
     if (verify) {

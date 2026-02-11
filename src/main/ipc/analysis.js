@@ -2,6 +2,7 @@ const { IpcServiceContext, createFromLegacyParams } = require('./IpcServiceConte
 const { performance } = require('perf_hooks');
 const { createHandler, safeHandle, z } = require('./ipcWrappers');
 const { safeFilePath } = require('../utils/safeAccess');
+const { validateFileOperationPath } = require('../../shared/pathSanitization');
 const { mapFoldersToCategories, getFolderNamesString } = require('../../shared/folderUtils');
 const { recognizeIfAvailable } = require('../utils/tesseractUtils');
 const {
@@ -28,15 +29,34 @@ function registerAnalysisIpc(servicesOrParams) {
   const stringSchema = z ? z.string().min(1) : null;
   const LOG_PREFIX = '[IPC-ANALYSIS]';
 
+  async function validateAnalysisPath(filePath) {
+    const cleanPath = safeFilePath(filePath);
+    if (!cleanPath) {
+      throw new Error('Invalid file path provided');
+    }
+
+    const validation = await validateFileOperationPath(cleanPath, {
+      requireExists: true,
+      checkSymlinks: true,
+      requireAbsolute: true,
+      disallowUNC: true,
+      disallowUrlSchemes: true,
+      allowFileUrl: false
+    });
+
+    if (!validation.valid) {
+      throw new Error(validation.error || 'Invalid file path provided');
+    }
+
+    return validation.normalizedPath;
+  }
+
   /**
    * Core document analysis logic - shared between with-zod and without-zod handlers
    */
   async function performDocumentAnalysis(filePath) {
     const serviceIntegration = getServiceIntegration?.();
-    const cleanPath = safeFilePath(filePath);
-    if (!cleanPath) {
-      throw new Error('Invalid file path provided');
-    }
+    const cleanPath = await validateAnalysisPath(filePath);
 
     const startTime = performance.now();
     logger.info(`${LOG_PREFIX} Starting document analysis for: ${cleanPath}`);
@@ -102,10 +122,7 @@ function registerAnalysisIpc(servicesOrParams) {
    */
   async function performImageAnalysis(filePath) {
     const serviceIntegration = getServiceIntegration?.();
-    const cleanPath = safeFilePath(filePath);
-    if (!cleanPath) {
-      throw new Error('Invalid file path provided');
-    }
+    const cleanPath = await validateAnalysisPath(filePath);
 
     const startTime = performance.now();
     logger.info(`${IMAGE_LOG_PREFIX} Starting image analysis for: ${cleanPath}`);
@@ -165,11 +182,7 @@ function registerAnalysisIpc(servicesOrParams) {
   safeHandle(ipcMain, IPC_CHANNELS.ANALYSIS.ANALYZE_IMAGE, analyzeImageHandler);
 
   async function runOcr(filePath) {
-    // FIX: Validate file path (same as document/image analysis handlers)
-    const cleanPath = safeFilePath(filePath);
-    if (!cleanPath) {
-      throw new Error('Invalid file path provided');
-    }
+    const cleanPath = await validateAnalysisPath(filePath);
     const start = performance.now();
     const ocrResult = await recognizeIfAvailable(null, cleanPath, {
       lang: 'eng',

@@ -3,6 +3,8 @@ const { createLogger } = require('../../shared/logger');
 const logger = createLogger('SmartFoldersLLMService');
 const { extractAndParseJSON } = require('../utils/jsonRepair');
 const { getInstance: getLlamaService } = require('./LlamaService');
+const { withAbortableTimeout } = require('../../shared/promiseUtils');
+const { TIMEOUTS } = require('../../shared/performanceConstants');
 async function enhanceSmartFolderWithLLM(folderData, existingFolders, _getTextModel) {
   try {
     logger.info('[LLM-ENHANCEMENT] Analyzing smart folder for optimization:', folderData.name);
@@ -35,11 +37,17 @@ Please provide a JSON response with the following enhancements:
     try {
       const llamaService = getLlamaService();
       await llamaService.initialize();
-      const result = await llamaService.generateText({
-        prompt,
-        maxTokens: 500,
-        temperature: 0.3
-      });
+      const result = await withAbortableTimeout(
+        (abortController) =>
+          llamaService.generateText({
+            prompt,
+            maxTokens: 500,
+            temperature: 0.3,
+            signal: abortController.signal
+          }),
+        TIMEOUTS.AI_ANALYSIS_MEDIUM,
+        `Smart folder enhancement (${folderData.name || 'unnamed'})`
+      );
       const enhancement = extractAndParseJSON(result?.response, null);
 
       if (enhancement && typeof enhancement === 'object') {
@@ -53,6 +61,16 @@ Please provide a JSON response with the following enhancements:
       });
       return { error: 'Invalid JSON response from LLM' };
     } catch (serviceError) {
+      const isTimeout =
+        serviceError?.name === 'AbortError' ||
+        /timed out/i.test(String(serviceError?.message || ''));
+      if (isTimeout) {
+        logger.warn('[LLM-ENHANCEMENT] Timed out, falling back to non-LLM enhancement path', {
+          folderName: folderData?.name || null,
+          timeoutMs: TIMEOUTS.AI_ANALYSIS_MEDIUM
+        });
+        return { error: 'LLM enhancement timed out', errorCode: 'LLM_ENHANCEMENT_TIMEOUT' };
+      }
       logger.error('[LLM-ENHANCEMENT] Service error:', serviceError);
       return { error: serviceError.message || 'Service error' };
     }
@@ -80,6 +98,24 @@ async function calculateFolderSimilarities(suggestedCategory, folderCategories, 
       });
     };
 
+    // Hoist LLM init outside the loop to avoid redundant initialization per folder
+    let llamaService;
+    try {
+      llamaService = getLlamaService();
+      await llamaService.initialize();
+    } catch (initError) {
+      logger.warn(
+        '[SEMANTIC] LLM initialization failed, using fallback for all folders:',
+        initError.message
+      );
+      for (const folder of folderCategories) {
+        pushFallback(folder);
+      }
+      return similarities.sort((a, b) => b.confidence - a.confidence);
+    }
+
+    const PER_CALL_TIMEOUT = TIMEOUTS.AI_ANALYSIS_SHORT;
+
     for (const folder of folderCategories) {
       const prompt = `Compare these two categories for semantic similarity:
 Category 1: "${suggestedCategory}"
@@ -96,13 +132,16 @@ Rate similarity from 0.0 to 1.0 where:
 Respond with only a number between 0.0 and 1.0:`;
 
       try {
-        const llamaService = getLlamaService();
-        await llamaService.initialize();
-        const result = await llamaService.generateText({
-          prompt,
-          maxTokens: 10,
-          temperature: 0.1
-        });
+        const result = await withAbortableTimeout(
+          () =>
+            llamaService.generateText({
+              prompt,
+              maxTokens: 10,
+              temperature: 0.1
+            }),
+          PER_CALL_TIMEOUT,
+          `Folder similarity (${folder.name})`
+        );
         const raw = result?.response || '';
         if (raw) {
           try {

@@ -50,18 +50,34 @@ if (typeof globalThis === 'undefined') {
       var diagDiv = document.createElement('div');
       diagDiv.style.cssText =
         'margin-top:16px;padding:16px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;max-width:480px;text-align:left;font-size:13px;color:#374151;word-break:break-word;';
-      diagDiv.innerHTML =
-        '<p style="margin:0 0 8px;font-weight:600;">Startup diagnostic</p>' +
-        '<p style="margin:0 0 4px;">Electron API: ' +
-        (hasElectronAPI ? 'OK' : '<span style="color:#ef4444">MISSING</span>') +
-        '</p>' +
-        '<p style="margin:0 0 4px;">React mounted: ' +
-        (hasReactRoot ? 'Yes' : '<span style="color:#ef4444">No</span>') +
-        '</p>' +
-        '<pre style="margin:8px 0 0;padding:8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:4px;overflow:auto;max-height:120px;font-size:11px;white-space:pre-wrap;">' +
-        errorText +
-        '</pre>' +
-        '<p style="margin:8px 0 0;font-size:11px;color:#6b7280;">Check the log file at %APPDATA%/stratosort/logs/ for details.</p>';
+      var heading = document.createElement('p');
+      heading.style.cssText = 'margin:0 0 8px;font-weight:600;';
+      heading.textContent = 'Startup diagnostic';
+      diagDiv.appendChild(heading);
+
+      var apiLine = document.createElement('p');
+      apiLine.style.cssText = 'margin:0 0 4px;';
+      apiLine.textContent = 'Electron API: ' + (hasElectronAPI ? 'OK' : 'MISSING');
+      if (!hasElectronAPI) apiLine.style.color = '#ef4444';
+      diagDiv.appendChild(apiLine);
+
+      var reactLine = document.createElement('p');
+      reactLine.style.cssText = 'margin:0 0 4px;';
+      reactLine.textContent = 'React mounted: ' + (hasReactRoot ? 'Yes' : 'No');
+      if (!hasReactRoot) reactLine.style.color = '#ef4444';
+      diagDiv.appendChild(reactLine);
+
+      var pre = document.createElement('pre');
+      pre.style.cssText =
+        'margin:8px 0 0;padding:8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:4px;overflow:auto;max-height:120px;font-size:11px;white-space:pre-wrap;';
+      pre.textContent = errorText;
+      diagDiv.appendChild(pre);
+
+      var hint = document.createElement('p');
+      hint.style.cssText = 'margin:8px 0 0;font-size:11px;color:#6b7280;';
+      hint.textContent = 'Check the log file at %APPDATA%/stratosort/logs/ for details.';
+      diagDiv.appendChild(hint);
+
       loaderContainer.parentNode.insertBefore(diagDiv, loaderContainer.nextSibling);
     }
   }, TIMEOUT_MS);

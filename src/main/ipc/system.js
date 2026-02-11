@@ -178,13 +178,17 @@ function registerSystemIpc(servicesOrParams) {
           if (!payload || typeof payload !== 'object') return { success: false };
           const { level, message, data } = payload;
 
+          // Validate log level to prevent arbitrary method invocation
+          const ALLOWED_LOG_LEVELS = new Set(['trace', 'debug', 'info', 'warn', 'error', 'fatal']);
+          const safeLevel = ALLOWED_LOG_LEVELS.has(level) ? level : 'info';
+
           // Route to main logger (which writes to the file)
           // We use a prefix to distinguish renderer logs
           const rendererContext = `Renderer${data?.context ? `:${data.context}` : ''}`;
           const loggerWithContext = logger.pino.child({ context: rendererContext });
 
-          // Call the appropriate level
-          const logMethod = loggerWithContext[level] || loggerWithContext.info;
+          // Call the validated level
+          const logMethod = loggerWithContext[safeLevel];
           if (typeof logMethod === 'function') {
             logMethod.call(loggerWithContext, data || {}, message);
           }

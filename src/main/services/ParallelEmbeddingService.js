@@ -242,8 +242,10 @@ class ParallelEmbeddingService {
       return;
     }
 
-    // Wake up next waiting request (hand slot directly, counter stays the same)
-    if (this.waitQueue.length > 0) {
+    // Wake up next waiting request (hand slot directly, counter stays the same).
+    // Only do this when activeRequests > 0, otherwise the slot being released
+    // doesn't actually exist and we'd grant an extra concurrent slot.
+    if (this.waitQueue.length > 0 && this.activeRequests > 0) {
       const next = this.waitQueue.shift();
       // FIX: Clear the timeout to prevent memory leak and spurious rejection
       if (next.timeoutId) {
@@ -366,9 +368,22 @@ class ParallelEmbeddingService {
           result.model ||
           (await llamaService.getConfig())?.embeddingModel ||
           AI_DEFAULTS.EMBEDDING.MODEL;
+
+        // Dimension validation — warn only for the LlamaService path.
+        // Unlike the worker pool (which could load a different model), LlamaService
+        // generated this embedding from the actual loaded model, so the vector is
+        // valid. The resolver's expectation may be stale for custom models.
+        const expectedDim = resolveEmbeddingDimension(modelName);
+        if (expectedDim > 0 && result.embedding.length !== expectedDim) {
+          logger.warn(
+            '[ParallelEmbeddingService] LlamaService returned embedding with unexpected dimension',
+            { actual: result.embedding.length, expected: expectedDim, model: modelName }
+          );
+        }
+
         const normalized = {
           success: true,
-          vector: result.embedding || [],
+          vector: result.embedding,
           model: modelName
         };
         return normalized;
@@ -455,8 +470,14 @@ class ParallelEmbeddingService {
 
           const { vector, model } = await this.embedText(item.text);
 
-          // FIX: Validate model consistency - warn if model used differs from batch model
-          if (model !== batchModel && model !== 'fallback') {
+          // FIX: Validate model consistency - warn if model used differs from batch model.
+          // Also tolerate the default fallback name (AI_DEFAULTS.EMBEDDING.MODEL) which
+          // may be returned when the actual model name can't be resolved from LlamaService.
+          if (
+            model !== batchModel &&
+            model !== 'fallback' &&
+            model !== AI_DEFAULTS.EMBEDDING.MODEL
+          ) {
             // FIX CRIT-29: Throw on model mismatch to prevent vector space corruption
             const mismatchMsg = `Model mismatch in batch: expected ${batchModel}, got ${model}. Aborting to protect vector integrity.`;
             logger.error('[ParallelEmbeddingService] ' + mismatchMsg, {

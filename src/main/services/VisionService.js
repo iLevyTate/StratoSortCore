@@ -54,8 +54,8 @@ const LLAMA_CPP_BASE_URL = 'https://github.com/ggml-org/llama.cpp/releases/downl
 const SERVER_BINARY_NAME = process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
 
 // Vision models (4-5GB) can take several minutes to load on CPU-only systems
-const DEFAULT_STARTUP_TIMEOUT_MS = TIMEOUTS.AI_ANALYSIS_LONG || 300000;
-const DEFAULT_REQUEST_TIMEOUT_MS = TIMEOUTS.AI_ANALYSIS_LONG || 300000;
+const DEFAULT_STARTUP_TIMEOUT_MS = TIMEOUTS.VISION_STARTUP || 120000;
+const DEFAULT_REQUEST_TIMEOUT_MS = TIMEOUTS.VISION_REQUEST || 90000;
 
 function getRuntimeRoot(tag = LLAMA_CPP_RELEASE_TAG) {
   return path.join(app.getPath('userData'), 'runtime', 'llama.cpp', tag);
@@ -305,11 +305,15 @@ async function requestJson({ method, port, path: endpointPath, body, timeoutMs, 
     }
   };
 
+  const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10 MB safety limit
   return new Promise((resolve, reject) => {
     const req = http.request(options, (res) => {
       let data = '';
       res.on('data', (chunk) => {
         data += chunk.toString('utf8');
+        if (data.length > MAX_RESPONSE_SIZE) {
+          req.destroy(new Error('Vision response exceeded 10 MB limit'));
+        }
       });
       res.on('end', () => {
         if (!data) {
@@ -711,6 +715,17 @@ class VisionService {
     this._process = child;
     this._port = port;
 
+    // Kill the child process if the parent exits unexpectedly (crash, SIGTERM, etc.)
+    // On Windows, child processes are NOT auto-killed when the parent dies.
+    this._exitHandler = () => {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        /* ignore */
+      }
+    };
+    process.on('exit', this._exitHandler);
+
     // Race health check against early exit -- if the process dies first, fail immediately
     try {
       await Promise.race([
@@ -894,29 +909,19 @@ class VisionService {
     this._activeConfig = null;
     this._startPromise = null;
 
+    // Remove the parent-exit safety handler since we're shutting down explicitly
+    if (this._exitHandler) {
+      process.removeListener('exit', this._exitHandler);
+      this._exitHandler = null;
+    }
+
     if (proc) {
       logger.info('[VisionService] Shutting down vision runtime');
 
       this._shutdownPromise = (async () => {
-        // FIX: Remove all listeners from the child process to prevent leaks.
-        // The 'exit' and 'error' listeners attached in _startServer would
-        // otherwise accumulate if the service is restarted multiple times.
-        try {
-          proc.removeAllListeners();
-          proc.stdout?.removeAllListeners();
-          proc.stderr?.removeAllListeners();
-        } catch {
-          // ignore -- streams may already be closed
-        }
-
-        try {
-          proc.kill();
-        } catch {
-          // ignore -- process may have already exited
-        }
-
         // Wait for the process to actually exit (max 5 s) so a subsequent
         // _startServer doesn't race against the dying instance.
+        // Attach the exit listener BEFORE killing to avoid missing the event.
         await new Promise((resolve) => {
           const timeout = setTimeout(() => {
             try {
@@ -932,6 +937,21 @@ class VisionService {
             clearTimeout(timeout);
             resolve();
           });
+
+          // Remove other listeners to prevent leaks from _startServer
+          try {
+            proc.removeAllListeners('error');
+            proc.stdout?.removeAllListeners();
+            proc.stderr?.removeAllListeners();
+          } catch {
+            // ignore -- streams may already be closed
+          }
+
+          try {
+            proc.kill();
+          } catch {
+            // ignore -- process may have already exited
+          }
         });
       })().finally(() => {
         this._shutdownPromise = null;

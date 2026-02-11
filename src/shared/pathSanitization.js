@@ -47,8 +47,8 @@ const {
  * FIX: Added file:// URL handling for consistency with preload
  *
  * @param {string} filePath - The file path to sanitize
- * @returns {string} Sanitized path
- * @throws {Error} If path is invalid or dangerous
+ * @returns {string} Sanitized path, or empty string if input is null/undefined/non-string
+ * @throws {Error} If path contains traversal, exceeds depth limit, or uses reserved names
  */
 function sanitizePath(filePath) {
   if (!filePath || typeof filePath !== 'string') {
@@ -304,7 +304,10 @@ function isPathDangerous(filePath) {
   for (const dangerous of dangerousPaths) {
     const normalizedDangerous = path.normalize(dangerous).toLowerCase();
     if (normalizedPath.startsWith(normalizedDangerous)) {
-      return true;
+      const remainder = normalizedPath.slice(normalizedDangerous.length);
+      if (remainder.length === 0 || remainder.startsWith(path.sep)) {
+        return true;
+      }
     }
   }
 

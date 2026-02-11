@@ -205,6 +205,12 @@ const SETTINGS_VALIDATION = {
     // Embedding workflow controls
     'embeddingTiming',
     'defaultEmbeddingPolicy',
+    'embeddingScope',
+    // LLM engine settings
+    'llamaGpuLayers',
+    'llamaContextSize',
+    'vectorDbPersistPath',
+    // Chat settings
     'chatPersona',
     'chatResponseMode',
     'launchOnStartup',
@@ -332,11 +338,11 @@ const ALLOWED_RECEIVE_CHANNELS = [
   'menu-action',
   'open-semantic-search',
   'settings-changed-external',
-  'operation-error',
-  'operation-complete',
-  'operation-failed',
+  'operation-error', // Dead: schema+preload exist but no safeSend from main process
+  'operation-complete', // Dead: schema+preload exist but no safeSend from main process
+  'operation-failed', // Dead: schema+preload exist but no safeSend from main process
   'file-operation-complete', // File move/delete notifications for search invalidation
-  'vectordb:status-changed', // Vector DB status events for UI integration
+  'vectordb:status-changed', // Reserved: defined in constants but not yet sent from main
   'notification', // Toast notifications from main process
   'undo-redo:state-changed', // FIX: Undo/redo state change notifications
   'batch-results-chunk' // FIX: Batch results streaming for progressive UI updates

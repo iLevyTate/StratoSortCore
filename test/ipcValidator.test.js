@@ -20,4 +20,16 @@ describe('ipcValidator', () => {
     const result = validateResult(null, 'files:select-directory');
     expect(result).toEqual({ success: false, path: null });
   });
+
+  test('rejects oversized payloads for generic channels', () => {
+    const { validateResult } = createIpcValidator();
+    const huge = { value: 'x'.repeat(500001) };
+    expect(validateResult(huge, 'llama:get-models')).toBeNull();
+  });
+
+  test('applies safe fallback for oversized select-directory payload', () => {
+    const { validateResult } = createIpcValidator();
+    const huge = { value: 'x'.repeat(500001) };
+    expect(validateResult(huge, 'files:select-directory')).toEqual({ success: false, path: null });
+  });
 });

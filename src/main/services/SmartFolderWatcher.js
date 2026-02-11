@@ -46,6 +46,7 @@ const {
 } = require('./organization/learningFeedback');
 const { withTimeout } = require('../../shared/promiseUtils');
 const { shouldEmbed } = require('./embedding/embeddingGate');
+const { resetLlamaCircuit } = require('./LlamaResilience');
 
 const logger = typeof createLogger === 'function' ? createLogger('SmartFolderWatcher') : baseLogger;
 if (typeof createLogger !== 'function' && logger?.setContext) {
@@ -317,6 +318,18 @@ class SmartFolderWatcher {
       this.queueTimer = null;
     }
 
+    // Wait for in-flight queue processing to finish (up to 30s)
+    if (this.isProcessingQueue) {
+      logger.debug('[SMART-FOLDER-WATCHER] Waiting for in-flight queue processing to finish...');
+      const deadline = Date.now() + 30000;
+      while (this.isProcessingQueue && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      if (this.isProcessingQueue) {
+        logger.warn('[SMART-FOLDER-WATCHER] Timed out waiting for queue processing during stop');
+      }
+    }
+
     // Clear pending analysis timeouts
     for (const pending of this.pendingAnalysis.values()) {
       if (pending.timeout) {
@@ -355,6 +368,7 @@ class SmartFolderWatcher {
     this.analysisQueue = [];
     this._lastQueueDropLogAt = 0;
     this._queueDropsSinceLog = 0;
+    this._lastDropNotification = null;
 
     logger.info('[SMART-FOLDER-WATCHER] Stopped');
   }
@@ -588,7 +602,11 @@ class SmartFolderWatcher {
               'High Load',
               `Analysis queue full. Some files (e.g. ${path.basename(dropped.filePath)}) were skipped to maintain performance.`
             )
-            .catch(() => {});
+            .catch((err) =>
+              logger.debug('[SmartFolderWatcher] Failed to notify watcher error', {
+                error: err.message
+              })
+            );
           this._lastDropNotification = now;
         }
       }
@@ -839,60 +857,144 @@ class SmartFolderWatcher {
     this.isProcessingQueue = true;
 
     try {
-      // Take up to maxConcurrentAnalysis files from queue
-      const batchSize = Math.max(1, this.maxConcurrentAnalysis || 1);
-      const batch = this.analysisQueue.splice(0, batchSize);
+      // Peek at first item to determine type — process same-type batches together
+      const firstIsImage = isImagePath(this.analysisQueue[0].filePath);
 
-      // Process batch items concurrently (maxConcurrentAnalysis controls batch size)
-      const results = await Promise.allSettled(
-        batch.map((item) =>
-          withTimeout(
-            this._analyzeFile(item),
-            TIMEOUTS.GLOBAL_ANALYSIS || 10 * 60 * 1000,
-            `SmartFolderWatcher analyze ${item.filePath}`
-          ).catch((error) => {
-            logger.warn('[SMART-FOLDER-WATCHER] Analysis timed out or failed', {
-              filePath: item.filePath,
-              error: error.message
+      if (firstIsImage) {
+        // Image batch: take consecutive images (up to 20), process sequentially
+        // Vision server is single-slot so parallel calls would just queue up
+        let count = 0;
+        const maxImageBatch = 20;
+        while (
+          count < this.analysisQueue.length &&
+          count < maxImageBatch &&
+          isImagePath(this.analysisQueue[count].filePath)
+        ) {
+          count++;
+        }
+        const batch = this.analysisQueue.splice(0, count);
+
+        // Enter vision batch mode once for the whole batch
+        let llamaService;
+        try {
+          const { getInstance: getLlamaService } = require('./LlamaService');
+          llamaService = getLlamaService();
+        } catch {
+          llamaService = null;
+        }
+
+        if (llamaService) {
+          try {
+            await llamaService.enterVisionBatchMode();
+          } catch (err) {
+            logger.warn('[SMART-FOLDER-WATCHER] Failed to enter vision batch mode', {
+              error: err.message
             });
-            this.stats.errors++;
+          }
+        }
 
-            const nextRetry = (item.retryCount || 0) + 1;
-            if (nextRetry <= MAX_ANALYSIS_RETRIES) {
-              this._enqueueAnalysisItem({
-                ...item,
-                retryCount: nextRetry,
-                cachedAnalysis: item._lastAnalysis || item.cachedAnalysis || null
-              });
-              logger.debug('[SMART-FOLDER-WATCHER] Re-queued file after failure', {
-                filePath: item.filePath,
-                retryCount: nextRetry,
-                hasCachedAnalysis: !!(item._lastAnalysis || item.cachedAnalysis)
-              });
-            } else {
-              logger.error('[SMART-FOLDER-WATCHER] Max retries reached, giving up', {
-                filePath: item.filePath,
-                retries: nextRetry
-              });
-
-              if (this.notificationService) {
-                this.notificationService
-                  .notifyWatcherError(
-                    'Analysis Failed',
-                    `File "${path.basename(item.filePath)}" failed after ${nextRetry} attempts: ${error?.message || 'Max retries exceeded'}`
-                  )
-                  .catch(() => {});
-              }
+        try {
+          for (const item of batch) {
+            try {
+              await withTimeout(
+                this._analyzeFile(item),
+                TIMEOUTS.GLOBAL_ANALYSIS || 10 * 60 * 1000,
+                `SmartFolderWatcher analyze ${item.filePath}`
+              );
+            } catch (error) {
+              this._handleAnalysisError(item, error);
             }
-          })
-        )
-      );
-      void results; // Errors handled per-item above
+          }
+        } finally {
+          if (llamaService) {
+            try {
+              await llamaService.exitVisionBatchMode();
+            } catch (err) {
+              logger.warn('[SMART-FOLDER-WATCHER] Failed to exit vision batch mode', {
+                error: err.message
+              });
+            }
+          }
+        }
+      } else {
+        // Document batch: take up to maxConcurrentAnalysis, process concurrently
+        const batchSize = Math.max(1, this.maxConcurrentAnalysis || 1);
+        let count = 0;
+        while (
+          count < this.analysisQueue.length &&
+          count < batchSize &&
+          !isImagePath(this.analysisQueue[count].filePath)
+        ) {
+          count++;
+        }
+        const batch = this.analysisQueue.splice(0, count);
+
+        const results = await Promise.allSettled(
+          batch.map((item) =>
+            withTimeout(
+              this._analyzeFile(item),
+              TIMEOUTS.GLOBAL_ANALYSIS || 10 * 60 * 1000,
+              `SmartFolderWatcher analyze ${item.filePath}`
+            ).catch((error) => {
+              this._handleAnalysisError(item, error);
+            })
+          )
+        );
+        void results; // Errors handled per-item above
+      }
     } catch (error) {
       logger.error('[SMART-FOLDER-WATCHER] Queue processing error:', error.message);
       this.stats.errors++;
     } finally {
       this.isProcessingQueue = false;
+      // Immediately re-trigger if more items remain instead of waiting for next 2s interval
+      if (this.analysisQueue.length > 0 && !this._isStopping) {
+        setImmediate(() => this._processQueue());
+      }
+    }
+  }
+
+  /**
+   * Handle analysis error for a single item — retry or give up
+   * @private
+   */
+  _handleAnalysisError(item, error) {
+    logger.warn('[SMART-FOLDER-WATCHER] Analysis timed out or failed', {
+      filePath: item.filePath,
+      error: error.message
+    });
+    this.stats.errors++;
+
+    const nextRetry = (item.retryCount || 0) + 1;
+    if (nextRetry <= MAX_ANALYSIS_RETRIES) {
+      this._enqueueAnalysisItem({
+        ...item,
+        retryCount: nextRetry,
+        cachedAnalysis: item._lastAnalysis || item.cachedAnalysis || null
+      });
+      logger.debug('[SMART-FOLDER-WATCHER] Re-queued file after failure', {
+        filePath: item.filePath,
+        retryCount: nextRetry,
+        hasCachedAnalysis: !!(item._lastAnalysis || item.cachedAnalysis)
+      });
+    } else {
+      logger.error('[SMART-FOLDER-WATCHER] Max retries reached, giving up', {
+        filePath: item.filePath,
+        retries: nextRetry
+      });
+
+      if (this.notificationService) {
+        this.notificationService
+          .notifyWatcherError(
+            'Analysis Failed',
+            `File "${path.basename(item.filePath)}" failed after ${nextRetry} attempts: ${error?.message || 'Max retries exceeded'}`
+          )
+          .catch((err) =>
+            logger.debug('[SmartFolderWatcher] Failed to notify analysis error', {
+              error: err.message
+            })
+          );
+      }
     }
   }
 
@@ -913,8 +1015,8 @@ class SmartFolderWatcher {
     this.processingFiles.add(filePath);
 
     try {
-      // Verify file still exists
-      await fs.stat(filePath);
+      // Verify file still exists and capture stats for reuse below
+      const fileStats = await fs.stat(filePath);
 
       logger.info('[SMART-FOLDER-WATCHER] Analyzing file:', filePath, {
         applyNaming: applyNaming !== false
@@ -933,9 +1035,13 @@ class SmartFolderWatcher {
       // Reuse cached LLM analysis when retrying after an embedding failure.
       // This avoids repeating the expensive LLM call for a transient embedding issue.
       let result;
-      if (item.cachedAnalysis) {
+      const isEmbeddingRetry = Boolean(item.cachedAnalysis);
+      if (isEmbeddingRetry) {
         result = item.cachedAnalysis;
-        logger.debug('[SMART-FOLDER-WATCHER] Reusing cached LLM analysis for retry:', filePath);
+        logger.debug(
+          '[SMART-FOLDER-WATCHER] Reusing cached LLM analysis for embedding retry:',
+          filePath
+        );
       } else if (isImagePath(filePath)) {
         result = await this.analyzeImageFile(filePath, folderCategories, {
           bypassCache: isReanalyze
@@ -949,9 +1055,35 @@ class SmartFolderWatcher {
       if (this._isStopping) return;
 
       if (result) {
+        // Embedding-only retry: skip all post-analysis side effects (naming, history,
+        // notification, learning feedback) since they already ran on the original pass.
+        // Only re-attempt the embedding.
+        if (isEmbeddingRetry) {
+          this._embedAnalyzedFile(filePath, result).catch((embedErr) => {
+            logger.warn('[SMART-FOLDER-WATCHER] Embedding retry failed again', {
+              filePath,
+              error: embedErr.message
+            });
+            const retryCount = (item.retryCount || 0) + 1;
+            if (retryCount <= MAX_ANALYSIS_RETRIES) {
+              this._enqueueAnalysisItem({
+                ...item,
+                retryCount,
+                cachedAnalysis: result
+              });
+            } else {
+              logger.error('[SMART-FOLDER-WATCHER] Embedding retries exhausted', {
+                filePath,
+                retryCount
+              });
+            }
+          });
+          // Skip to stats update and return
+        }
+
         // Apply user's naming convention to the suggested name (unless explicitly disabled)
         // Default behavior is to apply naming (backward compatibility)
-        const shouldApplyNaming = applyNaming !== false;
+        const shouldApplyNaming = applyNaming !== false && !isEmbeddingRetry;
 
         if (shouldApplyNaming) {
           try {
@@ -967,11 +1099,10 @@ class SmartFolderWatcher {
               caseConvention: settings.caseConvention
             };
 
-            // Get file timestamps for date-based naming
-            const stats = await fs.stat(filePath);
+            // Reuse fileStats from existence check above
             const fileTimestamps = {
-              created: stats.birthtime,
-              modified: stats.mtime
+              created: fileStats.birthtime,
+              modified: fileStats.mtime
             };
 
             const analysis = result.analysis || result;
@@ -1013,81 +1144,132 @@ class SmartFolderWatcher {
 
         // Cache the LLM analysis result on the item so that if embedding fails
         // and the item is re-enqueued for retry, the expensive LLM call is not repeated.
-        item._lastAnalysis = result;
-
-        // FIX: Immediately embed the analyzed file into the vector DB for semantic search
-        // This ensures files watched by SmartFolderWatcher are searchable without manual rebuild
-        await this._embedAnalyzedFile(filePath, result);
-
-        // FIX: Record to analysis history so smart folder analysis appears in history
-        {
-          const analysis = result?.analysis || result || {};
-          const keywords = Array.isArray(analysis.keywords)
-            ? analysis.keywords
-            : Array.isArray(analysis.tags)
-              ? analysis.tags
-              : [];
-
-          const derivedConfidence = deriveWatcherConfidencePercent(analysis);
-          const historyConfidence =
-            typeof analysis.confidence === 'number' && (analysis.confidence !== 0 || analysis.error)
-              ? analysis.confidence
-              : derivedConfidence;
-
-          const isImage = isImagePath(filePath);
-          const historyPayload = {
-            // The history utility uses suggestedName as the subject fallback.
-            // Prefer any naming-convention output; otherwise keep the original basename.
-            suggestedName: analysis.suggestedName || path.basename(filePath),
-            category: analysis.category || analysis.folder || 'uncategorized',
-            keywords,
-            confidence: historyConfidence,
-            summary: analysis.summary || analysis.description || '',
-            extractedText: analysis.extractedText || null,
-            smartFolder: analysis.smartFolder || analysis.folder || null,
-            model: analysis.model || result.model || (isImage ? 'vision' : 'llm'),
-            // Extended fields for document/image conversations
-            // CRITICAL: Use field names that match AnalysisHistoryServiceCore expectations
-            documentType: analysis.type || null,
-            entity: analysis.entity || null,
-            project: analysis.project || null,
-            purpose: analysis.purpose || null,
-            reasoning: analysis.reasoning || null,
-            documentDate: analysis.date || null,
-            keyEntities: analysis.keyEntities || [],
-            extractionMethod: analysis.extractionMethod || null,
-            // Image-specific fields
-            content_type: isImage ? analysis.content_type || null : null,
-            has_text: isImage ? Boolean(analysis.has_text) : null,
-            colors: isImage && Array.isArray(analysis.colors) ? analysis.colors : null
-          };
-
-          await recordAnalysisResult({
-            filePath,
-            result: historyPayload,
-            processingTime: Number(result.processingTimeMs || result.processingTime || 0),
-            modelType: isImagePath(filePath) ? 'vision' : 'llm',
-            analysisHistory: this.analysisHistoryService,
-            logger
-          });
-
-          // FIX P1-2: Invalidate BM25 index after analysis so new files are searchable immediately
-          // This triggers a rebuild on the next search instead of waiting 15 minutes
-          try {
-            const { getSearchServiceInstance } = require('../ipc/semantic');
-            const searchService = getSearchServiceInstance?.();
-            if (searchService?.invalidateIndex) {
-              searchService.invalidateIndex();
-              logger.debug('[SMART-FOLDER-WATCHER] Invalidated BM25 index for new analysis');
-            }
-          } catch (invalidateErr) {
-            // Non-fatal - search will still work with stale index
-            logger.debug(
-              '[SMART-FOLDER-WATCHER] Could not invalidate BM25 index:',
-              invalidateErr.message
-            );
-          }
+        if (!isEmbeddingRetry) {
+          item._lastAnalysis = result;
         }
+
+        // Skip persisting fallback-only results to analysis history so that
+        // _needsAnalysis() will pick the file up again on the next scan when
+        // the model becomes available. Also skip embedding — fallback results
+        // have no meaningful content to embed.
+        // Also skip entirely for embedding retries (handled above).
+        const analysis_check = result?.analysis || result || {};
+        const fallbackMethods = new Set([
+          'filename_fallback',
+          'extension_fallback',
+          'filename',
+          'failed'
+        ]);
+        const isFallbackOnly =
+          !isEmbeddingRetry &&
+          (fallbackMethods.has(analysis_check.extractionMethod) || analysis_check._isFallback);
+
+        if (isEmbeddingRetry) {
+          // Embedding retry handled above — skip all post-analysis side effects
+        } else if (isFallbackOnly) {
+          logger.info(
+            '[SMART-FOLDER-WATCHER] Fallback-only result, skipping history record and embedding',
+            { filePath }
+          );
+          // Still emit to UI for immediate display via notification below,
+          // but don't persist to history so _needsAnalysis() re-queues it later
+        } else {
+          // Embed the analyzed file into the vector DB for semantic search (fire-and-forget).
+          // Decoupled from the analysis pipeline so embedding latency doesn't block the next file.
+          // On failure, re-enqueue with the cached LLM result so only embedding is retried.
+          this._embedAnalyzedFile(filePath, result).catch((embedErr) => {
+            logger.warn(
+              '[SMART-FOLDER-WATCHER] Background embedding failed, re-queuing for retry',
+              {
+                filePath,
+                error: embedErr.message
+              }
+            );
+            const retryCount = (item.retryCount || 0) + 1;
+            if (retryCount <= MAX_ANALYSIS_RETRIES) {
+              this._enqueueAnalysisItem({
+                ...item,
+                retryCount,
+                cachedAnalysis: result // Skip LLM, retry only embedding
+              });
+            } else {
+              logger.error('[SMART-FOLDER-WATCHER] Embedding retries exhausted', {
+                filePath,
+                retryCount
+              });
+            }
+          });
+          // Record to analysis history so smart folder analysis appears in history
+          {
+            const analysis = result?.analysis || result || {};
+            const keywords = Array.isArray(analysis.keywords)
+              ? analysis.keywords
+              : Array.isArray(analysis.tags)
+                ? analysis.tags
+                : [];
+
+            const derivedConfidence = deriveWatcherConfidencePercent(analysis);
+            const historyConfidence =
+              typeof analysis.confidence === 'number' &&
+              (analysis.confidence !== 0 || analysis.error)
+                ? analysis.confidence
+                : derivedConfidence;
+
+            const isImage = isImagePath(filePath);
+            const historyPayload = {
+              // The history utility uses suggestedName as the subject fallback.
+              // Prefer any naming-convention output; otherwise keep the original basename.
+              suggestedName: analysis.suggestedName || path.basename(filePath),
+              category: analysis.category || analysis.folder || 'uncategorized',
+              keywords,
+              confidence: historyConfidence,
+              summary: analysis.summary || analysis.description || '',
+              extractedText: analysis.extractedText || null,
+              smartFolder: analysis.smartFolder || analysis.folder || null,
+              model: analysis.model || result.model || (isImage ? 'vision' : 'llm'),
+              // Extended fields for document/image conversations
+              // CRITICAL: Use field names that match AnalysisHistoryServiceCore expectations
+              documentType: analysis.type || null,
+              entity: analysis.entity || null,
+              project: analysis.project || null,
+              purpose: analysis.purpose || null,
+              reasoning: analysis.reasoning || null,
+              documentDate: analysis.date || null,
+              keyEntities: analysis.keyEntities || [],
+              extractionMethod: analysis.extractionMethod || null,
+              // Image-specific fields
+              content_type: isImage ? analysis.content_type || null : null,
+              has_text: isImage ? Boolean(analysis.has_text) : null,
+              colors: isImage && Array.isArray(analysis.colors) ? analysis.colors : null
+            };
+
+            await recordAnalysisResult({
+              filePath,
+              result: historyPayload,
+              processingTime: Number(result.processingTimeMs || result.processingTime || 0),
+              modelType: isImagePath(filePath) ? 'vision' : 'llm',
+              analysisHistory: this.analysisHistoryService,
+              logger
+            });
+
+            // FIX P1-2: Invalidate BM25 index after analysis so new files are searchable immediately
+            // This triggers a rebuild on the next search instead of waiting 15 minutes
+            try {
+              const { getSearchServiceInstance } = require('../ipc/semantic');
+              const searchService = getSearchServiceInstance?.();
+              if (searchService?.invalidateIndex) {
+                searchService.invalidateIndex();
+                logger.debug('[SMART-FOLDER-WATCHER] Invalidated BM25 index for new analysis');
+              }
+            } catch (invalidateErr) {
+              // Non-fatal - search will still work with stale index
+              logger.debug(
+                '[SMART-FOLDER-WATCHER] Could not invalidate BM25 index:',
+                invalidateErr.message
+              );
+            }
+          }
+        } // end else (non-fallback: persist to history)
 
         // Update stats
         if (eventType === 'add') {
@@ -1101,15 +1283,19 @@ class SmartFolderWatcher {
         // FIX: Record operation to prevent infinite loops with other watchers
         getFileOperationTracker().recordOperation(filePath, 'analyze', 'smartFolderWatcher');
 
-        // Record implicit learning feedback - file in smart folder = positive signal
-        await this._recordLearningFeedback(filePath, result);
+        // Skip learning feedback and notification for embedding-only retries
+        // (these already ran on the original analysis pass)
+        if (!isEmbeddingRetry) {
+          // Record implicit learning feedback - file in smart folder = positive signal
+          await this._recordLearningFeedback(filePath, result);
+        }
 
         // Send notification about the analyzed file
         const fileName = path.basename(filePath);
         const analysis = result.analysis || result;
         const confidence = deriveWatcherConfidencePercent(analysis);
 
-        if (this.notificationService) {
+        if (this.notificationService && !isEmbeddingRetry) {
           // Notify about file analysis
           await this.notificationService.notifyFileAnalyzed(fileName, 'smart_folder', {
             category: analysis.category || 'Unknown',
@@ -1161,13 +1347,21 @@ class SmartFolderWatcher {
    * @param {Object} analysisResult - Result from analyzeDocumentFile or analyzeImageFile
    */
   async _embedAnalyzedFile(filePath, analysisResult) {
+    // Skip if watcher is stopping — prevents fire-and-forget embeddings after shutdown
+    if (this._isStopping) {
+      logger.debug('[SMART-FOLDER-WATCHER] Skipping embedding - watcher is stopping');
+      return;
+    }
+
     // Skip if dependencies not available
     if (!this.folderMatcher || !this.vectorDbService) {
       logger.debug('[SMART-FOLDER-WATCHER] Skipping embedding - services not available');
       return;
     }
 
-    // Respect global embedding timing/policy. For watcher placement, this is a final-path stage.
+    // Respect global embedding timing/policy. The watcher IS the analysis path,
+    // so this is `stage: 'analysis'` (not 'final'). With the default timing of
+    // 'during_analysis', only 'analysis' stage embeds are permitted.
     // If we have a persisted per-file override, apply it here.
     let policyOverride = null;
     try {
@@ -1176,7 +1370,7 @@ class SmartFolderWatcher {
     } catch {
       // Non-fatal
     }
-    const gate = await shouldEmbed({ stage: 'final', policyOverride });
+    const gate = await shouldEmbed({ stage: 'analysis', policyOverride });
     if (!gate.shouldEmbed) {
       logger.debug('[SMART-FOLDER-WATCHER] Skipping embedding by policy/timing gate', {
         timing: gate.timing,
@@ -1204,6 +1398,64 @@ class SmartFolderWatcher {
         return;
       }
       // For other stat errors, continue and let embedding logic handle it
+    }
+
+    // FIX: Reuse precomputed embedding from document analysis to avoid duplicate embed+upsert.
+    // Documents: applyUnifiedFolderMatching already embeds and either enqueues or attaches vector.
+    // Images: have a different embedding path (image analysis block), so we skip reuse for them.
+    const precomputed =
+      analysisResult._embeddingForPersistence || analysisResult.analysis?._embeddingForPersistence;
+    if (precomputed && !isImagePath(filePath)) {
+      const { vector, model, meta, wasEnqueued } = precomputed;
+      if (vector && Array.isArray(vector) && vector.length > 0 && meta) {
+        if (wasEnqueued) {
+          // Document analysis enqueued to EmbeddingQueue; queue will persist. Skip embed and upsert.
+          logger.debug('[SMART-FOLDER-WATCHER] Reusing precomputed embedding (queued)', {
+            filePath
+          });
+          try {
+            await this.analysisHistoryService?.updateEmbeddingStateByPath?.(filePath, {
+              status: 'done',
+              model: model || null
+            });
+          } catch {
+            // Non-fatal
+          }
+          return;
+        }
+        // wasEnqueued: false — policy skipped enqueue but we have the vector; use it for direct upsert
+        const fileId = getCanonicalFileId(filePath, false);
+        try {
+          await this.vectorDbService.upsertFile({
+            id: fileId,
+            vector,
+            model: model || 'unknown',
+            meta: { ...meta, path: filePath, name: path.basename(filePath) },
+            updatedAt: new Date().toISOString()
+          });
+          logger.debug('[SMART-FOLDER-WATCHER] Reused precomputed embedding (direct upsert)', {
+            filePath
+          });
+          try {
+            await this.analysisHistoryService?.updateEmbeddingStateByPath?.(filePath, {
+              status: 'done',
+              model: model || null
+            });
+          } catch {
+            // Non-fatal
+          }
+          return;
+        } catch (upsertErr) {
+          logger.warn(
+            '[SMART-FOLDER-WATCHER] Precomputed embedding upsert failed, falling back to full flow',
+            {
+              filePath,
+              error: upsertErr?.message
+            }
+          );
+          // Fall through to normal embed+upsert
+        }
+      }
     }
 
     try {
@@ -1559,6 +1811,19 @@ class SmartFolderWatcher {
       candidate.timeoutId.unref();
     }
 
+    // Bound the move candidates map to prevent unbounded growth during mass deletions
+    const MAX_PENDING_MOVES = 200;
+    if (this._pendingMoveCandidates.size >= MAX_PENDING_MOVES) {
+      // Evict the oldest candidate
+      const oldestKey = this._pendingMoveCandidates.keys().next().value;
+      const oldest = this._pendingMoveCandidates.get(oldestKey);
+      if (oldest?.timeoutId) clearTimeout(oldest.timeoutId);
+      this._pendingMoveCandidates.delete(oldestKey);
+      logger.debug('[SMART-FOLDER-WATCHER] Evicted oldest pending move candidate due to limit', {
+        evicted: path.basename(oldestKey)
+      });
+    }
+
     this._pendingMoveCandidates.set(filePath, candidate);
 
     logger.debug('[SMART-FOLDER-WATCHER] Deferring deletion to detect move', {
@@ -1815,9 +2080,30 @@ class SmartFolderWatcher {
    * @returns {Promise<{scanned: number, queued: number}>}
    */
   async forceReanalyzeAll(options = {}) {
+    if (this._isStopping) {
+      logger.debug('[SMART-FOLDER-WATCHER] Skipping forceReanalyzeAll — watcher is stopping');
+      return { scanned: 0, queued: 0 };
+    }
+
     logger.info('[SMART-FOLDER-WATCHER] Force reanalyzing ALL files...', {
       applyNaming: options.applyNaming
     });
+
+    // Reset circuit breakers so prior failures don't block bulk reanalysis
+    for (const modelType of ['text', 'vision', 'embedding']) {
+      resetLlamaCircuit(modelType);
+    }
+
+    // Clear the embedding cache so stale embeddings aren't used for
+    // semantic folder matching during forced reanalysis
+    try {
+      if (this.folderMatcher?.embeddingCache?.clear) {
+        this.folderMatcher.embeddingCache.clear();
+        logger.debug('[SMART-FOLDER-WATCHER] Cleared embedding cache for reanalysis');
+      }
+    } catch (cacheErr) {
+      logger.debug('[SMART-FOLDER-WATCHER] Could not clear embedding cache:', cacheErr?.message);
+    }
 
     let scanned = 0;
     let queued = 0;
@@ -1855,6 +2141,13 @@ class SmartFolderWatcher {
         });
       }
     }
+
+    // Sort queue so non-images come first — eliminates text↔vision model thrashing
+    this.analysisQueue.sort((a, b) => {
+      const aImg = isImagePath(a.filePath) ? 1 : 0;
+      const bImg = isImagePath(b.filePath) ? 1 : 0;
+      return aImg - bImg;
+    });
 
     logger.info('[SMART-FOLDER-WATCHER] Force reanalyze queued:', { scanned, queued });
     return { scanned, queued };

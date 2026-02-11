@@ -21,7 +21,8 @@ const {
   AI_DEFAULTS,
   DEFAULT_AI_MODELS,
   FILE_SIZE_LIMITS,
-  LIMITS: FS_LIMITS
+  LIMITS: FS_LIMITS,
+  SETTINGS_SCHEMA_VERSION
 } = require('../constants');
 // NOTE: Theme switching is no longer supported; no theme values are needed here.
 
@@ -286,28 +287,28 @@ const CONFIG_SCHEMA = {
    * Size limits and constraints for file operations
    */
   FILE_LIMITS: {
-    /** Maximum text file size (bytes) */
+    /** Maximum text file size (bytes) — aligned with settingsValidation max */
     maxTextFileSize: {
       type: 'number',
       default: FILE_SIZE_LIMITS.MAX_TEXT_FILE_SIZE,
       min: 1024,
-      max: 1073741824, // 1GB
+      max: 200 * 1024 * 1024, // 200MB — matches settingsValidation
       description: 'Maximum text file size (bytes)'
     },
-    /** Maximum image file size (bytes) */
+    /** Maximum image file size (bytes) — aligned with settingsValidation max */
     maxImageFileSize: {
       type: 'number',
       default: FILE_SIZE_LIMITS.MAX_IMAGE_FILE_SIZE,
       min: 1024,
-      max: 1073741824,
+      max: 500 * 1024 * 1024, // 500MB — matches settingsValidation
       description: 'Maximum image file size (bytes)'
     },
-    /** Maximum document file size (bytes) */
+    /** Maximum document file size (bytes) — aligned with settingsValidation max */
     maxDocumentFileSize: {
       type: 'number',
       default: FILE_SIZE_LIMITS.MAX_DOCUMENT_FILE_SIZE,
       min: 1024,
-      max: 1073741824,
+      max: 500 * 1024 * 1024, // 500MB — matches settingsValidation
       description: 'Maximum document file size (bytes)'
     },
     /** Maximum path length */
@@ -425,12 +426,12 @@ const CONFIG_SCHEMA = {
       max: 86400000,
       description: 'Maximum age for workflow state restoration (ms)'
     },
-    /** Auto-save debounce delay (ms) */
+    /** Auto-save debounce delay (ms) — aligned with settingsValidation max */
     saveDebounceMs: {
       type: 'number',
       default: DEFAULT_SETTINGS.saveDebounceMs,
       min: 100,
-      max: 10000,
+      max: 5000, // Matches settingsValidation
       description: 'Debounce delay for auto-save operations (ms)'
     }
   },
@@ -458,7 +459,7 @@ const CONFIG_SCHEMA = {
     /** Settings schema version for migrations */
     settingsSchemaVersion: {
       type: 'number',
-      default: 1,
+      default: SETTINGS_SCHEMA_VERSION,
       min: 1,
       description: 'Current schema version for settings migration'
     }

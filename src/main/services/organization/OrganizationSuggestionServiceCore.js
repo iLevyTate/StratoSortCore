@@ -1305,7 +1305,13 @@ class OrganizationSuggestionServiceCore {
         await this.feedbackMemoryStore.update(updated.id, { embeddingModel: model }, {});
       } catch (error) {
         if (String(error.message).includes('dimension mismatch')) {
-          await this.rebuildFeedbackMemoryEmbeddings();
+          try {
+            await this.rebuildFeedbackMemoryEmbeddings();
+          } catch (rebuildError) {
+            logger.warn('[OrganizationSuggestionService] Feedback memory rebuild failed', {
+              error: rebuildError.message
+            });
+          }
         } else {
           logger.warn(
             '[OrganizationSuggestionService] Failed to update feedback memory embedding',

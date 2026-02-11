@@ -135,8 +135,10 @@ async function analyzeImageWithLlama(
   originalFileName,
   smartFolders = [],
   extractedText = null,
-  namingContext = []
+  namingContext = [],
+  options = {}
 ) {
+  const bypassDedup = Boolean(options?.bypassCache);
   try {
     const startedAt = Date.now();
     logger.info(`Analyzing image content with AI engine`, {
@@ -246,37 +248,26 @@ Analyze this image:`;
     // IMPORTANT: Vision model calls can hang indefinitely if the model/server gets stuck.
     // Enforce a hard timeout and abort the underlying request (supported by the AI client).
     const timeoutMs = Number(AppConfig.ai.imageAnalysis.timeout) || 60000;
+    const analysisFn = (abortController) =>
+      llamaService.analyzeImage({
+        prompt,
+        imageBase64,
+        maxTokens: AppConfig.ai.imageAnalysis.maxTokens,
+        temperature: AppConfig.ai.imageAnalysis.temperature,
+        signal: abortController.signal
+      });
+
     const response = await withAbortableTimeout(
       (abortController) => {
-        /*
-        const generateRequest = {
-          model: modelToUse,
-          prompt,
-          images: [imageBase64],
-          options: {
-            temperature: AppConfig.ai.imageAnalysis.temperature,
-            num_predict: AppConfig.ai.imageAnalysis.maxTokens,
-            ...perfOptions
-          },
-          format: 'json',
-          signal: abortController.signal
-        };
-        */
-
-        // Reduce retries to prevent exceeding outer timeout
-        // With 60s outer timeout and ~20s per LLM call, 2 retries (3 attempts) + delays fits within budget
-        return globalDeduplicator.deduplicate(
-          deduplicationKey,
-          () =>
-            llamaService.analyzeImage({
-              prompt,
-              imageBase64,
-              maxTokens: AppConfig.ai.imageAnalysis.maxTokens,
-              temperature: AppConfig.ai.imageAnalysis.temperature,
-              signal: abortController.signal
-            }),
-          { type: 'image', fileName: originalFileName } // Metadata for debugging cache hits
-        );
+        // Bypass deduplicator during forced reanalysis so stale cached results
+        // are not served when the user explicitly requests fresh analysis.
+        if (bypassDedup) {
+          return analysisFn(abortController);
+        }
+        return globalDeduplicator.deduplicate(deduplicationKey, () => analysisFn(abortController), {
+          type: 'image',
+          fileName: originalFileName
+        });
       },
       timeoutMs,
       `Image analysis for ${originalFileName}`
@@ -1020,7 +1011,8 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
         fileName,
         smartFolders,
         fileDateForText,
-        namingContext
+        namingContext,
+        { bypassCache }
       );
       if (textAnalysis && !textAnalysis.error) {
         return {
@@ -1051,7 +1043,7 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
         if (fallbackAnalysis) {
           analysis = fallbackAnalysis;
         } else {
-          return createVisionUnavailableFallback(
+          analysis = createVisionUnavailableFallback(
             {
               fileName,
               fileExtension,
@@ -1062,6 +1054,7 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
             },
             extractedText
           );
+          analysis._isFallback = true;
         }
       } else {
         analysis = await analyzeImageWithLlama(
@@ -1069,7 +1062,8 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
           fileName,
           smartFolders,
           extractedText,
-          namingContext
+          namingContext,
+          { bypassCache }
         );
       }
     } catch (error) {
@@ -1082,7 +1076,7 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
         if (fallbackAnalysis) {
           analysis = fallbackAnalysis;
         } else {
-          return createVisionUnavailableFallback(
+          analysis = createVisionUnavailableFallback(
             {
               fileName,
               fileExtension,
@@ -1093,13 +1087,14 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
             },
             extractedText
           );
+          analysis._isFallback = true;
         }
       } else {
         logger.error('[IMAGE] Error calling analyzeImageWithLlama', {
           error: error.message,
           filePath
         });
-        return createVisionUnavailableFallback(
+        analysis = createVisionUnavailableFallback(
           {
             fileName,
             fileExtension,
@@ -1111,6 +1106,7 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
           },
           extractedText
         );
+        analysis._isFallback = true;
       }
     }
 
@@ -1122,7 +1118,7 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
       if (fallbackAnalysis) {
         analysis = fallbackAnalysis;
       } else {
-        return createVisionUnavailableFallback(
+        analysis = createVisionUnavailableFallback(
           {
             fileName,
             fileExtension,
@@ -1133,6 +1129,7 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
           },
           extractedText
         );
+        analysis._isFallback = true;
       }
     }
 
@@ -1144,38 +1141,42 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
       analysis.date = exifDate;
     }
 
-    // ANTI-HALLUCINATION: Validate analysis against filename and OCR text
-    if (analysis && !analysis.error) {
-      analysis = validateAnalysisConsistency(analysis, fileName, extractedText);
-    }
+    // Skip validation and OCR for fallback analyses — they have no AI output to validate.
+    // Fall through directly to embedding so fallback images become searchable.
+    if (!analysis?._isFallback) {
+      // ANTI-HALLUCINATION: Validate analysis against filename and OCR text
+      if (analysis && !analysis.error) {
+        analysis = validateAnalysisConsistency(analysis, fileName, extractedText);
+      }
 
-    // If OCR not performed earlier, attempt it now when the analysis indicates text content.
-    if (
-      (!extractedText || extractedText.length < 20) &&
-      analysis &&
-      !analysis.error &&
-      !ocrAttempted
-    ) {
-      const contentType = String(analysis.content_type || '').toLowerCase();
-      const contentSuggestsText =
-        contentType.includes('text') ||
-        contentType.includes('document') ||
-        contentType.includes('screenshot');
-      const wantsOcr = analysis.has_text === true || (contentSuggestsText && hasTextHint);
-      if (wantsOcr) {
-        try {
-          logger.debug('[IMAGE] Analysis indicates text content, attempting OCR post-extraction');
-          ocrAttempted = true;
-          extractedText = await extractTextFromImage(filePath, { allowVisionOcr: true });
-          if (extractedText && extractedText.length > 20) {
-            logger.info('[IMAGE] OCR post-extraction successful', {
-              textLength: extractedText.length,
-              preview: extractedText.slice(0, 100)
-            });
-            analysis = validateAnalysisConsistency(analysis, fileName, extractedText);
+      // If OCR not performed earlier, attempt it now when the analysis indicates text content.
+      if (
+        (!extractedText || extractedText.length < 20) &&
+        analysis &&
+        !analysis.error &&
+        !ocrAttempted
+      ) {
+        const contentType = String(analysis.content_type || '').toLowerCase();
+        const contentSuggestsText =
+          contentType.includes('text') ||
+          contentType.includes('document') ||
+          contentType.includes('screenshot');
+        const wantsOcr = analysis.has_text === true || (contentSuggestsText && hasTextHint);
+        if (wantsOcr) {
+          try {
+            logger.debug('[IMAGE] Analysis indicates text content, attempting OCR post-extraction');
+            ocrAttempted = true;
+            extractedText = await extractTextFromImage(filePath, { allowVisionOcr: true });
+            if (extractedText && extractedText.length > 20) {
+              logger.info('[IMAGE] OCR post-extraction successful', {
+                textLength: extractedText.length,
+                preview: extractedText.slice(0, 100)
+              });
+              analysis = validateAnalysisConsistency(analysis, fileName, extractedText);
+            }
+          } catch (ocrError) {
+            logger.debug('[IMAGE] OCR post-extraction failed (non-fatal):', ocrError.message);
           }
-        } catch (ocrError) {
-          logger.debug('[IMAGE] OCR post-extraction failed (non-fatal):', ocrError.message);
         }
       }
     }
@@ -1279,11 +1280,12 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
       if (extractedTextForStorage) {
         result.extractedText = extractedTextForStorage;
       }
-      try {
-        setImageCache(signature, result);
-      } catch (cacheError) {
-        // Log cache failures for debugging instead of silent swallowing
-        logger.debug('[IMAGE] Cache write failed (non-fatal):', cacheError?.message);
+      if (!bypassCache) {
+        try {
+          setImageCache(signature, result);
+        } catch (cacheError) {
+          logger.debug('[IMAGE] Cache write failed (non-fatal):', cacheError?.message);
+        }
       }
       return result;
     }
@@ -1326,13 +1328,15 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
         extractionMethod: 'vision'
       });
 
-      try {
-        setImageCache(signature, normalized);
-      } catch (cacheError) {
-        logger.warn('[IMAGE] Cache write failed:', {
-          error: cacheError?.message,
-          filePath
-        });
+      if (!bypassCache) {
+        try {
+          setImageCache(signature, normalized);
+        } catch (cacheError) {
+          logger.warn('[IMAGE] Cache write failed:', {
+            error: cacheError?.message,
+            filePath
+          });
+        }
       }
       return normalized;
     }
@@ -1355,23 +1359,35 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
     if (extractedTextForStorage) {
       result.extractedText = extractedTextForStorage;
     }
-    try {
-      setImageCache(signature, result);
-    } catch (cacheError) {
-      logger.warn('[IMAGE] Cache write failed:', {
-        error: cacheError?.message,
-        filePath
-      });
+    if (!bypassCache) {
+      try {
+        setImageCache(signature, result);
+      } catch (cacheError) {
+        logger.warn('[IMAGE] Cache write failed:', {
+          error: cacheError?.message,
+          filePath
+        });
+      }
     }
     return result;
   } catch (error) {
+    // Re-throw programming errors so they surface in logs/tests
+    if (
+      error instanceof TypeError ||
+      error instanceof ReferenceError ||
+      error instanceof SyntaxError ||
+      error instanceof RangeError
+    ) {
+      throw error;
+    }
     logger.error('Error processing image', { filePath, error: error.message });
     return {
       error: `Failed to process image: ${error.message}`,
       category: 'error',
       project: fileName,
       keywords: [],
-      confidence: 50
+      confidence: 0,
+      extractionMethod: 'failed'
     };
   }
 }

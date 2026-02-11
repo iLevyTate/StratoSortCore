@@ -29,7 +29,7 @@ const commonConfig = (isProduction) => ({
         extractComments: false,
         terserOptions: {
           compress: {
-            drop_console: true
+            pure_funcs: ['console.log', 'console.debug']
           }
         }
       })
