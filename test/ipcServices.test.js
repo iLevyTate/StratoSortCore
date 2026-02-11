@@ -127,6 +127,19 @@ describe('ipc services', () => {
     expect(latest.files).toBe(2);
   });
 
+  test('embeddingsIpc.getStatsCached forwards forceRefresh to preload bridge', async () => {
+    const api = {
+      embeddings: {
+        getStats: jest.fn().mockResolvedValue({ success: true, files: 42 })
+      }
+    };
+    requireElectronAPI.mockReturnValue(api);
+
+    await embeddingsIpc.getStatsCached({ forceRefresh: true });
+
+    expect(api.embeddings.getStats).toHaveBeenCalledWith({ forceRefresh: true });
+  });
+
   test('eventsIpc registers progress handler', () => {
     const unsubscribe = jest.fn();
     const api = {

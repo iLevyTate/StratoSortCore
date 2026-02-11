@@ -71,7 +71,8 @@ jest.mock('fs', () => ({
 }));
 
 const { OramaVectorService } = require('../src/main/services/OramaVectorService');
-const { getByID: mockGetByID } = require('@orama/orama');
+const { getByID: mockGetByID, search: mockSearch } = require('@orama/orama');
+const { persist: mockPersist } = require('@orama/plugin-data-persistence');
 
 describe('OramaVectorService restore behavior', () => {
   beforeEach(() => {
@@ -315,5 +316,52 @@ describe('OramaVectorService restore behavior', () => {
       error: 'Source file has no valid embedding to clone'
     });
     expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  test('rebuild repair uses full persistence snapshot (not capped search slices)', async () => {
+    const docCount = 10020;
+    const docs = {};
+    for (let i = 0; i < docCount; i++) {
+      docs[`file:${i}`] = {
+        id: `file:${i}`,
+        embedding: [0.1, 0.2, 0.3],
+        filePath: `/doc-${i}.txt`,
+        fileName: `doc-${i}.txt`,
+        fileType: 'text/plain',
+        analyzedAt: new Date().toISOString(),
+        keywords: [],
+        tags: []
+      };
+    }
+
+    mockPersist.mockResolvedValueOnce({
+      docs: {
+        docs
+      }
+    });
+
+    const service = new OramaVectorService();
+    service._dimension = 3;
+    service._schemas = {
+      files: { id: 'string', embedding: 'vector[3]', hasVector: 'boolean', filePath: 'string' }
+    };
+    service._databases = { files: { _name: 'files-db' } };
+    service._embeddingStore = { files: new Map() };
+    service._collectionDimensions = {};
+    service._clearQueryCache = jest.fn();
+    service.persistAll = jest.fn().mockResolvedValue(undefined);
+
+    const result = await service._repairFilesVectorIndexFromCurrentState();
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        repaired: true,
+        repairedDocs: docCount
+      })
+    );
+    expect(mockPersist).toHaveBeenCalledWith({ _name: 'files-db' });
+    expect(mockSearch).not.toHaveBeenCalled();
+    expect(mockInsert).toHaveBeenCalledTimes(docCount);
+    expect(service.persistAll).toHaveBeenCalledTimes(1);
   });
 });

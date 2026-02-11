@@ -272,21 +272,73 @@ class OramaVectorService extends EventEmitter {
     this.emit('vector-health', this._getVectorHealthSnapshot());
   }
 
+  async _getAllFileDocuments() {
+    if (!this._databases?.files) return [];
+
+    // Prefer a persistence snapshot so repair/fallback logic is not capped by search limits.
+    try {
+      const snapshot = await persist(this._databases.files);
+      const docsById = snapshot?.docs?.docs;
+      if (docsById && typeof docsById === 'object') {
+        return Object.values(docsById).filter((doc) => doc && typeof doc === 'object');
+      }
+    } catch (error) {
+      logger.warn(
+        '[OramaVectorService] Failed to snapshot files DB; falling back to paged search',
+        {
+          error: error?.message
+        }
+      );
+    }
+
+    const pageSize = 1000;
+    const docs = [];
+    const seenFirstIds = new Set();
+    let offset = 0;
+
+    while (true) {
+      const page = await search(this._databases.files, {
+        term: '',
+        limit: pageSize,
+        offset
+      });
+      const hits = Array.isArray(page?.hits) ? page.hits : [];
+      if (hits.length === 0) break;
+
+      const firstId = hits[0]?.document?.id;
+      if (offset > 0 && firstId && seenFirstIds.has(firstId)) {
+        logger.warn(
+          '[OramaVectorService] Detected repeating paged search results; stopping to avoid infinite loop',
+          { offset, pageSize, firstId }
+        );
+        break;
+      }
+      if (firstId) seenFirstIds.add(firstId);
+
+      for (const hit of hits) {
+        if (hit?.document && typeof hit.document === 'object') {
+          docs.push(hit.document);
+        }
+      }
+
+      if (hits.length < pageSize) break;
+      offset += hits.length;
+    }
+
+    return docs;
+  }
+
   async _repairFilesVectorIndexFromCurrentState() {
     if (!this._databases?.files) return { repaired: false, reason: 'files-db-unavailable' };
 
-    const sourceDocs = await search(this._databases.files, {
-      term: '',
-      limit: 10000
-    });
+    const sourceDocs = await this._getAllFileDocuments();
 
     const rebuilt = await create({ schema: this._schemas.files });
     const rebuiltEmbeddings = new Map();
     let repairedDocs = 0;
     let placeholders = 0;
 
-    for (const hit of sourceDocs.hits || []) {
-      const existing = hit.document || {};
+    for (const existing of sourceDocs) {
       const normalizedEmbedding = this._normalizeEmbeddingVector(
         this._embeddingStore?.files?.get(existing.id) || existing.embedding,
         this._dimension
@@ -1108,14 +1160,10 @@ class OramaVectorService extends EventEmitter {
   }
 
   async _fallbackQuerySimilarFiles(queryEmbedding, topK) {
-    const all = await search(this._databases.files, {
-      term: '',
-      where: { isOrphaned: false },
-      limit: 10000
-    });
+    const docs = await this._getAllFileDocuments();
     const scored = [];
-    for (const hit of all.hits || []) {
-      const doc = hit.document;
+    for (const doc of docs) {
+      if (doc?.isOrphaned) continue;
       const emb = this._normalizeEmbeddingVector(
         this._embeddingStore?.files?.get(doc.id) || doc.embedding,
         queryEmbedding.length

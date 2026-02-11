@@ -556,8 +556,15 @@ class SecureIPCManager {
       // Rate limiting
       this.checkRateLimit(channel);
 
+      const embeddingStatsForceRefresh =
+        channel === IPC_CHANNELS.EMBEDDINGS.GET_STATS &&
+        args.length > 0 &&
+        typeof args[0] === 'object' &&
+        args[0] !== null &&
+        args[0].forceRefresh === true;
+
       // Coalesce frequent stats polling across renderer surfaces.
-      if (channel === IPC_CHANNELS.EMBEDDINGS.GET_STATS) {
+      if (channel === IPC_CHANNELS.EMBEDDINGS.GET_STATS && !embeddingStatsForceRefresh) {
         const now = Date.now();
         if (
           this._embeddingsStatsCache.value &&
@@ -586,6 +593,10 @@ class SecureIPCManager {
 
       const timeout = this._getInvokeTimeout(channel);
       if (channel === IPC_CHANNELS.EMBEDDINGS.GET_STATS) {
+        if (embeddingStatsForceRefresh) {
+          this._embeddingsStatsCache.value = null;
+          this._embeddingsStatsCache.expiresAt = 0;
+        }
         this._embeddingsStatsCache.pending = this._invokeWithRetries(
           channel,
           sanitizedArgs,
@@ -913,7 +924,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     reanalyzeFile: (filePath, options = {}) =>
       secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REANALYZE_FILE, { filePath, ...options }),
     clearStore: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.CLEAR_STORE),
-    getStats: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_STATS),
+    getStats: (options = undefined) =>
+      options === undefined
+        ? secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_STATS)
+        : secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_STATS, options),
     search: (query, options = {}) =>
       secureIPC.safeInvoke(
         IPC_CHANNELS.EMBEDDINGS.SEARCH,

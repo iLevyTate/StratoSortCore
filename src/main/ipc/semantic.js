@@ -1683,8 +1683,8 @@ function registerEmbeddingsIpc(servicesOrParams) {
     createHandler({
       logger,
       context,
-      schema: schemaVoid,
-      handler: async () => {
+      schema: schemaObjectOptional,
+      handler: async (_event, _options = {}) => {
         const initErr = await safeEnsureInit();
         if (initErr) return initErr;
         try {

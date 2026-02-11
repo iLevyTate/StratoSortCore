@@ -12,8 +12,8 @@ function shouldUseCachedStats() {
 }
 
 export const embeddingsIpc = {
-  getStats() {
-    return requireElectronAPI().embeddings.getStats();
+  getStats(options = undefined) {
+    return requireElectronAPI().embeddings.getStats(options);
   },
   async getStatsCached({ forceRefresh = false } = {}) {
     if (!forceRefresh && shouldUseCachedStats()) {
@@ -24,11 +24,12 @@ export const embeddingsIpc = {
     }
 
     const requestId = ++latestStatsRequestId;
+    const statsOptions = forceRefresh ? { forceRefresh: true } : undefined;
     const request = requireElectronAPI()
-      .embeddings.getStats()
+      .embeddings.getStats(statsOptions)
       .then((result) => {
         // Prevent older, slower responses from overwriting newer cache values.
-        if (requestId >= latestAppliedStatsRequestId) {
+        if (requestId > latestAppliedStatsRequestId) {
           latestAppliedStatsRequestId = requestId;
           cachedStats = result;
           cacheExpiresAt = Date.now() + EMBEDDINGS_STATS_CACHE_MS;
@@ -47,9 +48,12 @@ export const embeddingsIpc = {
   invalidateStatsCache() {
     cachedStats = null;
     cacheExpiresAt = 0;
-    latestAppliedStatsRequestId = 0;
+    inFlightStatsPromise = null;
+    // Prevent older pending responses from repopulating cache after invalidation.
+    latestAppliedStatsRequestId = latestStatsRequestId;
   },
   rebuildFiles() {
+    embeddingsIpc.invalidateStatsCache();
     return requireElectronAPI().embeddings.rebuildFiles();
   }
 };
