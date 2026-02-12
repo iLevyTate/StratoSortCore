@@ -1,4 +1,4 @@
-# Contributing to El StratoSort
+# Contributing to StratoSort Core
 
 <p align="center">
   <img src="https://img.shields.io/badge/contributions-welcome-brightgreen?style=flat-square" alt="Contributions Welcome" />
@@ -34,8 +34,8 @@ Be respectful, constructive, and kind. If you are unsure about behavior, default
 ### Setup
 
 ```powershell
-git clone https://github.com/iLevyTate/elstratosort.git
-cd elstratosort
+git clone https://github.com/iLevyTate/StratoSortCore.git
+cd StratoSortCore
 npm ci
 npm run dev
 ```
@@ -78,15 +78,15 @@ See `TESTING.md` for test patterns, goals, and manual verification checklists.
 
 ## Reporting Issues
 
-Please use [GitHub Issues](https://github.com/iLevyTate/elstratosort/issues) with:
+Please use [GitHub Issues](https://github.com/iLevyTate/StratoSortCore/issues) with:
 
 - Clear reproduction steps
 - Expected vs actual behavior
-- Relevant logs (found in `%APPDATA%/El StratoSort/logs/` on Windows)
+- Relevant logs (found in `%APPDATA%/StratoSort Core/logs/` on Windows)
 - System information (OS, Node version)
 
 ---
 
 <p align="center">
-  Thank you for helping make El StratoSort better!
+  Thank you for helping make StratoSort Core better!
 </p>

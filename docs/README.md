@@ -1,4 +1,4 @@
-# StratoSort Documentation Index
+# StratoSort Core Documentation Index
 
 This directory contains comprehensive documentation for the StratoSort codebase. Use this guide to
 find the right documentation for your needs.

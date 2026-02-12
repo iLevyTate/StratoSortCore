@@ -1,4 +1,4 @@
-# Releasing StratoSort
+# Releasing StratoSort Core
 
 This guide documents the release process and best practices for Windows builds. It is designed to
 ensure releases are reproducible, include bundled runtimes, and publish checksums + clear notes.
@@ -10,7 +10,7 @@ ensure releases are reproducible, include bundled runtimes, and publish checksum
    - Update `CHANGELOG.md` under **[Unreleased]**
 2. **Build & smoke test**
    - `npm run dist:win`
-   - Install the generated `StratoSort-Setup-*.exe`
+   - Install the generated `StratoSortCore-Setup-*.exe`
 
 - Confirm AI Model Setup wizard shows **Bundled** for OCR runtime
 - Confirm “Download Base Models” works (models are not bundled)
@@ -20,7 +20,7 @@ ensure releases are reproducible, include bundled runtimes, and publish checksum
    - If building locally, generate with:
      ```powershell
      Get-ChildItem release/build -File |
-       Where-Object { $_.Name -match 'StratoSort-.*|latest\\.yml|\\.blockmap' } |
+       Where-Object { $_.Name -match 'StratoSortCore-.*|latest\\.yml|\\.blockmap' } |
        ForEach-Object {
          $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
          "$hash *$($_.Name)"
@@ -58,8 +58,8 @@ npm run dist:win
 
 Artifacts are under `release/build/`:
 
-- `StratoSort-Setup-*.exe`
-- `StratoSort-*-win-*.exe` (portable)
+- `StratoSortCore-Setup-*.exe`
+- `StratoSortCore-*-win-*.exe` (portable)
 - `latest.yml`
 - `*.blockmap`
 - `checksums.sha256`

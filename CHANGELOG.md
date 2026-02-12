@@ -279,8 +279,8 @@ notes.
 - **Fixed**: Bug fixes
 - **Security**: Security-related changes
 
-[Unreleased]: https://github.com/iLevyTate/elstratosort/compare/v2.0.0...HEAD
-[2.0.0]: https://github.com/iLevyTate/elstratosort/compare/v1.2.2...v2.0.0
+[Unreleased]: https://github.com/iLevyTate/StratoSortCore/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/iLevyTate/StratoSortCore/compare/v1.2.2...v2.0.0
 [1.2.2]: https://github.com/iLevyTate/elstratosort/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/iLevyTate/elstratosort/releases/tag/v1.2.1
 [1.2.0]: https://github.com/iLevyTate/elstratosort/releases/tag/v1.2.0

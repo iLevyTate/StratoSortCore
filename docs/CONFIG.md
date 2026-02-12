@@ -1,6 +1,7 @@
 # Configuration Reference
 
-This document lists all environment variables and configuration options available in StratoSort.
+This document lists all environment variables and configuration options available in StratoSort
+Core.
 
 ## Model & OCR Setup
 
@@ -26,16 +27,46 @@ These variables affect setup scripts and `postinstall` behavior:
 
 ### Default AI Models
 
-StratoSort uses these GGUF models out of the box (configurable in Settings → AI Configuration):
+StratoSort Core uses these GGUF models out of the box (configurable in Settings → AI Configuration):
 
-| Role          | Default Model                          | Purpose                                |
-| ------------- | -------------------------------------- | -------------------------------------- |
-| **Text**      | `Mistral-7B-Instruct-v0.3-Q4_K_M.gguf` | Document analysis, chat, smart folders |
-| **Vision**    | `llava-v1.6-mistral-7b-Q4_K_M.gguf`    | Image understanding and OCR            |
-| **Embedding** | `nomic-embed-text-v1.5-Q8_0.gguf`      | Semantic search (768 dimensions)       |
+| Role          | Default Model                       | Purpose                                               |
+| ------------- | ----------------------------------- | ----------------------------------------------------- |
+| **Text**      | `Qwen2.5-7B-Instruct-Q4_K_M.gguf`   | Document analysis, chat, smart folders (128K context) |
+| **Vision**    | `llava-v1.6-mistral-7b-Q4_K_M.gguf` | Image understanding and OCR                           |
+| **Embedding** | `nomic-embed-text-v1.5-Q8_0.gguf`   | Semantic search (768 dimensions)                      |
 
-Fallbacks are used if primary models are unavailable. See `src/shared/constants.js` for the full
-list.
+To change defaults before install, edit `src/shared/aiModelConfig.js` or set env vars:
+`STRATOSORT_TEXT_MODEL`, `STRATOSORT_VISION_MODEL`, `STRATOSORT_EMBEDDING_MODEL`. See
+`src/shared/modelRegistry.js` for the full catalog.
+
+### Installing Additional Models from Settings
+
+Users can add new models via **Settings → Local AI Engine**:
+
+- **Download Base Models** — One-click download of the three default models (text, vision,
+  embedding)
+- **Model Management → Add Model** — Install any model from the registry by typing its exact
+  filename (e.g. `Qwen2.5-7B-Instruct-Q4_K_M.gguf`, `all-MiniLM-L6-v2-Q4_K_M.gguf`)
+- **Default AI Models** — Select which installed model to use for text, vision, and embeddings
+
+All installable models must be in `modelRegistry.js`; the catalog lists download URLs and metadata.
+
+### Fastest Models with Best Performance (2025)
+
+Based on node-llama-cpp docs and llama.cpp ecosystem:
+
+| Category      | Fastest options                                             | Best quality-speed balance                           |
+| ------------- | ----------------------------------------------------------- | ---------------------------------------------------- |
+| **Text**      | `Llama-3.2-3B-Instruct-Q4_K_M`, `Phi-3-mini-4k-instruct-q4` | `Qwen2.5-7B-Instruct-Q4_K_M` (default, 128K context) |
+| **Vision**    | `llava-phi-3-mini-Q4_K_M` (smaller, CPU-friendly)           | `llava-v1.6-mistral-7b-Q4_K_M` (default)             |
+| **Embedding** | `all-MiniLM-L6-v2-Q4_K_M.gguf` (~21MB, 384 dim)             | `nomic-embed-text-v1.5-Q8_0.gguf` (default, 768 dim) |
+
+**Quantization:** Per node-llama-cpp, `Q4_K_M` offers the best balance between compression and
+quality; `Q5_K_M` is a close second. `Q8_0` is higher quality but slower; smaller models (3B, Phi-3)
+are faster than 7B on limited hardware.
+
+**Embedding dimensions:** Changing embedding models changes vector dimensions (e.g. 384 for
+All-MiniLM vs 768 for Nomic). The index must be rebuilt when switching; the UI prompts for this.
 
 ## Environment Variables
 
