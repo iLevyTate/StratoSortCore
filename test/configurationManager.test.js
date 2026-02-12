@@ -55,4 +55,49 @@ describe('ConfigurationManager', () => {
     expect(dumped.config.SECURE.apiKey).toBe('secret');
     expect(dumped.config.SECURE.visible).toBe('ok');
   });
+
+  test('dump can include sensitive values when requested', () => {
+    const mgr = new ConfigurationManager();
+    mgr._config = {
+      SECURE: { password: '123', token: 'abc' }
+    };
+    mgr._loaded = true;
+
+    const dumped = mgr.dump({ includeSensitive: true });
+    expect(dumped.config.SECURE.password).toBe('123');
+    expect(dumped.config.SECURE.token).toBe('abc');
+    expect(dumped.metadata.validationErrors).toBe(0);
+  });
+
+  test('override rejects invalid schema values and keeps original value', () => {
+    const mgr = new ConfigurationManager();
+    mgr.load();
+    const originalPort = mgr.get('SERVER.devServerPort');
+
+    // devServerPort requires a number; string should be rejected
+    mgr.override('SERVER.devServerPort', 'not-a-number');
+
+    expect(mgr.get('SERVER.devServerPort')).toBe(originalPort);
+    expect(mgr.getValidationErrors()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'SERVER.devServerPort',
+          value: 'not-a-number',
+          reason: 'validation_failed'
+        })
+      ])
+    );
+  });
+
+  test('override writes unknown nested paths and reset restores defaults', () => {
+    const mgr = new ConfigurationManager();
+    mgr.load();
+
+    mgr.override('CUSTOM.runtime.flag', true);
+    expect(mgr.get('CUSTOM.runtime.flag')).toBe(true);
+
+    mgr.reset();
+    expect(mgr.get('CUSTOM.runtime.flag')).toBeUndefined();
+    expect(mgr.get('SERVER.devServerPort')).toBe(CONFIG_SCHEMA.SERVER.devServerPort.default);
+  });
 });

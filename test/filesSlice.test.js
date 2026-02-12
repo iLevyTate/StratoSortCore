@@ -7,15 +7,19 @@ import filesReducer, {
   setSelectedFiles,
   addSelectedFiles,
   removeSelectedFile,
+  removeSelectedFiles,
   updateFileState,
   setFileStates,
   setSmartFolders,
   addSmartFolder,
   setOrganizedFiles,
+  addOrganizedFiles,
+  removeOrganizedFiles,
   setNamingConvention,
   clearFiles,
   resetFilesState,
-  fetchSmartFolders
+  updateFilePathsAfterMove,
+  fetchSmartFolders,
 } from '../src/renderer/store/slices/filesSlice';
 
 describe('filesSlice', () => {
@@ -99,6 +103,39 @@ describe('filesSlice', () => {
     });
   });
 
+  describe('removeSelectedFiles', () => {
+    test('removes multiple files by path and cleans fileStates', () => {
+      const state = {
+        ...initialState,
+        selectedFiles: [
+          { path: '/file1.pdf' },
+          { path: '/file2.pdf' },
+          { path: '/file3.pdf' }
+        ],
+        fileStates: {
+          '/file1.pdf': { state: 'ready' },
+          '/file2.pdf': { state: 'analyzing' }
+        }
+      };
+
+      const result = filesReducer(
+        state,
+        removeSelectedFiles(['/file1.pdf', '/file3.pdf'])
+      );
+
+      expect(result.selectedFiles).toHaveLength(1);
+      expect(result.selectedFiles[0].path).toBe('/file2.pdf');
+      expect(result.fileStates['/file1.pdf']).toBeUndefined();
+      expect(result.fileStates['/file2.pdf']).toBeDefined();
+    });
+
+    test('ignores non-array payload', () => {
+      const state = { ...initialState, selectedFiles: [{ path: '/a.pdf' }] };
+      const result = filesReducer(state, removeSelectedFiles(null));
+      expect(result.selectedFiles).toHaveLength(1);
+    });
+  });
+
   describe('removeSelectedFile', () => {
     test('removes file by path', () => {
       const state = {
@@ -178,6 +215,47 @@ describe('filesSlice', () => {
     });
   });
 
+  describe('addOrganizedFiles', () => {
+    test('appends to organized files', () => {
+      const state = {
+        ...initialState,
+        organizedFiles: [{ originalPath: '/old.pdf' }]
+      };
+      const newFiles = [{ originalPath: '/new.pdf' }];
+
+      const result = filesReducer(state, addOrganizedFiles(newFiles));
+
+      expect(result.organizedFiles).toHaveLength(2);
+      expect(result.organizedFiles[1].originalPath).toBe('/new.pdf');
+    });
+  });
+
+  describe('removeOrganizedFiles', () => {
+    test('removes organized files by path', () => {
+      const state = {
+        ...initialState,
+        organizedFiles: [
+          { originalPath: 'C:/docs/a.pdf' },
+          { originalPath: 'C:/docs/b.pdf' }
+        ]
+      };
+
+      const result = filesReducer(state, removeOrganizedFiles(['C:\\docs\\a.pdf']));
+
+      expect(result.organizedFiles).toHaveLength(1);
+      expect(result.organizedFiles[0].originalPath).toBe('C:/docs/b.pdf');
+    });
+
+    test('ignores non-array payload', () => {
+      const state = {
+        ...initialState,
+        organizedFiles: [{ originalPath: '/a.pdf' }]
+      };
+      const result = filesReducer(state, removeOrganizedFiles(null));
+      expect(result.organizedFiles).toHaveLength(1);
+    });
+  });
+
   describe('setNamingConvention', () => {
     test('updates naming convention', () => {
       const result = filesReducer(
@@ -224,6 +302,52 @@ describe('filesSlice', () => {
     });
   });
 
+  describe('updateFilePathsAfterMove', () => {
+    test('updates selectedFiles and fileStates paths', () => {
+      const state = {
+        ...initialState,
+        selectedFiles: [{ path: '/old/a.pdf', name: 'a.pdf' }],
+        fileStates: { '/old/a.pdf': { state: 'ready' } }
+      };
+
+      const result = filesReducer(state, updateFilePathsAfterMove({
+        oldPaths: ['/old/a.pdf'],
+        newPaths: ['/new/a.pdf']
+      }));
+
+      expect(result.selectedFiles[0].path).toBe('/new/a.pdf');
+      expect(result.fileStates['/new/a.pdf']).toBeDefined();
+      expect(result.fileStates['/old/a.pdf']).toBeUndefined();
+    });
+
+    test('handles partial update when array lengths differ', () => {
+      const state = {
+        ...initialState,
+        selectedFiles: [
+          { path: '/old/a.pdf' },
+          { path: '/old/b.pdf' }
+        ]
+      };
+
+      const result = filesReducer(state, updateFilePathsAfterMove({
+        oldPaths: ['/old/a.pdf', '/old/b.pdf'],
+        newPaths: ['/new/a.pdf']
+      }));
+
+      expect(result.selectedFiles[0].path).toBe('/new/a.pdf');
+      expect(result.selectedFiles[1].path).toBe('/old/b.pdf');
+    });
+
+    test('returns unchanged when payload arrays invalid', () => {
+      const state = { ...initialState, selectedFiles: [{ path: '/a.pdf' }] };
+      const result = filesReducer(state, updateFilePathsAfterMove({
+        oldPaths: 'not-array',
+        newPaths: ['/new.pdf']
+      }));
+      expect(result.selectedFiles[0].path).toBe('/a.pdf');
+    });
+  });
+
   describe('fetchSmartFolders', () => {
     test('sets loading state on pending', () => {
       const result = filesReducer(initialState, {
@@ -254,5 +378,15 @@ describe('filesSlice', () => {
 
       expect(result.smartFoldersLoading).toBe(false);
     });
+
+    test('sets smartFoldersError on reject', () => {
+      const result = filesReducer(initialState, {
+        type: fetchSmartFolders.rejected.type,
+        payload: 'Network error'
+      });
+
+      expect(result.smartFoldersError).toBe('Network error');
+    });
   });
+
 });

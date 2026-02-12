@@ -14,6 +14,7 @@
 
 const fs = require('fs').promises;
 const path = require('path');
+const { AI_DEFAULTS } = require('../../src/shared/constants');
 let app;
 let OramaVectorService;
 
@@ -51,7 +52,7 @@ jest.mock('@orama/plugin-data-persistence', () => ({
 }));
 
 const TEMP_DIR = path.join(__dirname, 'temp-vector-search-pipeline');
-const DIM = 768;
+const DIM = AI_DEFAULTS?.EMBEDDING?.DIMENSIONS || 384;
 
 // Load mocked modules after jest.mock calls
 ({ app } = require('electron'));
