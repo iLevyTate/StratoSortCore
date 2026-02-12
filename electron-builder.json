@@ -1,15 +1,15 @@
 {
-  "productName": "StratoSort",
+  "productName": "StratoSort Core",
   "appId": "com.stratosort.app",
   "copyright": "Copyright © 2026 StratoSort Team",
   "publish": [
     {
       "provider": "github",
       "owner": "iLevyTate",
-      "repo": "elstratosort"
+      "repo": "StratoSortCore"
     }
   ],
-  "artifactName": "StratoSort-${version}-${os}-${arch}.${ext}",
+  "artifactName": "StratoSortCore-${version}-${os}-${arch}.${ext}",
   "compression": "maximum",
   "asar": true,
   "asarUnpack": [
@@ -83,14 +83,14 @@
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": "always",
     "createStartMenuShortcut": true,
-    "shortcutName": "StratoSort",
+    "shortcutName": "StratoSort Core",
     "runAfterFinish": true,
     "allowElevation": true,
     "installerIcon": "assets/icons/win/icon.ico",
     "uninstallerIcon": "assets/icons/win/icon.ico",
     "installerHeaderIcon": "assets/icons/win/icon.ico",
     "include": "build/installer-themed.nsh",
-    "artifactName": "StratoSort-Setup-${version}.exe"
+    "artifactName": "StratoSortCore-Setup-${version}.exe"
   },
   "mac": {
     "icon": "assets/icons/mac/icon.png",
@@ -111,7 +111,7 @@
     ]
   },
   "dmg": {
-    "title": "StratoSort ${version}",
+    "title": "StratoSort Core ${version}",
     "icon": "assets/icons/mac/icon.png",
     "background": "assets/installer/dmg-background.png",
     "window": {
