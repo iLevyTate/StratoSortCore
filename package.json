@@ -192,7 +192,7 @@
     "electron-builder": "^26.7.0",
     "electron-debug": "^4.1.0",
     "electron-devtools-installer": "^4.0.0",
-    "eslint": "^9.39.2",
+    "eslint": "^10.0.0",
     "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-import-resolver-webpack": "^0.13.10",
     "eslint-plugin-compat": "^6.1.0",
