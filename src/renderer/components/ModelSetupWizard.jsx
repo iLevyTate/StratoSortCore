@@ -14,12 +14,37 @@ import Button from './ui/Button';
 import Card from './ui/Card';
 import { Text, Heading } from './ui/Typography';
 import { formatBytes, formatDuration } from '../utils/format';
-import { AI_DEFAULTS } from '../../shared/constants';
+import { AI_DEFAULTS, INSTALL_MODEL_PROFILES } from '../../shared/constants';
 import { MODEL_CATALOG } from '../../shared/modelRegistry';
+
+const PROFILE_MODELS = {
+  base: {
+    embedding: INSTALL_MODEL_PROFILES?.BASE_SMALL?.models?.EMBEDDING,
+    text: INSTALL_MODEL_PROFILES?.BASE_SMALL?.models?.TEXT_ANALYSIS,
+    vision: INSTALL_MODEL_PROFILES?.BASE_SMALL?.models?.IMAGE_ANALYSIS
+  },
+  quality: {
+    embedding: INSTALL_MODEL_PROFILES?.BETTER_QUALITY?.models?.EMBEDDING,
+    text: INSTALL_MODEL_PROFILES?.BETTER_QUALITY?.models?.TEXT_ANALYSIS,
+    vision: INSTALL_MODEL_PROFILES?.BETTER_QUALITY?.models?.IMAGE_ANALYSIS
+  }
+};
+
+function detectProfileKey(models) {
+  if (
+    models?.embedding === PROFILE_MODELS.quality.embedding &&
+    models?.text === PROFILE_MODELS.quality.text &&
+    models?.vision === PROFILE_MODELS.quality.vision
+  ) {
+    return 'quality';
+  }
+  return 'base';
+}
 
 export default function ModelSetupWizard({ onComplete, onSkip }) {
   const [systemInfo, setSystemInfo] = useState(null);
   const [recommendations, setRecommendations] = useState(null);
+  const [selectedProfile, setSelectedProfile] = useState('base');
   const [selectedModels, setSelectedModels] = useState({});
   const [availableModels, setAvailableModels] = useState([]);
   const [downloadState, setDownloadState] = useState({});
@@ -60,15 +85,18 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     setHasApi(hasLlamaApi);
 
     const fallbackDefaults = {
-      embedding: AI_DEFAULTS?.EMBEDDING?.MODEL,
-      text: AI_DEFAULTS?.TEXT?.MODEL,
-      vision: AI_DEFAULTS?.IMAGE?.MODEL
+      embedding: PROFILE_MODELS.base.embedding || AI_DEFAULTS?.EMBEDDING?.MODEL,
+      text: PROFILE_MODELS.base.text || AI_DEFAULTS?.TEXT?.MODEL,
+      vision: PROFILE_MODELS.base.vision || AI_DEFAULTS?.IMAGE?.MODEL
     };
 
     if (!hasLlamaApi) {
       if (!isMountedRef.current) return;
-      setRecommendations(fallbackDefaults);
-      setSelectedModels(fallbackDefaults);
+      const fallbackProfile = detectProfileKey(fallbackDefaults);
+      const fallbackSelection = PROFILE_MODELS[fallbackProfile] || fallbackDefaults;
+      setSelectedProfile(fallbackProfile);
+      setRecommendations(fallbackSelection);
+      setSelectedModels(fallbackSelection);
       setSystemInfo({ gpuBackend: null, modelsPath: null });
       setInitError('AI engine is still starting. Please try again in a moment.');
       setStep('select');
@@ -89,6 +117,8 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
         text: config?.textModel || fallbackDefaults.text,
         vision: config?.visionModel || fallbackDefaults.vision
       };
+      const profileKey = detectProfileKey(defaults);
+      const selectedProfileModels = PROFILE_MODELS[profileKey] || defaults;
 
       const modelList = Array.isArray(modelsResponse)
         ? modelsResponse
@@ -98,8 +128,9 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
       const available = modelList.map((m) => m.name || m.filename || m).filter(Boolean);
       const availableNow = new Set(available);
 
-      setRecommendations(defaults);
-      setSelectedModels(defaults);
+      setSelectedProfile(profileKey);
+      setRecommendations(selectedProfileModels);
+      setSelectedModels(selectedProfileModels);
       setAvailableModels(available);
       setSystemInfo({
         gpuBackend: config?.gpuBackend || null,
@@ -177,12 +208,30 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     };
   }, [updateDownloadState]);
 
+  async function applySelectedProfileConfig() {
+    const updateConfig = window?.electronAPI?.llama?.updateConfig;
+    if (typeof updateConfig !== 'function') return;
+    const payload = {
+      textModel: selectedModels.text,
+      embeddingModel: selectedModels.embedding
+    };
+    if (selectedModels.vision) {
+      payload.visionModel = selectedModels.vision;
+    }
+    try {
+      await updateConfig(payload);
+    } catch (error) {
+      setInitError(error?.message || 'Could not apply selected model profile.');
+    }
+  }
+
   async function startDownloads() {
     const modelsToDownload = Object.values(selectedModels)
       .filter(Boolean)
       .filter((modelName) => !availableSet.has(modelName));
 
     if (modelsToDownload.length === 0) {
+      await applySelectedProfileConfig();
       setStep('complete');
       return;
     }
@@ -221,6 +270,10 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
       .filter(Boolean)
       .filter((name) => !nextAvailable.has(name));
 
+    if (requiredMissing.length === 0) {
+      await applySelectedProfileConfig();
+    }
+
     setStep(requiredMissing.length === 0 ? 'complete' : 'select');
   }
 
@@ -240,6 +293,11 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     }
     return total;
   };
+
+  const getProfileSize = (profileKey) =>
+    Object.values(PROFILE_MODELS[profileKey] || {})
+      .filter(Boolean)
+      .reduce((sum, filename) => sum + getModelSize(filename), 0);
 
   const totalDownloadSize = Object.values(selectedModels)
     .filter(Boolean)
@@ -292,6 +350,64 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
             <div>GPU: {systemInfo?.gpuBackend || 'CPU only'}</div>
             <div>Models path: {systemInfo?.modelsPath || 'Default app storage'}</div>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <Text variant="small" className="font-medium mb-2">
+            Install Profile
+          </Text>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedProfile('base');
+                setRecommendations(PROFILE_MODELS.base);
+                setSelectedModels(PROFILE_MODELS.base);
+              }}
+              className={`text-left border rounded-lg p-4 transition ${
+                selectedProfile === 'base'
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+              disabled={!hasApi || isRefreshing}
+            >
+              <Text className="font-medium">
+                {INSTALL_MODEL_PROFILES?.BASE_SMALL?.label || 'Base (Small & Fast)'}
+              </Text>
+              <Text variant="small" className="text-gray-600 mt-1">
+                {INSTALL_MODEL_PROFILES?.BASE_SMALL?.description ||
+                  'Runs on most machines with faster startup and smaller downloads.'}
+              </Text>
+              <Text variant="tiny" className="text-gray-500 mt-2">
+                Approx. download: {formatBytes(getProfileSize('base'))}
+              </Text>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedProfile('quality');
+                setRecommendations(PROFILE_MODELS.quality);
+                setSelectedModels(PROFILE_MODELS.quality);
+              }}
+              className={`text-left border rounded-lg p-4 transition ${
+                selectedProfile === 'quality'
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+              disabled={!hasApi || isRefreshing}
+            >
+              <Text className="font-medium">
+                {INSTALL_MODEL_PROFILES?.BETTER_QUALITY?.label || 'Better Quality (Larger)'}
+              </Text>
+              <Text variant="small" className="text-gray-600 mt-1">
+                {INSTALL_MODEL_PROFILES?.BETTER_QUALITY?.description ||
+                  'Higher quality output with larger models and larger downloads.'}
+              </Text>
+              <Text variant="tiny" className="text-gray-500 mt-2">
+                Approx. download: {formatBytes(getProfileSize('quality'))}
+              </Text>
+            </button>
           </div>
         </div>
 

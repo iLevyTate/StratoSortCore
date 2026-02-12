@@ -190,53 +190,15 @@ const ACTION_TYPES = {
 };
 
 /**
- * Default AI Models (GGUF format for node-llama-cpp)
- * These are in-process models, no external server required
+ * AI model defaults — imported from aiModelConfig.js (single source of truth)
+ * Change models in src/shared/aiModelConfig.js
  */
-const DEFAULT_AI_MODELS = {
-  // Text generation model (instruction-tuned)
-  TEXT_ANALYSIS: 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf',
-  // Vision-language model for image understanding
-  IMAGE_ANALYSIS: 'llava-v1.6-mistral-7b-Q4_K_M.gguf',
-  // Embedding model for semantic search
-  EMBEDDING: 'nomic-embed-text-v1.5-Q8_0.gguf',
-  // Fallback models (smaller, for CPU-only systems)
-  FALLBACK_MODELS: ['Llama-3.2-3B-Instruct-Q4_K_M.gguf', 'Phi-3-mini-4k-instruct-q4.gguf']
-};
+const { INSTALL_MODEL_PROFILES, DEFAULT_AI_MODELS, AI_DEFAULTS } = require('./aiModelConfig');
 
 /**
  * Settings schema version (shared across main/renderer)
  */
 const SETTINGS_SCHEMA_VERSION = 2;
-
-/**
- * AI Processing Defaults
- * Updated for in-process node-llama-cpp (no external server)
- */
-const AI_DEFAULTS = {
-  TEXT: {
-    MODEL: DEFAULT_AI_MODELS.TEXT_ANALYSIS,
-    GPU_LAYERS: -1, // -1 = auto → resolved to Infinity (all layers on GPU) by LlamaService
-    TEMPERATURE: 0.7,
-    MAX_TOKENS: 8192,
-    CONTEXT_SIZE: 8192,
-    MAX_CONTENT_LENGTH: 32000, // Optimized to match 8k context window
-    DEEP_ANALYSIS: false // Enable map-reduce summarization for large documents (slower but thorough)
-  },
-  IMAGE: {
-    MODEL: DEFAULT_AI_MODELS.IMAGE_ANALYSIS,
-    GPU_LAYERS: -1, // -1 = auto → resolved to Infinity by LlamaService
-    TEMPERATURE: 0.2,
-    MAX_TOKENS: 512
-  },
-  EMBEDDING: {
-    MODEL: DEFAULT_AI_MODELS.EMBEDDING,
-    DIMENSIONS: 768, // nomic-embed-text v1.5 uses 768 dimensions
-    GPU_LAYERS: -1, // -1 = auto → resolved to Infinity by LlamaService
-    FALLBACK_MODELS: ['nomic-embed-text-v1.5-Q4_K_M.gguf', 'all-MiniLM-L6-v2.Q8_0.gguf'],
-    AUTO_CHUNK_ON_ANALYSIS: false
-  }
-};
 
 /**
  * Processing Limits
@@ -587,6 +549,7 @@ const RENDERER_LIMITS = {
 module.exports = {
   IPC_CHANNELS,
   ACTION_TYPES,
+  INSTALL_MODEL_PROFILES,
   DEFAULT_AI_MODELS,
   SETTINGS_SCHEMA_VERSION,
   AI_DEFAULTS,

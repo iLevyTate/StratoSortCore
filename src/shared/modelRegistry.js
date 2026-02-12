@@ -28,6 +28,7 @@ const QuantizationLevel = {
   Q8_0: 'Q8_0', // 8-bit (good quality, reasonable size)
   Q6_K: 'Q6_K', // 6-bit K-quant
   Q5_K_M: 'Q5_K_M', // 5-bit K-quant medium
+  Q4_0: 'Q4_0', // 4-bit legacy quant
   Q4_K_M: 'Q4_K_M', // 4-bit K-quant medium (recommended balance)
   Q4_K_S: 'Q4_K_S', // 4-bit K-quant small
   Q3_K_M: 'Q3_K_M', // 3-bit K-quant (smaller, lower quality)
@@ -90,7 +91,52 @@ const MODEL_CATALOG = {
     minRam: 2048
   },
 
+  'all-MiniLM-L6-v2-Q4_K_M.gguf': {
+    type: ModelType.EMBEDDING,
+    displayName: 'All-MiniLM-L6-v2 (Quantized)',
+    description: 'Fastest embedding model, 384 dimensions, ideal for speed-focused use',
+    dimensions: 384,
+    contextLength: 384,
+    size: 21 * 1024 * 1024, // ~21MB
+    quantization: QuantizationLevel.Q4_K_M,
+    url: `${HF_BASE_URL}/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-Q4_K_M.gguf`,
+    checksum: null,
+    recommended: false,
+    requiresGpu: false,
+    minRam: 256
+  },
+
+  'all-MiniLM-L6-v2-Q8_0.gguf': {
+    type: ModelType.EMBEDDING,
+    displayName: 'All-MiniLM-L6-v2',
+    description: 'Fast embedding model, 384 dimensions, good quality-speed balance',
+    dimensions: 384,
+    contextLength: 384,
+    size: 25 * 1024 * 1024, // ~25MB
+    quantization: QuantizationLevel.Q8_0,
+    url: `${HF_BASE_URL}/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-Q8_0.gguf`,
+    checksum: null,
+    recommended: false,
+    requiresGpu: false,
+    minRam: 256
+  },
+
   // ========== TEXT MODELS ==========
+  'Qwen2.5-7B-Instruct-Q4_K_M.gguf': {
+    type: ModelType.TEXT,
+    displayName: 'Qwen2.5 7B Instruct',
+    description: 'Strong instruction-following, 128K context, better than Mistral 7B on benchmarks',
+    dimensions: null,
+    contextLength: 131072, // 128K
+    size: 4800 * 1024 * 1024, // ~4.68GB
+    quantization: QuantizationLevel.Q4_K_M,
+    url: `${HF_BASE_URL}/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf`,
+    checksum: null, // Update when known
+    recommended: true,
+    requiresGpu: true,
+    minRam: 8192
+  },
+
   'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf': {
     type: ModelType.TEXT,
     displayName: 'Mistral 7B Instruct v0.3',
@@ -101,7 +147,7 @@ const MODEL_CATALOG = {
     quantization: QuantizationLevel.Q4_K_M,
     url: `${HF_BASE_URL}/bartowski/Mistral-7B-Instruct-v0.3-GGUF/resolve/main/Mistral-7B-Instruct-v0.3-Q4_K_M.gguf`,
     checksum: '1270d22c0fbb3d092fb725d4d96c457b7b687a5f5a715abe1e818da303e562b6',
-    recommended: true,
+    recommended: false,
     requiresGpu: true,
     minRam: 8192
   },
@@ -159,15 +205,15 @@ const MODEL_CATALOG = {
     }
   },
 
-  'llava-phi-3-mini-Q4_K_M.gguf': {
+  'llava-phi-3-mini-int4.gguf': {
     type: ModelType.VISION,
     displayName: 'LLaVA Phi-3 Mini',
     description: 'Smaller vision model for CPU systems',
     dimensions: null,
     contextLength: 4096,
-    size: 2300 * 1024 * 1024, // ~2.3GB
-    quantization: QuantizationLevel.Q4_K_M,
-    url: `${HF_BASE_URL}/xtuner/llava-phi-3-mini-gguf/resolve/main/llava-phi-3-mini-Q4_K_M.gguf`,
+    size: 2320 * 1024 * 1024, // ~2.32GB
+    quantization: QuantizationLevel.Q4_0,
+    url: `${HF_BASE_URL}/xtuner/llava-phi-3-mini-gguf/resolve/main/llava-phi-3-mini-int4.gguf`,
     checksum: null,
     recommended: false,
     requiresGpu: false,
@@ -175,7 +221,7 @@ const MODEL_CATALOG = {
     clipModel: {
       name: 'llava-phi-3-mini-mmproj-f16.gguf',
       url: `${HF_BASE_URL}/xtuner/llava-phi-3-mini-gguf/resolve/main/llava-phi-3-mini-mmproj-f16.gguf`,
-      size: 580 * 1024 * 1024, // ~580MB
+      size: 608 * 1024 * 1024, // ~608MB
       checksum: null
     }
   }
