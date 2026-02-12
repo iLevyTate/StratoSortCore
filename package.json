@@ -1,7 +1,7 @@
 {
-  "name": "stratosort",
+  "name": "stratosort-core",
   "version": "2.0.0",
-  "description": "Stratosort - Local AI Document Organizer. Privacy-focused document organization using in-process AI (node-llama-cpp + Orama). Zero external dependencies.",
+  "description": "StratoSort Core - Local AI Document Organizer. Privacy-focused document organization using in-process AI (node-llama-cpp + Orama). Zero external dependencies.",
   "keywords": [
     "electron",
     "ai",
@@ -11,18 +11,17 @@
     "local-ai",
     "privacy",
     "file-organizer",
-    "elstratosort",
     "document-analysis",
     "vector-search",
     "llm"
   ],
-  "homepage": "https://github.com/iLevyTate/elstratosort#readme",
+  "homepage": "https://github.com/iLevyTate/StratoSortCore#readme",
   "bugs": {
-    "url": "https://github.com/iLevyTate/elstratosort/issues"
+    "url": "https://github.com/iLevyTate/StratoSortCore/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/iLevyTate/elstratosort.git"
+    "url": "git+https://github.com/iLevyTate/StratoSortCore.git"
   },
   "license": "SEE LICENSE IN LICENSE",
   "author": {
@@ -68,7 +67,7 @@
     "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx}\" \"test/**/*.{js,ts}\" \"scripts/**/*.js\" \"*.{js,json}\" \"webpack.config.js\" \"babel.config.js\" \"postcss.config.js\" \"playwright.config.js\"",
     "format:check": "prettier --check \"src/**/*.{js,jsx,ts,tsx}\" \"test/**/*.{js,ts}\" \"scripts/**/*.js\" \"*.{js,json}\" \"webpack.config.js\" \"babel.config.js\" \"postcss.config.js\" \"playwright.config.js\"",
     "prepare": "husky install",
-    "package": "rimraf dist && npm run build && npm run setup:vision-runtime && electron-builder build --publish never",
+    "package": "rimraf dist && npm run build && npm run setup:vision-runtime && npm run setup:vision-runtime:check && electron-builder build --publish never",
     "start": "npm run build:dev && cross-env NODE_ENV=development electron . --enable-logging",
     "start:prod": "cross-env NODE_ENV=production electron .",
     "start:debug": "cross-env NODE_ENV=development electron . --enable-logging --inspect",
@@ -88,11 +87,11 @@
     "test:soak": "cross-env SOAK=1 SOAK_MINUTES=12 npx playwright test test/e2e/soak.spec.js --timeout=1200000",
     "models:check": "node scripts/setup-models.js --check",
     "models:download": "node scripts/setup-models.js --download",
-    "dist": "npm run build && npm run setup:vision-runtime && electron-builder --publish never --config electron-builder.json",
-    "dist:win": "npm run build && npm run setup:vision-runtime && electron-builder --win --publish never --config electron-builder.json",
-    "dist:mac": "npm run build && npm run setup:vision-runtime && electron-builder --mac --publish never --config electron-builder.json",
-    "dist:linux": "npm run build && npm run setup:vision-runtime && electron-builder --linux --publish never --config electron-builder.json",
-    "dist:all": "npm run build && npm run setup:vision-runtime && electron-builder --mac --win --linux --publish never --config electron-builder.json",
+    "dist": "npm run build && npm run setup:vision-runtime && npm run setup:vision-runtime:check && electron-builder --publish never --config electron-builder.json",
+    "dist:win": "npm run build && npm run setup:vision-runtime && npm run setup:vision-runtime:check && electron-builder --win --publish never --config electron-builder.json",
+    "dist:mac": "npm run build && npm run setup:vision-runtime && npm run setup:vision-runtime:check && electron-builder --mac --publish never --config electron-builder.json",
+    "dist:linux": "npm run build && npm run setup:vision-runtime && npm run setup:vision-runtime:check && electron-builder --linux --publish never --config electron-builder.json",
+    "dist:all": "npm run build && npm run setup:vision-runtime && npm run setup:vision-runtime:check && electron-builder --mac --win --linux --publish never --config electron-builder.json",
     "ci": "npm run format:check && npm run lint && npm test && npm run build",
     "upgrade": "npx npm-check-updates -u && npm install"
   },
