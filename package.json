@@ -155,7 +155,7 @@
     "@babel/preset-typescript": "^7.28.5",
     "@electron/notarize": "^3.1.1",
     "@electron/rebuild": "^4.0.3",
-    "@eslint/js": "^9.39.2",
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.58.2",
     "@pmmmwh/react-refresh-webpack-plugin": "^0.6.2",
     "@reduxjs/toolkit": "^2.11.2",
