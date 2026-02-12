@@ -15,7 +15,7 @@ const { app } = require('electron');
 const { EventEmitter } = require('events');
 const { createLogger } = require('../../shared/logger');
 const { createSingletonHelpers } = require('../../shared/singletonFactory');
-const { AI_DEFAULTS } = require('../../shared/constants');
+const { AI_DEFAULTS, DEFAULT_AI_MODELS } = require('../../shared/constants');
 const { getModel } = require('../../shared/modelRegistry');
 const { resolveEmbeddingDimension } = require('../../shared/embeddingDimensions');
 const { ERROR_CODES } = require('../../shared/errorCodes');
@@ -107,11 +107,11 @@ const LOW_VRAM_VISION_RETRY_BATCH_SIZE = 512;
 const LOW_VRAM_VISION_RETRY_UBATCH_SIZE = 128;
 const LOW_VRAM_VISION_RETRY_MAX_TOKENS = 256;
 
-// Default model configuration
+// Default model configuration (from aiModelConfig)
 const DEFAULT_CONFIG = {
-  textModel: AI_DEFAULTS.TEXT?.MODEL || 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf',
-  visionModel: AI_DEFAULTS.IMAGE?.MODEL || 'llava-v1.6-mistral-7b-Q4_K_M.gguf',
-  embeddingModel: AI_DEFAULTS.EMBEDDING?.MODEL || 'nomic-embed-text-v1.5-Q8_0.gguf',
+  textModel: AI_DEFAULTS.TEXT?.MODEL ?? DEFAULT_AI_MODELS.TEXT_ANALYSIS,
+  visionModel: AI_DEFAULTS.IMAGE?.MODEL ?? DEFAULT_AI_MODELS.IMAGE_ANALYSIS,
+  embeddingModel: AI_DEFAULTS.EMBEDDING?.MODEL ?? DEFAULT_AI_MODELS.EMBEDDING,
   gpuLayers: 'auto', // 'auto' = let node-llama-cpp fit GPU layers to VRAM
   contextSize: 8192,
   threads: 0 // 0 = auto-detect

@@ -8,7 +8,7 @@
  */
 
 const { createLogger } = require('../shared/logger');
-const { AI_DEFAULTS } = require('../shared/constants');
+const { AI_DEFAULTS, DEFAULT_AI_MODELS } = require('../shared/constants');
 
 const logger = createLogger('llama-utils');
 
@@ -127,15 +127,15 @@ async function loadLlamaConfig() {
     // Load model names from settings or use defaults
     selectedTextModel = resolveModel(
       allSettings.textModel,
-      AI_DEFAULTS.TEXT?.MODEL || 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf'
+      AI_DEFAULTS.TEXT?.MODEL ?? DEFAULT_AI_MODELS.TEXT_ANALYSIS
     );
     selectedVisionModel = resolveModel(
       allSettings.visionModel,
-      AI_DEFAULTS.IMAGE?.MODEL || 'llava-v1.6-mistral-7b-Q4_K_M.gguf'
+      AI_DEFAULTS.IMAGE?.MODEL ?? DEFAULT_AI_MODELS.IMAGE_ANALYSIS
     );
     selectedEmbeddingModel = resolveModel(
       allSettings.embeddingModel,
-      AI_DEFAULTS.EMBEDDING?.MODEL || 'nomic-embed-text-v1.5-Q8_0.gguf'
+      AI_DEFAULTS.EMBEDDING?.MODEL ?? DEFAULT_AI_MODELS.EMBEDDING
     );
 
     logger.info('[LlamaUtils] Config loaded', {
