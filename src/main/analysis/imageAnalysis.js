@@ -6,7 +6,11 @@ const { getInstance: getLlamaService } = require('../services/LlamaService');
 const { globalDeduplicator } = require('../utils/llmOptimization');
 const { extractAndParseJSON } = require('../utils/jsonRepair');
 const { attemptJsonRepairWithLlama } = require('../utils/llmJsonRepair');
-const { AI_DEFAULTS, SUPPORTED_IMAGE_EXTENSIONS } = require('../../shared/constants');
+const {
+  AI_DEFAULTS,
+  DEFAULT_AI_MODELS,
+  SUPPORTED_IMAGE_EXTENSIONS
+} = require('../../shared/constants');
 const { TRUNCATION, TIMEOUTS } = require('../../shared/performanceConstants');
 const { withAbortableTimeout } = require('../../shared/promiseUtils');
 const { ANALYSIS_SCHEMA_PROMPT } = require('../../shared/analysisSchema');
@@ -67,7 +71,7 @@ function createVisionUnavailableFallback(params, extractedText) {
 const AppConfig = {
   ai: {
     imageAnalysis: {
-      defaultModel: AI_DEFAULTS?.IMAGE?.MODEL || 'llava-v1.6-mistral-7b-Q4_K_M.gguf',
+      defaultModel: AI_DEFAULTS?.IMAGE?.MODEL,
       // Keep image analysis aligned with global processing timeouts so the renderer lock
       // doesn't get "stuck" for minutes when vision calls hang.
       timeout: TIMEOUTS.AI_ANALYSIS_LONG,
@@ -222,7 +226,7 @@ async function getImagePreflight(llamaService, { forceRefresh = false } = {}) {
       visionModelName:
         cfg?.visionModel ||
         AppConfig.ai.imageAnalysis.defaultModel ||
-        'llava-v1.6-mistral-7b-Q4_K_M.gguf'
+        DEFAULT_AI_MODELS.IMAGE_ANALYSIS
     };
     preflightCache.serviceRef = llamaService;
     preflightCache.value = preflight;
@@ -319,7 +323,7 @@ Rules:
       modelToUse =
         cfg.visionModel ||
         AppConfig.ai.imageAnalysis.defaultModel ||
-        'llava-v1.6-mistral-7b-Q4_K_M.gguf';
+        DEFAULT_AI_MODELS.IMAGE_ANALYSIS;
     }
 
     // Use deduplicator to prevent duplicate LLM calls for identical images
