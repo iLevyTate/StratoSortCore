@@ -50,7 +50,7 @@ const RECOMMENDED_MODELS = buildRecommendedModels();
 
 // Get user data directory
 function getModelsPath() {
-  const appName = 'stratosort';
+  const appName = 'stratosort-core';
   const home = process.env.HOME || process.env.USERPROFILE;
 
   if (process.platform === 'win32') {
