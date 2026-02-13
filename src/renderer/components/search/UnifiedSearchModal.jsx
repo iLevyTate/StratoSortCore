@@ -77,6 +77,7 @@ const STABLE_EDGE_TYPES = EDGE_TYPES;
 const GRAPH_SIDEBAR_CARD = 'rounded-lg border border-system-gray-200 bg-white/90 p-3 shadow-sm';
 const GRAPH_SIDEBAR_SECTION_TITLE =
   'text-[11px] font-semibold text-system-gray-500 uppercase tracking-wider flex items-center gap-2';
+const GRAPH_SIDEBAR_HELP_TEXT = 'text-[11px] text-system-gray-500';
 
 /**
  * Format error messages to be more user-friendly and actionable
@@ -976,6 +977,10 @@ export default function UnifiedSearchModal({
   const withinRequestCounterRef = useRef(0);
   const withinReqRef = useRef(0);
   const reactFlowInstance = useRef(null);
+  const graphFitViewTimeoutRef = useRef(null);
+  const guideIntentLoadTimeoutRef = useRef(null);
+  const statsRequestCounterRef = useRef(0);
+  const freshMetadataRequestCounterRef = useRef(0);
   const resultListRef = useRef(null);
   const graphContainerRef = useRef(null);
   const wasOpenRef = useRef(false);
@@ -1339,6 +1344,14 @@ export default function UnifiedSearchModal({
       graphActions.setEdges([]);
       setBulkSelectedIds(new Set());
       setDuplicateGroups([]);
+      if (graphFitViewTimeoutRef.current) {
+        clearTimeout(graphFitViewTimeoutRef.current);
+        graphFitViewTimeoutRef.current = null;
+      }
+      if (guideIntentLoadTimeoutRef.current) {
+        clearTimeout(guideIntentLoadTimeoutRef.current);
+        guideIntentLoadTimeoutRef.current = null;
+      }
       return () => {};
     }
 
@@ -1377,6 +1390,14 @@ export default function UnifiedSearchModal({
       graphActions.selectNode(null);
       setAddMode(true);
       setIsGraphMaximized(false);
+      if (graphFitViewTimeoutRef.current) {
+        clearTimeout(graphFitViewTimeoutRef.current);
+        graphFitViewTimeoutRef.current = null;
+      }
+      if (guideIntentLoadTimeoutRef.current) {
+        clearTimeout(guideIntentLoadTimeoutRef.current);
+        guideIntentLoadTimeoutRef.current = null;
+      }
       setWithinQuery('');
       setDebouncedWithinQuery('');
       setGraphStatus('');
@@ -1402,6 +1423,14 @@ export default function UnifiedSearchModal({
     // Cleanup pending layouts on unmount
     return () => {
       cancelPendingLayout();
+      if (graphFitViewTimeoutRef.current) {
+        clearTimeout(graphFitViewTimeoutRef.current);
+        graphFitViewTimeoutRef.current = null;
+      }
+      if (guideIntentLoadTimeoutRef.current) {
+        clearTimeout(guideIntentLoadTimeoutRef.current);
+        guideIntentLoadTimeoutRef.current = null;
+      }
       graphActions.reset();
     };
   }, [isOpen, effectiveInitialTab, graphActions, initialTab]);
@@ -1903,6 +1932,7 @@ export default function UnifiedSearchModal({
 
   const refreshStats = useCallback(async (options = {}) => {
     const forceRefresh = options === true || options?.force === true;
+    const requestId = (statsRequestCounterRef.current += 1);
     if (isMountedRef.current) setIsLoadingStats(true);
     try {
       const [statsResult, settingsResult] = await Promise.allSettled([
@@ -1912,7 +1942,12 @@ export default function UnifiedSearchModal({
       const res = statsResult.status === 'fulfilled' ? statsResult.value : null;
       const settings = settingsResult.status === 'fulfilled' ? settingsResult.value : null;
 
-      if (isMountedRef.current && settings && typeof settings === 'object') {
+      if (
+        isMountedRef.current &&
+        statsRequestCounterRef.current === requestId &&
+        settings &&
+        typeof settings === 'object'
+      ) {
         setEmbeddingConfig({
           timing:
             settings.embeddingTiming === 'during_analysis' ||
@@ -1927,27 +1962,27 @@ export default function UnifiedSearchModal({
               ? settings.defaultEmbeddingPolicy
               : null
         });
-      } else if (isMountedRef.current) {
+      } else if (isMountedRef.current && statsRequestCounterRef.current === requestId) {
         setEmbeddingConfig(null);
       }
 
-      if (isMountedRef.current && res?.success) {
+      if (isMountedRef.current && statsRequestCounterRef.current === requestId && res?.success) {
         setStats({
           files: typeof res.files === 'number' ? res.files : 0,
           folders: typeof res.folders === 'number' ? res.folders : 0,
           initialized: Boolean(res.initialized)
         });
-      } else if (isMountedRef.current) {
+      } else if (isMountedRef.current && statsRequestCounterRef.current === requestId) {
         setStats(null);
       }
     } catch (e) {
       logger.warn('Failed to load embedding stats', { error: e?.message });
-      if (isMountedRef.current) {
+      if (isMountedRef.current && statsRequestCounterRef.current === requestId) {
         setStats(null);
         setEmbeddingConfig(null);
       }
     } finally {
-      if (isMountedRef.current) {
+      if (isMountedRef.current && statsRequestCounterRef.current === requestId) {
         setIsLoadingStats(false);
         setHasLoadedStats(true);
       }
@@ -4855,6 +4890,11 @@ export default function UnifiedSearchModal({
       activeGraphFilterChips.length > 0,
     [bridgeOverlayEnabled, clusterMode, activeClusterFilterChips, activeGraphFilterChips]
   );
+  const activeSidebarFilterCount =
+    (clusterMode !== DEFAULT_CLUSTER_MODE ? 1 : 0) +
+    (bridgeOverlayEnabled ? 1 : 0) +
+    activeClusterFilterChips.length +
+    activeGraphFilterChips.length;
 
   const showEmptyBanner =
     hasLoadedStats && stats && typeof stats.files === 'number' && stats.files === 0 && !error;
@@ -5399,7 +5439,9 @@ export default function UnifiedSearchModal({
         {GRAPH_FEATURE_FLAGS.SHOW_GRAPH && activeTab === 'graph' && (
           <div
             className={`grid gap-3 flex-1 min-h-[60vh] transition-all duration-300 ${
-              isGraphMaximized ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-[320px_1fr_320px]'
+              isGraphMaximized
+                ? 'grid-cols-1'
+                : 'grid-cols-1 lg:grid-cols-[minmax(280px,320px)_minmax(0,1fr)_minmax(280px,340px)]'
             }`}
           >
             {/* Left: Controls */}
@@ -5409,14 +5451,79 @@ export default function UnifiedSearchModal({
                 role="complementary"
                 aria-label="Graph Controls"
               >
-                <div className="p-4 border-b border-system-gray-100 bg-system-gray-50/50">
-                  <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
-                    <Network className="w-3.5 h-3.5 text-stratosort-blue" aria-hidden="true" />
-                    <span>Graph Controls</span>
+                <div className="p-4 border-b border-system-gray-100 bg-system-gray-50/50 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
+                      <Network className="w-3.5 h-3.5 text-stratosort-blue" aria-hidden="true" />
+                      <span>Graph Controls</span>
+                    </Text>
+                    {hasGraphFilterIndicators && (
+                      <Button variant="ghost" size="xs" onClick={resetGraphFilters}>
+                        Reset Filters
+                      </Button>
+                    )}
+                  </div>
+                  <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_HELP_TEXT}>
+                    Search, cluster, and organize your graph.
                   </Text>
                 </div>
 
                 <div className="p-4 flex-1 min-h-0 overflow-y-auto panel-scroll flex flex-col gap-5">
+                  <div className={`${GRAPH_SIDEBAR_CARD} bg-system-gray-50/80`}>
+                    <div className="flex items-center justify-between gap-2 text-[11px]">
+                      <Text as="span" variant="tiny" className="font-semibold text-system-gray-700">
+                        Current graph
+                      </Text>
+                      {selectedNode ? (
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => graphActions.selectNode(null)}
+                        >
+                          Clear Selection
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                      <div className="rounded-md border border-system-gray-200 bg-white px-2 py-1.5">
+                        <Text
+                          as="div"
+                          variant="tiny"
+                          className="font-semibold text-system-gray-800"
+                        >
+                          {nodes.length}
+                        </Text>
+                        <Text as="div" variant="tiny" className="text-system-gray-500">
+                          Nodes
+                        </Text>
+                      </div>
+                      <div className="rounded-md border border-system-gray-200 bg-white px-2 py-1.5">
+                        <Text
+                          as="div"
+                          variant="tiny"
+                          className="font-semibold text-system-gray-800"
+                        >
+                          {edges.length}
+                        </Text>
+                        <Text as="div" variant="tiny" className="text-system-gray-500">
+                          Links
+                        </Text>
+                      </div>
+                      <div className="rounded-md border border-system-gray-200 bg-white px-2 py-1.5">
+                        <Text
+                          as="div"
+                          variant="tiny"
+                          className="font-semibold text-system-gray-800"
+                        >
+                          {activeSidebarFilterCount}
+                        </Text>
+                        <Text as="div" variant="tiny" className="text-system-gray-500">
+                          Filters
+                        </Text>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Add to Graph */}
                   <section className="space-y-2">
                     <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
@@ -6252,14 +6359,8 @@ export default function UnifiedSearchModal({
                     variant="tiny"
                     className="mt-auto pt-4 text-system-gray-400 border-t border-system-gray-100"
                   >
-                    {nodes.length > 0 ? (
-                      <div className="flex justify-between items-center">
-                        <span>{nodes.length} nodes</span>
-                        <span>{edges.length} links</span>
-                      </div>
-                    ) : (
-                      <div className="italic text-center">Empty graph</div>
-                    )}
+                    Tip: use <span className="font-mono text-system-gray-500">?</span> for graph
+                    help.
                   </Text>
                 </div>
               </div>
@@ -6298,6 +6399,7 @@ export default function UnifiedSearchModal({
                     variant="secondary"
                     size="sm"
                     leftIcon={<Layers className="w-4 h-4" />}
+                    aria-label={showClusters ? 'Hide clusters' : 'Show clusters'}
                     className={`h-8 px-2 backdrop-blur-sm shadow-sm ${
                       showClusters
                         ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
@@ -6327,10 +6429,14 @@ export default function UnifiedSearchModal({
                 />
                 <IconButton
                   onClick={() => {
-                    setIsGraphMaximized(!isGraphMaximized);
+                    setIsGraphMaximized((prev) => !prev);
+                    if (graphFitViewTimeoutRef.current) {
+                      clearTimeout(graphFitViewTimeoutRef.current);
+                    }
                     // Wait for layout transition then fit view
-                    setTimeout(() => {
+                    graphFitViewTimeoutRef.current = setTimeout(() => {
                       reactFlowInstance.current?.fitView({ padding: 0.2, duration: 800 });
+                      graphFitViewTimeoutRef.current = null;
                     }, 300);
                   }}
                   size="sm"
@@ -6461,15 +6567,15 @@ export default function UnifiedSearchModal({
                     </div>
                     <div className="flex items-center gap-2">
                       <kbd className="px-1.5 py-0.5 rounded bg-system-gray-100 border border-system-gray-200 font-mono text-system-gray-600">
-                        Arrows
+                        Drag
                       </kbd>
-                      <span>to navigate nodes</span>
+                      <span>to pan the canvas</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <kbd className="px-1.5 py-0.5 rounded bg-system-gray-100 border border-system-gray-200 font-mono text-system-gray-600">
-                        Enter
+                        ?
                       </kbd>
-                      <span>to open selected file</span>
+                      <span>for graph help</span>
                     </div>
                   </Text>
                 </div>
@@ -6614,10 +6720,26 @@ export default function UnifiedSearchModal({
                 role="complementary"
                 aria-label="Node Details"
               >
-                <div className="p-4 border-b border-system-gray-100 bg-system-gray-50/50">
-                  <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
-                    <Sparkles className="h-3.5 w-3.5 text-stratosort-blue" aria-hidden="true" />
-                    <span>{selectedNode ? 'Node Details' : 'Legend'}</span>
+                <div className="p-4 border-b border-system-gray-100 bg-system-gray-50/50 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
+                      <Sparkles className="h-3.5 w-3.5 text-stratosort-blue" aria-hidden="true" />
+                      <span>{selectedNode ? 'Node Details' : 'Legend'}</span>
+                    </Text>
+                    {selectedNode ? (
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => graphActions.selectNode(null)}
+                      >
+                        Back to Legend
+                      </Button>
+                    ) : null}
+                  </div>
+                  <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_HELP_TEXT}>
+                    {selectedNode
+                      ? 'Inspect connections and take action on the selected node.'
+                      : 'Understand node types and filter what is shown.'}
                   </Text>
                 </div>
 
@@ -7326,6 +7448,23 @@ export default function UnifiedSearchModal({
                       {/* Integrated Legend when no node selected */}
                       {showClusters || nodes.length > 0 ? (
                         <div className="space-y-4">
+                          <div className={`${GRAPH_SIDEBAR_CARD} space-y-2 bg-system-gray-50/80`}>
+                            <Text
+                              as="div"
+                              variant="tiny"
+                              className="font-semibold text-system-gray-700"
+                            >
+                              No node selected
+                            </Text>
+                            <Text as="div" variant="tiny" className="text-system-gray-500">
+                              Click a node in the graph to inspect details and actions.
+                            </Text>
+                            <div className="flex items-center justify-between text-[11px] text-system-gray-500">
+                              <span>{nodes.length} nodes</span>
+                              <span>{edges.length} links</span>
+                              <span>{activeSidebarFilterCount} filters</span>
+                            </div>
+                          </div>
                           <div className={`${GRAPH_SIDEBAR_CARD} space-y-3`}>
                             <div className="flex items-center justify-between">
                               <Text

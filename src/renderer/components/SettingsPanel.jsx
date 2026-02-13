@@ -105,6 +105,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const [isAddingModel, setIsAddingModel] = useState(false);
   const [pullProgress, setPullProgress] = useState(null);
   const progressUnsubRef = useRef(null);
+  const pullProgressTimeoutRef = useRef(null);
 
   useEffect(() => {
     return () => {
@@ -115,6 +116,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           // Non-fatal if cleanup fails
         }
         progressUnsubRef.current = null;
+      }
+      if (pullProgressTimeoutRef.current) {
+        clearTimeout(pullProgressTimeoutRef.current);
+        pullProgressTimeoutRef.current = null;
       }
     };
   }, []);
@@ -497,7 +502,13 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     } finally {
       setIsAddingModel(false);
       const NOTIFICATION_DELAY_MS = 1500;
-      setTimeout(() => setPullProgress(null), NOTIFICATION_DELAY_MS);
+      if (pullProgressTimeoutRef.current) {
+        clearTimeout(pullProgressTimeoutRef.current);
+      }
+      pullProgressTimeoutRef.current = setTimeout(() => {
+        setPullProgress(null);
+        pullProgressTimeoutRef.current = null;
+      }, NOTIFICATION_DELAY_MS);
       try {
         if (progressUnsubRef.current) progressUnsubRef.current();
         progressUnsubRef.current = null;
