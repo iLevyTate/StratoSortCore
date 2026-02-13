@@ -100,7 +100,7 @@ const MODEL_CATALOG = {
     size: 21 * 1024 * 1024, // ~21MB
     quantization: QuantizationLevel.Q4_K_M,
     url: `${HF_BASE_URL}/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-Q4_K_M.gguf`,
-    checksum: null,
+    checksum: '2ec4cee28a27a9c973d5f5230930d6ef6e52694bd2bc71be26a9bef5b1d755e6',
     recommended: false,
     requiresGpu: false,
     minRam: 256
@@ -115,7 +115,7 @@ const MODEL_CATALOG = {
     size: 25 * 1024 * 1024, // ~25MB
     quantization: QuantizationLevel.Q8_0,
     url: `${HF_BASE_URL}/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-Q8_0.gguf`,
-    checksum: null,
+    checksum: '263215c3cadd6e16740741a7624ab4cbb6c8e777688bd5331ecfbf5681c2f8ed',
     recommended: false,
     requiresGpu: false,
     minRam: 256
@@ -131,7 +131,7 @@ const MODEL_CATALOG = {
     size: 4800 * 1024 * 1024, // ~4.68GB
     quantization: QuantizationLevel.Q4_K_M,
     url: `${HF_BASE_URL}/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf`,
-    checksum: null, // Update when known
+    checksum: '65b8fcd92af6b4fefa935c625d1ac27ea29dcb6ee14589c55a8f115ceaaa1423',
     recommended: true,
     requiresGpu: true,
     minRam: 8192
@@ -214,7 +214,7 @@ const MODEL_CATALOG = {
     size: 2320 * 1024 * 1024, // ~2.32GB
     quantization: QuantizationLevel.Q4_0,
     url: `${HF_BASE_URL}/xtuner/llava-phi-3-mini-gguf/resolve/main/llava-phi-3-mini-int4.gguf`,
-    checksum: null,
+    checksum: '377876be20bac24488716c04824ab3a6978900679b40013b0d2585004555e658',
     recommended: false,
     requiresGpu: false,
     minRam: 4096,
@@ -222,7 +222,7 @@ const MODEL_CATALOG = {
       name: 'llava-phi-3-mini-mmproj-f16.gguf',
       url: `${HF_BASE_URL}/xtuner/llava-phi-3-mini-gguf/resolve/main/llava-phi-3-mini-mmproj-f16.gguf`,
       size: 608 * 1024 * 1024, // ~608MB
-      checksum: null
+      checksum: '004fc09697203296f72321b296a8d48aade2d23e553cbfb1c1e6a0b5157a08d5'
     }
   }
 };
@@ -241,7 +241,16 @@ function getAllModels() {
  * @returns {Object|null} Model info or null
  */
 function getModel(modelName) {
-  return MODEL_CATALOG[modelName] || null;
+  if (!modelName || typeof modelName !== 'string') return null;
+  // Direct match first (common case)
+  if (MODEL_CATALOG[modelName]) return MODEL_CATALOG[modelName];
+  // Case-insensitive fallback — Windows filesystem is case-insensitive so
+  // the on-disk filename may differ in casing from the catalog key.
+  const lower = modelName.toLowerCase();
+  for (const [key, value] of Object.entries(MODEL_CATALOG)) {
+    if (key.toLowerCase() === lower) return value;
+  }
+  return null;
 }
 
 /**
@@ -312,7 +321,7 @@ function getDefaultModel(type) {
 function calculateDownloadSize(modelNames) {
   let total = 0;
   for (const name of modelNames) {
-    const model = MODEL_CATALOG[name];
+    const model = getModel(name);
     if (model) {
       total += model.size;
       // Add clip model size if present

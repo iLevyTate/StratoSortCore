@@ -35,6 +35,15 @@ const getEmbeddingDimensionForModel = (modelName) =>
     defaultDimension: getConfig('ANALYSIS.embeddingDimension', 768)
   });
 
+function isEmbeddingContextOverflow(error) {
+  const message = String(
+    error?.message || error?.originalError?.message || error?.cause?.message || ''
+  ).toLowerCase();
+  return (
+    message.includes('input is longer than the context size') || message.includes('context size of')
+  );
+}
+
 /**
  * FolderMatchingService - Handles file-to-folder matching using embeddings
  *
@@ -310,8 +319,8 @@ class FolderMatchingService {
       const model = cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
       // Legacy perf options omitted; not needed for LlamaService
       const originalText = String(text || '');
-      const capped = capEmbeddingInput(originalText);
-      const embeddingInput = capped.text;
+      const capped = capEmbeddingInput(originalText, { modelName: model });
+      let embeddingInput = capped.text;
 
       if (capped.wasTruncated) {
         logger.warn('[FolderMatchingService] Embedding input truncated to token limit', {
@@ -349,7 +358,50 @@ class FolderMatchingService {
 
       // Cache miss - generate embedding via API
       // Use LlamaService.generateEmbedding
-      const response = await llamaService.generateEmbedding(embeddingInput || '');
+      let response;
+      try {
+        response = await llamaService.generateEmbedding(embeddingInput || '');
+      } catch (embedError) {
+        // Some token-dense inputs (CSV-like content, symbols-heavy OCR text) can exceed
+        // context even when character-capped. Retry once with stricter truncation.
+        if (!isEmbeddingContextOverflow(embedError)) {
+          throw embedError;
+        }
+
+        const retryCap = capEmbeddingInput(originalText, {
+          maxTokens: Math.max(64, Math.floor(capped.maxTokens * 0.7)),
+          charsPerToken: 3,
+          modelName: model
+        });
+        const retryInput = retryCap.text;
+
+        if (!retryInput || retryInput === embeddingInput) {
+          throw embedError;
+        }
+
+        logger.warn(
+          '[FolderMatchingService] Retrying embedding with stricter truncation after context overflow',
+          {
+            model,
+            originalLength: originalText.length,
+            firstAttemptLength: embeddingInput.length,
+            retryLength: retryInput.length,
+            retryEstimatedTokens: retryCap.estimatedTokens
+          }
+        );
+
+        const cachedRetry = this.embeddingCache.get(retryInput, model);
+        if (cachedRetry) {
+          const duration = Date.now() - startTime;
+          logger.debug(
+            `[FolderMatchingService] Embedding retrieved in ${duration}ms (cache: HIT on retry)`
+          );
+          return cachedRetry;
+        }
+
+        response = await llamaService.generateEmbedding(retryInput);
+        embeddingInput = retryInput;
+      }
 
       // generateEmbedding returns { embedding: number[] }
       const vector = response?.embedding;
@@ -581,7 +633,13 @@ class FolderMatchingService {
       const uncachedFolders = [];
       const cachedPayloads = [];
 
+      let processedCount = 0;
       for (const folder of folders) {
+        processedCount++;
+        if (processedCount % 50 === 0) {
+          await new Promise((resolve) => setImmediate(resolve));
+        }
+
         // Enrich folder text with semantic context for better file type matching
         const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
         const folderId = folder.id || this.generateFolderId(folder);
@@ -867,7 +925,13 @@ class FolderMatchingService {
       const uncachedFiles = [];
       const cachedResults = [];
 
+      let processedCount = 0;
       for (const item of fileSummaries) {
+        processedCount++;
+        if (processedCount % 50 === 0) {
+          await new Promise((resolve) => setImmediate(resolve));
+        }
+
         const cachedResult = this.embeddingCache.get(item.summary || '', model);
 
         if (cachedResult) {

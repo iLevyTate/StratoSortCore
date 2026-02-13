@@ -7,7 +7,7 @@ const https = require('https');
 const http = require('http');
 const crypto = require('crypto');
 const { createLogger } = require('../../shared/logger');
-const { MODEL_CATALOG } = require('../../shared/modelRegistry');
+const { MODEL_CATALOG, getModel } = require('../../shared/modelRegistry');
 const { ensureResolvedModelsPath } = require('./modelPathResolver');
 
 const logger = createLogger('ModelDownloadManager');
@@ -55,13 +55,13 @@ class ModelDownloadManager {
     try {
       const modelPath = await this._ensureModelPath();
       const files = await fs.readdir(modelPath);
-      const ggufFiles = files.filter((f) => f.endsWith('.gguf'));
+      const ggufFiles = files.filter((f) => /\.gguf$/i.test(f));
 
       return Promise.all(
         ggufFiles.map(async (filename) => {
           const filePath = path.join(modelPath, filename);
           const stats = await fs.stat(filePath);
-          const registryInfo = MODEL_CATALOG[filename] || {};
+          const registryInfo = getModel(filename) || {};
 
           return {
             filename,
@@ -111,12 +111,13 @@ class ModelDownloadManager {
    * @private
    */
   _resolveModelInfo(filename) {
-    const direct = MODEL_CATALOG[filename];
+    const direct = getModel(filename);
     if (direct) return direct;
 
     // Check if filename matches a clipModel companion of any vision model
+    const lowerFilename = filename?.toLowerCase();
     for (const info of Object.values(MODEL_CATALOG)) {
-      if (info.clipModel && info.clipModel.name === filename) {
+      if (info.clipModel && info.clipModel.name?.toLowerCase() === lowerFilename) {
         return {
           type: 'vision-helper',
           displayName: `Vision Projector (${filename})`,
@@ -331,12 +332,24 @@ class ModelDownloadManager {
           isResume = false;
         }
 
+        // Prefer the server's Content-Length for size validation.
+        // Catalog sizes are informational estimates (e.g. "~21MB") and may
+        // not match the real file byte-for-byte, causing spurious mismatches.
+        const contentLength = parseInt(response.headers['content-length'], 10);
+        const serverExpectedBytes =
+          Number.isFinite(contentLength) && contentLength > 0
+            ? isResume
+              ? contentLength + startByte
+              : contentLength
+            : null;
+        const expectedBytes = serverExpectedBytes || modelInfo.size;
+
         const writeStream = createWriteStream(partialPath, {
           flags: isResume ? 'a' : 'w'
         });
 
         let downloaded = startByte;
-        const total = modelInfo.size;
+        const total = expectedBytes;
 
         response.on('data', (chunk) => {
           downloaded += chunk.length;
@@ -359,11 +372,13 @@ class ModelDownloadManager {
 
         writeStream.on('finish', async () => {
           try {
-            // Verify file size
+            // Verify file size against server-reported Content-Length (or catalog fallback).
             const stats = await fs.stat(partialPath);
-            if (stats.size !== modelInfo.size) {
+            if (stats.size !== expectedBytes) {
               finalizeFailure(
-                new Error('Download incomplete - file size mismatch'),
+                new Error(
+                  `Download incomplete - file size mismatch (got ${stats.size}, expected ${expectedBytes})`
+                ),
                 'incomplete',
                 true
               );
@@ -477,6 +492,16 @@ class ModelDownloadManager {
       });
     }
     return { active: downloads.length, downloads };
+  }
+
+  /**
+   * Check if a model is currently being downloaded.
+   * @param {string} filename - Model filename
+   * @returns {boolean}
+   */
+  isDownloading(filename) {
+    const state = this._downloads.get(filename);
+    return !!state && (state.status === 'downloading' || state.status === 'redirecting');
   }
 
   /**

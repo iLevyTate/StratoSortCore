@@ -546,8 +546,9 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
             await matcher.initialize();
           }
 
-          // Create a lightweight summary for embedding
-          const summaryForEmbedding = extractedText.slice(0, 1500);
+          // Create a summary for embedding - let the matcher handle truncation/pooling based on model capacity
+          // We limit to 50k chars to avoid passing massive strings, which covers >12k tokens (enough for 8k context models)
+          const summaryForEmbedding = extractedText.slice(0, 50000);
           const { vector } = await matcher.embedText(summaryForEmbedding);
           // Find top 5 similar files
           const similarFiles = await matcher.findSimilarFilesByVector(vector, 5);

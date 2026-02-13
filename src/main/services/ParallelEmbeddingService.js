@@ -6,6 +6,7 @@ const { getEmbeddingPool } = require('../utils/workerPools');
 const { ERROR_CODES } = require('../../shared/errorCodes');
 const { AI_DEFAULTS } = require('../../shared/constants');
 const { resolveEmbeddingDimension } = require('../../shared/embeddingDimensions');
+const { capEmbeddingInput } = require('../utils/embeddingInput');
 
 const logger = createLogger('ParallelEmbeddingService');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
@@ -81,7 +82,7 @@ class ParallelEmbeddingService {
         this._llamaInitHandler = () => {
           const newLimit = Math.min(this._calculateOptimalConcurrency(), 10);
           if (newLimit !== this.concurrencyLimit) {
-            this.concurrencyLimit = newLimit;
+            this.setConcurrencyLimit(newLimit);
             logger.info('[ParallelEmbeddingService] Concurrency updated after LlamaService init', {
               limit: this.concurrencyLimit
             });
@@ -103,7 +104,7 @@ class ParallelEmbeddingService {
       if (!recs?.maxConcurrent) return;
       const capped = Math.max(1, Math.min(this.concurrencyLimit, recs.maxConcurrent, 10));
       if (capped !== this.concurrencyLimit) {
-        this.concurrencyLimit = capped;
+        this.setConcurrencyLimit(capped);
         logger.info('[ParallelEmbeddingService] Concurrency capped by system recommendation', {
           limit: this.concurrencyLimit,
           recommended: recs.maxConcurrent,
@@ -230,31 +231,30 @@ class ParallelEmbeddingService {
   /**
    * Release a semaphore slot
    * FIX: Clears timeout when resolving queued requests
+   * FIX: Respects concurrencyLimit when releasing, preventing over-limit execution
+   * if the limit was dynamically reduced.
    */
   _releaseSlot() {
-    // FIX: Guard against underflow. An unmatched _releaseSlot() would push
-    // activeRequests negative, permanently allowing more concurrent requests
-    // than the configured limit for all future _acquireSlot() calls.
-    if (this.activeRequests <= 0 && this.waitQueue.length === 0) {
+    // FIX: Guard against underflow.
+    if (this.activeRequests <= 0) {
       logger.warn(
         '[ParallelEmbeddingService] _releaseSlot() called without matching acquire, ignoring'
       );
       return;
     }
 
-    // Wake up next waiting request (hand slot directly, counter stays the same).
-    // Only do this when activeRequests > 0, otherwise the slot being released
-    // doesn't actually exist and we'd grant an extra concurrent slot.
-    if (this.waitQueue.length > 0 && this.activeRequests > 0) {
+    this.activeRequests--;
+
+    // Try to wake up next waiting request if we have capacity
+    if (this.waitQueue.length > 0 && this.activeRequests < this.concurrencyLimit) {
       const next = this.waitQueue.shift();
       // FIX: Clear the timeout to prevent memory leak and spurious rejection
       if (next.timeoutId) {
         clearTimeout(next.timeoutId);
       }
+      this.activeRequests++;
       this.stats.peakConcurrency = Math.max(this.stats.peakConcurrency, this.activeRequests);
       next.resolve();
-    } else {
-      this.activeRequests--;
     }
   }
 
@@ -300,18 +300,23 @@ class ParallelEmbeddingService {
       if (pool) {
         try {
           const config = await getLlamaService().getConfig();
+          const modelName = config?.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
+
+          // Cap input to prevent context overflow in worker
+          const capped = capEmbeddingInput(text, { modelName });
+          const textToEmbed = capped.text;
+
           const modelPath =
             config?.modelsPath && config?.embeddingModel
               ? path.join(config.modelsPath, config.embeddingModel)
               : null;
           if (modelPath) {
             const result = await pool.run({
-              text,
+              text: textToEmbed,
               modelPath,
               gpuLayers: config?.gpuLayers ?? 'auto'
             });
             if (result?.embedding) {
-              const modelName = config?.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
               const expectedDim = resolveEmbeddingDimension(modelName);
               if (result.embedding.length !== expectedDim) {
                 logger.warn(
@@ -651,6 +656,17 @@ class ParallelEmbeddingService {
         new: newLimit
       });
       this.concurrencyLimit = newLimit;
+
+      // If limit increased, try to wake up queued requests
+      while (this.waitQueue.length > 0 && this.activeRequests < this.concurrencyLimit) {
+        const next = this.waitQueue.shift();
+        if (next.timeoutId) {
+          clearTimeout(next.timeoutId);
+        }
+        this.activeRequests++;
+        this.stats.peakConcurrency = Math.max(this.stats.peakConcurrency, this.activeRequests);
+        next.resolve();
+      }
     }
   }
 

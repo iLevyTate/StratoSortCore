@@ -53,19 +53,30 @@ const AI_DEFAULTS = {
     MAX_TOKENS: 8192,
     CONTEXT_SIZE: 8192,
     MAX_CONTENT_LENGTH: 32000,
-    DEEP_ANALYSIS: false
+    DEEP_ANALYSIS: false,
+    FALLBACK_MODELS: [
+      'Qwen2.5-7B-Instruct-Q4_K_M.gguf',
+      'Llama-3.2-3B-Instruct-Q4_K_M.gguf',
+      'Phi-3-mini-4k-instruct-q4.gguf'
+    ]
   },
   IMAGE: {
     MODEL: DEFAULT_AI_MODELS.IMAGE_ANALYSIS,
     GPU_LAYERS: -1,
     TEMPERATURE: 0.2,
-    MAX_TOKENS: 512
+    MAX_TOKENS: 512,
+    FALLBACK_MODELS: ['llava-v1.6-mistral-7b-Q4_K_M.gguf', 'llava-phi-3-mini-int4.gguf']
   },
   EMBEDDING: {
     MODEL: DEFAULT_AI_MODELS.EMBEDDING,
     DIMENSIONS: 384,
     GPU_LAYERS: -1,
-    FALLBACK_MODELS: ['nomic-embed-text-v1.5-Q4_K_M.gguf', 'all-MiniLM-L6-v2-Q4_K_M.gguf'],
+    FALLBACK_MODELS: [
+      'nomic-embed-text-v1.5-Q8_0.gguf',
+      'nomic-embed-text-v1.5-Q4_K_M.gguf',
+      'all-MiniLM-L6-v2-Q8_0.gguf',
+      'all-MiniLM-L6-v2-Q4_K_M.gguf'
+    ],
     AUTO_CHUNK_ON_ANALYSIS: false
   }
 };

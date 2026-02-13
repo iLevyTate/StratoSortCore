@@ -1,4 +1,5 @@
 const { LLAMA } = require('../../shared/performanceConstants');
+const { getModel } = require('../../shared/modelRegistry');
 
 const DEFAULT_CHARS_PER_TOKEN = 4;
 const DEFAULT_HEADROOM_RATIO = 0.9;
@@ -10,11 +11,18 @@ function estimateTokens(text, charsPerToken = DEFAULT_CHARS_PER_TOKEN) {
   return Math.ceil(safe.length / divisor);
 }
 
-function getEmbeddingTokenLimit(explicitLimit) {
-  const base =
-    typeof explicitLimit === 'number' && explicitLimit > 0
-      ? explicitLimit
-      : LLAMA.CONTEXT_EMBEDDINGS || 512;
+function getEmbeddingTokenLimit(explicitLimit, modelName) {
+  let base = LLAMA.CONTEXT_EMBEDDINGS || 512;
+
+  if (typeof explicitLimit === 'number' && explicitLimit > 0) {
+    base = explicitLimit;
+  } else if (modelName) {
+    const modelInfo = getModel(modelName);
+    if (modelInfo?.contextLength) {
+      base = modelInfo.contextLength;
+    }
+  }
+
   return Math.max(32, Math.floor(base * DEFAULT_HEADROOM_RATIO));
 }
 
@@ -28,7 +36,7 @@ function truncateToTokenLimit(text, maxTokens, charsPerToken = DEFAULT_CHARS_PER
 }
 
 function capEmbeddingInput(text, options = {}) {
-  const maxTokens = getEmbeddingTokenLimit(options.maxTokens);
+  const maxTokens = getEmbeddingTokenLimit(options.maxTokens, options.modelName);
   const estimatedTokens = estimateTokens(text, options.charsPerToken);
   const capped = truncateToTokenLimit(text, maxTokens, options.charsPerToken);
   return {
