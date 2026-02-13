@@ -62,19 +62,22 @@ npm run dev
 ### Automated
 
 ```powershell
+npm run format:check
 npm run lint
 npm test
 ```
 
-See `TESTING.md` for test patterns, goals, and manual verification checklists.
+Use `npm run ci` for the same baseline checks as CI.  
+See `TESTING.md` for test patterns, priorities, and the manual QA checklist.
 
 ## Pull Request Checklist
 
+- [ ] Formatting passes (`npm run format:check`)
 - [ ] Lint passes (`npm run lint`)
 - [ ] Tests pass (`npm test`)
-- [ ] Manual testing done when changes affect user flows
+- [ ] Manual checklist reviewed/completed when user flows change (`TESTING.md`)
 - [ ] Docs updated for new behavior or configuration
-- [ ] PR description includes what changed and why
+- [ ] PR template is fully completed with clear test notes
 
 ## Reporting Issues
 
@@ -82,7 +85,7 @@ Please use [GitHub Issues](https://github.com/iLevyTate/StratoSortCore/issues) w
 
 - Clear reproduction steps
 - Expected vs actual behavior
-- Relevant logs (found in `%APPDATA%/StratoSort Core/logs/` on Windows)
+- Relevant logs (found in `%APPDATA%/stratosort/logs/` on Windows)
 - System information (OS, Node version)
 
 ---

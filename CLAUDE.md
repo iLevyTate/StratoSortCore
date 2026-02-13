@@ -1,8 +1,8 @@
-# ElStratoSort - Project Intelligence
+# StratoSort Core - Project Intelligence
 
 ## What This Is
 
-ElStratoSort is a privacy-first, local AI-powered document organizer built with Electron 40+. It
+StratoSort Core is a privacy-first, local AI-powered document organizer built with Electron 40+. It
 uses **node-llama-cpp** for in-process LLM inference and **Orama** for vector search. All processing
 happens on-device with zero external dependencies - no data leaves the machine.
 

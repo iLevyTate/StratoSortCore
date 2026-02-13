@@ -1,133 +1,110 @@
-# ElStratoSort Testing Guide
+# StratoSort Core Testing Guide
 
-**Version:** 2.0.0 **Date:** 2026-01-18 **Purpose:** The single source of truth for testing
-ElStratoSort—from quick manual checks to deep automated regression suites.
+**Version:** 2.0.0  
+**Date:** 2026-02-13  
+**Purpose:** Single source of truth for manual QA and automated test expectations.
 
 ---
 
-## ⚡ 1. Quick Manual Checklist (QA)
+## 1) Quick Manual Checklist (QA)
 
-Use this guide for a 5-minute pre-release verification.
+Use this checklist before release candidates and before merging changes that impact user workflows.
 
-### A. Launch & Setup
+### A. Launch and Baseline
 
-- [ ] **Startup:** Splash screen shows "Connecting to AI..." and completes successfully.
-- [ ] **UI Density:** Verify cards/buttons on the "Setup" screen have ample breathing room (32px
-      `spacious` layout).
-- [ ] **Smart Folders:**
-  - [ ] Create a folder named "Test Docs".
-  - [ ] Click "Generate with AI" (description should auto-fill).
-  - [ ] Save; verify it appears in the grid.
+- [ ] App launches without fatal errors.
+- [ ] AI setup/readiness state is clear (either ready or setup prompt is shown).
+- [ ] Existing settings load correctly (theme, preferences, and configured smart folders).
 
-### B. Discovery & Analysis
+### B. File Intake and Analysis
 
-- [ ] **Import:** Drag & drop a mixed batch (PDF, Image, Text) into the window.
-- [ ] **Analysis:** Progress bar moves; files appear with correct icons and AI-generated tags.
-- [ ] **Edge Cases:** Drop a 0-byte file or `.tmp` file—app should ignore or handle gracefully
-      without crashing.
+- [ ] Import a mixed set of files (PDF, image, and text-based document).
+- [ ] Analysis completes and results include classification/tags without UI freezes.
+- [ ] Unsupported or empty files are handled gracefully (no crash, clear status).
 
-### C. Organization & Actions
+### C. Organization and Safety
 
-- [ ] **Suggestions:** Verify AI suggests "Test Docs" for relevant content.
-- [ ] **Confidence:** Scores are dynamic (e.g., 85%, 92%), not stuck at a default value.
-- [ ] **Execution:**
-  - [ ] Click "Organize Files"; verify files actually move on disk.
-  - [ ] Click "Undo"; verify files return to original location.
+- [ ] Suggestions are sensible for at least one known test folder.
+- [ ] Apply organization actions and verify files moved to expected locations.
+- [ ] Undo restores files to the original location.
+- [ ] Filename collisions/permission issues are surfaced clearly and do not corrupt data.
 
-### D. Knowledge Graph (Visuals)
+### D. Search and Graph
 
-- [ ] **Layout:** Graph is aligned and readable (not a "hairball").
-- [ ] **Color Coding:** Nodes are colored by type (Blue=Docs, Purple=Images).
-- [ ] **Interactivity:**
-  - [ ] Hover over a connection line: Tooltip says **"Relationship Analysis"** and explains _why_
-        (e.g., "Both are Invoices").
-  - [ ] Search (Ctrl+K): Typing filters the graph nodes in real-time.
+- [ ] Unified search returns meaningful results for known test terms.
+- [ ] Search filtering updates results in real time.
+- [ ] Knowledge graph renders and remains interactive under normal load.
 
 ### E. Resilience
 
-- [ ] **Settings Persistence:** Change Theme/Naming Strategy → Restart App → Verify saved.
-- [ ] **Offline Mode:** Disconnect internet → Analyze file → Verify success (Local AI).
+- [ ] Restart app and confirm key state persists.
+- [ ] Validate core analysis flow still works offline after models are installed.
 
 ---
 
-## 🤖 2. Automated Testing
+## 2) Automated Test Commands
 
-For developers and CI pipelines.
-
-### Run Tests
+Run these locally before opening a PR.
 
 ```powershell
-# Unit & Integration Tests (Fast)
+# Formatting and lint
+npm run format:check
+npm run lint
+
+# Unit/integration tests
 npm test
 
-# End-to-End Tests (Slow, requires build)
+# Optional deeper coverage
+npm run test:integration
+npm run test:coverage
+
+# Optional E2E (slower)
 npm run build
 npm run test:e2e
-
-# Run specific suite
-npm test -- settings-service
 ```
 
-### Coverage Goals
+Notes:
 
-- **Unit/Integration:** 70%+ (Focus: Business logic, Services)
-- **E2E:** Critical paths only (Startup, Analysis flow, Organization)
-
----
-
-## 🧠 3. Testing Strategy & Critical Paths
-
-Where to focus your testing efforts.
-
-### Priority 1: File Analysis Pipeline
-
-**Risk:** High. If this fails, the app does nothing.
-
-- **Path:** User Selects → Validation → Extraction → LLM Analysis → Results.
-- **Key Services:** `FileAnalysisService.js`, `LlamaService.js`.
-- **Test For:** Corrupted PDFs, Password-protected files, 0-byte files.
-
-### Priority 2: Organization System
-
-**Risk:** High (Data Loss).
-
-- **Path:** Suggestion → User Confirm → Move File → Undo.
-- **Key Services:** `OrganizationSuggestionService.js`, `UndoRedoService.js`.
-- **Test For:** Permission denied, Disk full, Filename collisions.
-
-### Priority 3: IPC & Resilience
-
-**Risk:** Medium.
-
-- **Path:** Renderer ↔ Main Process Communication.
-- **Test For:** App resuming after sleep, rapid-fire IPC calls, offline handling.
+- `npm run ci` runs the same baseline checks as CI (`format:check`, `lint`, `test`, `build`).
+- Use targeted test commands when iterating (`npm test -- <pattern>`).
 
 ---
 
-## 🛠️ 4. Debugging & Troubleshooting
+## 3) Critical Test Focus Areas
+
+Prioritize these paths when time is limited:
+
+1. **Analysis pipeline**: import -> validate -> extract -> classify -> render results.
+2. **Organization safety**: suggest -> apply move -> undo/rollback.
+3. **Search quality**: semantic search relevance and ranking stability.
+4. **IPC resilience**: renderer/main interactions under repeated actions.
+
+---
+
+## 4) Debugging and Troubleshooting
 
 ### Log Locations
 
-- **Windows:** `%APPDATA%/El StratoSort/logs/`
-- **macOS:** `~/Library/Logs/El StratoSort/`
-- **Linux:** `~/.config/El StratoSort/logs/`
+- **Windows:** `%APPDATA%/stratosort/logs/`
+- **macOS:** `~/Library/Logs/stratosort/`
+- **Linux:** `~/.config/stratosort/logs/`
 
 ### Common Issues
 
-| Symptom                  | Probable Cause               | Fix                                                   |
-| ------------------------ | ---------------------------- | ----------------------------------------------------- |
-| **Analysis Stuck**       | Model missing/unloaded       | Run `npm run setup:models:check` and download models. |
-| **No Text in Images**    | Tesseract missing            | Install Tesseract (see README).                       |
-| **Search Empty**         | Vector DB needs rebuild      | Re-run analysis or trigger rebuild in the app.        |
-| **Graph "Congested"**    | Similarity threshold too low | Adjust `threshold` in `UnifiedSearchModal.jsx`.       |
-| **"Cannot find module"** | Stale Webpack cache          | Run `npm run clean`.                                  |
+| Symptom                | Probable Cause             | Recommended Fix                                |
+| ---------------------- | -------------------------- | ---------------------------------------------- |
+| Analysis never starts  | Models unavailable         | Run `npm run setup:models:check`               |
+| OCR results are poor   | OCR runtime missing/failed | Run `npm run setup:vision-runtime:check`       |
+| Test flakiness         | Stale build artifacts      | Run `npm run clean` then re-run tests          |
+| Build/test environment | Dependency drift           | Run `npm ci` to restore lockfile-based install |
 
 ---
 
-## 🐛 5. Reporting Bugs
+## 5) Reporting Bugs
 
-If you find an issue, please report it on GitHub with:
+When filing a bug report, include:
 
-1. **Steps to Reproduce:** Exact sequence of clicks.
-2. **Environment:** OS Version, RAM, GPU info (if available).
-3. **Logs:** Attach relevant snippets from the log files above.
+1. Reproduction steps (exact sequence).
+2. Expected behavior and actual behavior.
+3. Environment (OS version, app version, hardware details when relevant).
+4. Relevant logs from the paths above.

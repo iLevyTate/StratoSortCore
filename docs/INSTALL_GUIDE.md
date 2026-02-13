@@ -27,6 +27,29 @@ from source, see [GETTING_STARTED.md](GETTING_STARTED.md).
    - **Windows:** `StratoSortCore-Setup-X.X.X.exe` or `StratoSortCore-X.X.X-win-x64.exe`
    - **macOS:** `StratoSortCore-X.X.X-mac-arm64.dmg` (Apple Silicon) or
      `StratoSortCore-X.X.X-mac-x64.dmg` (Intel)
+3. (Optional but recommended) Download the checksum file for your platform:
+   - **Windows:** `checksums-windows.sha256`
+   - **macOS:** `checksums-macos.sha256`
+
+---
+
+## Optional: Verify Download Integrity
+
+### Windows (PowerShell)
+
+```powershell
+Get-FileHash .\StratoSortCore-Setup-X.X.X.exe -Algorithm SHA256
+```
+
+Compare the hash output to the matching entry in `checksums-windows.sha256`.
+
+### macOS (Terminal)
+
+```bash
+shasum -a 256 StratoSortCore-X.X.X-mac-arm64.dmg
+```
+
+Compare the hash output to the matching entry in `checksums-macos.sha256`.
 
 ---
 

@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/versioning-SemVer-3F4551?style=flat-square" alt="Semantic Versioning" />
 </p>
 
-All notable changes to El StratoSort will be documented in this file.
+All notable changes to StratoSort Core will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -278,6 +278,9 @@ notes.
 - **Removed**: Features that have been removed
 - **Fixed**: Bug fixes
 - **Security**: Security-related changes
+
+Note: `v1.x` release links intentionally point to the predecessor repository for historical
+traceability.
 
 [Unreleased]: https://github.com/iLevyTate/StratoSortCore/compare/v2.0.0...HEAD
 [2.0.0]: https://github.com/iLevyTate/StratoSortCore/compare/v1.2.2...v2.0.0

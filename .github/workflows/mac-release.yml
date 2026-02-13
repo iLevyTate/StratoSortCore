@@ -1,5 +1,5 @@
 # Mac release workflow — run on tag push.
-# Builds on macos-latest (Apple Silicon). For Intel DMG, add a matrix or separate job.
+# electron-builder is configured to emit both arm64 and x64 mac artifacts.
 name: Release (macOS)
 
 on:
@@ -43,27 +43,28 @@ jobs:
       - name: Generate SHA256 checksums
         run: |
           cd release/build
+          rm -f checksums-macos.sha256
+
+          if [ -f latest.yml ]; then
+            mv latest.yml latest-macos.yml
+          fi
+
           for f in StratoSortCore-*.dmg StratoSortCore-*.zip; do
-            [ -f "$f" ] && shasum -a 256 "$f" >> checksums.sha256 || true
+            [ -f "$f" ] && shasum -a 256 "$f" >> checksums-macos.sha256 || true
           done
 
-      - name: Build release notes
-        run: |
-          echo "## Release Notes" > release/build/release-notes.md
-          echo "" >> release/build/release-notes.md
-          echo "- **Vision runtime is included** — no separate download needed." >> release/build/release-notes.md
-          echo "- Use **Download Base Models** after install to enable AI features." >> release/build/release-notes.md
-          echo "- See the [Install Guide](https://github.com/iLevyTate/StratoSortCore/blob/main/docs/INSTALL_GUIDE.md) for Windows & Mac — one download, no CLI." >> release/build/release-notes.md
-          echo "" >> release/build/release-notes.md
-          echo "See CHANGELOG.md for details." >> release/build/release-notes.md
+          if [ ! -s checksums-macos.sha256 ]; then
+            echo "No macOS build artifacts found to checksum."
+            exit 1
+          fi
 
       - name: Publish release artifacts
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: false
-          body_path: release/build/release-notes.md
           fail_on_unmatched_files: false
           files: |
             release/build/StratoSortCore-*.dmg
             release/build/StratoSortCore-*.zip
-            release/build/checksums.sha256
+            release/build/latest*.yml
+            release/build/checksums-macos.sha256

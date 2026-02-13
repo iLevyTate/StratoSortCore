@@ -59,8 +59,8 @@ See **[CHANGELOG.md](CHANGELOG.md)** for complete release notes.
 ## Provenance
 
 StratoSort Core is the successor to the original
-[StratoSort Stack (elstratosort)](https://github.com/iLevyTate/elstratosort) repository. This
-repository represents a clean break starting from v2.0.0, focusing on a streamlined, in-process AI
+[StratoSort Stack (legacy repository)](https://github.com/iLevyTate/elstratosort). This repository
+represents a clean break starting from v2.0.0, focusing on a streamlined, in-process AI
 architecture. For versions prior to v2.0.0, or to view the legacy codebase, please visit the
 original repository.
 

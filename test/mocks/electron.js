@@ -42,7 +42,7 @@ const mockApp = {
     };
     return paths[name] || `/mock/${name}`;
   }),
-  getName: jest.fn(() => 'ElStratoSort'),
+  getName: jest.fn(() => 'StratoSort Core'),
   getVersion: jest.fn(() => '1.0.0'),
   isPackaged: false,
   quit: jest.fn(),
