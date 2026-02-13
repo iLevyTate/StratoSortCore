@@ -21,6 +21,7 @@ const { resolveEmbeddingDimension } = require('../../shared/embeddingDimensions'
 const { ERROR_CODES } = require('../../shared/errorCodes');
 const SettingsService = require('./SettingsService');
 const { getInstance: getVisionService } = require('./VisionService');
+const { ensureResolvedModelsPath } = require('./modelPathResolver');
 
 // New Managers
 const { GPUMonitor } = require('./GPUMonitor');
@@ -296,16 +297,27 @@ class LlamaService extends EventEmitter {
 
   async _ensureConfigLoaded() {
     if (!this._modelsPath) {
-      const base =
-        typeof app?.getPath === 'function' && app.getPath('userData')
-          ? app.getPath('userData')
-          : os.tmpdir();
-      this._modelsPath = path.join(base, 'models');
       try {
-        await fs.mkdir(this._modelsPath, { recursive: true });
+        const resolved = await ensureResolvedModelsPath();
+        this._modelsPath = resolved.modelsPath;
+        if (resolved.source === 'legacy') {
+          logger.warn('[LlamaService] Using legacy models directory', {
+            modelsPath: resolved.modelsPath,
+            currentModelsPath: resolved.currentModelsPath
+          });
+        }
       } catch (e) {
-        // Non-fatal in tests and restricted environments; model ops will surface errors later.
-        logger.debug('[LlamaService] Could not create models directory:', e?.message);
+        const base =
+          typeof app?.getPath === 'function' && app.getPath('userData')
+            ? app.getPath('userData')
+            : os.tmpdir();
+        this._modelsPath = path.join(base, 'models');
+        try {
+          await fs.mkdir(this._modelsPath, { recursive: true });
+        } catch {
+          // Non-fatal in tests and restricted environments; model ops will surface errors later.
+        }
+        logger.debug('[LlamaService] Falling back to default models directory:', e?.message);
       }
     }
 

@@ -3,24 +3,47 @@
 const path = require('path');
 const fs = require('fs').promises;
 const { createWriteStream } = require('fs');
-const { app } = require('electron');
 const https = require('https');
 const http = require('http');
 const crypto = require('crypto');
 const { createLogger } = require('../../shared/logger');
 const { MODEL_CATALOG } = require('../../shared/modelRegistry');
+const { ensureResolvedModelsPath } = require('./modelPathResolver');
 
 const logger = createLogger('ModelDownloadManager');
 
 class ModelDownloadManager {
   constructor() {
-    this._modelPath = path.join(app.getPath('userData'), 'models');
+    this._modelPath = null;
+    this._modelPathInitPromise = null;
     this._downloads = new Map(); // filename -> download state
     this._progressCallbacks = new Set();
   }
 
+  async _ensureModelPath() {
+    if (this._modelPath) return this._modelPath;
+    if (!this._modelPathInitPromise) {
+      this._modelPathInitPromise = (async () => {
+        const resolved = await ensureResolvedModelsPath();
+        this._modelPath = resolved.modelsPath;
+        if (resolved.source === 'legacy') {
+          logger.warn('[Download] Using legacy models directory', {
+            modelsPath: resolved.modelsPath,
+            currentModelsPath: resolved.currentModelsPath
+          });
+        }
+        return this._modelPath;
+      })();
+    }
+    try {
+      return await this._modelPathInitPromise;
+    } finally {
+      this._modelPathInitPromise = null;
+    }
+  }
+
   async initialize() {
-    await fs.mkdir(this._modelPath, { recursive: true });
+    await this._ensureModelPath();
   }
 
   /**
@@ -28,12 +51,13 @@ class ModelDownloadManager {
    */
   async getDownloadedModels() {
     try {
-      const files = await fs.readdir(this._modelPath);
+      const modelPath = await this._ensureModelPath();
+      const files = await fs.readdir(modelPath);
       const ggufFiles = files.filter((f) => f.endsWith('.gguf'));
 
       return Promise.all(
         ggufFiles.map(async (filename) => {
-          const filePath = path.join(this._modelPath, filename);
+          const filePath = path.join(modelPath, filename);
           const stats = await fs.stat(filePath);
           const registryInfo = MODEL_CATALOG[filename] || {};
 
@@ -58,11 +82,12 @@ class ModelDownloadManager {
    */
   async checkDiskSpace(requiredBytes) {
     try {
+      const modelPath = await this._ensureModelPath();
       // FIX Bug #29: Use fs.statfs instead of execSync to prevent shell injection
       // and support modern Windows environments where wmic is deprecated.
       // fs.statfs is available since Node 18.15.0.
       if (fs.statfs) {
-        const stats = await fs.statfs(this._modelPath);
+        const stats = await fs.statfs(modelPath);
         const freeSpace = stats.bfree * stats.bsize;
         return { available: freeSpace, sufficient: freeSpace > requiredBytes * 1.1 };
       }
@@ -110,6 +135,7 @@ class ModelDownloadManager {
    * is automatically downloaded after the main model completes.
    */
   async downloadModel(filename, options = {}) {
+    const modelPath = await this._ensureModelPath();
     const modelInfo = this._resolveModelInfo(filename);
     if (!modelInfo) {
       throw new Error(`Unknown model: ${filename}`);
@@ -122,7 +148,7 @@ class ModelDownloadManager {
     }
 
     const { onProgress, signal } = options;
-    const filePath = path.join(this._modelPath, filename);
+    const filePath = path.join(modelPath, filename);
     const partialPath = filePath + '.partial';
 
     // Check disk space
@@ -322,7 +348,7 @@ class ModelDownloadManager {
 
             // Auto-download clipModel companion (mmproj) for vision models
             if (modelInfo.clipModel && modelInfo.clipModel.name && modelInfo.clipModel.url) {
-              const companionPath = path.join(this._modelPath, modelInfo.clipModel.name);
+              const companionPath = path.join(modelPath, modelInfo.clipModel.name);
               try {
                 await fs.access(companionPath);
                 logger.info(`[Download] Companion already exists: ${modelInfo.clipModel.name}`);
@@ -424,7 +450,8 @@ class ModelDownloadManager {
    * Delete a downloaded model
    */
   async deleteModel(filename) {
-    const filePath = path.join(this._modelPath, filename);
+    const modelPath = await this._ensureModelPath();
+    const filePath = path.join(modelPath, filename);
     const partialPath = filePath + '.partial';
 
     try {
