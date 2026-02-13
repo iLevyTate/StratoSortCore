@@ -363,12 +363,12 @@ function createMainWindow() {
 
   // Capture renderer console output for diagnosis (always enabled)
   // Electron 40 still passes positional args (deprecated); fall back to event properties
-  win.webContents.on('console-message', (_event, levelArg, messageArg, lineArg, sourceIdArg) => {
-    const level = typeof levelArg === 'number' ? levelArg : (_event?.level ?? 0);
+  win.webContents.on('console-message', (event, levelArg, messageArg, lineArg, sourceIdArg) => {
+    const level = typeof levelArg === 'number' ? levelArg : (event?.level ?? 0);
     const message =
-      typeof messageArg === 'string' ? messageArg : (_event?.message ?? String(messageArg));
-    const line = typeof lineArg === 'number' ? lineArg : (_event?.line ?? 0);
-    const sourceId = typeof sourceIdArg === 'string' ? sourceIdArg : (_event?.sourceId ?? '');
+      typeof messageArg === 'string' ? messageArg : (event?.message ?? String(messageArg));
+    const line = typeof lineArg === 'number' ? lineArg : (event?.line ?? 0);
+    const sourceId = typeof sourceIdArg === 'string' ? sourceIdArg : (event?.sourceId ?? '');
     const prefix = '[RENDERER]';
     const meta = { line, sourceId: sourceId ? sourceId.split('/').pop() : '' };
 
@@ -382,6 +382,10 @@ function createMainWindow() {
     // wrap the literal value in quotes, so normalize first and drop both forms.
     // Structured log payloads are already forwarded via window.electronAPI.system.log.
     if (normalizedMessage === '[object Object]') {
+      // Prevent Chromium from echoing noisy raw console payloads to the terminal.
+      if (typeof event?.preventDefault === 'function') {
+        event.preventDefault();
+      }
       return;
     }
 

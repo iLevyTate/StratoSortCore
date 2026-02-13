@@ -184,10 +184,52 @@ describe('ModelDownloadManager', () => {
       return request;
     });
 
-    await expect(manager.downloadModel('alpha.gguf')).rejects.toThrow(
+    await expect(manager.downloadModel('alpha.gguf', { _maxRetries: 0 })).rejects.toThrow(
       'Download incomplete - file size mismatch'
     );
     expect(mockFs.unlink).toHaveBeenCalledWith(partialPath);
+  });
+
+  test('downloadModel retries after size mismatch and succeeds', async () => {
+    const manager = new ModelDownloadManager();
+    fsModule.createWriteStream.mockImplementation(() => {
+      const ws = new EventEmitter();
+      ws.destroy = jest.fn();
+      return ws;
+    });
+
+    // Attempt 1: no partial + mismatch. Attempt 2: no partial + correct size.
+    mockFs.stat
+      .mockRejectedValueOnce(new Error('no partial'))
+      .mockResolvedValueOnce({ size: 1234 })
+      .mockRejectedValueOnce(new Error('no partial'))
+      .mockResolvedValueOnce({ size: 2048 });
+    mockFs.unlink.mockResolvedValue(undefined);
+
+    https.get.mockImplementation((_options, onResponse) => {
+      const request = new EventEmitter();
+      request.setTimeout = jest.fn();
+      request.destroy = jest.fn();
+
+      const response = new EventEmitter();
+      response.statusCode = 200;
+      response.statusMessage = 'OK';
+      response.headers = {};
+      response.resume = jest.fn();
+      response.pipe = (ws) => {
+        setTimeout(() => ws.emit('finish'), 0);
+        return ws;
+      };
+
+      setTimeout(() => onResponse(response), 0);
+      return request;
+    });
+
+    await expect(manager.downloadModel('alpha.gguf')).resolves.toEqual(
+      expect.objectContaining({ success: true })
+    );
+    expect(https.get).toHaveBeenCalledTimes(2);
+    expect(mockFs.unlink).toHaveBeenCalledWith('C:\\fake-user-data\\models\\alpha.gguf.partial');
   });
 
   test('downloadModel resolves relative redirect locations', async () => {
@@ -267,7 +309,9 @@ describe('ModelDownloadManager', () => {
       return request;
     });
 
-    await expect(manager.downloadModel('alpha.gguf')).rejects.toThrow('Download timeout');
+    await expect(manager.downloadModel('alpha.gguf', { _maxRetries: 0 })).rejects.toThrow(
+      'Download timeout'
+    );
     expect(mockFs.unlink).not.toHaveBeenCalled();
   });
 

@@ -6,12 +6,13 @@ const {
   SUPPORTED_DOCUMENT_EXTENSIONS,
   SUPPORTED_ARCHIVE_EXTENSIONS,
   SUPPORTED_VIDEO_EXTENSIONS,
-  AI_DEFAULTS
+  AI_DEFAULTS,
+  DEFAULT_AI_MODELS
 } = require('../../shared/constants');
 const { TRUNCATION, TIMEOUTS } = require('../../shared/performanceConstants');
 const { withTimeout, delay } = require('../../shared/promiseUtils');
 const { createLogger } = require('../../shared/logger');
-const { getTextModel, loadLlamaConfig } = require('../llamaUtils');
+const { getTextModel, getLlamaService } = require('../llamaUtils');
 const { AppConfig } = require('./documentLlm');
 
 // Enforce required dependency for AI-first operation
@@ -174,12 +175,17 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
       AppConfig.ai.textAnalysis &&
       AppConfig.ai.textAnalysis.defaultModel) ||
     (AI_DEFAULTS && AI_DEFAULTS.TEXT && AI_DEFAULTS.TEXT.MODEL) ||
-    'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf';
+    DEFAULT_AI_MODELS.TEXT_ANALYSIS;
 
   let modelName = defaultTextModel;
   try {
-    const cfg = await loadLlamaConfig();
-    modelName = getTextModel() || cfg?.selectedTextModel || defaultTextModel;
+    const llamaService = getLlamaService();
+    if (llamaService && typeof llamaService.getConfig === 'function') {
+      const cfg = await llamaService.getConfig();
+      modelName = cfg?.textModel || cfg?.selectedTextModel || defaultTextModel;
+    } else {
+      modelName = getTextModel() || defaultTextModel;
+    }
   } catch (err) {
     logger.debug('Failed to load llama config for signature, using default', {
       error: err.message

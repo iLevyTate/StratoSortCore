@@ -20,7 +20,7 @@ const { ERROR_CODES } = require('../../shared/errorCodes');
 const { replaceFileWithRetry } = require('../../shared/atomicFile');
 const { compress, uncompress } = require('lz4-napi');
 const { resolveEmbeddingDimension } = require('../../shared/embeddingDimensions');
-const { getEmbeddingModel, loadLlamaConfig } = require('../llamaUtils');
+const { getEmbeddingModel, loadLlamaConfig, getLlamaService } = require('../llamaUtils');
 const { writeEmbeddingIndexMetadata } = require('./vectorDb/embeddingIndexMetadata');
 const { get: getConfig } = require('../../shared/config/index');
 const { SEARCH } = require('../../shared/performanceConstants');
@@ -571,6 +571,22 @@ class OramaVectorService extends EventEmitter {
 
   async _resolveEmbeddingConfig(modelOverride) {
     let modelName = modelOverride;
+    if (!modelName) {
+      try {
+        const llamaService = getLlamaService();
+        if (llamaService && typeof llamaService.getConfig === 'function') {
+          const cfg = await llamaService.getConfig();
+          modelName = cfg?.embeddingModel || null;
+        }
+      } catch (error) {
+        logger.debug(
+          '[OramaVectorService] Failed to read LlamaService config for dimension resolve',
+          {
+            error: error.message
+          }
+        );
+      }
+    }
     if (!modelName) {
       try {
         await loadLlamaConfig();

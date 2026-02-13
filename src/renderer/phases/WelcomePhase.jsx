@@ -64,7 +64,8 @@ function WelcomePhase() {
       const config = configResponse?.config || configResponse;
       const required = [
         config?.embeddingModel || AI_DEFAULTS?.EMBEDDING?.MODEL,
-        config?.textModel || AI_DEFAULTS?.TEXT?.MODEL
+        config?.textModel || AI_DEFAULTS?.TEXT?.MODEL,
+        config?.visionModel || AI_DEFAULTS?.IMAGE?.MODEL
       ].filter(Boolean);
       const missing = required.filter((name) => !available.has(name));
 

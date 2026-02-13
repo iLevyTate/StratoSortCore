@@ -64,12 +64,20 @@ async function getUnpdfRenderer() {
       return null;
     }
 
-    ensurePromiseResolversPolyfill();
-    try {
-      await definePDFJSModule(() => import('pdfjs-dist/legacy/build/pdf.mjs'));
-    } catch (error) {
-      logger.warn('[OCR] Failed to load pdfjs-dist renderer', { error: error.message });
-      return null;
+    // IMPORTANT:
+    // Unpdf ships with a serverless PDF.js bundle where API and worker versions are aligned.
+    // Forcing a custom pdfjs-dist build here can cause mismatches such as:
+    // "API version X does not match Worker version Y" and break scanned-PDF OCR.
+    // Default behavior uses unpdf's bundled PDF.js unless explicitly overridden.
+    const useOfficialPdfjs = String(process.env.STRATOSORT_USE_OFFICIAL_PDFJS || '').toLowerCase();
+    if (useOfficialPdfjs === 'true') {
+      ensurePromiseResolversPolyfill();
+      try {
+        await definePDFJSModule(() => import('pdfjs-dist/legacy/build/pdf.mjs'));
+      } catch (error) {
+        logger.warn('[OCR] Failed to load official pdfjs-dist renderer', { error: error.message });
+        return null;
+      }
     }
 
     unpdfRenderer = { renderPageAsImage };
