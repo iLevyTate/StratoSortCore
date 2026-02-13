@@ -130,6 +130,21 @@ function findSmartFolderMatch(suggestion, index) {
   return null;
 }
 
+function canonicalizeSuggestionToSmartFolder(suggestion, index) {
+  if (!suggestion || !index) return suggestion;
+  const match = findSmartFolderMatch(suggestion, index);
+  if (!match) return null;
+  if (typeof match.path !== 'string' || !match.path.trim()) return null;
+  return {
+    ...suggestion,
+    folder: match.name || suggestion.folder,
+    path: match.path,
+    description: match.description || suggestion.description,
+    folderId: match.id || suggestion.folderId,
+    isSmartFolder: true
+  };
+}
+
 /**
  * OrganizationSuggestionService - AI-powered file organization suggestions
  */
@@ -242,6 +257,7 @@ class OrganizationSuggestionServiceCore {
     this._loadingPatterns = this._loadPatternsAsync();
     this._loadingFeedbackMemory = this._loadFeedbackMemoryAsync();
     this._rebuildingFeedbackMemory = false;
+    this._lastEmbeddingMismatchSignature = null;
     // FIX C-2: Track whether patterns have been successfully loaded
     this._patternsLoaded = false;
   }
@@ -336,11 +352,28 @@ class OrganizationSuggestionServiceCore {
       embeddingIndex.model !== configuredEmbeddingModel;
 
     if (embeddingModelMismatch) {
+      const mismatchSignature = `${embeddingIndex.model}->${configuredEmbeddingModel}`;
+      const remediation = {
+        action: 'rebuild_embeddings',
+        message:
+          'Embedding model has changed. Rebuild embeddings to restore semantic folder routing.',
+        currentConfiguredModel: configuredEmbeddingModel,
+        indexedModel: embeddingIndex.model
+      };
+      if (this._lastEmbeddingMismatchSignature !== mismatchSignature) {
+        this._lastEmbeddingMismatchSignature = mismatchSignature;
+        logger.warn(
+          '[OrganizationSuggestionService] Embedding model mismatch detected',
+          remediation
+        );
+      }
       return {
         available: false,
         reason: 'embedding_model_mismatch',
         stats,
-        embeddingIndex
+        embeddingIndex,
+        configuredEmbeddingModel,
+        remediation
       };
     }
 
@@ -599,8 +632,9 @@ class OrganizationSuggestionServiceCore {
       normalizedFile = { ...file, extension: inferredExtension };
     }
 
+    let routing = null;
     try {
-      const routing =
+      routing =
         routingModeOverride && Object.values(ROUTING_MODES).includes(routingModeOverride)
           ? { mode: routingModeOverride, reason: routingReason || 'override' }
           : await this._resolveRoutingMode();
@@ -609,6 +643,15 @@ class OrganizationSuggestionServiceCore {
         logger.debug('[OrganizationSuggestionService] Routing mode: LLM-only', {
           reason: routing.reason
         });
+        if (routing.reason === 'embedding_model_mismatch' && routing.health?.remediation) {
+          logger.warn(
+            '[OrganizationSuggestionService] Semantic routing disabled until remediation',
+            {
+              reason: routing.reason,
+              remediation: routing.health.remediation
+            }
+          );
+        }
       } else {
         logger.debug('[OrganizationSuggestionService] Routing mode selected', {
           mode: routing.mode,
@@ -695,21 +738,20 @@ class OrganizationSuggestionServiceCore {
       }
 
       const smartFolderIndex = buildSmartFolderIndex(smartFolders);
-      const normalizedSuggestions = allSuggestions.map((suggestion) => {
-        const match = findSmartFolderMatch(suggestion, smartFolderIndex);
-        if (!match) {
-          return { ...suggestion, isSmartFolder: false };
-        }
-
-        return {
-          ...suggestion,
-          folder: match.name || suggestion.folder,
-          path: match.path || suggestion.path,
-          description: match.description || suggestion.description,
-          isSmartFolder: true,
-          folderId: match.id || suggestion.folderId
-        };
-      });
+      const normalizedSuggestions = allSuggestions
+        .map((suggestion) => {
+          const canonical = canonicalizeSuggestionToSmartFolder(suggestion, smartFolderIndex);
+          if (canonical) return canonical;
+          // Demote unresolved suggestions so they cannot dominate ranking/auto-move logic.
+          return {
+            ...suggestion,
+            isSmartFolder: false,
+            score: Math.min(Number(suggestion?.score || 0), 0.2),
+            confidence: Math.min(Number(suggestion?.confidence || 0), 0.2),
+            unresolvedSmartFolder: true
+          };
+        })
+        .filter(Boolean);
 
       // Rank suggestions (cluster-consistent ones get boosted)
       let rankedSuggestions = rankSuggestions(normalizedSuggestions);
@@ -760,14 +802,26 @@ class OrganizationSuggestionServiceCore {
         strategies: getApplicableStrategies(normalizedFile),
         confidence: calculateConfidence(primary),
         explanation: generateExplanation(primary, normalizedFile),
-        folderImprovements
+        folderImprovements,
+        routing: {
+          mode: routing.mode,
+          reason: routing.reason
+        },
+        remediation: routing.health?.remediation || null
       };
     } catch (error) {
       logger.error('[OrganizationSuggestionService] Failed to get suggestions:', error);
       return {
         success: false,
         error: error.message,
-        fallback: getFallbackSuggestion(normalizedFile, smartFolders)
+        fallback: getFallbackSuggestion(normalizedFile, smartFolders),
+        routing: routing
+          ? {
+              mode: routing.mode,
+              reason: routing.reason
+            }
+          : null,
+        remediation: routing?.health?.remediation || null
       };
     }
   }
@@ -811,6 +865,7 @@ class OrganizationSuggestionServiceCore {
       const routing = await this._resolveRoutingMode();
       const patterns = analyzeFilePatterns(files);
       const groups = new Map();
+      const fileOrder = new Map(files.map((f, idx) => [f.path || f.name, idx]));
 
       const optimalConcurrency = calculateOptimalConcurrency();
       logger.info('[OrganizationSuggestionService] Processing batch', {
@@ -831,13 +886,22 @@ class OrganizationSuggestionServiceCore {
                 });
                 return { file, suggestion };
               })(),
-              60000, // 60s timeout per file - accounts for semaphore queue wait under load
+              (() => {
+                const fileIndex = fileOrder.get(file.path || file.name) || 0;
+                const queueWave = Math.floor(fileIndex / Math.max(1, optimalConcurrency));
+                const baseTimeoutMs = 60000;
+                const queueBudgetPerWaveMs = 20000;
+                const maxTimeoutMs = 180000;
+                return Math.min(maxTimeoutMs, baseTimeoutMs + queueWave * queueBudgetPerWaveMs);
+              })(),
               `Suggestion analysis for ${file.name}`
             );
           } catch (error) {
             logger.warn(`[OrganizationSuggestionService] File suggestion timed out or failed`, {
               file: file.name,
-              error: error.message
+              error: error.message,
+              routingMode: routing.mode,
+              routingReason: routing.reason
             });
             return {
               file,
@@ -907,7 +971,12 @@ class OrganizationSuggestionServiceCore {
         groups: Array.from(groups.values()),
         patterns,
         recommendations,
-        suggestedStrategy: selectBestStrategy(patterns, files)
+        suggestedStrategy: selectBestStrategy(patterns, files),
+        routing: {
+          mode: routing.mode,
+          reason: routing.reason
+        },
+        remediation: routing.health?.remediation || null
       };
     } catch (error) {
       logger.error('[OrganizationSuggestionService] Batch failed:', error);

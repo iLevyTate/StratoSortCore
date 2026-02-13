@@ -14,10 +14,46 @@ const { AI_DEFAULTS } = require('../../../shared/constants');
 const { getInstance: getLlamaService } = require('../LlamaService');
 const { globalDeduplicator } = require('../../utils/llmOptimization');
 const { extractAndParseJSON } = require('../../utils/jsonRepair');
+const { attemptJsonRepairWithLlama } = require('../../utils/llmJsonRepair');
 
 const logger = createLogger('Organization:LLMSuggester');
 // Security limits
 const MAX_RESPONSE_SIZE = 1024 * 1024; // 1MB
+const LLM_SUGGESTIONS_SCHEMA = {
+  suggestions: [
+    {
+      folder: 'folder name',
+      reasoning: 'why this makes sense',
+      confidence: 0.0,
+      strategy: 'organization principle used'
+    }
+  ]
+};
+
+function normalizeFolderKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function resolveConfiguredSmartFolder(folderName, smartFolders = []) {
+  if (!folderName || !Array.isArray(smartFolders) || smartFolders.length === 0) return null;
+  const candidate = String(folderName).trim();
+  if (!candidate) return null;
+  const lowerCandidate = candidate.toLowerCase();
+
+  const exact = smartFolders.find(
+    (f) => f && typeof f.name === 'string' && f.name.toLowerCase() === lowerCandidate
+  );
+  if (exact) return exact;
+
+  const normalizedCandidate = normalizeFolderKey(candidate);
+  return (
+    smartFolders.find(
+      (f) => f && typeof f.name === 'string' && normalizeFolderKey(f.name) === normalizedCandidate
+    ) || null
+  );
+}
 
 /**
  * Get LLM-powered alternative suggestions
@@ -102,7 +138,62 @@ Return JSON: {
     }
 
     // Parse JSON response with robust extraction and repair
-    const parsed = extractAndParseJSON(responseText, null);
+    let parsed = extractAndParseJSON(responseText, null, {
+      source: 'llmSuggester',
+      fileName: file?.name,
+      model
+    });
+
+    if (!parsed) {
+      const repairedResponse = await attemptJsonRepairWithLlama(llamaService, responseText, {
+        schema: LLM_SUGGESTIONS_SCHEMA,
+        maxTokens: llmMaxTokens,
+        operation: 'Organization suggestions'
+      });
+
+      if (repairedResponse) {
+        parsed = extractAndParseJSON(repairedResponse, null, {
+          source: 'llmSuggester.repair',
+          fileName: file?.name,
+          model
+        });
+      }
+    }
+
+    if (!parsed) {
+      // One strict retry to reduce avoidable empty suggestion sets.
+      const strictPrompt = `${prompt}
+
+STRICT OUTPUT REQUIREMENT:
+- Return ONLY valid JSON.
+- Do NOT include markdown fences, prose, or extra tokens.
+- Use exactly this shape: {"suggestions":[{"folder":"name","reasoning":"text","confidence":0.0,"strategy":"text"}]}`;
+      const strictRetryKey = globalDeduplicator.generateKey({
+        fileName: file.name,
+        analysis: JSON.stringify(file.analysis || {}),
+        folders: smartFolders.map((f) => f.name).join(','),
+        type: 'organization-suggestions',
+        retry: 'strict-json'
+      });
+      const strictResponse = await withAbortableTimeout(
+        (abortController) =>
+          globalDeduplicator.deduplicate(strictRetryKey, () =>
+            llamaService.generateText({
+              prompt: strictPrompt,
+              temperature: 0.1,
+              maxTokens: llmMaxTokens,
+              signal: abortController.signal
+            })
+          ),
+        timeoutMs,
+        'LLM organization suggestions strict retry'
+      );
+      parsed = extractAndParseJSON(strictResponse?.response || '', null, {
+        source: 'llmSuggester.strict-retry',
+        fileName: file?.name,
+        model
+      });
+    }
 
     if (!parsed) {
       logger.warn('[LLMSuggester] Failed to parse JSON response', {
@@ -119,6 +210,10 @@ Return JSON: {
 
     return parsed.suggestions
       .filter((s) => {
+        if (!s || typeof s !== 'object') {
+          logger.warn('[LLMSuggester] Skipping suggestion with invalid shape');
+          return false;
+        }
         // Ensure folder is a valid string
         if (typeof s.folder !== 'string' || !s.folder.trim()) {
           logger.warn('[LLMSuggester] Skipping suggestion with invalid folder', {
@@ -130,18 +225,34 @@ Return JSON: {
         return true;
       })
       .map((s) => {
-        const rawConf = typeof s.confidence === 'number' ? s.confidence : 0.5;
-        const normalizedConf = rawConf > 1 ? rawConf / 100 : rawConf;
+        const resolvedFolder = resolveConfiguredSmartFolder(s.folder, smartFolders);
+        if (!resolvedFolder) {
+          logger.warn('[LLMSuggester] Dropping hallucinated/non-configured folder suggestion', {
+            folder: s.folder,
+            file: file?.name
+          });
+          return null;
+        }
+
+        const rawConf = Number.isFinite(s.confidence) ? s.confidence : Number(s.confidence);
+        const normalizedRawConf = Number.isFinite(rawConf) ? rawConf : 0.5;
+        const reasoning = typeof s.reasoning === 'string' ? s.reasoning.trim() : '';
+        const strategy = typeof s.strategy === 'string' ? s.strategy.trim() : '';
+        const normalizedConf = normalizedRawConf > 1 ? normalizedRawConf / 100 : normalizedRawConf;
         const clampedConf = Math.max(0, Math.min(1, normalizedConf));
         return {
-          folder: String(s.folder).trim(),
+          folder: resolvedFolder.name,
+          path: resolvedFolder.path,
+          folderId: resolvedFolder.id,
+          isSmartFolder: true,
           score: clampedConf,
           confidence: clampedConf,
-          reasoning: s.reasoning,
-          strategy: s.strategy,
+          reasoning,
+          strategy,
           method: 'llm_creative'
         };
-      });
+      })
+      .filter(Boolean);
   } catch (error) {
     logger.warn('[LLMSuggester] LLM suggestions failed:', error.message);
     return [];
