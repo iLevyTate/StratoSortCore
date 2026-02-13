@@ -1352,6 +1352,10 @@ export default function UnifiedSearchModal({
         clearTimeout(guideIntentLoadTimeoutRef.current);
         guideIntentLoadTimeoutRef.current = null;
       }
+      if (guideIntentLoadTimeoutRef.current) {
+        clearTimeout(guideIntentLoadTimeoutRef.current);
+        guideIntentLoadTimeoutRef.current = null;
+      }
       return () => {};
     }
 
@@ -1390,6 +1394,10 @@ export default function UnifiedSearchModal({
       graphActions.selectNode(null);
       setAddMode(true);
       setIsGraphMaximized(false);
+      if (guideIntentLoadTimeoutRef.current) {
+        clearTimeout(guideIntentLoadTimeoutRef.current);
+        guideIntentLoadTimeoutRef.current = null;
+      }
       if (graphFitViewTimeoutRef.current) {
         clearTimeout(graphFitViewTimeoutRef.current);
         graphFitViewTimeoutRef.current = null;
@@ -1418,6 +1426,10 @@ export default function UnifiedSearchModal({
       // Duplicates state
       setDuplicateGroups([]);
       setIsFindingDuplicates(false);
+    }
+    if (guideIntentLoadTimeoutRef.current) {
+      clearTimeout(guideIntentLoadTimeoutRef.current);
+      guideIntentLoadTimeoutRef.current = null;
     }
 
     // Cleanup pending layouts on unmount
@@ -2765,8 +2777,12 @@ export default function UnifiedSearchModal({
       const applyAndLoad = (mode, nextFilters = {}) => {
         setClusterMode(mode);
         setClusterFilters((prev) => ({ ...prev, ...nextFilters }));
+        if (guideIntentLoadTimeoutRef.current) {
+          clearTimeout(guideIntentLoadTimeoutRef.current);
+        }
         // Defer load to allow state to update
-        setTimeout(() => {
+        guideIntentLoadTimeoutRef.current = setTimeout(() => {
+          guideIntentLoadTimeoutRef.current = null;
           loadClustersRef.current?.();
         }, 0);
       };
@@ -3055,25 +3071,32 @@ export default function UnifiedSearchModal({
   // This ensures we show the CURRENT file path after files have been moved/organized
   useEffect(() => {
     if (!selectedNode || selectedNode.data?.kind !== 'file') {
+      freshMetadataRequestCounterRef.current += 1;
       setFreshMetadata(null);
+      setIsLoadingMetadata(false);
       return undefined;
     }
 
     let cancelled = false;
     const nodeId = selectedNode.id;
+    const requestId = (freshMetadataRequestCounterRef.current += 1);
 
     const fetchFreshMetadata = async () => {
       setIsLoadingMetadata(true);
       try {
         const resp = await window.electronAPI?.embeddings?.getFileMetadata?.([nodeId]);
-        if (!cancelled && resp?.success) {
+        if (!cancelled && freshMetadataRequestCounterRef.current === requestId && resp?.success) {
           setFreshMetadata(resp.metadata?.[nodeId] || null);
         }
       } catch {
         // Silently fail - use cached metadata from node
-        if (!cancelled) setFreshMetadata(null);
+        if (!cancelled && freshMetadataRequestCounterRef.current === requestId) {
+          setFreshMetadata(null);
+        }
       } finally {
-        if (!cancelled) setIsLoadingMetadata(false);
+        if (!cancelled && freshMetadataRequestCounterRef.current === requestId) {
+          setIsLoadingMetadata(false);
+        }
       }
     };
 
