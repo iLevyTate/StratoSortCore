@@ -140,7 +140,7 @@ describe('AutoOrganize File Processor', () => {
   describe('processFilesIndividually', () => {
     test('processes files with high confidence suggestions', async () => {
       const files = [{ name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' }];
-      const smartFolders = [];
+      const smartFolders = [{ name: 'Documents', path: '/docs/Documents', isDefault: true }];
       const options = {
         confidenceThreshold: 0.7,
         defaultLocation: '/docs',
@@ -210,6 +210,36 @@ describe('AutoOrganize File Processor', () => {
       // With no default smart folder, files below threshold go to needsReview
       expect(results.needsReview).toHaveLength(1);
       expect(results.organized).toHaveLength(0);
+    });
+
+    test('does not auto-move high confidence suggestion when folder is not configured', async () => {
+      mockSuggestionService.getSuggestionsForFile.mockResolvedValueOnce({
+        success: true,
+        primary: { folder: 'HallucinatedFolder', path: '/unknown/path', isSmartFolder: true },
+        confidence: 0.95,
+        alternatives: []
+      });
+
+      const files = [{ name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' }];
+      const options = { confidenceThreshold: 0.8, defaultLocation: '/docs' };
+      const results = {
+        organized: [],
+        needsReview: [],
+        failed: [],
+        operations: []
+      };
+
+      await processFilesIndividually(
+        files,
+        [{ name: 'Documents', path: '/docs/Documents', isDefault: true }],
+        options,
+        results,
+        mockSuggestionService
+      );
+
+      expect(results.organized).toHaveLength(0);
+      expect(results.needsReview).toHaveLength(1);
+      expect(mockSuggestionService.recordFeedback).not.toHaveBeenCalled();
     });
 
     test('uses fallback when no suggestion', async () => {
@@ -302,7 +332,7 @@ describe('AutoOrganize File Processor', () => {
     test('auto-organizes high confidence files', async () => {
       const result = await processNewFile(
         '/path/to/file.pdf',
-        [],
+        [{ name: 'Documents', path: '/docs/Documents', isDefault: true }],
         {
           autoOrganizeEnabled: true,
           confidenceThreshold: 0.8,
@@ -320,7 +350,7 @@ describe('AutoOrganize File Processor', () => {
     test('records undo action', async () => {
       const result = await processNewFile(
         '/path/to/file.pdf',
-        [],
+        [{ name: 'Documents', path: '/docs/Documents', isDefault: true }],
         {
           autoOrganizeEnabled: true,
           confidenceThreshold: 0.8,
@@ -424,7 +454,7 @@ describe('AutoOrganize File Processor', () => {
     test('works without undoRedo service', async () => {
       const result = await processNewFile(
         '/path/to/file.pdf',
-        [],
+        [{ name: 'Documents', path: '/docs/Documents', isDefault: true }],
         {
           autoOrganizeEnabled: true,
           confidenceThreshold: 0.8,

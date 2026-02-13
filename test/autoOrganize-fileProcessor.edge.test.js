@@ -69,16 +69,17 @@ describe('autoOrganize/fileProcessor (edge cases)', () => {
     };
 
     const { processNewFile } = load();
+    const smartFolders = [{ id: 'docs-1', name: 'Docs', path: 'C:\\Sorted\\Docs' }];
 
     const p1 = processNewFile(
       'C:\\X\\File.pdf',
-      [],
+      smartFolders,
       { autoOrganizeEnabled: true },
       suggestionService
     );
     const p2 = processNewFile(
       'C:\\x\\file.pdf',
-      [],
+      smartFolders,
       { autoOrganizeEnabled: true },
       suggestionService
     ); // different case
@@ -99,9 +100,10 @@ describe('autoOrganize/fileProcessor (edge cases)', () => {
     };
 
     const { processNewFile } = load();
+    const smartFolders = [{ id: 'docs-1', name: 'Docs', path: 'C:\\Sorted\\Docs' }];
     const res = await processNewFile(
       'C:\\X\\File.pdf',
-      [],
+      smartFolders,
       { autoOrganizeEnabled: true },
       suggestionService
     );
@@ -133,9 +135,10 @@ describe('autoOrganize/fileProcessor (edge cases)', () => {
     };
 
     const { processNewFile } = load();
+    const smartFolders = [{ id: 'docs-1', name: 'Docs', path: 'C:\\Sorted\\Docs' }];
     const res = await processNewFile(
       'C:\\X\\File.pdf',
-      [],
+      smartFolders,
       { autoOrganizeEnabled: true, namingSettings: { enabled: true } },
       suggestionService
     );

@@ -16,7 +16,7 @@ const {
   getFallbackDestination,
   buildDestinationPath
 } = require('./folderOperations');
-const { safeSuggestion } = require('./pathUtils');
+const { safeSuggestion, resolveSuggestionToSmartFolder } = require('./pathUtils');
 // FIX C-5: Import from shared idUtils to break circular dependency with batchProcessor
 const { generateSecureId } = require('./idUtils');
 
@@ -164,16 +164,17 @@ async function processFilesIndividually(files, smartFolders, options, results, s
       const { primary } = suggestion;
       const confidence = suggestion.confidence || 0;
 
+      const canonicalPrimary = resolveSuggestionToSmartFolder(primary, smartFolders);
+
       // Determine action based on confidence
-      if (confidence >= effectiveThreshold && primary.isSmartFolder) {
+      if (confidence >= effectiveThreshold && canonicalPrimary) {
         // High confidence - organize automatically
-        // Ensure primary suggestion folder/path are valid strings
-        const safePrimary = safeSuggestion(primary);
+        const safePrimary = safeSuggestion(canonicalPrimary);
         const destination = buildDestinationPath(file, safePrimary, defaultLocation, preserveNames);
 
         results.organized.push({
           file: sanitizeFile(file),
-          suggestion: primary,
+          suggestion: canonicalPrimary,
           destination,
           confidence,
           method: 'automatic'
@@ -187,13 +188,23 @@ async function processFilesIndividually(files, smartFolders, options, results, s
 
         // Record feedback with proper error handling
         try {
-          await suggestionService.recordFeedback(file, primary, true);
+          await suggestionService.recordFeedback(file, canonicalPrimary, true);
         } catch (feedbackError) {
           logger.warn('[AutoOrganize] Failed to record feedback (non-critical):', {
             file: file.path,
             error: feedbackError.message
           });
         }
+      } else if (confidence >= effectiveThreshold && !canonicalPrimary) {
+        // High confidence but unresolved folder => review only (never auto-create unknown destinations)
+        results.needsReview.push({
+          file: sanitizeFile(file),
+          suggestion: primary,
+          alternatives: suggestion.alternatives,
+          confidence,
+          explanation:
+            'Suggestion did not resolve to a configured smart folder. Review required before moving.'
+        });
       } else {
         const defaultFolder = findDefaultFolder(smartFolders);
         if (
@@ -369,43 +380,11 @@ async function processNewFile(filePath, smartFolders, options, suggestionService
       includeAlternatives: false
     });
 
-    // Only auto-organize if confidence is very high
-    if (
-      suggestion.success &&
-      suggestion.primary &&
-      suggestion.primary.isSmartFolder &&
-      suggestion.confidence >= effectiveThreshold
-    ) {
-      // Ensure primary suggestion folder/path are valid strings
-      const { primary } = suggestion;
+    const canonicalPrimary = resolveSuggestionToSmartFolder(suggestion?.primary, smartFolders);
 
-      // FIX: Check if we can resolve to an existing smart folder by name
-      // This handles cases where strategies generate a path/name that matches a smart folder
-      // but the strategy logic failed to link them (e.g. slight path mismatch)
-      const safePrimary = safeSuggestion(primary);
-      let resolvedPath = safePrimary.path;
-      let resolvedFolder = safePrimary.folder;
-
-      const matchingSmartFolder = smartFolders.find(
-        (f) =>
-          (f.name && f.name.toLowerCase() === resolvedFolder.toLowerCase()) ||
-          (f.path && resolvedPath && f.path.toLowerCase() === resolvedPath.toLowerCase())
-      );
-
-      if (matchingSmartFolder) {
-        logger.debug('[AutoOrganize] Resolved suggestion to existing smart folder:', {
-          suggestion: resolvedFolder,
-          smartFolder: matchingSmartFolder.name,
-          path: matchingSmartFolder.path
-        });
-        resolvedPath = matchingSmartFolder.path;
-        resolvedFolder = matchingSmartFolder.name;
-      }
-
-      // Re-apply resolved values to safePrimary
-      safePrimary.folder = resolvedFolder;
-      safePrimary.path = resolvedPath;
-
+    // Only auto-organize if confidence is very high and destination resolves to a configured smart folder
+    if (suggestion.success && canonicalPrimary && suggestion.confidence >= effectiveThreshold) {
+      const safePrimary = safeSuggestion(canonicalPrimary);
       const destination = buildDestinationPath(file, safePrimary, options.defaultLocation, false);
 
       logger.info('[AutoOrganize] Auto-organizing new file', {
@@ -431,7 +410,7 @@ async function processNewFile(filePath, smartFolders, options, suggestionService
         source: filePath,
         destination,
         confidence: suggestion.confidence,
-        suggestion: suggestion.primary,
+        suggestion: canonicalPrimary,
         undoAction
       };
     }

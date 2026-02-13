@@ -118,6 +118,50 @@ describe('AutoOrganize Batch Processor', () => {
       expect(results.operations).toHaveLength(1);
     });
 
+    test('does not auto-move high confidence suggestions that are not configured smart folders', async () => {
+      const batchSuggestions = {
+        groups: [
+          {
+            folder: 'UnknownFolder',
+            confidence: 0.95,
+            files: [
+              {
+                name: 'report.pdf',
+                path: '/source/report.pdf',
+                suggestion: { folder: 'UnknownFolder', path: '/nowhere/UnknownFolder' }
+              }
+            ]
+          }
+        ]
+      };
+
+      const files = [{ name: 'report.pdf', path: '/source/report.pdf', extension: 'pdf' }];
+      const options = {
+        confidenceThreshold: 0.7,
+        defaultLocation: '/default',
+        preserveNames: true
+      };
+      const smartFolders = [{ name: 'Documents', path: '/docs/Documents', isDefault: true }];
+      const results = {
+        organized: [],
+        needsReview: [],
+        operations: [],
+        failed: []
+      };
+
+      await processBatchResults(
+        batchSuggestions,
+        files,
+        options,
+        results,
+        mockSuggestionService,
+        smartFolders
+      );
+
+      expect(results.organized).toHaveLength(0);
+      expect(results.needsReview).toHaveLength(1);
+    });
+
     test('routes medium confidence files to default smart folder', async () => {
       const batchSuggestions = {
         groups: [
