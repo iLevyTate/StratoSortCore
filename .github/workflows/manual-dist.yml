@@ -72,7 +72,7 @@ jobs:
           $hashes | Out-File release/build/checksums-windows.sha256 -Encoding ASCII
 
       - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: stratosort-windows-dist-${{ github.run_number }}
           path: |
@@ -124,7 +124,7 @@ jobs:
           fi
 
       - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: stratosort-macos-dist-${{ github.run_number }}
           path: |
