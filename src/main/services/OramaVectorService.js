@@ -2177,14 +2177,28 @@ class OramaVectorService extends EventEmitter {
     let inserted = 0;
     for (const chunk of chunks) {
       try {
+        const content =
+          chunk.meta?.content || chunk.meta?.text || chunk.meta?.snippet || chunk.document || '';
+        const startOffset =
+          typeof chunk.meta?.startOffset === 'number'
+            ? chunk.meta.startOffset
+            : typeof chunk.meta?.charStart === 'number'
+              ? chunk.meta.charStart
+              : 0;
+        const endOffset =
+          typeof chunk.meta?.endOffset === 'number'
+            ? chunk.meta.endOffset
+            : typeof chunk.meta?.charEnd === 'number'
+              ? chunk.meta.charEnd
+              : 0;
         const doc = {
           id: chunk.id,
           embedding: chunk.vector,
           fileId: chunk.meta?.fileId || chunk.meta?.parentFileId || '',
           chunkIndex: chunk.meta?.chunkIndex || 0,
-          content: chunk.meta?.content || chunk.meta?.text || '',
-          startOffset: chunk.meta?.startOffset || 0,
-          endOffset: chunk.meta?.endOffset || 0
+          content,
+          startOffset,
+          endOffset
         };
 
         try {
@@ -2221,21 +2235,42 @@ class OramaVectorService extends EventEmitter {
         limit
       });
 
-      return result.hits
-        .filter((hit) => !this._isZeroPlaceholderHit(hit))
-        .slice(0, topK)
-        .map((hit) => ({
-          id: hit.document.id,
-          score: hit.score,
-          distance: 1 - hit.score,
-          metadata: {
-            fileId: hit.document.fileId,
-            chunkIndex: hit.document.chunkIndex,
-            content: hit.document.content,
-            startOffset: hit.document.startOffset,
-            endOffset: hit.document.endOffset
+      const hits = result.hits.filter((hit) => !this._isZeroPlaceholderHit(hit)).slice(0, topK);
+      return Promise.all(
+        hits.map(async (hit) => {
+          const chunkDoc = hit.document || {};
+          let parentFile = null;
+          if (chunkDoc.fileId) {
+            try {
+              parentFile = await getByID(this._databases.files, chunkDoc.fileId);
+            } catch {
+              parentFile = null;
+            }
           }
-        }));
+          const content = chunkDoc.content || '';
+          const startOffset =
+            typeof chunkDoc.startOffset === 'number' ? chunkDoc.startOffset : undefined;
+          const endOffset = typeof chunkDoc.endOffset === 'number' ? chunkDoc.endOffset : undefined;
+          return {
+            id: chunkDoc.id,
+            score: hit.score,
+            distance: 1 - hit.score,
+            metadata: {
+              fileId: chunkDoc.fileId,
+              path: parentFile?.filePath || '',
+              name: parentFile?.fileName || '',
+              type: parentFile?.fileType || 'document',
+              chunkIndex: chunkDoc.chunkIndex,
+              content,
+              snippet: content.slice(0, 240),
+              startOffset: startOffset ?? 0,
+              endOffset: endOffset ?? 0,
+              charStart: startOffset ?? 0,
+              charEnd: endOffset ?? 0
+            }
+          };
+        })
+      );
     } catch (error) {
       throw attachErrorCode(error, ERROR_CODES.VECTOR_DB_QUERY_FAILED);
     }

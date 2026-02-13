@@ -41,7 +41,14 @@ jest.mock('../src/renderer/phases/discover/namingUtils', () => ({
       progress.total >= 0
     );
   }),
-  generatePreviewName: jest.fn((name) => name)
+  generatePreviewName: jest.fn((name) => name),
+  generateSuggestedNameFromAnalysis: jest.fn(({ originalFileName }) => originalFileName),
+  makeUniqueFileName: jest.fn((candidate) => candidate),
+  extractFileName: jest.fn((filePath) => {
+    const value = String(filePath || '');
+    const parts = value.split(/[\\/]/);
+    return parts[parts.length - 1] || value;
+  })
 }));
 
 // Mock window.electronAPI
@@ -345,6 +352,36 @@ describe('useAnalysis', () => {
 
       expect(mockActions.setPhaseData).toHaveBeenCalledWith('currentAnalysisFile', '');
     });
+
+    test('requeues in-flight files to pending when cancelled', () => {
+      const { result } = renderHook(() =>
+        useAnalysis(
+          createMockOptions({
+            fileStates: {
+              '/inflight.txt': { state: 'analyzing' },
+              '/ready.txt': { state: 'ready' }
+            }
+          })
+        )
+      );
+
+      act(() => {
+        result.current.cancelAnalysis();
+      });
+
+      const updaterCalls = mockSetFileStates.mock.calls.filter(
+        (call) => typeof call[0] === 'function'
+      );
+      const updaterCall = updaterCalls[updaterCalls.length - 1];
+      expect(updaterCall).toBeDefined();
+      const updater = updaterCall[0];
+      const updated = updater({
+        '/inflight.txt': { state: 'analyzing' },
+        '/ready.txt': { state: 'ready' }
+      });
+      expect(updated['/inflight.txt'].state).toBe('pending');
+      expect(updated['/ready.txt'].state).toBe('ready');
+    });
   });
 
   describe('clearAnalysisQueue', () => {
@@ -434,6 +471,82 @@ describe('useAnalysis', () => {
           result.current.resetAnalysisState('test');
         });
       }).not.toThrow();
+    });
+
+    test('preserves completed batch subset when reset is triggered mid-run', async () => {
+      const files = Array.from({ length: 40 }, (_, index) => ({
+        path: `/reset-batch/file-${index}.txt`,
+        name: `file-${index}.txt`
+      }));
+
+      let resolveBatch;
+      const batchPromise = new Promise((resolve) => {
+        resolveBatch = resolve;
+      });
+
+      mockElectronAPI.settings.get.mockResolvedValueOnce({
+        maxConcurrentAnalysis: 1
+      });
+      mockElectronAPI.analysis.batch.mockReturnValueOnce(batchPromise);
+
+      const { result } = renderHook(() =>
+        useAnalysis(
+          createMockOptions({
+            selectedFiles: files
+          })
+        )
+      );
+
+      let analyzePromise;
+      await act(async () => {
+        analyzePromise = result.current.analyzeFiles(files);
+        jest.advanceTimersByTime(50);
+        await Promise.resolve();
+      });
+
+      const progressEvent = (completed, currentFile) =>
+        new CustomEvent('operation-progress', {
+          detail: {
+            type: 'batch_analyze',
+            batchId: 'batch-reset-test',
+            completed,
+            total: files.length,
+            currentFile
+          }
+        });
+
+      act(() => {
+        window.dispatchEvent(progressEvent(1, files[0].path));
+        window.dispatchEvent(progressEvent(2, files[1].path));
+        result.current.resetAnalysisState('Analysis lock timeout');
+      });
+
+      resolveBatch({
+        success: true,
+        results: files.map((file) => ({
+          filePath: file.path,
+          success: true,
+          result: {
+            category: 'documents',
+            suggestedName: `${file.name}-done`
+          }
+        })),
+        errors: [],
+        total: files.length,
+        successful: files.length
+      });
+
+      await act(async () => {
+        await analyzePromise;
+      });
+
+      const resultArrayCalls = mockSetAnalysisResults.mock.calls
+        .map((call) => call[0])
+        .filter((value) => Array.isArray(value));
+      expect(resultArrayCalls.length).toBeGreaterThan(0);
+      const lastResults = resultArrayCalls[resultArrayCalls.length - 1];
+      expect(lastResults).toHaveLength(2);
+      expect(lastResults.map((item) => item.path)).toEqual(files.slice(0, 2).map((f) => f.path));
     });
   });
 
@@ -544,6 +657,83 @@ describe('useAnalysis', () => {
 
       expect(startingNotifications.length).toBeGreaterThan(0);
       expect(resumingNotifications.length).toBe(0);
+    });
+
+    test('preserves already-completed batch results when cancelled', async () => {
+      const files = Array.from({ length: 40 }, (_, index) => ({
+        path: `/cancelled-batch/file-${index}.txt`,
+        name: `file-${index}.txt`
+      }));
+
+      let resolveBatch;
+      const batchPromise = new Promise((resolve) => {
+        resolveBatch = resolve;
+      });
+
+      mockElectronAPI.settings.get.mockResolvedValueOnce({
+        maxConcurrentAnalysis: 1
+      });
+      mockElectronAPI.analysis.batch.mockReturnValueOnce(batchPromise);
+
+      const { result } = renderHook(() =>
+        useAnalysis(
+          createMockOptions({
+            selectedFiles: files
+          })
+        )
+      );
+
+      let analyzePromise;
+      await act(async () => {
+        analyzePromise = result.current.analyzeFiles(files);
+        jest.advanceTimersByTime(50);
+        await Promise.resolve();
+      });
+
+      const progressEvent = (completed, currentFile) =>
+        new CustomEvent('operation-progress', {
+          detail: {
+            type: 'batch_analyze',
+            batchId: 'batch-cancel-test',
+            completed,
+            total: files.length,
+            currentFile
+          }
+        });
+
+      act(() => {
+        window.dispatchEvent(progressEvent(1, files[0].path));
+        window.dispatchEvent(progressEvent(2, files[1].path));
+        window.dispatchEvent(progressEvent(3, files[2].path));
+        result.current.cancelAnalysis();
+      });
+
+      resolveBatch({
+        success: true,
+        results: files.map((file) => ({
+          filePath: file.path,
+          success: true,
+          result: {
+            category: 'documents',
+            suggestedName: `${file.name}-done`
+          }
+        })),
+        errors: [],
+        total: files.length,
+        successful: files.length
+      });
+
+      await act(async () => {
+        await analyzePromise;
+      });
+
+      const resultArrayCalls = mockSetAnalysisResults.mock.calls
+        .map((call) => call[0])
+        .filter((value) => Array.isArray(value));
+      expect(resultArrayCalls.length).toBeGreaterThan(0);
+      const lastResults = resultArrayCalls[resultArrayCalls.length - 1];
+      expect(lastResults).toHaveLength(3);
+      expect(lastResults.map((item) => item.path)).toEqual(files.slice(0, 3).map((f) => f.path));
     });
   });
 });

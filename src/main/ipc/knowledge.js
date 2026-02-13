@@ -14,6 +14,19 @@ function registerKnowledgeIpc(servicesOrParams) {
 
   const { ipcMain, IPC_CHANNELS, logger } = context.core;
   const { getServiceIntegration } = context;
+  const emptyStats = {
+    success: true,
+    updatedAt: null,
+    sourceUpdatedAt: null,
+    edgeCount: 0,
+    conceptCount: 0,
+    docCount: 0,
+    maxWeight: 0,
+    minWeight: 2,
+    // Backward compatibility for older consumers/tests.
+    totalEdges: 0,
+    totalNodes: 0
+  };
 
   let _cachedFallbackService = null;
   const getRelationshipService = () => {
@@ -50,16 +63,22 @@ function registerKnowledgeIpc(servicesOrParams) {
         schema: schemas.relationshipEdges,
         handler: async (event, { fileIds, minWeight, maxEdges } = {}) => {
           const service = getRelationshipService();
-          if (!service) return [];
-          return service.getEdges(fileIds, { minWeight, maxEdges });
+          if (!service) return { success: true, edges: [] };
+          const response = await service.getEdges(fileIds, { minWeight, maxEdges });
+          if (Array.isArray(response)) {
+            return { success: true, edges: response };
+          }
+          return response && typeof response === 'object' ? response : { success: true, edges: [] };
         }
       },
       [IPC_CHANNELS.KNOWLEDGE.GET_RELATIONSHIP_STATS]: {
         schema: schemas.relationshipStats,
         handler: async () => {
           const service = getRelationshipService();
-          if (!service) return { totalEdges: 0, totalNodes: 0 };
-          return service.getStats();
+          if (!service) return emptyStats;
+          const response = await service.getStats();
+          if (!response || typeof response !== 'object') return emptyStats;
+          return response;
         }
       }
     }

@@ -38,8 +38,11 @@ const SQLITE_KEYS = {
 const SQLITE_COMPRESSION_ENABLED =
   String(process.env.STRATOSORT_SQLITE_COMPRESS || 'true').toLowerCase() !== 'false';
 
-let sqliteStore = null;
-let sqliteDbPath = null;
+const sqliteStores = new Map();
+
+function getSqliteDbPath(referencePath) {
+  return path.join(path.dirname(referencePath), SQLITE_DB_NAME);
+}
 
 function isTransientError(error) {
   return Boolean(error?.code && TRANSIENT_ERROR_CODES.has(error.code));
@@ -50,10 +53,11 @@ function shouldUseSqlite() {
 }
 
 function getSqliteStore(referencePath) {
-  if (sqliteStore) return sqliteStore;
-  const dbPath = path.join(path.dirname(referencePath), SQLITE_DB_NAME);
-  sqliteDbPath = dbPath;
-  sqliteStore = createKeyValueStore({
+  const dbPath = getSqliteDbPath(referencePath);
+  if (sqliteStores.has(dbPath)) {
+    return sqliteStores.get(dbPath);
+  }
+  const store = createKeyValueStore({
     dbPath,
     tableName: SQLITE_TABLE,
     serialize: (value) => {
@@ -82,23 +86,34 @@ function getSqliteStore(referencePath) {
       }
     }
   });
-  return sqliteStore;
+  sqliteStores.set(dbPath, store);
+  return store;
 }
 
-function closeSqliteStore() {
-  if (sqliteStore && typeof sqliteStore.close === 'function') {
-    sqliteStore.close();
+function closeSqliteStore(referencePath = null) {
+  if (referencePath) {
+    const dbPath = getSqliteDbPath(referencePath);
+    const store = sqliteStores.get(dbPath);
+    if (store && typeof store.close === 'function') {
+      store.close();
+    }
+    sqliteStores.delete(dbPath);
+    return;
   }
-  sqliteStore = null;
-  sqliteDbPath = null;
+
+  for (const [dbPath, store] of sqliteStores.entries()) {
+    if (store && typeof store.close === 'function') {
+      store.close();
+    }
+    sqliteStores.delete(dbPath);
+  }
 }
 
-async function backupSqliteDb(reason) {
-  const dbPath = sqliteDbPath;
-  if (!dbPath) return;
+async function backupSqliteDb(referencePath, reason) {
+  const dbPath = getSqliteDbPath(referencePath);
 
   // Close store to release file lock before moving
-  closeSqliteStore();
+  closeSqliteStore(referencePath);
 
   const backupPath = `${dbPath}.corrupt.${Date.now()}`;
   try {
@@ -256,8 +271,7 @@ async function loadConfig(configPath, getDefaultConfig, saveConfig) {
       existing = store.get(SQLITE_KEYS.config);
     } catch (error) {
       if (error?.code === 'SQLITE_CORRUPT') {
-        await backupSqliteDb(error);
-        closeSqliteStore();
+        await backupSqliteDb(configPath, error);
       }
       throw error;
     }
@@ -277,7 +291,7 @@ async function loadConfig(configPath, getDefaultConfig, saveConfig) {
       error?.code === 'SQLITE_NOTADB' ||
       (error?.message && error.message.includes('file is not a database'))
     ) {
-      await backupSqliteDb(error);
+      await backupSqliteDb(configPath, error);
       // Fall through to JSON fallback
     }
     if (isSqliteTransientError(error)) {
@@ -382,8 +396,7 @@ async function loadHistory(
       history = store.get(SQLITE_KEYS.history);
     } catch (error) {
       if (error?.code === 'SQLITE_CORRUPT') {
-        await backupSqliteDb(error);
-        closeSqliteStore();
+        await backupSqliteDb(historyPath, error);
       }
       throw error;
     }
@@ -408,7 +421,7 @@ async function loadHistory(
       error?.code === 'SQLITE_NOTADB' ||
       (error?.message && error.message.includes('file is not a database'))
     ) {
-      await backupSqliteDb(error);
+      await backupSqliteDb(historyPath, error);
       // Fall through to JSON fallback
     }
     if (isSqliteTransientError(error)) {
@@ -492,8 +505,7 @@ async function loadIndex(indexPath, createEmptyIndex, saveIndex) {
       index = store.get(SQLITE_KEYS.index);
     } catch (error) {
       if (error?.code === 'SQLITE_CORRUPT') {
-        await backupSqliteDb(error);
-        closeSqliteStore();
+        await backupSqliteDb(indexPath, error);
       }
       throw error;
     }
@@ -511,7 +523,7 @@ async function loadIndex(indexPath, createEmptyIndex, saveIndex) {
       error?.code === 'SQLITE_NOTADB' ||
       (error?.message && error.message.includes('file is not a database'))
     ) {
-      await backupSqliteDb(error);
+      await backupSqliteDb(indexPath, error);
       // Fall through to JSON fallback
     }
     if (isSqliteTransientError(error)) {

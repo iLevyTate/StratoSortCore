@@ -146,6 +146,12 @@ describe('llmSuggester', () => {
     expect(suggestions).toEqual([]);
   });
 
+  test('returns empty array when no valid smart folders are configured', async () => {
+    const suggestions = await getLLMAlternativeSuggestions(testFile, [{}, { name: '   ' }]);
+    expect(suggestions).toEqual([]);
+    expect(mockLlamaService.generateText).not.toHaveBeenCalled();
+  });
+
   test('uses default model', async () => {
     const suggestions = await getLLMAlternativeSuggestions(testFile, testSmartFolders);
     expect(suggestions).toHaveLength(1);

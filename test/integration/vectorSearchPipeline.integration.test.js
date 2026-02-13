@@ -208,6 +208,55 @@ describe('Vector Search Pipeline - OramaVectorService', () => {
       const result = await service.getFile('file:nonexistent.pdf');
       expect(result).toBeNull();
     });
+
+    test('stores and returns chunk metadata in search-compatible shape', async () => {
+      await service.upsertFile(TEST_DOCUMENTS[0]);
+
+      const chunkPayloads = [
+        {
+          id: `chunk:${TEST_DOCUMENTS[0].id}:0`,
+          vector: FINANCE_VEC,
+          meta: {
+            fileId: TEST_DOCUMENTS[0].id,
+            path: TEST_DOCUMENTS[0].meta.path,
+            name: TEST_DOCUMENTS[0].meta.fileName,
+            chunkIndex: 0,
+            charStart: 12,
+            charEnd: 64,
+            snippet: 'invoice payment terms and totals'
+          },
+          document: 'invoice payment terms and totals'
+        }
+      ];
+
+      const inserted = await service.batchUpsertFileChunks(chunkPayloads);
+      expect(inserted).toBe(1);
+
+      const results = await service.querySimilarFileChunks(FINANCE_VEC, 3);
+      expect(results).toHaveLength(1);
+      expect(results[0].metadata).toEqual(
+        expect.objectContaining({
+          fileId: TEST_DOCUMENTS[0].id,
+          path: TEST_DOCUMENTS[0].meta.path,
+          name: TEST_DOCUMENTS[0].meta.fileName,
+          chunkIndex: 0,
+          content: 'invoice payment terms and totals',
+          snippet: 'invoice payment terms and totals',
+          startOffset: 12,
+          endOffset: 64,
+          charStart: 12,
+          charEnd: 64
+        })
+      );
+
+      const chunkMap = await service.getChunksForFile(TEST_DOCUMENTS[0].id);
+      expect(chunkMap[0]).toEqual(
+        expect.objectContaining({
+          chunkIndex: 0,
+          text: 'invoice payment terms and totals'
+        })
+      );
+    });
   });
 
   describe('Similarity search ranking', () => {

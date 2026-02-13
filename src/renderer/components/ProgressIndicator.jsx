@@ -11,6 +11,9 @@ function ProgressIndicator() {
   const currentPhase = useAppSelector((state) => state.ui.currentPhase);
   const [showPhaseMenu, setShowPhaseMenu] = useState(false);
   const firstMenuItemRef = useRef(null);
+  const secondMenuItemRef = useRef(null);
+  const phaseMenuRef = useRef(null);
+  const phaseMenuTriggerRef = useRef(null);
   const metadata = PHASE_METADATA[currentPhase] || {
     title: 'Unknown',
     icon: '?',
@@ -73,30 +76,45 @@ function ProgressIndicator() {
             {getPersistKeysForPhase().length > 0 && (
               <div
                 className="relative"
-                onBlur={() => setTimeout(() => setShowPhaseMenu(false), 100)}
+                ref={phaseMenuRef}
+                onBlur={(e) => {
+                  const nextFocused = e.relatedTarget;
+                  if (nextFocused && e.currentTarget.contains(nextFocused)) {
+                    return;
+                  }
+                  setShowPhaseMenu(false);
+                }}
                 tabIndex={0}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') {
                     setShowPhaseMenu(false);
+                    const triggerButton = phaseMenuTriggerRef.current?.querySelector('button');
+                    triggerButton?.focus();
                     return;
                   }
                   if (e.key === 'ArrowDown' && showPhaseMenu) {
                     e.preventDefault();
                     firstMenuItemRef.current?.focus();
                   }
+                  if (e.key === 'ArrowUp' && showPhaseMenu) {
+                    e.preventDefault();
+                    secondMenuItemRef.current?.focus();
+                  }
                 }}
               >
-                <IconButton
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  aria-haspopup="menu"
-                  aria-expanded={showPhaseMenu}
-                  title="Phase sections"
-                  aria-label="Open phase menu"
-                  onClick={() => setShowPhaseMenu((prev) => !prev)}
-                  icon={<ChevronDown className="w-4 h-4" />}
-                />
+                <span ref={phaseMenuTriggerRef}>
+                  <IconButton
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    aria-haspopup="menu"
+                    aria-expanded={showPhaseMenu}
+                    title="Phase sections"
+                    aria-label="Open phase menu"
+                    onClick={() => setShowPhaseMenu((prev) => !prev)}
+                    icon={<ChevronDown className="w-4 h-4" />}
+                  />
+                </span>
 
                 {showPhaseMenu && (
                   <div className="absolute left-0 mt-2 bg-white border border-border-soft rounded-lg shadow-lg z-overlay min-w-[140px] py-1 overflow-hidden">
@@ -105,6 +123,19 @@ function ProgressIndicator() {
                       size="sm"
                       className="w-full justify-start px-4 py-2 text-system-gray-700 hover:bg-system-gray-50 rounded-none"
                       ref={firstMenuItemRef}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowDown') {
+                          e.preventDefault();
+                          secondMenuItemRef.current?.focus();
+                        }
+                        if (e.key === 'Escape') {
+                          e.preventDefault();
+                          setShowPhaseMenu(false);
+                          const triggerButton =
+                            phaseMenuTriggerRef.current?.querySelector('button');
+                          triggerButton?.focus();
+                        }
+                      }}
                       onClick={() => {
                         applyPhaseExpandCollapse(true);
                         setShowPhaseMenu(false);
@@ -116,6 +147,20 @@ function ProgressIndicator() {
                       variant="ghost"
                       size="sm"
                       className="w-full justify-start px-4 py-2 text-system-gray-700 hover:bg-system-gray-50 rounded-none"
+                      ref={secondMenuItemRef}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowUp') {
+                          e.preventDefault();
+                          firstMenuItemRef.current?.focus();
+                        }
+                        if (e.key === 'Escape') {
+                          e.preventDefault();
+                          setShowPhaseMenu(false);
+                          const triggerButton =
+                            phaseMenuTriggerRef.current?.querySelector('button');
+                          triggerButton?.focus();
+                        }
+                      }}
                       onClick={() => {
                         applyPhaseExpandCollapse(false);
                         setShowPhaseMenu(false);

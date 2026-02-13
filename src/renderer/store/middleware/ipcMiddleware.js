@@ -32,6 +32,40 @@ function validateIncomingEvent(eventName, data) {
   return { valid: true, data: result.data };
 }
 
+/**
+ * Normalize operation-progress payloads used by analysis UI.
+ * Main process batch analysis emits { completed, total }, while renderer analysis
+ * state expects { current, total }.
+ *
+ * Only normalize analysis-related events so model download progress does not
+ * pollute discover/organize analysis progress state.
+ *
+ * @param {*} payload
+ * @returns {*}
+ */
+function normalizeAnalysisProgressPayload(payload) {
+  if (!payload || typeof payload !== 'object') return payload;
+
+  const type = String(payload.type || '').toLowerCase();
+  if (type !== 'batch_analyze' && type !== 'analyze') {
+    return payload;
+  }
+
+  const normalized = { ...payload };
+  const completed = Number(payload.completed);
+  const total = Number(payload.total);
+
+  if (!Number.isFinite(Number(payload.current)) && Number.isFinite(completed) && completed >= 0) {
+    normalized.current = completed;
+  }
+
+  if (Number.isFinite(total) && total >= 0) {
+    normalized.total = total;
+  }
+
+  return normalized;
+}
+
 // Track listeners for cleanup to prevent memory leaks
 let listenersInitialized = false;
 let cleanupFunctions = [];
@@ -266,7 +300,7 @@ const ipcMiddleware = (store) => {
       const progressCleanup = window.electronAPI.events.onOperationProgress((data) => {
         const { valid, data: validatedData } = validateIncomingEvent('operation-progress', data);
         if (!valid) return;
-        safeDispatch(updateProgress, validatedData);
+        safeDispatch(updateProgress, normalizeAnalysisProgressPayload(validatedData));
       });
       if (progressCleanup) cleanupFunctions.push(progressCleanup);
     } else {

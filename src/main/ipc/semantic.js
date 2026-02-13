@@ -942,8 +942,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
           // Track results for files
           const fileResults = {
-            success: 0,
+            prepared: 0,
+            persisted: 0,
             failed: 0,
+            persistFailed: 0,
             errors: [],
             chunkFailures: 0,
             chunkFailureSamples: []
@@ -1052,7 +1054,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
                 },
                 updatedAt: new Date().toISOString()
               });
-              fileResults.success++;
+              fileResults.prepared++;
 
               // Chunk embeddings (analyzed-only): embed extracted text for deep semantic recall.
               // This is intentionally behind the \"Rebuild\" flow so users can opt in.
@@ -1081,6 +1083,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
                         path: filePath,
                         name: displayName,
                         chunkIndex: c.index,
+                        startOffset: c.charStart,
+                        endOffset: c.charEnd,
+                        text: c.text,
+                        content: c.text,
                         charStart: c.charStart,
                         charEnd: c.charEnd,
                         snippet,
@@ -1129,13 +1135,28 @@ function registerEmbeddingsIpc(servicesOrParams) {
             const batch = filePayloads.slice(i, i + BATCH_SIZE);
             try {
               const result = await getOramaService().batchUpsertFiles(batch);
-              rebuilt += result?.count ?? result ?? 0;
+              const persistedCount = Number(result?.count ?? result ?? 0);
+              const safePersistedCount =
+                Number.isFinite(persistedCount) && persistedCount > 0 ? persistedCount : 0;
+              rebuilt += safePersistedCount;
+              if (safePersistedCount < batch.length) {
+                fileResults.persistFailed += batch.length - safePersistedCount;
+                logger.warn(
+                  '[EMBEDDINGS] Batch upsert persisted fewer files than prepared payloads',
+                  {
+                    prepared: batch.length,
+                    persisted: safePersistedCount
+                  }
+                );
+              }
             } catch (e) {
+              fileResults.persistFailed += batch.length;
               logger.warn('[EMBEDDINGS] Failed to batch upsert files:', e.message);
             }
             // FIX: Yield between batches to prevent UI blocking
             await new Promise((resolve) => setImmediate(resolve));
           }
+          fileResults.persisted = rebuilt;
 
           // Batch upsert chunk embeddings (in chunks to keep payloads bounded)
           let chunkRebuilt = 0;
@@ -1152,7 +1173,8 @@ function registerEmbeddingsIpc(servicesOrParams) {
           }
 
           // Return detailed status
-          const allFailed = fileResults.success === 0 && allEntries.length > 0;
+          const totalFileFailures = fileResults.failed + fileResults.persistFailed;
+          const allFailed = rebuilt === 0 && allEntries.length > 0;
 
           // Record which model/dimensions were used for the index (for UI mismatch warnings)
           try {
@@ -1176,8 +1198,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
             total: allEntries.length,
             totalUniqueFiles: uniqueHistoryFileIds.size,
             uniquePrepared: filePayloads.length,
-            succeeded: fileResults.success,
-            failed: fileResults.failed,
+            succeeded: rebuilt,
+            failed: totalFileFailures,
+            prepared: fileResults.prepared,
+            persistFailed: fileResults.persistFailed,
             errors: fileResults.errors.slice(0, 5), // Limit error details
             chunkFailures: fileResults.chunkFailures,
             chunkFailureSamples: fileResults.chunkFailureSamples.slice(0, 3),
@@ -1187,10 +1211,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
             },
             model: modelCheck.model,
             message: allFailed
-              ? `All ${fileResults.failed} file embeddings failed. Check AI engine status.`
-              : fileResults.failed > 0
-                ? `${fileResults.success} files embedded, ${fileResults.failed} failed`
-                : `Successfully embedded ${fileResults.success} files`
+              ? `All ${totalFileFailures} file embeddings failed. Check AI engine status.`
+              : totalFileFailures > 0
+                ? `${rebuilt} files embedded, ${totalFileFailures} failed`
+                : `Successfully embedded ${rebuilt} files`
           };
         } catch (e) {
           logger.error('[EMBEDDINGS] Rebuild files failed:', e);
@@ -1466,6 +1490,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
                             path: filePath,
                             name: displayName,
                             chunkIndex: chunk.index,
+                            startOffset: chunk.charStart,
+                            endOffset: chunk.charEnd,
+                            text: chunk.text,
+                            content: chunk.text,
                             charStart: chunk.charStart,
                             charEnd: chunk.charEnd,
                             snippet,

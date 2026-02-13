@@ -5,7 +5,7 @@
  * Shows member count badge and expands on double-click.
  */
 
-import React, { memo, useState, useCallback, useRef } from 'react';
+import React, { memo, useState, useCallback, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { Handle, Position, NodeToolbar } from 'reactflow';
 import {
@@ -31,6 +31,7 @@ const ClusterNode = memo(({ data, selected }) => {
   const [isEditingLabel, setIsEditingLabel] = useState(false);
   const [editedLabel, setEditedLabel] = useState('');
   const labelInputRef = useRef(null);
+  const focusTimerRef = useRef(null);
 
   const isExpanded = data?.expanded || false;
   const memberCount = data?.memberCount || 0;
@@ -64,13 +65,29 @@ const ClusterNode = memo(({ data, selected }) => {
 
   const handleMenuAction = useCallback((action) => action?.(data), [data]);
 
+  useEffect(
+    () => () => {
+      if (focusTimerRef.current) {
+        clearTimeout(focusTimerRef.current);
+        focusTimerRef.current = null;
+      }
+    },
+    []
+  );
+
   // Label editing
   const handleStartEditLabel = useCallback(
     (e) => {
       e?.stopPropagation();
       setEditedLabel(label);
       setIsEditingLabel(true);
-      setTimeout(() => labelInputRef.current?.focus(), 50);
+      if (focusTimerRef.current) {
+        clearTimeout(focusTimerRef.current);
+      }
+      focusTimerRef.current = setTimeout(() => {
+        focusTimerRef.current = null;
+        labelInputRef.current?.focus();
+      }, 50);
     },
     [label]
   );

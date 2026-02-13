@@ -17,6 +17,10 @@ jest.mock('../src/main/services/LlamaService', () => ({
 
 const OrganizationSuggestionService = require('../src/main/services/organization');
 
+// `npm test` enables `--detectOpenHandles`, which can add overhead and make
+// default 5s per-test timeouts flaky in this integration-heavy suite.
+jest.setTimeout(30000);
+
 describe('OrganizationSuggestionService', () => {
   let service;
   let mockVectorDbService;

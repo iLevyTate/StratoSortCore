@@ -313,7 +313,7 @@ function ResultRow({
         }
         size="sm"
         variant="ghost"
-        className={`absolute top-4 left-3 z-10 h-7 w-7 p-0.5 transition-opacity ${isBulkSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+        className={`absolute top-4 left-3 z-10 h-7 w-7 p-0.5 transition-opacity focus-visible:opacity-100 ${isBulkSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
         title={isBulkSelected ? 'Deselect' : 'Select'}
         aria-label={isBulkSelected ? 'Deselect result' : 'Select result'}
       />
@@ -1002,6 +1002,7 @@ export default function UnifiedSearchModal({
 
   // Track the last fetched document details path to avoid re-fetching
   const lastFetchedDetailsPathRef = useRef(null);
+  const detailsRequestCounterRef = useRef(0);
 
   // Refs to access current nodes/edges in callbacks without creating stale closures
   const nodesRef = useRef(nodes);
@@ -1352,10 +1353,6 @@ export default function UnifiedSearchModal({
         clearTimeout(guideIntentLoadTimeoutRef.current);
         guideIntentLoadTimeoutRef.current = null;
       }
-      if (guideIntentLoadTimeoutRef.current) {
-        clearTimeout(guideIntentLoadTimeoutRef.current);
-        guideIntentLoadTimeoutRef.current = null;
-      }
       return () => {};
     }
 
@@ -1394,10 +1391,6 @@ export default function UnifiedSearchModal({
       graphActions.selectNode(null);
       setAddMode(true);
       setIsGraphMaximized(false);
-      if (guideIntentLoadTimeoutRef.current) {
-        clearTimeout(guideIntentLoadTimeoutRef.current);
-        guideIntentLoadTimeoutRef.current = null;
-      }
       if (graphFitViewTimeoutRef.current) {
         clearTimeout(graphFitViewTimeoutRef.current);
         graphFitViewTimeoutRef.current = null;
@@ -1427,11 +1420,6 @@ export default function UnifiedSearchModal({
       setDuplicateGroups([]);
       setIsFindingDuplicates(false);
     }
-    if (guideIntentLoadTimeoutRef.current) {
-      clearTimeout(guideIntentLoadTimeoutRef.current);
-      guideIntentLoadTimeoutRef.current = null;
-    }
-
     // Cleanup pending layouts on unmount
     return () => {
       cancelPendingLayout();
@@ -2902,8 +2890,10 @@ export default function UnifiedSearchModal({
           : null;
 
     if (!path) {
+      detailsRequestCounterRef.current += 1;
       setSelectedDocumentDetails(null);
       lastFetchedDetailsPathRef.current = null;
+      setIsLoadingDocumentDetails(false);
       return undefined;
     }
 
@@ -2911,18 +2901,21 @@ export default function UnifiedSearchModal({
     if (lastFetchedDetailsPathRef.current === path) return undefined;
 
     let cancelled = false;
+    const requestId = (detailsRequestCounterRef.current += 1);
     const fetchDetails = async () => {
       setIsLoadingDocumentDetails(true);
       try {
         const history = await window.electronAPI?.analysisHistory?.getFileHistory?.(path);
-        if (!cancelled && history) {
+        if (!cancelled && detailsRequestCounterRef.current === requestId && history) {
           lastFetchedDetailsPathRef.current = path;
           setSelectedDocumentDetails(history);
         }
       } catch (err) {
         logger.warn('Failed to fetch document details', err);
       } finally {
-        if (!cancelled) setIsLoadingDocumentDetails(false);
+        if (!cancelled && detailsRequestCounterRef.current === requestId) {
+          setIsLoadingDocumentDetails(false);
+        }
       }
     };
     fetchDetails();
@@ -4789,11 +4782,6 @@ export default function UnifiedSearchModal({
     });
   }, [nodes, selectedNodeId, showClusters]);
 
-  // Keep ReactFlow type maps stable across renders (React Flow warning #002).
-  // Use useMemo to ensure stability.
-  const rfNodeTypes = useMemo(() => STABLE_NODE_TYPES, []);
-  const rfEdgeTypes = useMemo(() => STABLE_EDGE_TYPES, []);
-
   // FIX: Filter edges based on visible nodes to prevent "dangling" edges
   // Split into baseEdges (expensive, no hover deps) and rfEdges (lightweight hover overlay)
   const baseEdges = useMemo(() => {
@@ -5847,6 +5835,7 @@ export default function UnifiedSearchModal({
                                                       e.stopPropagation();
                                                       openFile(filePath);
                                                     }}
+                                                    aria-label="Open bridge file"
                                                     title="Open file"
                                                   >
                                                     <ExternalLink className="h-3 w-3" />
@@ -5858,6 +5847,7 @@ export default function UnifiedSearchModal({
                                                       e.stopPropagation();
                                                       revealFile(filePath);
                                                     }}
+                                                    aria-label="Reveal bridge file"
                                                     title="Show in folder"
                                                   >
                                                     <FolderOpen className="h-3 w-3" />
@@ -6632,8 +6622,8 @@ export default function UnifiedSearchModal({
                   <ReactFlow
                     nodes={rfNodes}
                     edges={rfEdges}
-                    nodeTypes={rfNodeTypes}
-                    edgeTypes={rfEdgeTypes}
+                    nodeTypes={STABLE_NODE_TYPES}
+                    edgeTypes={STABLE_EDGE_TYPES}
                     onNodesChange={onNodesChange}
                     onEdgesChange={graphActions.onEdgesChange}
                     className={`graph-flow bg-[var(--surface-muted)] ${zoomLevel < ZOOM_LABEL_HIDE_THRESHOLD ? 'graph-zoomed-out' : ''}`}

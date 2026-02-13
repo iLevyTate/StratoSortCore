@@ -28,6 +28,16 @@ export function NotificationProvider({ children }) {
   // Map toast IDs to notification IDs for consistent Redux dismissal
   const toastToNotificationIdRef = useRef(new Map());
 
+  const reconcileEvictedToasts = useCallback(() => {
+    for (const evictedId of drainEvictedIds()) {
+      const evictedNotifId = toastToNotificationIdRef.current.get(evictedId);
+      if (evictedNotifId) {
+        toastToNotificationIdRef.current.delete(evictedId);
+        dispatch(markNotificationDismissed(evictedNotifId));
+      }
+    }
+  }, [dispatch, drainEvictedIds]);
+
   const addNotification = useCallback(
     (message, severity = 'info', duration = 3000, groupKey = null) => {
       const toastId = addToast(message, severity, duration, groupKey);
@@ -45,17 +55,11 @@ export function NotificationProvider({ children }) {
       toastToNotificationIdRef.current.set(toastId, notificationId);
 
       // Clean up mappings for any toasts evicted by the cap
-      for (const evictedId of drainEvictedIds()) {
-        const evictedNotifId = toastToNotificationIdRef.current.get(evictedId);
-        if (evictedNotifId) {
-          toastToNotificationIdRef.current.delete(evictedId);
-          dispatch(markNotificationDismissed(evictedNotifId));
-        }
-      }
+      reconcileEvictedToasts();
 
       return toastId;
     },
-    [addToast, drainEvictedIds, dispatch]
+    [addToast, dispatch, reconcileEvictedToasts]
   );
 
   const removeNotification = useCallback(
@@ -100,6 +104,7 @@ export function NotificationProvider({ children }) {
               if (notificationId && toastId != null) {
                 toastToNotificationIdRef.current.set(toastId, notificationId);
               }
+              reconcileEvictedToasts();
             }
             break;
           case 'error':
@@ -108,6 +113,7 @@ export function NotificationProvider({ children }) {
               if (notificationId && toastId != null) {
                 toastToNotificationIdRef.current.set(toastId, notificationId);
               }
+              reconcileEvictedToasts();
             }
             break;
           case 'warning':
@@ -116,6 +122,7 @@ export function NotificationProvider({ children }) {
               if (notificationId && toastId != null) {
                 toastToNotificationIdRef.current.set(toastId, notificationId);
               }
+              reconcileEvictedToasts();
             }
             break;
           default:
@@ -124,6 +131,7 @@ export function NotificationProvider({ children }) {
               if (notificationId && toastId != null) {
                 toastToNotificationIdRef.current.set(toastId, notificationId);
               }
+              reconcileEvictedToasts();
             }
         }
       } catch (e) {
@@ -136,7 +144,7 @@ export function NotificationProvider({ children }) {
 
     window.addEventListener('app:notification', handleNotification);
     return () => window.removeEventListener('app:notification', handleNotification);
-  }, [showSuccess, showError, showWarning, showInfo]);
+  }, [showSuccess, showError, showWarning, showInfo, reconcileEvictedToasts]);
 
   // FIX H15: Memoize the context value WITHOUT toasts in the dependency array.
   // All consumers only use action functions (addNotification, showSuccess, etc.)

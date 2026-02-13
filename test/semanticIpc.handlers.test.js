@@ -275,6 +275,12 @@ describe('Semantic IPC (Handlers)', () => {
     const handler = getHandler(IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES);
     const mockVectorDb = OramaVectorService.getInstance();
     mockVectorDb.rebuildIndex.mockResolvedValue({ count: 50 });
+    mockVectorDb.batchUpsertFiles.mockResolvedValue({ count: 1 });
+    mockVectorDb.batchUpsertFileChunks = jest.fn().mockResolvedValue(0);
+
+    const { container, ServiceIds } = require('../src/main/services/ServiceContainer');
+    const mockFolderMatcher = container.resolve(ServiceIds.FOLDER_MATCHING);
+    mockFolderMatcher.embedText.mockResolvedValue({ vector: [0.1], model: 'test' });
 
     const result = await handler({}, {});
 

@@ -224,7 +224,15 @@ describe('Smart Folders IPC', () => {
   describe('SMART_FOLDERS.ADD', () => {
     test('adds a new folder successfully', async () => {
       const handler = getHandler(IPC_CHANNELS.SMART_FOLDERS.ADD);
+      const { enhanceSmartFolderWithLLM } = require('../src/main/services/SmartFoldersLLMService');
       const newFolder = { name: 'Projects', path: 'C:\\Users\\Test\\Documents\\Projects' };
+      enhanceSmartFolderWithLLM.mockResolvedValueOnce({
+        improvedDescription: 'Project files and planning docs',
+        suggestedKeywords: ['project', 'planning'],
+        suggestedCategory: 'work',
+        confidence: 92,
+        relatedFolders: ['Work', 'MadeUpFolder']
+      });
 
       // Mock path check sequence:
       // 1. Parent dir check (succeeds)
@@ -255,6 +263,9 @@ describe('Smart Folders IPC', () => {
       const savedFolders = mockFoldersService.setCustomFolders.mock.calls[0][0];
       expect(savedFolders).toHaveLength(3); // 2 existing + 1 new
       expect(savedFolders[2].name).toBe('Projects');
+      expect(savedFolders[2].description).toBe('Project files and planning docs');
+      expect(savedFolders[2].confidenceScore).toBeCloseTo(0.92, 2);
+      expect(savedFolders[2].relatedFolders).toEqual(['Work']);
     });
 
     test('validates folder name characters', async () => {

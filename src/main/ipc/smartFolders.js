@@ -304,7 +304,18 @@ function registerSmartFoldersIpc(servicesOrParams) {
             try {
               const llamaService = getLlamaService();
               await llamaService.initialize();
-              const prompt = `You are ranking folders for organizing a file. Given this description:\n"""${text}"""\nFolders:\n${smartFolders.map((f, i) => `${i + 1}. ${f.name} - ${f.description || ''}`).join('\n')}\nReturn JSON: { "index": <1-based best folder index>, "reason": "..." }`;
+              const prompt = `You are ranking folders for organizing a file.
+Given this description:
+"""${text}"""
+
+Folders:
+${smartFolders.map((f, i) => `${i + 1}. ${f.name} - ${f.description || ''}`).join('\n')}
+
+Rules:
+- Choose exactly ONE folder from the list.
+- Do NOT invent new folder names.
+- Return ONLY valid JSON in this exact shape:
+  {"index": <1-based best folder index>, "reason": "short reason"}`;
               const timeoutMs = TIMEOUTS.AI_ANALYSIS_LONG;
               logger.debug('[SMART_FOLDERS.MATCH] Using text model', {
                 model: getTextModel() || AI_DEFAULTS.TEXT.MODEL,
@@ -803,7 +814,10 @@ function registerSmartFoldersIpc(servicesOrParams) {
           }
 
           // Generate description using LLM
-          const prompt = `You are helping organize files on a computer. Generate a brief, helpful description (1-2 sentences) for a folder called "${folderName}". The description should explain what types of files belong in this folder to help an AI system match files to folders. Be specific and practical.
+          const prompt = `You are helping organize files on a computer. Generate a brief, helpful description (1-2 sentences) for a folder called "${folderName}".
+The description should explain what types of files belong in this folder to help an AI system match files to folders.
+Use only the folder name as context and avoid making up company- or project-specific details.
+Return plain text only (no markdown, no quotes, no bullet points).
 
 Example for "Work Documents": "Contains professional documents, reports, and work-related files such as meeting notes, project plans, and business correspondence."
 
@@ -821,9 +835,21 @@ Now generate a description for "${folderName}":`;
             });
 
             if (result?.response && result.response.trim()) {
+              const description = String(result.response)
+                .replace(/```[\s\S]*?```/g, ' ')
+                .replace(/\s+/g, ' ')
+                .replace(/^["'\s]+|["'\s]+$/g, '')
+                .slice(0, 320)
+                .trim();
+              if (!description) {
+                return {
+                  success: false,
+                  error: 'No usable description from AI'
+                };
+              }
               return {
                 success: true,
-                description: result.response.trim()
+                description
               };
             }
             return {
@@ -979,21 +1005,64 @@ Now generate a description for "${folderName}":`;
             );
           }
 
+          const descriptionFromLlm =
+            (typeof llmEnhancedData.improvedDescription === 'string' &&
+              llmEnhancedData.improvedDescription.trim()) ||
+            (typeof llmEnhancedData.enhancedDescription === 'string' &&
+              llmEnhancedData.enhancedDescription.trim()) ||
+            '';
+          const keywordsFromLlm = Array.isArray(llmEnhancedData.suggestedKeywords)
+            ? llmEnhancedData.suggestedKeywords
+                .map((v) => String(v || '').trim())
+                .filter(Boolean)
+                .slice(0, 12)
+            : [];
+          const semanticTagsFromLlm = Array.isArray(llmEnhancedData.semanticTags)
+            ? llmEnhancedData.semanticTags
+                .map((v) => String(v || '').trim())
+                .filter(Boolean)
+                .slice(0, 12)
+            : [];
+          const existingFolderNameLookup = new Map(
+            customFolders
+              .filter((f) => f && typeof f.name === 'string' && f.name.trim())
+              .map((f) => [f.name.toLowerCase(), f.name])
+          );
+          const relatedFoldersFromLlm = Array.isArray(llmEnhancedData.relatedFolders)
+            ? llmEnhancedData.relatedFolders
+                .map((v) => String(v || '').trim())
+                .filter(Boolean)
+                .map((name) => existingFolderNameLookup.get(name.toLowerCase()) || null)
+                .filter(Boolean)
+                .slice(0, 8)
+            : [];
+          const confidenceFromLlm = Number(llmEnhancedData.confidence);
+          const normalizedConfidence = Number.isFinite(confidenceFromLlm)
+            ? Math.max(
+                0,
+                Math.min(1, confidenceFromLlm > 1 ? confidenceFromLlm / 100 : confidenceFromLlm)
+              )
+            : 0.8;
+          const categoryFromLlm =
+            typeof llmEnhancedData.suggestedCategory === 'string' &&
+            llmEnhancedData.suggestedCategory.trim()
+              ? llmEnhancedData.suggestedCategory.trim().toLowerCase().slice(0, 60)
+              : 'general';
           const newFolder = {
             id: `sf-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
             name: sanitizedName,
             path: normalizedPath,
             description:
-              llmEnhancedData.enhancedDescription ||
+              descriptionFromLlm ||
               folder.description?.trim() ||
               `Smart folder for ${sanitizedName}`,
-            keywords: llmEnhancedData.suggestedKeywords || [],
-            category: llmEnhancedData.suggestedCategory || 'general',
+            keywords: keywordsFromLlm,
+            category: categoryFromLlm,
             isDefault: folder.isDefault || false,
             createdAt: new Date().toISOString(),
-            semanticTags: llmEnhancedData.semanticTags || [],
-            relatedFolders: llmEnhancedData.relatedFolders || [],
-            confidenceScore: llmEnhancedData.confidence || 0.8,
+            semanticTags: semanticTagsFromLlm,
+            relatedFolders: relatedFoldersFromLlm,
+            confidenceScore: normalizedConfidence,
             usageCount: 0,
             lastUsed: null
           };

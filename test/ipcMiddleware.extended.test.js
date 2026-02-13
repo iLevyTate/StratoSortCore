@@ -143,6 +143,60 @@ describe('ipcMiddleware extended coverage', () => {
     expect(handlers.vectorStatusChanged).toBeDefined();
   });
 
+  describe('operation progress normalization', () => {
+    test('maps batch analysis completed -> current', () => {
+      ipcMiddleware(mockStore);
+      markStoreReady();
+
+      handlers.operationProgress({
+        type: 'batch_analyze',
+        completed: 7,
+        total: 20,
+        percentage: 35
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'analysis/updateProgress',
+          payload: expect.objectContaining({
+            type: 'batch_analyze',
+            completed: 7,
+            current: 7,
+            total: 20,
+            percentage: 35
+          })
+        })
+      );
+    });
+
+    test('does not map non-analysis progress payloads', () => {
+      ipcMiddleware(mockStore);
+      markStoreReady();
+
+      handlers.operationProgress({
+        type: 'model-download',
+        completed: 512,
+        total: 1024
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'analysis/updateProgress',
+          payload: expect.objectContaining({
+            type: 'model-download',
+            completed: 512,
+            total: 1024
+          })
+        })
+      );
+
+      const call = mockDispatch.mock.calls.find(
+        (entry) => entry[0]?.type === 'analysis/updateProgress'
+      );
+      expect(call[0].payload.current).toBeUndefined();
+    });
+  });
+
   describe('onFileOperationComplete handler', () => {
     test('dispatches atomic path update for move operations', () => {
       ipcMiddleware(mockStore);

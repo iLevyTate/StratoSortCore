@@ -83,10 +83,12 @@ class PatternPersistence {
     this.userDataPath = app.getPath('userData');
     this.patternsFilePath = path.join(this.userDataPath, options.filename || 'user-patterns.json');
     this.backupFilePath = path.join(this.userDataPath, 'user-patterns.backup.json');
-    this.lastSaveTime = Date.now();
+    // Start at 0 so the first save is never throttled.
+    this.lastSaveTime = 0;
     this.saveThrottleMs = options.saveThrottleMs || 5000;
     this.pendingSave = null;
     this._pendingSaveData = null;
+    this._pendingSaveWaiters = [];
   }
 
   async _loadFromJson() {
@@ -124,33 +126,23 @@ class PatternPersistence {
     return null;
   }
 
-  async save(data) {
+  _resolvePendingSaveWaiters(result) {
+    if (this._pendingSaveWaiters.length === 0) return;
+    const waiters = this._pendingSaveWaiters;
+    this._pendingSaveWaiters = [];
+    for (const resolve of waiters) {
+      try {
+        resolve(result);
+      } catch {
+        // Ignore waiter callback errors.
+      }
+    }
+  }
+
+  async _saveNow(data) {
     let tempPath;
     try {
       const now = Date.now();
-      if (now - this.lastSaveTime < this.saveThrottleMs) {
-        this._pendingSaveData = data;
-        if (!this.pendingSave) {
-          this.pendingSave = setTimeout(
-            () => {
-              this.pendingSave = null;
-              const dataToSave = this._pendingSaveData;
-              this._pendingSaveData = null;
-              if (dataToSave) {
-                this.save(dataToSave).catch((err) => {
-                  logger.error('[Persistence] Deferred save failed:', err.message);
-                });
-              }
-            },
-            this.saveThrottleMs - (now - this.lastSaveTime)
-          );
-          if (typeof this.pendingSave.unref === 'function') {
-            this.pendingSave.unref();
-          }
-        }
-        return { success: true, throttled: true };
-      }
-
       this.lastSaveTime = now;
       this._pendingSaveData = null;
 
@@ -188,6 +180,45 @@ class PatternPersistence {
     }
   }
 
+  async save(data, options = {}) {
+    const waitForFlush = options.waitForFlush === true;
+    const now = Date.now();
+    const waitForDeferredFlush = waitForFlush
+      ? new Promise((resolve) => {
+          this._pendingSaveWaiters.push(resolve);
+        })
+      : null;
+
+    if (now - this.lastSaveTime < this.saveThrottleMs) {
+      this._pendingSaveData = data;
+      if (!this.pendingSave) {
+        const delayMs = this.saveThrottleMs - (now - this.lastSaveTime);
+        this.pendingSave = setTimeout(async () => {
+          this.pendingSave = null;
+          const dataToSave = this._pendingSaveData;
+          this._pendingSaveData = null;
+          const result = dataToSave
+            ? await this._saveNow(dataToSave)
+            : { success: true, skipped: true };
+          this._resolvePendingSaveWaiters(result);
+        }, delayMs);
+        if (typeof this.pendingSave.unref === 'function') {
+          this.pendingSave.unref();
+        }
+      }
+      return waitForDeferredFlush || { success: true, throttled: true };
+    }
+
+    if (this.pendingSave) {
+      clearTimeout(this.pendingSave);
+      this.pendingSave = null;
+    }
+    this._pendingSaveData = null;
+    const result = await this._saveNow(data);
+    this._resolvePendingSaveWaiters(result);
+    return result;
+  }
+
   cancelPendingSave() {
     if (this.pendingSave) {
       clearTimeout(this.pendingSave);
@@ -208,10 +239,14 @@ class PatternPersistence {
       logger.info('[Persistence] Flushing pending save on shutdown');
       try {
         this.lastSaveTime = 0;
-        await this.save(dataToFlush);
+        const result = await this._saveNow(dataToFlush);
+        this._resolvePendingSaveWaiters(result);
       } catch (error) {
         logger.error('[Persistence] Failed to flush pending save on shutdown:', error.message);
+        this._resolvePendingSaveWaiters({ success: false, error: error.message });
       }
+    } else {
+      this._resolvePendingSaveWaiters({ success: true, skipped: true });
     }
     logger.debug('[Persistence] Shutdown complete');
   }

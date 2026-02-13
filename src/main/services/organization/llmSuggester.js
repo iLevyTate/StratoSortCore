@@ -66,8 +66,16 @@ async function getLLMAlternativeSuggestions(file, smartFolders, config = {}) {
   try {
     const llamaService = getLlamaService();
     const model = AI_DEFAULTS.TEXT.MODEL;
+    const configuredFolders = Array.isArray(smartFolders)
+      ? smartFolders.filter(
+          (folder) => folder && typeof folder.name === 'string' && folder.name.trim()
+        )
+      : [];
 
     if (!llamaService) {
+      return [];
+    }
+    if (configuredFolders.length === 0) {
       return [];
     }
     await llamaService.initialize();
@@ -78,16 +86,27 @@ async function getLLMAlternativeSuggestions(file, smartFolders, config = {}) {
     // Limit analysis content size and avoid leaking excessive detail
     const serializedAnalysis = JSON.stringify(file.analysis || {}, null, 2).slice(0, 800);
 
-    const prompt = `Given this file analysis, suggest 3 alternative organization approaches:
+    const allowedFoldersText = configuredFolders
+      .map(
+        (f, idx) =>
+          `${idx + 1}. "${f.name}" - ${(f.description || 'No description provided').slice(0, 140)}`
+      )
+      .join('\n');
+    const prompt = `Given this file analysis, suggest up to 3 alternative organization approaches:
 
 File: ${file.name}
 Type: ${file.extension}
 Analysis (truncated): ${serializedAnalysis}
 
-Available folders: ${smartFolders.map((f) => `${f.name}: ${f.description}`).join(', ')}
+AVAILABLE SMART FOLDERS (ONLY valid outputs):
+${allowedFoldersText}
 
-Suggest creative but practical organization alternatives that might not be obvious.
-Consider: workflow stages, temporal organization, project grouping, or functional categorization.
+RULES:
+- Use ONLY folder names from the list above.
+- Do NOT invent, rename, merge, or pluralize folder names.
+- Return 1-3 UNIQUE suggestions (no duplicate folders).
+- If uncertain, choose the closest folder from the list.
+- Keep reasoning grounded in the provided file analysis only.
 
 Return JSON: {
   "suggestions": [
@@ -104,7 +123,7 @@ Return JSON: {
     const deduplicationKey = globalDeduplicator.generateKey({
       fileName: file.name,
       analysis: JSON.stringify(file.analysis || {}),
-      folders: smartFolders.map((f) => f.name).join(','),
+      folders: configuredFolders.map((f) => f.name).join(','),
       type: 'organization-suggestions'
     });
 
@@ -167,11 +186,12 @@ Return JSON: {
 STRICT OUTPUT REQUIREMENT:
 - Return ONLY valid JSON.
 - Do NOT include markdown fences, prose, or extra tokens.
+- Every "folder" value MUST exactly match one of the allowed folder names listed above.
 - Use exactly this shape: {"suggestions":[{"folder":"name","reasoning":"text","confidence":0.0,"strategy":"text"}]}`;
       const strictRetryKey = globalDeduplicator.generateKey({
         fileName: file.name,
         analysis: JSON.stringify(file.analysis || {}),
-        folders: smartFolders.map((f) => f.name).join(','),
+        folders: configuredFolders.map((f) => f.name).join(','),
         type: 'organization-suggestions',
         retry: 'strict-json'
       });
@@ -208,6 +228,7 @@ STRICT OUTPUT REQUIREMENT:
       return [];
     }
 
+    const seenFolderNames = new Set();
     return parsed.suggestions
       .filter((s) => {
         if (!s || typeof s !== 'object') {
@@ -225,7 +246,7 @@ STRICT OUTPUT REQUIREMENT:
         return true;
       })
       .map((s) => {
-        const resolvedFolder = resolveConfiguredSmartFolder(s.folder, smartFolders);
+        const resolvedFolder = resolveConfiguredSmartFolder(s.folder, configuredFolders);
         if (!resolvedFolder) {
           logger.warn('[LLMSuggester] Dropping hallucinated/non-configured folder suggestion', {
             folder: s.folder,
@@ -233,6 +254,11 @@ STRICT OUTPUT REQUIREMENT:
           });
           return null;
         }
+        const dedupeKey = String(resolvedFolder.name || '').toLowerCase();
+        if (seenFolderNames.has(dedupeKey)) {
+          return null;
+        }
+        seenFolderNames.add(dedupeKey);
 
         const rawConf = Number.isFinite(s.confidence) ? s.confidence : Number(s.confidence);
         const normalizedRawConf = Number.isFinite(rawConf) ? rawConf : 0.5;

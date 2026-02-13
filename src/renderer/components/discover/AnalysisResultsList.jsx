@@ -103,6 +103,7 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
   const dispatch = useDispatch();
   const actionButtonRef = useRef(null);
   const menuRef = useRef(null);
+  const lastFocusedElementRef = useRef(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
 
@@ -115,10 +116,20 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
   useLayoutEffect(() => {
     if (!menuOpen) return;
     updateMenuPosition();
-    const scheduleUpdate = () => requestAnimationFrame(updateMenuPosition);
+    let rafId = null;
+    const scheduleUpdate = () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        updateMenuPosition();
+      });
+    };
     window.addEventListener('resize', scheduleUpdate);
     window.addEventListener('scroll', scheduleUpdate, true);
     return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
       window.removeEventListener('resize', scheduleUpdate);
       window.removeEventListener('scroll', scheduleUpdate, true);
     };
@@ -126,6 +137,13 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
 
   useEffect(() => {
     if (!menuOpen) return;
+    const actionButtonElement = actionButtonRef.current;
+    lastFocusedElementRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusMenuRaf = requestAnimationFrame(() => {
+      const firstMenuItem = menuRef.current?.querySelector('[role="menuitem"]');
+      firstMenuItem?.focus();
+    });
     const handleClickOutside = (e) => {
       const target = e.target;
       if (
@@ -143,8 +161,15 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
     document.addEventListener('mousedown', handleClickOutside, true);
     document.addEventListener('keydown', handleEscape);
     return () => {
+      cancelAnimationFrame(focusMenuRaf);
       document.removeEventListener('mousedown', handleClickOutside, true);
       document.removeEventListener('keydown', handleEscape);
+      const triggerButton = actionButtonElement?.querySelector('button');
+      if (triggerButton instanceof HTMLElement) {
+        triggerButton.focus();
+      } else if (lastFocusedElementRef.current instanceof HTMLElement) {
+        lastFocusedElementRef.current.focus();
+      }
     };
   }, [menuOpen]);
 
@@ -300,7 +325,12 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
       <Card
         variant="interactive"
         className="flex items-start p-3 gap-3 h-full group transition-all duration-200 hover:border-stratosort-blue/30 overflow-visible hover:scale-100"
-        onClick={() => handleAction && handleAction('open', file.path)}
+        onClick={() => {
+          const selectedText =
+            typeof window !== 'undefined' ? window.getSelection?.()?.toString() : '';
+          if (selectedText && selectedText.trim().length > 0) return;
+          handleAction?.('open', file.path);
+        }}
       >
         {/* Icon */}
         <div className="p-2 bg-system-gray-50 rounded-lg shrink-0 text-system-gray-500 group-hover:bg-stratosort-blue/5 group-hover:text-stratosort-blue transition-colors">
@@ -382,8 +412,19 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
             variant="ghost"
             onClick={(e) => {
               e.stopPropagation();
-              setMenuOpen((prev) => !prev);
-              if (!menuOpen) updateMenuPosition();
+              setMenuOpen((prev) => {
+                const next = !prev;
+                if (next) {
+                  updateMenuPosition();
+                }
+                return next;
+              });
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setMenuOpen(true);
+              }
             }}
             title="Actions"
             aria-label="File actions"

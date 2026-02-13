@@ -247,6 +247,7 @@ describe('SearchService (extended)', () => {
       });
 
       expect(meta.enabled).toBe(true);
+      expect(meta.expanded).toBe(true);
       expect(meta.addedCount).toBe(1);
 
       const byId = Object.fromEntries(results.map((r) => [r.id, r]));
@@ -263,6 +264,7 @@ describe('SearchService (extended)', () => {
         graphExpansion: true
       });
       expect(meta.enabled).toBe(false);
+      expect(meta.expanded).toBe(false);
     });
   });
 });

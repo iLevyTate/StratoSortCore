@@ -317,6 +317,8 @@ export function useAnalysis(options = {}) {
   const lockTimeoutRef = useRef(null);
   const abortControllerRef = useRef(null);
   const pendingFilesRef = useRef([]);
+  const batchCompletedPathsRef = useRef(new Set());
+  const cancelledBatchSnapshotRef = useRef(null);
   const batchResultsRef = useRef([]);
   const pendingResultsRef = useRef([]);
   const lastResultsFlushRef = useRef(0);
@@ -388,13 +390,40 @@ export function useAnalysis(options = {}) {
     [flushPendingResults]
   );
 
+  const requeueInFlightFileStates = useCallback(() => {
+    setFileStates((prev) => {
+      if (!prev || typeof prev !== 'object') return prev;
+      let hasChanges = false;
+      const next = { ...prev };
+      Object.entries(next).forEach(([filePath, stateInfo]) => {
+        if (!stateInfo || stateInfo.state !== 'analyzing') return;
+        hasChanges = true;
+        next[filePath] = {
+          ...stateInfo,
+          state: FILE_STATES.PENDING
+        };
+      });
+      return hasChanges ? next : prev;
+    });
+  }, [setFileStates]);
+
+  const captureCancelledBatchSnapshot = useCallback((runId = analysisRunIdRef.current) => {
+    cancelledBatchSnapshotRef.current = {
+      runId,
+      completedAtCancel: Math.max(0, Number(completedCountRef.current) || 0),
+      completedPaths: Array.from(batchCompletedPathsRef.current)
+    };
+  }, []);
+
   /**
    * Reset analysis state
    */
   const resetAnalysisState = useCallback(
     (reason) => {
       logger.info('Resetting analysis state', { reason });
-      analysisRunIdRef.current += 1;
+      const activeRunId = analysisRunIdRef.current;
+      captureCancelledBatchSnapshot(activeRunId);
+      analysisRunIdRef.current = activeRunId + 1;
       // Ensure any in-flight analysis is stopped and locks are released.
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -425,7 +454,9 @@ export function useAnalysis(options = {}) {
         pendingFilesTimeoutRef.current = null;
       }
       pendingFilesRef.current = [];
+      batchCompletedPathsRef.current.clear();
       flushPendingResults(true);
+      requeueInFlightFileStates();
 
       setIsAnalyzing(false);
       const clearedProgress = { current: 0, total: 0, currentFile: '', lastActivity: 0 };
@@ -445,7 +476,9 @@ export function useAnalysis(options = {}) {
       setAnalysisProgress,
       setCurrentAnalysisFile,
       setGlobalAnalysisActive,
+      captureCancelledBatchSnapshot,
       flushPendingResults,
+      requeueInFlightFileStates,
       actions
     ]
   );
@@ -705,6 +738,8 @@ export function useAnalysis(options = {}) {
 
       const runId = ++analysisRunIdRef.current;
       const isActiveRun = () => analysisRunIdRef.current === runId;
+      cancelledBatchSnapshotRef.current = null;
+      batchCompletedPathsRef.current.clear();
 
       // FIX Issue-4: Mark as "resumed" ONLY after lock is acquired
       // This prevents the resume useEffect from showing "Resuming..." notification
@@ -827,6 +862,7 @@ export function useAnalysis(options = {}) {
           windowLabel,
           hardCapLabel
         });
+        captureCancelledBatchSnapshot(runId);
         if (analysisRunIdRef.current === runId) {
           analysisRunIdRef.current += 1;
         }
@@ -847,6 +883,7 @@ export function useAnalysis(options = {}) {
         }
         flushPendingResults(true);
         pendingFilesRef.current = [];
+        requeueInFlightFileStates();
         setIsAnalyzing(false);
         setAnalysisProgress({ current: 0, total: 0, lastActivity: 0 });
         setCurrentAnalysisFile('');
@@ -996,7 +1033,11 @@ export function useAnalysis(options = {}) {
               activeBatchId = payload.batchId;
             }
 
+            const previousCompleted = Number(completedCountRef.current) || 0;
             const current = Math.min(Number(payload.completed) || 0, uniqueFiles.length);
+            if (current > previousCompleted && typeof payload.currentFile === 'string') {
+              batchCompletedPathsRef.current.add(payload.currentFile);
+            }
             const total = Math.max(1, Number(payload.total) || uniqueFiles.length);
             completedCountRef.current = current;
             lastProgressAtRef.current = Date.now();
@@ -1035,6 +1076,67 @@ export function useAnalysis(options = {}) {
 
             if (!batchResult || !Array.isArray(batchResult.results)) {
               throw new Error('Batch analysis returned an invalid result payload');
+            }
+
+            const cancelledSnapshot = cancelledBatchSnapshotRef.current;
+            const shouldRecoverCancelledBatch =
+              (abortSignal.aborted || !isActiveRun()) &&
+              cancelledSnapshot &&
+              cancelledSnapshot.runId === runId;
+            if (shouldRecoverCancelledBatch) {
+              const targetCount = Math.max(
+                0,
+                Math.min(Number(cancelledSnapshot.completedAtCancel) || 0, uniqueFiles.length)
+              );
+              if (targetCount > 0) {
+                const resultByPath = new Map(
+                  batchResult.results
+                    .filter((item) => item && typeof item.filePath === 'string')
+                    .map((item) => [item.filePath, item])
+                );
+                const selectedPaths = [];
+                const seenPaths = new Set();
+                const eventPaths = Array.isArray(cancelledSnapshot.completedPaths)
+                  ? cancelledSnapshot.completedPaths
+                  : [];
+                for (const filePath of eventPaths) {
+                  if (!filePath || seenPaths.has(filePath)) continue;
+                  if (!resultByPath.has(filePath)) continue;
+                  selectedPaths.push(filePath);
+                  seenPaths.add(filePath);
+                  if (selectedPaths.length >= targetCount) break;
+                }
+                if (selectedPaths.length < targetCount) {
+                  for (const file of uniqueFiles) {
+                    const filePath = file?.path;
+                    if (!filePath || seenPaths.has(filePath)) continue;
+                    if (!resultByPath.has(filePath)) continue;
+                    selectedPaths.push(filePath);
+                    seenPaths.add(filePath);
+                    if (selectedPaths.length >= targetCount) break;
+                  }
+                }
+
+                for (const filePath of selectedPaths) {
+                  const item = resultByPath.get(filePath);
+                  if (!item) continue;
+                  const fileInfoRaw = fileByPath.get(filePath) || { path: filePath };
+                  const fileInfo = {
+                    ...fileInfoRaw,
+                    size: fileInfoRaw.size || 0,
+                    created: fileInfoRaw.created,
+                    modified: fileInfoRaw.modified
+                  };
+                  const resultPayload = item?.result ?? null;
+                  const explicitError =
+                    item?.success === false
+                      ? item?.error || resultPayload?.error || 'Analysis failed'
+                      : null;
+                  applyAnalysisOutcome(fileInfo, resultPayload, explicitError);
+                }
+                flushPendingResults(true);
+              }
+              return;
             }
 
             const totalResults = batchResult.results.length;
@@ -1281,6 +1383,7 @@ export function useAnalysis(options = {}) {
       } finally {
         const shouldCleanup = isActiveRun();
         if (shouldCleanup) {
+          flushPendingResults(true);
           if (heartbeatIntervalRef.current) {
             clearInterval(heartbeatIntervalRef.current);
             heartbeatIntervalRef.current = null;
@@ -1299,6 +1402,9 @@ export function useAnalysis(options = {}) {
               ? analysisProgressRef.current.total
               : files.length;
           const didComplete = trackedTotal > 0 && completedCountRef.current >= trackedTotal;
+          if (!didComplete) {
+            requeueInFlightFileStates();
+          }
 
           // CRITICAL FIX: Only preserve Redux state if analysis is still in-flight.
           // If we already completed, clear state even if component unmounted to avoid
@@ -1372,8 +1478,10 @@ export function useAnalysis(options = {}) {
       addNotification,
       actions,
       setGlobalAnalysisActive,
+      captureCancelledBatchSnapshot,
       flushPendingResults,
       applyAnalysisOutcome,
+      requeueInFlightFileStates,
       resetAnalysisState,
       getCurrentPhase
     ]
@@ -1391,6 +1499,7 @@ export function useAnalysis(options = {}) {
       abortControllerRef.current = null;
       logger.info('Analysis aborted by user');
     }
+    captureCancelledBatchSnapshot(analysisRunIdRef.current);
     clearAutoAdvanceTimeoutRef(autoAdvanceTimeoutRef);
     analysisRunIdRef.current += 1;
     // Ensure locks/timeouts are cleared so a new run can start immediately.
@@ -1418,6 +1527,7 @@ export function useAnalysis(options = {}) {
     flushPendingResults(true);
     // Clear any pending files when cancelling
     pendingFilesRef.current = [];
+    requeueInFlightFileStates();
     setIsAnalyzing(false);
     const clearedProgress = { current: 0, total: 0, lastActivity: 0 };
     analysisProgressRef.current = clearedProgress;
@@ -1443,7 +1553,9 @@ export function useAnalysis(options = {}) {
     setAnalysisProgress,
     actions,
     addNotification,
-    flushPendingResults
+    captureCancelledBatchSnapshot,
+    flushPendingResults,
+    requeueInFlightFileStates
   ]);
 
   /**

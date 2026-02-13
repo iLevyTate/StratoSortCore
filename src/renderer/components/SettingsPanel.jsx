@@ -89,6 +89,19 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     dispatch(toggleSettings());
   }, [dispatch]);
 
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        handleToggleSettings();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleToggleSettings]);
+
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [modelLists, setModelLists] = useState({
     text: [],
@@ -612,7 +625,12 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       }}
       role="presentation"
     >
-      <div className="surface-panel !p-0 w-full max-w-4xl mx-auto max-h-[86vh] flex flex-col overflow-hidden shadow-2xl animate-modal-enter pointer-events-auto">
+      <div
+        className="surface-panel !p-0 w-full max-w-4xl mx-auto max-h-[86vh] flex flex-col overflow-hidden shadow-2xl animate-modal-enter pointer-events-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+      >
         {showUnavailable ? (
           <>
             <div className="settings-modal-header px-6 py-4 border-b border-border-soft/70 bg-white flex-shrink-0 rounded-t-2xl">
@@ -852,7 +870,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 size="sm"
                 leftIcon={<X className="w-4 h-4" />}
               >
-                Cancel
+                Close
               </Button>
               <Button
                 onClick={saveSettings}
