@@ -1,4 +1,4 @@
-# Mac release workflow — run on tag push or manually.
+# Mac release workflow — run on tag push.
 # Builds on macos-latest (Apple Silicon). For Intel DMG, add a matrix or separate job.
 name: Release (macOS)
 
@@ -6,7 +6,6 @@ on:
   push:
     tags:
       - 'v*.*.*'
-  workflow_dispatch:
 
 permissions:
   contents: write

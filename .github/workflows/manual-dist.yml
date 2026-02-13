@@ -1,0 +1,222 @@
+name: Manual Dist Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_windows:
+        description: Build Windows distribution
+        required: true
+        default: true
+        type: boolean
+      build_macos:
+        description: Build macOS distribution
+        required: true
+        default: true
+        type: boolean
+      publish_release:
+        description: Create draft GitHub release with uploaded artifacts
+        required: true
+        default: false
+        type: boolean
+      release_tag:
+        description: 'Release tag to create/update when publish_release=true (example: v2.0.1)'
+        required: false
+        default: ''
+        type: string
+      release_name:
+        description: Optional release title (defaults to tag)
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: manual-dist-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  dist-windows:
+    if: ${{ inputs.build_windows }}
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows distribution
+        run: npm run dist:win
+
+      - name: Generate SHA256 checksums
+        run: |
+          $files = Get-ChildItem release/build -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^StratoSortCore-.*\.(exe|blockmap)$|^latest\.yml$' }
+          if (-not $files -or $files.Count -eq 0) {
+            throw "No Windows build artifacts found to checksum."
+          }
+
+          $hashes = $files | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+            "$hash *$($_.Name)"
+          }
+          $hashes | Out-File release/build/checksums-windows.sha256 -Encoding ASCII
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stratosort-windows-dist-${{ github.run_number }}
+          path: |
+            release/build/StratoSortCore-Setup-*.exe
+            release/build/StratoSortCore-*-win-*.exe
+            release/build/*.blockmap
+            release/build/latest.yml
+            release/build/checksums-windows.sha256
+          if-no-files-found: error
+
+  dist-macos:
+    if: ${{ inputs.build_macos }}
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build macOS distribution
+        run: npm run dist:mac
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd release/build
+          rm -f checksums-macos.sha256
+
+          if [ -f latest.yml ]; then
+            mv latest.yml latest-macos.yml
+          fi
+
+          for f in StratoSortCore-*.dmg StratoSortCore-*.zip; do
+            if [ -f "$f" ]; then
+              shasum -a 256 "$f" >> checksums-macos.sha256
+            fi
+          done
+
+          if [ ! -s checksums-macos.sha256 ]; then
+            echo "No macOS build artifacts found to checksum."
+            exit 1
+          fi
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stratosort-macos-dist-${{ github.run_number }}
+          path: |
+            release/build/StratoSortCore-*.dmg
+            release/build/StratoSortCore-*.zip
+            release/build/latest*.yml
+            release/build/checksums-macos.sha256
+          if-no-files-found: error
+
+  publish-release:
+    needs:
+      - dist-windows
+      - dist-macos
+    if: >-
+      ${{
+        inputs.publish_release &&
+        (inputs.build_windows || inputs.build_macos) &&
+        (needs.dist-windows.result == 'success' || needs.dist-windows.result == 'skipped') &&
+        (needs.dist-macos.result == 'success' || needs.dist-macos.result == 'skipped')
+      }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate release tag
+        run: |
+          if [ -z "${{ inputs.release_tag }}" ]; then
+            echo "release_tag is required when publish_release=true"
+            exit 1
+          fi
+
+      - name: Download Windows artifacts
+        if: ${{ inputs.build_windows }}
+        uses: actions/download-artifact@v4
+        with:
+          name: stratosort-windows-dist-${{ github.run_number }}
+          path: release-upload/windows
+
+      - name: Download macOS artifacts
+        if: ${{ inputs.build_macos }}
+        uses: actions/download-artifact@v4
+        with:
+          name: stratosort-macos-dist-${{ github.run_number }}
+          path: release-upload/macos
+
+      - name: Prepare merged release files
+        run: |
+          mkdir -p release-upload/final
+
+          if [ "${{ inputs.build_windows }}" = "true" ] && [ -d release-upload/windows ]; then
+            for f in release-upload/windows/*; do
+              [ -f "$f" ] || continue
+              base="$(basename "$f")"
+              cp "$f" "release-upload/final/$base"
+            done
+          fi
+
+          if [ "${{ inputs.build_macos }}" = "true" ] && [ -d release-upload/macos ]; then
+            for f in release-upload/macos/*; do
+              [ -f "$f" ] || continue
+              base="$(basename "$f")"
+              target="release-upload/final/$base"
+              if [ -e "$target" ]; then
+                target="release-upload/final/macos-$base"
+              fi
+              cp "$f" "$target"
+            done
+          fi
+
+          count=$(find release-upload/final -maxdepth 1 -type f | wc -l)
+          if [ "$count" -eq 0 ]; then
+            echo "No files prepared for release upload."
+            exit 1
+          fi
+
+      - name: Resolve release metadata
+        id: release_meta
+        run: |
+          tag="${{ inputs.release_tag }}"
+          name="${{ inputs.release_name }}"
+          if [ -z "$name" ]; then
+            name="$tag"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Create draft release and upload artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_meta.outputs.tag }}
+          name: ${{ steps.release_meta.outputs.name }}
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release-upload/final/*
