@@ -11,7 +11,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const { logger } = require('../../../shared/logger');
 const { createKeyValueStore, shouldUseSqliteBackend } = require('../../utils/sqliteStore');
-const { compressSync: compress, uncompressSync: uncompress } = require('lz4-napi');
+const { compressSync: compress, uncompressSync: uncompress } = require('../../../shared/lz4Codec');
 const {
   atomicWriteFile,
   safeUnlink,

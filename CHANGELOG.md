@@ -17,6 +17,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [docs/RELEASING.md](docs/RELEASING.md) for versioning, runtime staging, checksums, and release
 notes.
 
+## [2.0.1] - 2026-02-13
+
+### Fixed
+
+- **macOS startup stability**: Prevented app launch failure when `lz4-napi` native bindings are
+  unavailable in packaged environments by adding a shared codec wrapper with graceful fallback.
+- **Persistence startup path hardening**: Updated vector DB, analysis history, and embedding queue
+  persistence modules to use safe LZ4 codec loading instead of hard-failing at module import time.
+
 ## [2.0.0] - 2026-02-09
 
 ### Changed (BREAKING)
@@ -282,7 +291,8 @@ notes.
 Note: `v1.x` release links intentionally point to the predecessor repository for historical
 traceability.
 
-[Unreleased]: https://github.com/iLevyTate/StratoSortCore/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/iLevyTate/StratoSortCore/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/iLevyTate/StratoSortCore/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/iLevyTate/StratoSortCore/compare/v1.2.2...v2.0.0
 [1.2.2]: https://github.com/iLevyTate/elstratosort/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/iLevyTate/elstratosort/releases/tag/v1.2.1

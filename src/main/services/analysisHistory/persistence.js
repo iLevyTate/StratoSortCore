@@ -16,7 +16,7 @@ const {
   shouldUseSqliteBackend,
   isSqliteTransientError
 } = require('../../utils/sqliteStore');
-const { compressSync: compress, uncompressSync: uncompress } = require('lz4-napi');
+const { compressSync: compress, uncompressSync: uncompress } = require('../../../shared/lz4Codec');
 
 const logger = createLogger('AnalysisHistory-Persistence');
 const TRANSIENT_ERROR_CODES = new Set([
