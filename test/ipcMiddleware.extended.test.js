@@ -387,5 +387,18 @@ describe('ipcMiddleware extended coverage', () => {
       expect(() => recoverPersistedCriticalEvents()).not.toThrow();
       expect(storedLocalStorage.removeItem).toHaveBeenCalledWith('ipc_critical_events');
     });
+
+    test('treats non-array persisted payload as empty', () => {
+      ipcMiddleware(mockStore);
+      markStoreReady();
+      mockDispatch.mockClear();
+      storedLocalStorage.removeItem.mockClear();
+
+      storedLocalStorage.setItem('ipc_critical_events', 'null');
+      recoverPersistedCriticalEvents();
+
+      expect(mockDispatch).not.toHaveBeenCalled();
+      expect(storedLocalStorage.removeItem).not.toHaveBeenCalled();
+    });
   });
 });

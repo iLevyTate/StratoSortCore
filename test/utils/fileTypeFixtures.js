@@ -571,7 +571,9 @@ async function createTestFileObject(fixtureKey) {
       fixture // Include fixture metadata for reference
     };
   } catch (error) {
-    throw new Error(`Failed to read fixture file ${fixture.name}: ${error.message}`);
+    throw new Error(`Failed to read fixture file ${fixture.name}: ${error.message}`, {
+      cause: error
+    });
   }
 }
 

@@ -35,7 +35,9 @@ jest.mock('../src/main/utils/sqliteStore', () => ({
   shouldUseSqliteBackend: jest.fn(() => mockUseSqlite),
   createKeyValueStore: jest.fn(() => ({
     get: jest.fn((k) => mockStore.get(k)),
-    set: jest.fn((k, v) => { mockStore.set(k, v); }),
+    set: jest.fn((k, v) => {
+      mockStore.set(k, v);
+    }),
     close: jest.fn()
   }))
 }));

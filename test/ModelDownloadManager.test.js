@@ -75,7 +75,7 @@ describe('ModelDownloadManager', () => {
   });
 
   test('getDownloadedModels maps gguf files with registry info', async () => {
-    mockFs.readdir.mockResolvedValueOnce(['alpha.gguf', 'note.txt']);
+    mockFs.readdir.mockResolvedValue(['alpha.gguf', 'note.txt']);
     mockFs.stat.mockResolvedValueOnce({ size: 1024 * 1024 * 2 });
 
     const manager = new ModelDownloadManager();

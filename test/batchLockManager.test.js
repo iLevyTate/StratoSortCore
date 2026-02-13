@@ -75,7 +75,10 @@ describe('batchLockManager', () => {
   test('acquireBatchLock retries until acquired', async () => {
     jest.useFakeTimers();
     jest.setSystemTime(0);
-    const { acquireBatchLock, releaseBatchLock } = require('../src/main/ipc/files/batchLockManager');
+    const {
+      acquireBatchLock,
+      releaseBatchLock
+    } = require('../src/main/ipc/files/batchLockManager');
 
     await acquireBatchLock('holder', 100);
     const waiterPromise = acquireBatchLock('waiter', 100);

@@ -83,6 +83,30 @@ describe('ProcessingStateService', () => {
     expect(service.initialized).toBe(true);
   });
 
+  test('loadState recovers from corrupted JSON by resetting state', async () => {
+    fs.readFile.mockResolvedValueOnce('{ invalid json');
+    isNotFoundError.mockReturnValue(false);
+    const saveSpy = jest.spyOn(service, '_saveStateInternal').mockResolvedValue();
+
+    await service.loadState();
+
+    expect(service.state).toBeTruthy();
+    expect(service.state.analysis.jobs).toEqual({});
+    expect(saveSpy).toHaveBeenCalled();
+  });
+
+  test('loadState recovers when persisted state has invalid shape', async () => {
+    fs.readFile.mockResolvedValueOnce(JSON.stringify(['bad-shape']));
+    isNotFoundError.mockReturnValue(false);
+    const saveSpy = jest.spyOn(service, '_saveStateInternal').mockResolvedValue();
+
+    await service.loadState();
+
+    expect(service.state).toBeTruthy();
+    expect(service.state.organize.batches).toEqual({});
+    expect(saveSpy).toHaveBeenCalled();
+  });
+
   test('saveState debounces multiple calls into one write', async () => {
     jest.useFakeTimers();
     service.state = service.createEmptyState();

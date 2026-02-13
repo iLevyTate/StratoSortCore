@@ -9,10 +9,7 @@ jest.mock('../src/shared/logger', () => ({
   }
 }));
 
-import {
-  migrateState,
-  CURRENT_STATE_VERSION
-} from '../src/renderer/store/migrations';
+import { migrateState, CURRENT_STATE_VERSION } from '../src/renderer/store/migrations';
 
 describe('migrations', () => {
   test('CURRENT_STATE_VERSION is defined', () => {

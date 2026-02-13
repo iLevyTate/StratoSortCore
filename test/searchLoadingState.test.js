@@ -246,7 +246,7 @@ describe('Search Loading State', () => {
 
   describe('Finally Block Guarantees', () => {
     test('finally block executes on success', async () => {
-      let finallyCalled = false;
+      let finallyCalled;
 
       try {
         await Promise.resolve('success');
@@ -258,7 +258,7 @@ describe('Search Loading State', () => {
     });
 
     test('finally block executes on error', async () => {
-      let finallyCalled = false;
+      let finallyCalled;
 
       try {
         await Promise.reject(new Error('fail'));

@@ -2,7 +2,10 @@
  * Tests for atomicActions - cross-slice Redux thunks
  */
 
-const mockUpdateFilePaths = jest.fn((p) => ({ type: 'files/updateFilePathsAfterMove', payload: p }));
+const mockUpdateFilePaths = jest.fn((p) => ({
+  type: 'files/updateFilePathsAfterMove',
+  payload: p
+}));
 const mockRemoveSelectedFiles = jest.fn((p) => ({ type: 'files/removeSelectedFiles', payload: p }));
 const mockUpdateResultPaths = jest.fn((p) => ({
   type: 'analysis/updateResultPathsAfterMove',

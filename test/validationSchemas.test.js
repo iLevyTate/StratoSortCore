@@ -1,7 +1,6 @@
 const schemasModule = require('../src/main/ipc/validationSchemas');
 
 describe('validationSchemas', () => {
-
   test('filePathSchema validates non-empty string', () => {
     const { filePath, _usingFallback } = schemasModule;
     if (_usingFallback) {
