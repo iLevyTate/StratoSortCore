@@ -472,7 +472,11 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       }
       const res = await llamaIpc.downloadModel(newModel.trim());
       if (res?.success) {
-        addNotification(`Model "${newModel.trim()}" installed`, 'success');
+        if (res?.alreadyInProgress) {
+          addNotification(`Model "${newModel.trim()}" is already downloading`, 'info');
+        } else {
+          addNotification(`Model "${newModel.trim()}" installed`, 'success');
+        }
         setNewModel('');
         await loadModels();
       } else {
@@ -504,22 +508,34 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   }, [newModel, addNotification, loadModels]);
 
   const downloadRecommendedModels = useCallback(async () => {
+    // Use the user's configured models, falling back to system defaults.
+    // This avoids downloading BASE_SMALL models when the user has selected
+    // a BETTER_QUALITY profile.
     const modelsToDownload = [
-      DEFAULT_AI_MODELS.TEXT_ANALYSIS,
-      DEFAULT_AI_MODELS.IMAGE_ANALYSIS,
-      DEFAULT_AI_MODELS.EMBEDDING
+      settings.textModel || DEFAULT_AI_MODELS.TEXT_ANALYSIS,
+      settings.visionModel || DEFAULT_AI_MODELS.IMAGE_ANALYSIS,
+      settings.embeddingModel || DEFAULT_AI_MODELS.EMBEDDING
     ].filter(Boolean);
     if (modelsToDownload.length === 0) return;
 
     try {
       setIsAddingModel(true);
+      const errors = [];
       for (const modelName of modelsToDownload) {
         const res = await llamaIpc.downloadModel(modelName);
+        if (res?.alreadyInProgress) {
+          // Download started by background setup — not an error
+          continue;
+        }
         if (!res?.success) {
-          throw new Error(res?.error || `Failed to download ${modelName}`);
+          errors.push(res?.error || `Failed to download ${modelName}`);
         }
       }
-      addNotification('Recommended models downloaded', 'success');
+      if (errors.length > 0) {
+        addNotification(`Some downloads failed: ${errors.join('; ')}`, 'warning');
+      } else {
+        addNotification('Recommended models downloaded', 'success');
+      }
       await loadModels();
     } catch (error) {
       addNotification(
@@ -529,7 +545,13 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     } finally {
       setIsAddingModel(false);
     }
-  }, [addNotification, loadModels]);
+  }, [
+    settings.textModel,
+    settings.visionModel,
+    settings.embeddingModel,
+    addNotification,
+    loadModels
+  ]);
 
   const deleteModel = useCallback(
     async (modelName) => {

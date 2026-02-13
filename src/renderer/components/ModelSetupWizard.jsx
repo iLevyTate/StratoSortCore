@@ -15,7 +15,7 @@ import Card from './ui/Card';
 import { Text, Heading } from './ui/Typography';
 import { formatBytes, formatDuration } from '../utils/format';
 import { AI_DEFAULTS, INSTALL_MODEL_PROFILES } from '../../shared/constants';
-import { MODEL_CATALOG } from '../../shared/modelRegistry';
+import { getModel } from '../../shared/modelRegistry';
 
 const PROFILE_MODELS = {
   base: {
@@ -108,7 +108,9 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
       const [config, modelsResponse, downloadStatus] = await Promise.all([
         llamaApi.getConfig(),
         llamaApi.getModels(),
-        typeof llamaApi.getDownloadStatus === 'function' ? llamaApi.getDownloadStatus() : null
+        typeof llamaApi.getDownloadStatus === 'function'
+          ? llamaApi.getDownloadStatus().catch(() => null)
+          : null
       ]);
       if (!isMountedRef.current) return;
 
@@ -249,9 +251,15 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
       try {
         const result = await window.electronAPI.llama.downloadModel(filename);
         if (result?.success) {
-          updateDownloadState(filename, { status: 'ready', percent: 100 });
-          nextAvailable.add(filename);
-          setAvailableModels((prev) => Array.from(new Set([...(prev || []), filename])));
+          if (result?.alreadyInProgress) {
+            // Background setup already started this download; keep showing in-progress
+            // and wait for actual availability before marking complete.
+            updateDownloadState(filename, { status: 'downloading' });
+          } else {
+            updateDownloadState(filename, { status: 'ready', percent: 100 });
+            nextAvailable.add(filename);
+            setAvailableModels((prev) => Array.from(new Set([...(prev || []), filename])));
+          }
         } else {
           updateDownloadState(filename, {
             status: 'failed',
@@ -266,6 +274,43 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
       }
     }
 
+    // Refresh availability from source-of-truth after requests complete.
+    // This avoids treating "alreadyInProgress" downloads as fully installed.
+    let activeDownloads = [];
+    try {
+      const [modelsResponse, downloadStatus] = await Promise.all([
+        window.electronAPI.llama.getModels(),
+        typeof window.electronAPI.llama.getDownloadStatus === 'function'
+          ? window.electronAPI.llama.getDownloadStatus().catch(() => null)
+          : Promise.resolve(null)
+      ]);
+
+      const modelList = Array.isArray(modelsResponse)
+        ? modelsResponse
+        : Array.isArray(modelsResponse?.models)
+          ? modelsResponse.models
+          : [];
+      const latestAvailable = modelList.map((m) => m.name || m.filename || m).filter(Boolean);
+
+      latestAvailable.forEach((name) => nextAvailable.add(name));
+      if (latestAvailable.length > 0) {
+        setAvailableModels((prev) => Array.from(new Set([...(prev || []), ...latestAvailable])));
+      }
+
+      activeDownloads = downloadStatus?.status?.downloads || [];
+      activeDownloads.forEach((download) => {
+        if (!download?.filename) return;
+        updateDownloadState(download.filename, {
+          status: 'downloading',
+          percent: download.progress ?? 0,
+          downloadedBytes: download.downloadedBytes,
+          totalBytes: download.totalBytes
+        });
+      });
+    } catch {
+      // Non-fatal: fallback to local state if status refresh fails.
+    }
+
     const requiredMissing = [selectedModels.embedding, selectedModels.text]
       .filter(Boolean)
       .filter((name) => !nextAvailable.has(name));
@@ -274,7 +319,11 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
       await applySelectedProfileConfig();
     }
 
-    setStep(requiredMissing.length === 0 ? 'complete' : 'select');
+    if (requiredMissing.length === 0) {
+      setStep('complete');
+    } else {
+      setStep(activeDownloads.length > 0 ? 'downloading' : 'select');
+    }
   }
 
   function toggleModel(type, filename) {
@@ -285,7 +334,7 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
   }
 
   const getModelSize = (filename) => {
-    const model = MODEL_CATALOG[filename];
+    const model = getModel(filename);
     if (!model) return 0;
     let total = model.size || 0;
     if (model.clipModel?.size) {
@@ -529,9 +578,7 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
             return (
               <div key={filename} className="border rounded-lg p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <Text className="font-medium">
-                    {MODEL_CATALOG[filename]?.displayName || filename}
-                  </Text>
+                  <Text className="font-medium">{getModel(filename)?.displayName || filename}</Text>
                   <Text variant="small" className="text-gray-600">
                     {status === 'failed' ? 'Failed' : `${progress.percent || 0}%`}
                   </Text>
@@ -552,7 +599,9 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
                         : 'Starting...'}
                   </span>
                   <span>
-                    {progress.etaSeconds ? `ETA: ${formatDuration(progress.etaSeconds)}` : ''}
+                    {progress.etaSeconds
+                      ? `ETA: ${formatDuration(progress.etaSeconds * 1000)}`
+                      : ''}
                   </span>
                 </div>
                 {progress.error && (
@@ -622,7 +671,7 @@ function ModelSelector({
   const filename = recommendations?.[type];
   if (!filename) return null;
 
-  const modelInfo = MODEL_CATALOG[filename];
+  const modelInfo = getModel(filename);
   const displayName = modelInfo?.displayName || filename;
   const isInstalled = status === 'ready' || status === 'complete';
   const statusLabel = isInstalled ? 'Installed' : status === 'failed' ? 'Failed' : 'Not installed';
