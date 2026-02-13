@@ -248,6 +248,36 @@ describe('FeedbackMemoryStore - Migration Tests', () => {
   });
 
   describe('_save() throttling', () => {
+    test('does not throttle the first save even with a long throttle window', async () => {
+      const immediateStore = new FeedbackMemoryStore({ saveThrottleMs: 10000 });
+
+      await immediateStore.add({ id: 'first', text: 'immediate save' });
+
+      expect(fs.writeFile).toHaveBeenCalled();
+    });
+
+    test('awaits deferred save when throttled', async () => {
+      jest.useFakeTimers();
+      try {
+        const throttledStore = new FeedbackMemoryStore({ saveThrottleMs: 5000 });
+        throttledStore.lastSaveTime = Date.now();
+
+        const savePromise = throttledStore.add(
+          { id: 'throttle', text: 'wait for flush' },
+          { waitForFlush: true }
+        );
+        await Promise.resolve();
+        expect(fs.writeFile).not.toHaveBeenCalled();
+
+        await jest.advanceTimersByTimeAsync(5000);
+        await savePromise;
+
+        expect(fs.writeFile).toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     test('tracks jsonWrites metric after save', async () => {
       await store.add({ id: 'a', text: 'test' });
 

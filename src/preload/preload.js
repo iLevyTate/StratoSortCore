@@ -617,7 +617,7 @@ class SecureIPCManager {
       return await this._invokeWithRetries(channel, sanitizedArgs, timeout);
     } catch (error) {
       log.error(`IPC invoke error for ${channel}: ${error.message}`);
-      throw new Error(`IPC Error: ${error.message}`);
+      throw new Error(`IPC Error: ${error.message}`, { cause: error });
     }
   }
 

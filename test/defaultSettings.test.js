@@ -71,15 +71,15 @@ describe('defaultSettings', () => {
 
   describe('AI settings', () => {
     test('has textModel', () => {
-      expect(DEFAULT_SETTINGS.textModel).toBe('Mistral-7B-Instruct-v0.3-Q4_K_M.gguf');
+      expect(DEFAULT_SETTINGS.textModel).toBe('Llama-3.2-3B-Instruct-Q4_K_M.gguf');
     });
 
     test('has visionModel', () => {
-      expect(DEFAULT_SETTINGS.visionModel).toBe('llava-v1.6-mistral-7b-Q4_K_M.gguf');
+      expect(DEFAULT_SETTINGS.visionModel).toBe('llava-phi-3-mini-int4.gguf');
     });
 
     test('has embeddingModel', () => {
-      expect(DEFAULT_SETTINGS.embeddingModel).toBe('nomic-embed-text-v1.5-Q8_0.gguf');
+      expect(DEFAULT_SETTINGS.embeddingModel).toBe('all-MiniLM-L6-v2-Q4_K_M.gguf');
     });
   });
 

@@ -147,7 +147,7 @@ async function _executeWithRetries(operation, options) {
     onFallback = null
   } = options;
 
-  let lastError = null;
+  let lastError;
   let usedCPUFallback = false;
 
   // Try with current GPU setting

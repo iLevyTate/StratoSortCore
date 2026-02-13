@@ -6,9 +6,33 @@ const { getEmbeddingPool } = require('../utils/workerPools');
 const { ERROR_CODES } = require('../../shared/errorCodes');
 const { AI_DEFAULTS } = require('../../shared/constants');
 const { resolveEmbeddingDimension } = require('../../shared/embeddingDimensions');
+const { capEmbeddingInput } = require('../utils/embeddingInput');
+const { chunkText } = require('../utils/textChunking');
 
 const logger = createLogger('ParallelEmbeddingService');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
+
+function isEmbeddingContextOverflow(error) {
+  const message = String(
+    error?.message || error?.originalError?.message || error?.cause?.message || ''
+  ).toLowerCase();
+  return (
+    message.includes('input is longer than the context size') || message.includes('context size of')
+  );
+}
+
+function meanPoolVectors(vectors) {
+  if (!Array.isArray(vectors) || vectors.length === 0) return [];
+  const dim = vectors[0]?.length || 0;
+  if (!dim) return [];
+  const sums = new Array(dim).fill(0);
+  for (const vector of vectors) {
+    for (let i = 0; i < dim; i += 1) {
+      sums[i] += vector[i] || 0;
+    }
+  }
+  return sums.map((value) => value / vectors.length);
+}
 
 /**
  * Semaphore configuration constants
@@ -81,7 +105,7 @@ class ParallelEmbeddingService {
         this._llamaInitHandler = () => {
           const newLimit = Math.min(this._calculateOptimalConcurrency(), 10);
           if (newLimit !== this.concurrencyLimit) {
-            this.concurrencyLimit = newLimit;
+            this.setConcurrencyLimit(newLimit);
             logger.info('[ParallelEmbeddingService] Concurrency updated after LlamaService init', {
               limit: this.concurrencyLimit
             });
@@ -103,7 +127,7 @@ class ParallelEmbeddingService {
       if (!recs?.maxConcurrent) return;
       const capped = Math.max(1, Math.min(this.concurrencyLimit, recs.maxConcurrent, 10));
       if (capped !== this.concurrencyLimit) {
-        this.concurrencyLimit = capped;
+        this.setConcurrencyLimit(capped);
         logger.info('[ParallelEmbeddingService] Concurrency capped by system recommendation', {
           limit: this.concurrencyLimit,
           recommended: recs.maxConcurrent,
@@ -230,31 +254,30 @@ class ParallelEmbeddingService {
   /**
    * Release a semaphore slot
    * FIX: Clears timeout when resolving queued requests
+   * FIX: Respects concurrencyLimit when releasing, preventing over-limit execution
+   * if the limit was dynamically reduced.
    */
   _releaseSlot() {
-    // FIX: Guard against underflow. An unmatched _releaseSlot() would push
-    // activeRequests negative, permanently allowing more concurrent requests
-    // than the configured limit for all future _acquireSlot() calls.
-    if (this.activeRequests <= 0 && this.waitQueue.length === 0) {
+    // FIX: Guard against underflow.
+    if (this.activeRequests <= 0) {
       logger.warn(
         '[ParallelEmbeddingService] _releaseSlot() called without matching acquire, ignoring'
       );
       return;
     }
 
-    // Wake up next waiting request (hand slot directly, counter stays the same).
-    // Only do this when activeRequests > 0, otherwise the slot being released
-    // doesn't actually exist and we'd grant an extra concurrent slot.
-    if (this.waitQueue.length > 0 && this.activeRequests > 0) {
+    this.activeRequests--;
+
+    // Try to wake up next waiting request if we have capacity
+    if (this.waitQueue.length > 0 && this.activeRequests < this.concurrencyLimit) {
       const next = this.waitQueue.shift();
       // FIX: Clear the timeout to prevent memory leak and spurious rejection
       if (next.timeoutId) {
         clearTimeout(next.timeoutId);
       }
+      this.activeRequests++;
       this.stats.peakConcurrency = Math.max(this.stats.peakConcurrency, this.activeRequests);
       next.resolve();
-    } else {
-      this.activeRequests--;
     }
   }
 
@@ -293,110 +316,106 @@ class ParallelEmbeddingService {
    * @returns {Promise<{vector: number[], model: string}>}
    */
   async _embedTextWithRetry(text) {
-    // FIX: Delegate to LlamaService for consistent model resolution and fallback logic
-    // This ensures ingestion uses the same logic as search
+    const originalText = String(text || '');
+    const llamaService = getLlamaService();
+
+    const config = await llamaService.getConfig();
+    const modelName = config?.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
+
+    // Health check enhancement: fail fast when service is known unhealthy.
+    const health = llamaService.getHealthStatus?.();
+    if (health && health.initialized === false) {
+      const error = new Error('Llama service is unhealthy (not initialized)');
+      error.code = 'SERVICE_UNAVAILABLE';
+      throw error;
+    }
+
+    // Build progressively stricter caps. The first pass preserves current behavior,
+    // then we tighten token estimates for token-dense inputs to avoid hard failures.
+    const capPlans = [];
+    const primaryCap = capEmbeddingInput(originalText, { modelName });
+    capPlans.push({
+      ...primaryCap,
+      reason: 'default_cap'
+    });
+
+    const strictCap = capEmbeddingInput(originalText, {
+      modelName,
+      maxTokens: Math.max(64, Math.floor(primaryCap.maxTokens * 0.7)),
+      charsPerToken: 3
+    });
+    capPlans.push({
+      ...strictCap,
+      reason: 'strict_cap'
+    });
+
+    const ultraStrictCap = capEmbeddingInput(originalText, {
+      modelName,
+      maxTokens: Math.max(48, Math.floor(primaryCap.maxTokens * 0.55)),
+      charsPerToken: 2.5
+    });
+    capPlans.push({
+      ...ultraStrictCap,
+      reason: 'ultra_strict_cap'
+    });
+
+    const uniquePlans = [];
+    const seenTexts = new Set();
+    for (const plan of capPlans) {
+      const key = `${plan.text.length}:${plan.text}`;
+      if (seenTexts.has(key)) continue;
+      seenTexts.add(key);
+      uniquePlans.push(plan);
+    }
+
+    let lastOverflowError = null;
     try {
-      const pool = getEmbeddingPool();
-      if (pool) {
+      for (const plan of uniquePlans) {
         try {
-          const config = await getLlamaService().getConfig();
-          const modelPath =
-            config?.modelsPath && config?.embeddingModel
-              ? path.join(config.modelsPath, config.embeddingModel)
-              : null;
-          if (modelPath) {
-            const result = await pool.run({
-              text,
-              modelPath,
-              gpuLayers: config?.gpuLayers ?? 'auto'
-            });
-            if (result?.embedding) {
-              const modelName = config?.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
-              const expectedDim = resolveEmbeddingDimension(modelName);
-              if (result.embedding.length !== expectedDim) {
-                logger.warn(
-                  '[ParallelEmbeddingService] Worker returned embedding with wrong dimension',
-                  {
-                    actual: result.embedding.length,
-                    expected: expectedDim,
-                    model: modelName
-                  }
-                );
-                throw new Error(
-                  `Dimension mismatch: got ${result.embedding.length}, expected ${expectedDim}`
-                );
-              }
-              return {
-                success: true,
-                vector: result.embedding,
-                model: modelName
-              };
-            }
-          }
-        } catch (workerError) {
-          logger.warn('[ParallelEmbeddingService] Embedding worker failed, falling back', {
-            error: workerError.message
+          return await this._embedWithProviders(plan.text, {
+            llamaService,
+            modelName,
+            config
           });
-        }
-      }
-
-      const llamaService = getLlamaService();
-
-      // Health check enhancement: Fail fast if service is known to be unhealthy
-      const health = llamaService.getHealthStatus();
-      if (health && !health.initialized) {
-        const error = new Error('Llama service is unhealthy (not initialized)');
-        error.code = 'SERVICE_UNAVAILABLE';
-        throw error;
-      }
-
-      // Pass retry configuration to LlamaService
-      // Note: LlamaService handles retries internally via LlamaResilience, but we pass options if supported
-      const options = {
-        // maxRetries: this.maxRetries, // LlamaService uses internal config for retries
-        // initialDelay: this.initialRetryDelayMs,
-        // maxDelay: this.maxRetryDelayMs
-      };
-
-      const result = await llamaService.generateEmbedding(text, options);
-
-      // Normalize shape to { vector, model, success } expected by callers
-      if (result && result.embedding) {
-        // LlamaService.generateEmbedding() returns {embedding, model}.
-        // Fall back to config lookup if model is missing for any reason.
-        const modelName =
-          result.model ||
-          (await llamaService.getConfig())?.embeddingModel ||
-          AI_DEFAULTS.EMBEDDING.MODEL;
-
-        // Dimension validation — warn only for the LlamaService path.
-        // Unlike the worker pool (which could load a different model), LlamaService
-        // generated this embedding from the actual loaded model, so the vector is
-        // valid. The resolver's expectation may be stale for custom models.
-        const expectedDim = resolveEmbeddingDimension(modelName);
-        if (expectedDim > 0 && result.embedding.length !== expectedDim) {
+        } catch (error) {
+          if (!isEmbeddingContextOverflow(error)) {
+            throw error;
+          }
+          lastOverflowError = error;
           logger.warn(
-            '[ParallelEmbeddingService] LlamaService returned embedding with unexpected dimension',
-            { actual: result.embedding.length, expected: expectedDim, model: modelName }
+            '[ParallelEmbeddingService] Embedding overflow, retrying with stricter input cap',
+            {
+              reason: plan.reason,
+              originalLength: originalText.length,
+              attemptedLength: plan.text.length,
+              estimatedTokens: plan.estimatedTokens,
+              maxTokens: plan.maxTokens
+            }
           );
         }
-
-        const normalized = {
-          success: true,
-          vector: result.embedding,
-          model: modelName
-        };
-        return normalized;
       }
 
-      // Propagate structured failure for upstream handling
-      const err = new Error(result?.error || 'Embedding failed');
-      err.code = ERROR_CODES.EMBEDDING_GENERATION_FAILED;
-      logger.warn('[ParallelEmbeddingService] Embedding failed', {
-        model: result?.model,
-        error: err.message
-      });
-      throw err;
+      // Final fallback: chunk and mean-pool. This ensures oversized/token-dense
+      // inputs remain processable rather than being dropped.
+      const pooled = await this._embedWithChunkPooling(
+        originalText,
+        modelName,
+        llamaService,
+        config,
+        ultraStrictCap.maxChars
+      );
+      if (pooled && Array.isArray(pooled.vector) && pooled.vector.length > 0) {
+        logger.warn('[ParallelEmbeddingService] Recovered embedding via chunk pooling', {
+          originalLength: originalText.length,
+          pooledDim: pooled.vector.length
+        });
+        return pooled;
+      }
+
+      if (lastOverflowError) {
+        throw lastOverflowError;
+      }
+      throw new Error('Embedding overflow recovery failed');
     } catch (error) {
       logger.error('[ParallelEmbeddingService] Embedding failed via AI service', {
         error: error.message,
@@ -408,6 +427,149 @@ class ParallelEmbeddingService {
       embeddingError.originalError = error;
       embeddingError.retryable = this._isRetryableError(error);
       throw embeddingError;
+    }
+  }
+
+  async _embedWithProviders(textToEmbed, { llamaService, modelName, config }) {
+    const pool = getEmbeddingPool();
+    if (pool) {
+      try {
+        const modelPath =
+          config?.modelsPath && config?.embeddingModel
+            ? path.join(config.modelsPath, config.embeddingModel)
+            : null;
+        if (modelPath) {
+          const result = await pool.run({
+            text: textToEmbed,
+            modelPath,
+            gpuLayers: config?.gpuLayers ?? 'auto'
+          });
+          if (result?.embedding) {
+            const expectedDim = resolveEmbeddingDimension(modelName);
+            if (result.embedding.length !== expectedDim) {
+              logger.warn(
+                '[ParallelEmbeddingService] Worker returned embedding with wrong dimension',
+                {
+                  actual: result.embedding.length,
+                  expected: expectedDim,
+                  model: modelName
+                }
+              );
+              throw new Error(
+                `Dimension mismatch: got ${result.embedding.length}, expected ${expectedDim}`
+              );
+            }
+            return {
+              success: true,
+              vector: result.embedding,
+              model: modelName
+            };
+          }
+        }
+      } catch (workerError) {
+        logger.warn('[ParallelEmbeddingService] Embedding worker failed, falling back', {
+          error: workerError.message
+        });
+      }
+    }
+
+    // Pass retry configuration to LlamaService
+    // Note: LlamaService handles retries internally via LlamaResilience, but we pass options if supported
+    const options = {
+      // maxRetries: this.maxRetries, // LlamaService uses internal config for retries
+      // initialDelay: this.initialRetryDelayMs,
+      // maxDelay: this.maxRetryDelayMs
+    };
+
+    const result = await llamaService.generateEmbedding(textToEmbed, options);
+
+    // Normalize shape to { vector, model, success } expected by callers
+    if (result && result.embedding) {
+      // LlamaService.generateEmbedding() returns {embedding, model}.
+      // Fall back to config lookup if model is missing for any reason.
+      const resolvedModelName =
+        result.model ||
+        (await llamaService.getConfig())?.embeddingModel ||
+        AI_DEFAULTS.EMBEDDING.MODEL;
+
+      // Dimension validation — warn only for the LlamaService path.
+      // Unlike the worker pool (which could load a different model), LlamaService
+      // generated this embedding from the actual loaded model, so the vector is
+      // valid. The resolver's expectation may be stale for custom models.
+      const expectedDim = resolveEmbeddingDimension(resolvedModelName);
+      if (expectedDim > 0 && result.embedding.length !== expectedDim) {
+        logger.warn(
+          '[ParallelEmbeddingService] LlamaService returned embedding with unexpected dimension',
+          { actual: result.embedding.length, expected: expectedDim, model: resolvedModelName }
+        );
+      }
+
+      const normalized = {
+        success: true,
+        vector: result.embedding,
+        model: resolvedModelName
+      };
+      return normalized;
+    }
+
+    // Propagate structured failure for upstream handling
+    const err = new Error(result?.error || 'Embedding failed');
+    err.code = ERROR_CODES.EMBEDDING_GENERATION_FAILED;
+    logger.warn('[ParallelEmbeddingService] Embedding failed', {
+      model: result?.model,
+      error: err.message
+    });
+    throw err;
+  }
+
+  async _embedWithChunkPooling(originalText, modelName, llamaService, config, maxCharsHint) {
+    try {
+      const baseChunkSize = Number.isFinite(maxCharsHint) && maxCharsHint > 0 ? maxCharsHint : 900;
+      const chunkSize = Math.max(200, Math.floor(baseChunkSize * 0.35));
+      const overlap = Math.max(60, Math.floor(chunkSize * 0.12));
+      const chunks = chunkText(originalText, {
+        chunkSize,
+        overlap,
+        maxChunks: 5
+      });
+
+      if (chunks.length <= 1) return null;
+
+      const vectors = [];
+      for (const chunk of chunks) {
+        const safeChunk = capEmbeddingInput(chunk.text, {
+          modelName,
+          maxTokens: Math.max(48, Math.floor((baseChunkSize / 4) * 0.6)),
+          charsPerToken: 2.5
+        }).text;
+        if (!safeChunk) continue;
+        try {
+          const chunkResult = await this._embedWithProviders(safeChunk, {
+            llamaService,
+            modelName,
+            config
+          });
+          if (chunkResult?.vector?.length) {
+            vectors.push(chunkResult.vector);
+          }
+        } catch (error) {
+          if (!isEmbeddingContextOverflow(error)) {
+            throw error;
+          }
+        }
+      }
+
+      if (vectors.length === 0) return null;
+      return {
+        success: true,
+        vector: meanPoolVectors(vectors),
+        model: modelName
+      };
+    } catch (error) {
+      logger.warn('[ParallelEmbeddingService] Chunk pooling fallback failed', {
+        error: error.message
+      });
+      return null;
     }
   }
 
@@ -651,6 +813,17 @@ class ParallelEmbeddingService {
         new: newLimit
       });
       this.concurrencyLimit = newLimit;
+
+      // If limit increased, try to wake up queued requests
+      while (this.waitQueue.length > 0 && this.activeRequests < this.concurrencyLimit) {
+        const next = this.waitQueue.shift();
+        if (next.timeoutId) {
+          clearTimeout(next.timeoutId);
+        }
+        this.activeRequests++;
+        this.stats.peakConcurrency = Math.max(this.stats.peakConcurrency, this.activeRequests);
+        next.resolve();
+      }
     }
   }
 

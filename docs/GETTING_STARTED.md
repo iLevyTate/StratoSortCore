@@ -1,11 +1,11 @@
-# Getting Started with El StratoSort
+# Getting Started with StratoSort Core
 
 <p align="center">
   <img src="https://img.shields.io/badge/setup%20time-~10%20minutes-blue?style=flat-square" alt="Setup Time" />
   <img src="https://img.shields.io/badge/difficulty-beginner-green?style=flat-square" alt="Difficulty" />
 </p>
 
-This guide will walk you through setting up **El StratoSort** on your local machine.
+This guide will walk you through setting up **StratoSort Core** on your local machine.
 
 ## Table of Contents
 
@@ -17,7 +17,7 @@ This guide will walk you through setting up **El StratoSort** on your local mach
 
 ## System Requirements
 
-Before you begin, ensure your system meets the following requirements. El StratoSort runs a fully
+Before you begin, ensure your system meets the following requirements. StratoSort Core runs a fully
 local, in-process AI stack and does not rely on external servers.
 
 ### System Dependencies Chart
@@ -37,8 +37,8 @@ local, in-process AI stack and does not rely on external servers.
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/iLevyTate/elstratosort.git
-cd elstratosort
+git clone https://github.com/iLevyTate/StratoSortCore.git
+cd StratoSortCore
 ```
 
 ### 2. Install Dependencies
@@ -101,15 +101,15 @@ graph TD
 
 ### Startup Preflight Checks
 
-On each launch, StratoSort runs preflight checks to verify model availability, vector DB readiness,
-and OCR health. If a service is slow to respond, you can raise the timeout using
+On each launch, StratoSort Core runs preflight checks to verify model availability, vector DB
+readiness, and OCR health. If a service is slow to respond, you can raise the timeout using
 `SERVICE_CHECK_TIMEOUT` (ms). Check logs if the app reports missing or unreachable dependencies.
 
 ### Tesseract OCR Setup
 
-El StratoSort uses **Tesseract OCR** to read text from images. The setup script attempts to install
-Tesseract automatically and falls back to the bundled `tesseract.js` implementation if native
-install is unavailable:
+StratoSort Core uses **Tesseract OCR** to read text from images. The setup script attempts to
+install Tesseract automatically and falls back to the bundled `tesseract.js` implementation if
+native install is unavailable:
 
 - **Windows**: Uses `winget` or `chocolatey`
 - **macOS**: Uses `brew`
@@ -210,5 +210,5 @@ For more information, see the [main README](../README.md) or explore the [docume
 ---
 
 <p align="center">
-  Need help? <a href="https://github.com/iLevyTate/elstratosort/issues">Open an issue</a> on GitHub.
+  Need help? <a href="https://github.com/iLevyTate/StratoSortCore/issues">Open an issue</a> on GitHub.
 </p>

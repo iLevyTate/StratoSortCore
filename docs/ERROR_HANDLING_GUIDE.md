@@ -3,8 +3,8 @@
 ## Overview
 
 This guide provides comprehensive patterns and best practices for error handling across the
-StratoSort codebase. It consolidates all error handling utilities and provides clear guidance on
-when to use each pattern.
+StratoSort Core codebase. It consolidates all error handling utilities and provides clear guidance
+on when to use each pattern.
 
 ---
 

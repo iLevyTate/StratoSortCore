@@ -96,7 +96,7 @@ class FileOperationTracker {
         }
 
         if (loaded > 0) {
-          logger.info('[FILE-OP-TRACKER] Loaded persisted operations:', loaded);
+          logger.info('[FILE-OP-TRACKER] Loaded persisted operations', { count: loaded });
         }
       }
     } catch (error) {
@@ -301,7 +301,7 @@ class FileOperationTracker {
     }
 
     if (cleaned > 0) {
-      logger.debug('[FILE-OP-TRACKER] Cleaned expired entries:', cleaned);
+      logger.debug('[FILE-OP-TRACKER] Cleaned expired entries', { count: cleaned });
     }
 
     // Schedule another cleanup if there are still entries

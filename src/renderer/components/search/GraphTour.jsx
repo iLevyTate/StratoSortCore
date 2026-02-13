@@ -31,7 +31,7 @@ const TOUR_STEPS = [
     icon: Map,
     title: 'Navigate the graph',
     content:
-      'Use the minimap in the corner to navigate large graphs. Drag to pan, use Ctrl/Cmd + scroll to zoom, and click nodes to see details.',
+      'Use the minimap in the corner to navigate large graphs. Drag the canvas to pan, use the +/- zoom controls, and click nodes to see details.',
     position: 'center'
   }
 ];

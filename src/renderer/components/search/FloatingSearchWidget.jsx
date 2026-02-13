@@ -24,7 +24,15 @@ function FloatingSearchWidget({ isOpen, onClose, onOpenSearch }) {
       const saved = localStorage.getItem('floatingSearchWidgetPosition');
       if (saved) {
         const parsed = JSON.parse(saved);
-        setPosition(parsed);
+        if (
+          parsed &&
+          Number.isFinite(parsed.x) &&
+          Number.isFinite(parsed.y) &&
+          parsed.x >= 0 &&
+          parsed.y >= 0
+        ) {
+          setPosition({ x: parsed.x, y: parsed.y });
+        }
       }
     } catch {
       // Ignore localStorage errors

@@ -265,7 +265,6 @@ describe('LlamaService session disposal on sequence exhaustion', () => {
           } catch {
             /* model is being unloaded */
           }
-          session = null;
         }
         recoverFromExhaustion(error);
         // Second attempt

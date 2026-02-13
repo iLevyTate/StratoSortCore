@@ -222,6 +222,15 @@ describe('Custom Folders', () => {
       expect(folders).toHaveLength(8);
       expect(folders.some((f) => f.name === 'Uncategorized')).toBe(true);
     });
+
+    test('handles non-array JSON payload gracefully', async () => {
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify({ folders: [] }));
+
+      const folders = await customFolders.loadCustomFolders();
+
+      expect(folders).toHaveLength(8);
+      expect(folders.some((f) => f.name === 'Uncategorized')).toBe(true);
+    });
   });
 
   describe('saveCustomFolders', () => {

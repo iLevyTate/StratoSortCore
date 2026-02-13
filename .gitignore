@@ -41,6 +41,7 @@ logs/
 *.log
 app-errors.txt
 app-output.txt
+crash-dumps/
 
 # Runtime data
 pids/
@@ -68,10 +69,6 @@ blob-report/
 repomix-output.xml
 repomix-output.txt
 nul
-
-# Electron
-electron-builder.yml
-!electron-builder.yml
 
 # Debug files
 debug-analysis.js

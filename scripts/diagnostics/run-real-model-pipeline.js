@@ -20,8 +20,6 @@ const Module = require('module');
 const { withAbortableTimeout } = require('../../src/shared/promiseUtils');
 
 const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
-const userDataPath = path.join(appData, 'stratosort');
-const modelsPath = path.join(userDataPath, 'models');
 
 const REQUIRED_MODELS = [
   'nomic-embed-text-v1.5-Q8_0.gguf',
@@ -29,6 +27,33 @@ const REQUIRED_MODELS = [
   'llava-v1.6-mistral-7b-Q4_K_M.gguf',
   'mmproj-model-f16.gguf'
 ];
+
+function countPresentModels(modelsDir) {
+  return REQUIRED_MODELS.reduce(
+    (count, name) => count + (fs.existsSync(path.join(modelsDir, name)) ? 1 : 0),
+    0
+  );
+}
+
+function resolveUserDataPath() {
+  const candidates = [path.join(appData, 'stratosort-core'), path.join(appData, 'stratosort')];
+  let bestPath = candidates[0];
+  let bestCount = -1;
+
+  for (const candidate of candidates) {
+    const modelsDir = path.join(candidate, 'models');
+    const count = countPresentModels(modelsDir);
+    if (count > bestCount) {
+      bestCount = count;
+      bestPath = candidate;
+    }
+  }
+
+  return bestPath;
+}
+
+const userDataPath = resolveUserDataPath();
+const modelsPath = path.join(userDataPath, 'models');
 
 const FIXTURE_DIR = path.resolve(__dirname, '../../test/test-files');
 const SUPPORTED_IMAGE_EXTENSIONS = new Set([
@@ -173,7 +198,7 @@ async function runDocumentAnalysisChecks(llama, errors) {
         'Text model sanity check'
       );
       if (!sanity?.response) {
-        throw new Error('no response');
+        throw new Error('no response', { cause: error });
       }
       log('- Text model sanity check: OK');
     } catch (sanityError) {

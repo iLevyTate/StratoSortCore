@@ -16,7 +16,7 @@ const {
   buildDestinationPath,
   findDefaultFolder
 } = require('./folderOperations');
-const { safeSuggestion } = require('./pathUtils');
+const { safeSuggestion, resolveSuggestionToSmartFolder } = require('./pathUtils');
 // FIX C-5: Import from idUtils to break circular dependency with fileProcessor
 const { generateSecureId } = require('./idUtils');
 
@@ -84,25 +84,7 @@ async function processBatchResults(
         continue;
       }
 
-      if (suggestion && smartFolders && smartFolders.length > 0) {
-        const resolvedSmartFolder = smartFolders.find(
-          (folder) =>
-            (folder.name &&
-              suggestion.folder &&
-              folder.name.toLowerCase() === String(suggestion.folder).toLowerCase()) ||
-            (folder.path &&
-              suggestion.path &&
-              folder.path.toLowerCase() === String(suggestion.path).toLowerCase())
-        );
-        if (resolvedSmartFolder) {
-          suggestion = {
-            ...suggestion,
-            folder: resolvedSmartFolder.name,
-            path: resolvedSmartFolder.path,
-            isSmartFolder: true
-          };
-        }
-      }
+      const canonicalSuggestion = resolveSuggestionToSmartFolder(suggestion, smartFolders);
 
       if (!suggestion) {
         // Use fallback if no suggestion
@@ -134,10 +116,10 @@ async function processBatchResults(
       }
 
       // Determine action based on confidence
-      if (confidence >= effectiveThreshold && suggestion.isSmartFolder) {
+      if (confidence >= effectiveThreshold && canonicalSuggestion) {
         // High confidence - organize automatically
         // Ensure suggestion folder/path are valid strings
-        const safeSuggestionObj = safeSuggestion(suggestion);
+        const safeSuggestionObj = safeSuggestion(canonicalSuggestion);
         const destination = buildDestinationPath(
           file,
           safeSuggestionObj,
@@ -147,7 +129,7 @@ async function processBatchResults(
 
         results.organized.push({
           file: sanitizeFile(file),
-          suggestion,
+          suggestion: canonicalSuggestion,
           destination,
           confidence,
           method: 'batch-automatic'
@@ -162,7 +144,7 @@ async function processBatchResults(
         // Record feedback for learning (non-blocking with error handling)
         pendingFeedback.push(
           withTimeout(
-            suggestionService.recordFeedback(file, suggestion, true),
+            suggestionService.recordFeedback(file, canonicalSuggestion, true),
             TIMEOUTS.API_REQUEST,
             'AutoOrganize feedback'
           ).catch((err) => {
@@ -172,6 +154,15 @@ async function processBatchResults(
             });
           })
         );
+      } else if (confidence >= effectiveThreshold && !canonicalSuggestion) {
+        results.needsReview.push({
+          file: sanitizeFile(file),
+          suggestion,
+          alternatives: fileWithSuggestion.alternatives,
+          confidence,
+          explanation:
+            'Suggestion did not resolve to a configured smart folder. Review required before moving.'
+        });
       } else {
         const defaultFolder = findDefaultFolder(smartFolders);
         if (defaultFolder?.path && confidence < effectiveThreshold) {
@@ -278,17 +269,8 @@ async function batchOrganize(
     try {
       if (group.confidence >= confidenceThreshold) {
         // Auto-approve high confidence groups, but only if they map to a smart folder.
-        const resolvedGroupFolder = smartFolders.find(
-          (folder) =>
-            (folder.name &&
-              group.folder &&
-              folder.name.toLowerCase() === String(group.folder).toLowerCase()) ||
-            (folder.path &&
-              group.path &&
-              folder.path.toLowerCase() === String(group.path).toLowerCase())
-        );
-
-        if (!resolvedGroupFolder) {
+        const canonicalGroup = resolveSuggestionToSmartFolder(group, smartFolders);
+        if (!canonicalGroup) {
           results.skipped.push({
             folder: group.folder,
             files: group.files,
@@ -319,12 +301,9 @@ async function batchOrganize(
 
           try {
             // Ensure folder and path are valid strings
-            const safeGroup = safeSuggestion(group);
-            let folderName = safeGroup.folder;
-            let folderPath = safeGroup.path;
-
-            folderName = resolvedGroupFolder.name;
-            folderPath = resolvedGroupFolder.path;
+            const safeGroup = safeSuggestion(canonicalGroup);
+            const folderName = safeGroup.folder;
+            const folderPath = safeGroup.path;
 
             if (!folderPath) {
               throw new Error('Resolved smart folder is missing a path');
@@ -392,7 +371,7 @@ async function batchOrganize(
           // Use path-based comparison instead of object reference equality
           const failedPaths = new Set(groupFailures.map((failure) => failure.filePath));
           results.groups.push({
-            folder: resolvedGroupFolder.name,
+            folder: canonicalGroup.folder,
             files: group.files.filter((f) => f?.path && !failedPaths.has(f.path)),
             confidence: group.confidence,
             autoApproved: true,

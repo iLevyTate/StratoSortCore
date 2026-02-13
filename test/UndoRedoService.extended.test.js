@@ -347,6 +347,15 @@ describe('UndoRedoService - Extended Tests', () => {
       expect(desc).toContain('old-name.txt');
       expect(desc).toContain('new-name.txt');
     });
+
+    test('handles missing actionData defensively', () => {
+      expect(() => service.getActionDescription('FILE_MOVE')).not.toThrow();
+      expect(() => service.getActionDescription('FILE_RENAME', null)).not.toThrow();
+      expect(() =>
+        service.getActionDescription('BATCH_OPERATION', { operations: null })
+      ).not.toThrow();
+      expect(service.getActionDescription('BATCH_OPERATION', { operations: null })).toContain('0');
+    });
   });
 
   describe('History management', () => {
@@ -431,6 +440,85 @@ describe('UndoRedoService - Extended Tests', () => {
 
       expect(service.actions).toEqual([]);
       expect(service.currentIndex).toBe(-1);
+    });
+
+    test('loadActions clamps out-of-range currentIndex from disk', async () => {
+      fs.readFile.mockResolvedValueOnce(
+        JSON.stringify({
+          actions: [
+            {
+              id: '1',
+              type: 'FILE_MOVE',
+              data: { originalPath: '/a', newPath: '/b' },
+              timestamp: new Date().toISOString(),
+              description: 'test 1'
+            },
+            {
+              id: '2',
+              type: 'FILE_MOVE',
+              data: { originalPath: '/c', newPath: '/d' },
+              timestamp: new Date().toISOString(),
+              description: 'test 2'
+            }
+          ],
+          currentIndex: 99
+        })
+      );
+
+      await service.loadActions();
+
+      expect(service.actions).toHaveLength(2);
+      expect(service.currentIndex).toBe(1);
+      expect(service.canUndo()).toBe(true);
+      expect(service.canRedo()).toBe(false);
+    });
+
+    test('loadActions clamps negative currentIndex lower bound to -1', async () => {
+      fs.readFile.mockResolvedValueOnce(
+        JSON.stringify({
+          actions: [
+            {
+              id: '1',
+              type: 'FILE_MOVE',
+              data: { originalPath: '/a', newPath: '/b' },
+              timestamp: new Date().toISOString(),
+              description: 'test 1'
+            }
+          ],
+          currentIndex: -99
+        })
+      );
+
+      await service.loadActions();
+
+      expect(service.actions).toHaveLength(1);
+      expect(service.currentIndex).toBe(-1);
+      expect(service.canUndo()).toBe(false);
+      expect(service.canRedo()).toBe(true);
+    });
+
+    test('loadActions treats non-numeric currentIndex as -1', async () => {
+      fs.readFile.mockResolvedValueOnce(
+        JSON.stringify({
+          actions: [
+            {
+              id: '1',
+              type: 'FILE_MOVE',
+              data: { originalPath: '/a', newPath: '/b' },
+              timestamp: new Date().toISOString(),
+              description: 'test 1'
+            }
+          ],
+          currentIndex: 'bad-index'
+        })
+      );
+
+      await service.loadActions();
+
+      expect(service.actions).toHaveLength(1);
+      expect(service.currentIndex).toBe(-1);
+      expect(service.canUndo()).toBe(false);
+      expect(service.canRedo()).toBe(true);
     });
   });
 

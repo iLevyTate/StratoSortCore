@@ -99,6 +99,24 @@ describe('ChatService – extended coverage', () => {
     });
   });
 
+  describe('intent detection', () => {
+    test('detects holistic synthesis intent', () => {
+      const service = createTestService();
+      expect(
+        service._isHolisticSynthesisQuery('give me a psych profile based on all my docs')
+      ).toBe(true);
+      expect(service._isHolisticSynthesisQuery('find tax return')).toBe(false);
+    });
+
+    test('detects correction feedback intent', () => {
+      const service = createTestService();
+      expect(service._isCorrectionFeedback('that is not correct dig deeper and holistically')).toBe(
+        true
+      );
+      expect(service._isCorrectionFeedback('show recent invoices')).toBe(false);
+    });
+  });
+
   describe('_retrieveSources', () => {
     test('returns sources from hybrid search', async () => {
       const service = createTestService();
@@ -369,6 +387,40 @@ describe('ChatService – extended coverage', () => {
       expect(result.success).toBe(true);
       // Fallback response should be added
       expect(result.response.modelAnswer.length).toBeGreaterThan(0);
+    });
+
+    test('auto-escalates to deeper retrieval for holistic profile queries', async () => {
+      const searchService = {
+        hybridSearch: jest.fn().mockResolvedValue({
+          success: true,
+          results: [
+            {
+              id: 'file-1',
+              score: 0.91,
+              metadata: { name: 'notes.pdf', path: '/docs/notes.pdf', summary: 'Summary text' }
+            }
+          ],
+          meta: { mode: 'hybrid' }
+        }),
+        chunkSearch: jest.fn().mockResolvedValue([])
+      };
+      const service = createTestService({ searchService });
+
+      const result = await service.query({
+        query: 'give me a psych profile based on all my docs',
+        responseMode: 'fast',
+        topK: 6,
+        chunkTopK: 10,
+        chunkWeight: 0.2
+      });
+
+      const searchArgs = searchService.hybridSearch.mock.calls[0][1];
+      expect(searchArgs.topK).toBeGreaterThanOrEqual(12);
+      expect(searchArgs.chunkTopK).toBeGreaterThanOrEqual(80);
+      expect(searchArgs.chunkWeight).toBeGreaterThanOrEqual(0.35);
+      expect(searchArgs.rerank).toBe(true);
+      expect(result.meta.responseMode).toBe('deep');
+      expect(result.meta.holisticIntent).toBe(true);
     });
   });
 });

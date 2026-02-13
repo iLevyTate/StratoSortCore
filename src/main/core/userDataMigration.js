@@ -4,6 +4,7 @@ const path = require('path');
 const { createLogger } = require('../../shared/logger');
 
 const logger = createLogger('UserDataMigration');
+// Legacy folder names are intentionally preserved here for backward-compatible migrations.
 const LEGACY_USERDATA_FOLDERS = [
   'StratoSort',
   'stratosort',

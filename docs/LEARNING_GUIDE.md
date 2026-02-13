@@ -1,6 +1,6 @@
-# El StratoSort Codebase Learning Guide
+# StratoSort Core Codebase Learning Guide
 
-Welcome to the El StratoSort codebase! This guide is designed to serve as a comprehensive map for
+Welcome to the StratoSort Core codebase! This guide is designed to serve as a comprehensive map for
 understanding what you have built. It breaks down the software from multiple engineering
 perspectives, ranging from high-level architecture to specific design patterns and critical system
 concepts.
@@ -553,5 +553,5 @@ const MyButton = () => {
 
 ---
 
-_This document acts as the engineering manual for El StratoSort. It covers the "Why" and "How"
+_This document acts as the engineering manual for StratoSort Core. It covers the "Why" and "How"
 behind the code architecture._

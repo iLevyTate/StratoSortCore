@@ -6,7 +6,7 @@
   - **Filter visibility**: Active graph filters are surfaced as chips on the graph (top-left
     overlay) and can be reset from there.
 
-# Stratosort Architecture
+# StratoSort Core Architecture
 
 ## High-Level Information Flow
 

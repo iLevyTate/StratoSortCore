@@ -21,10 +21,31 @@ const mockFs = {
   readFile: jest.fn(),
   writeFile: jest.fn(),
   rename: jest.fn(),
-  unlink: jest.fn()
+  unlink: jest.fn(),
+  copyFile: jest.fn()
 };
 jest.mock('fs', () => ({
   promises: mockFs
+}));
+
+// Mock sqliteStore for SQLite path coverage (mock prefix required by Jest)
+const mockStoresByDbPath = new Map();
+let mockUseSqlite = false;
+jest.mock('../src/main/utils/sqliteStore', () => ({
+  shouldUseSqliteBackend: jest.fn(() => mockUseSqlite),
+  createKeyValueStore: jest.fn(({ dbPath }) => {
+    if (!mockStoresByDbPath.has(dbPath)) {
+      mockStoresByDbPath.set(dbPath, new Map());
+    }
+    const scopedStore = mockStoresByDbPath.get(dbPath);
+    return {
+      get: jest.fn((k) => scopedStore.get(k)),
+      set: jest.fn((k, v) => {
+        scopedStore.set(k, v);
+      }),
+      close: jest.fn()
+    };
+  })
 }));
 
 describe('Embedding Queue Persistence', () => {
@@ -38,6 +59,8 @@ describe('Embedding Queue Persistence', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.resetModules();
+    mockStoresByDbPath.clear();
+    mockUseSqlite = false;
 
     // Default mocks
     mockFs.access.mockResolvedValue(undefined);
@@ -246,6 +269,68 @@ describe('Embedding Queue Persistence', () => {
       await persistDeadLetterQueue('/path/to/dlq.json', []);
 
       expect(mockFs.unlink).toHaveBeenCalled();
+    });
+  });
+
+  describe('SQLite path', () => {
+    beforeEach(() => {
+      mockUseSqlite = true;
+      jest.resetModules();
+      const mod = require('../src/main/analysis/embeddingQueue/persistence');
+      loadPersistedData = mod.loadPersistedData;
+      persistQueueData = mod.persistQueueData;
+      persistFailedItems = mod.persistFailedItems;
+      persistDeadLetterQueue = mod.persistDeadLetterQueue;
+    });
+
+    test('loadPersistedData reads from SQLite store', async () => {
+      const stored = [{ id: 'from-sqlite' }];
+      await persistQueueData('/tmp/queue.json', stored, { key: 'queue' });
+
+      const onLoad = jest.fn();
+      await loadPersistedData('/tmp/queue.json', onLoad, 'queue', { key: 'queue' });
+
+      expect(onLoad).toHaveBeenCalledWith(stored);
+    });
+
+    test('persistQueueData writes to SQLite store', async () => {
+      const queue = [{ id: 'item1' }];
+
+      await persistQueueData('/tmp/queue.json', queue, { key: 'queue' });
+
+      const stores = Array.from(mockStoresByDbPath.values());
+      expect(stores).toHaveLength(1);
+      expect(stores[0].get('queue')).toEqual(queue);
+    });
+
+    test('persistFailedItems writes Map entries to SQLite store', async () => {
+      const failedItems = new Map([['id1', { retryCount: 1 }]]);
+
+      await persistFailedItems('/tmp/failed.json', failedItems);
+
+      const stores = Array.from(mockStoresByDbPath.values());
+      expect(stores).toHaveLength(1);
+      expect(stores[0].get('failedItems')).toEqual([['id1', { retryCount: 1 }]]);
+    });
+
+    test('persistDeadLetterQueue writes to SQLite store', async () => {
+      const dlq = [{ itemId: 'x', error: 'err' }];
+
+      await persistDeadLetterQueue('/tmp/dlq.json', dlq);
+
+      const stores = Array.from(mockStoresByDbPath.values());
+      expect(stores).toHaveLength(1);
+      expect(stores[0].get('deadLetter')).toEqual(dlq);
+    });
+
+    test('keeps SQLite stores isolated by file path', async () => {
+      await persistQueueData('/tmp/a/queue.json', [{ id: 'A' }], { key: 'queue' });
+      await persistQueueData('/tmp/b/queue.json', [{ id: 'B' }], { key: 'queue' });
+
+      const stores = Array.from(mockStoresByDbPath.values());
+      expect(stores).toHaveLength(2);
+      const queueValues = stores.map((store) => store.get('queue'));
+      expect(queueValues).toEqual(expect.arrayContaining([[{ id: 'A' }], [{ id: 'B' }]]));
     });
   });
 });

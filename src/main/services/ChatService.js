@@ -12,6 +12,9 @@ const DEFAULTS = {
   contextFileLimit: 200,
   memoryWindow: 6
 };
+const HOLISTIC_MIN_TOPK = 12;
+const HOLISTIC_MIN_CHUNK_TOPK = 80;
+const HOLISTIC_MIN_CHUNK_WEIGHT = 0.35;
 
 const MAX_SESSIONS = 50;
 
@@ -122,22 +125,39 @@ Return ONLY valid JSON:
 
     const memory = await this._getSessionMemory(sessionId);
     const history = await this._getHistoryText(memory);
+    const holisticIntent = this._isHolisticSynthesisQuery(cleanQuery);
+    const correctionIntent = this._isCorrectionFeedback(cleanQuery);
 
-    const modeConfig = RESPONSE_MODES[responseMode] || RESPONSE_MODES.fast;
-    const effectiveChunkTopK =
-      Number.isInteger(chunkTopK) && chunkTopK > 0 ? chunkTopK : modeConfig.chunkTopK;
-    const effectiveChunkWeight =
-      typeof chunkWeight === 'number' ? chunkWeight : modeConfig.chunkWeight;
+    const forcedResponseMode = holisticIntent && responseMode !== 'deep' ? 'deep' : responseMode;
+    const modeConfig = RESPONSE_MODES[forcedResponseMode] || RESPONSE_MODES.fast;
+    const effectiveTopK = holisticIntent ? Math.max(topK, HOLISTIC_MIN_TOPK) : topK;
+    const effectiveChunkTopK = holisticIntent
+      ? Math.max(
+          Number.isInteger(chunkTopK) && chunkTopK > 0 ? chunkTopK : modeConfig.chunkTopK,
+          HOLISTIC_MIN_CHUNK_TOPK
+        )
+      : Number.isInteger(chunkTopK) && chunkTopK > 0
+        ? chunkTopK
+        : modeConfig.chunkTopK;
+    const effectiveChunkWeight = holisticIntent
+      ? Math.max(
+          typeof chunkWeight === 'number' ? chunkWeight : modeConfig.chunkWeight,
+          HOLISTIC_MIN_CHUNK_WEIGHT
+        )
+      : typeof chunkWeight === 'number'
+        ? chunkWeight
+        : modeConfig.chunkWeight;
+    const effectiveRerank = Boolean(modeConfig.rerank || holisticIntent);
 
     const retrieval = await this._retrieveSources(cleanQuery, {
-      topK,
+      topK: effectiveTopK,
       mode,
       chunkTopK: effectiveChunkTopK,
       chunkWeight: effectiveChunkWeight,
       contextFileIds,
       expandSynonyms: modeConfig.expandSynonyms,
       correctSpelling: modeConfig.correctSpelling,
-      rerank: modeConfig.rerank
+      rerank: effectiveRerank
     });
 
     logger.debug('[ChatService] Retrieval completed', {
@@ -152,7 +172,11 @@ Return ONLY valid JSON:
       query: cleanQuery,
       history,
       sources: retrieval.sources,
-      persona
+      persona,
+      intent: {
+        holisticIntent,
+        correctionIntent
+      }
     });
 
     const llamaResult = await this.llamaService.analyzeText(prompt, {
@@ -198,7 +222,12 @@ Return ONLY valid JSON:
       success: true,
       response: parsed,
       sources: retrieval.sources,
-      meta: retrieval.meta
+      meta: {
+        ...retrieval.meta,
+        responseMode: forcedResponseMode,
+        holisticIntent,
+        correctionIntent
+      }
     };
   }
 
@@ -286,6 +315,33 @@ Return ONLY valid JSON:
       .replace(/[^\w\s]/g, '')
       .trim();
     return conversational.has(clean);
+  }
+
+  _isHolisticSynthesisQuery(query) {
+    const q = String(query || '').toLowerCase();
+    if (!q) return false;
+    return (
+      /\ball\b.*\bdocs?\b/.test(q) ||
+      /\bacross\b.*\bdocs?\b/.test(q) ||
+      /\bholistic\b/.test(q) ||
+      /\bbig picture\b/.test(q) ||
+      /\bdig deeper\b/.test(q) ||
+      /\bprofile\b/.test(q) ||
+      /\bbased on\b.*\bdocuments?\b/.test(q)
+    );
+  }
+
+  _isCorrectionFeedback(query) {
+    const q = String(query || '').toLowerCase();
+    if (!q) return false;
+    return (
+      /\bnot correct\b/.test(q) ||
+      /\bwrong\b/.test(q) ||
+      /\bregenerate\b/.test(q) ||
+      /\bretry\b/.test(q) ||
+      /\bdig deeper\b/.test(q) ||
+      /\bholistic\b/.test(q)
+    );
   }
 
   async _retrieveSources(
@@ -377,7 +433,7 @@ Return ONLY valid JSON:
     const baseResults = Array.isArray(searchResults.results) ? searchResults.results : [];
 
     // FIX Bug #28: Wrap chunkSearch in try/catch to prevent chat crash on index failure
-    let chunkResults = [];
+    let chunkResults;
     try {
       chunkResults = await this.searchService.chunkSearch(
         query,
@@ -394,8 +450,8 @@ Return ONLY valid JSON:
         }
       );
     } catch (chunkError) {
-      logger.warn('[ChatService] Chunk search failed (non-fatal):', chunkError.message);
       chunkResults = [];
+      logger.warn('[ChatService] Chunk search failed (non-fatal):', chunkError.message);
     }
 
     const chunkMap = new Map();
@@ -585,7 +641,7 @@ Return ONLY valid JSON:
     return getChatPersonaOrDefault();
   }
 
-  _buildPrompt({ query, history, sources, persona }) {
+  _buildPrompt({ query, history, sources, persona, intent = {} }) {
     // Build comprehensive source context for richer conversations
     const sourcesText = sources
       .map((s) => {
@@ -615,6 +671,24 @@ Return ONLY valid JSON:
     const personaText = persona?.guidance
       ? `${persona.label}\n${persona.guidance}`
       : '(no persona guidance)';
+    const holisticIntent = Boolean(intent?.holisticIntent);
+    const correctionIntent = Boolean(intent?.correctionIntent);
+    const synthesisRules = holisticIntent
+      ? `
+Holistic constraints:
+- Synthesize across multiple sources instead of anchoring on one document.
+- If 3+ sources are available, use evidence from at least 3 distinct sources.
+- For profile-style requests, summarize observable patterns (work style, topics, preferences) and avoid medical/clinical diagnosis.
+- If evidence is weak/conflicting, say that explicitly and lower certainty.
+`.trim()
+      : '';
+    const correctionRules = correctionIntent
+      ? `
+Correction constraints:
+- The user indicated prior answer quality issues. Re-evaluate from scratch against sources.
+- Do not repeat previous assistant claims unless supported by the current document evidence.
+`.trim()
+      : '';
 
     return `
 You are StratoSort, an intelligent and helpful local document assistant.
@@ -654,6 +728,8 @@ Rules:
 5. Be concise but helpful. Avoid robotic repetition.
 6. If the documents don't answer the question, say so clearly in 'modelAnswer' and offer general advice if applicable.
 7. Generate 1-3 natural follow-up questions that help the user explore their data further.
+${synthesisRules}
+${correctionRules}
 `.trim();
   }
 

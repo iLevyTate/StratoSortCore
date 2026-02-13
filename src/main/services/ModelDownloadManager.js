@@ -3,24 +3,49 @@
 const path = require('path');
 const fs = require('fs').promises;
 const { createWriteStream } = require('fs');
-const { app } = require('electron');
 const https = require('https');
 const http = require('http');
 const crypto = require('crypto');
 const { createLogger } = require('../../shared/logger');
-const { MODEL_CATALOG } = require('../../shared/modelRegistry');
+const { MODEL_CATALOG, getModel } = require('../../shared/modelRegistry');
+const { ensureResolvedModelsPath } = require('./modelPathResolver');
 
 const logger = createLogger('ModelDownloadManager');
+const DEFAULT_DOWNLOAD_MAX_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 500;
 
 class ModelDownloadManager {
   constructor() {
-    this._modelPath = path.join(app.getPath('userData'), 'models');
+    this._modelPath = null;
+    this._modelPathInitPromise = null;
     this._downloads = new Map(); // filename -> download state
     this._progressCallbacks = new Set();
   }
 
+  async _ensureModelPath() {
+    if (this._modelPath) return this._modelPath;
+    if (!this._modelPathInitPromise) {
+      this._modelPathInitPromise = (async () => {
+        const resolved = await ensureResolvedModelsPath();
+        this._modelPath = resolved.modelsPath;
+        if (resolved.source === 'legacy') {
+          logger.warn('[Download] Using legacy models directory', {
+            modelsPath: resolved.modelsPath,
+            currentModelsPath: resolved.currentModelsPath
+          });
+        }
+        return this._modelPath;
+      })();
+    }
+    try {
+      return await this._modelPathInitPromise;
+    } finally {
+      this._modelPathInitPromise = null;
+    }
+  }
+
   async initialize() {
-    await fs.mkdir(this._modelPath, { recursive: true });
+    await this._ensureModelPath();
   }
 
   /**
@@ -28,14 +53,15 @@ class ModelDownloadManager {
    */
   async getDownloadedModels() {
     try {
-      const files = await fs.readdir(this._modelPath);
-      const ggufFiles = files.filter((f) => f.endsWith('.gguf'));
+      const modelPath = await this._ensureModelPath();
+      const files = await fs.readdir(modelPath);
+      const ggufFiles = files.filter((f) => /\.gguf$/i.test(f));
 
       return Promise.all(
         ggufFiles.map(async (filename) => {
-          const filePath = path.join(this._modelPath, filename);
+          const filePath = path.join(modelPath, filename);
           const stats = await fs.stat(filePath);
-          const registryInfo = MODEL_CATALOG[filename] || {};
+          const registryInfo = getModel(filename) || {};
 
           return {
             filename,
@@ -58,11 +84,12 @@ class ModelDownloadManager {
    */
   async checkDiskSpace(requiredBytes) {
     try {
+      const modelPath = await this._ensureModelPath();
       // FIX Bug #29: Use fs.statfs instead of execSync to prevent shell injection
       // and support modern Windows environments where wmic is deprecated.
       // fs.statfs is available since Node 18.15.0.
       if (fs.statfs) {
-        const stats = await fs.statfs(this._modelPath);
+        const stats = await fs.statfs(modelPath);
         const freeSpace = stats.bfree * stats.bsize;
         return { available: freeSpace, sufficient: freeSpace > requiredBytes * 1.1 };
       }
@@ -84,12 +111,13 @@ class ModelDownloadManager {
    * @private
    */
   _resolveModelInfo(filename) {
-    const direct = MODEL_CATALOG[filename];
+    const direct = getModel(filename);
     if (direct) return direct;
 
     // Check if filename matches a clipModel companion of any vision model
+    const lowerFilename = filename?.toLowerCase();
     for (const info of Object.values(MODEL_CATALOG)) {
-      if (info.clipModel && info.clipModel.name === filename) {
+      if (info.clipModel && info.clipModel.name?.toLowerCase() === lowerFilename) {
         return {
           type: 'vision-helper',
           displayName: `Vision Projector (${filename})`,
@@ -110,6 +138,7 @@ class ModelDownloadManager {
    * is automatically downloaded after the main model completes.
    */
   async downloadModel(filename, options = {}) {
+    const modelPath = await this._ensureModelPath();
     const modelInfo = this._resolveModelInfo(filename);
     if (!modelInfo) {
       throw new Error(`Unknown model: ${filename}`);
@@ -122,7 +151,11 @@ class ModelDownloadManager {
     }
 
     const { onProgress, signal } = options;
-    const filePath = path.join(this._modelPath, filename);
+    const retryAttempt = Number.isInteger(options._attempt) ? options._attempt : 0;
+    const maxRetries = Number.isInteger(options._maxRetries)
+      ? Math.max(0, options._maxRetries)
+      : DEFAULT_DOWNLOAD_MAX_RETRIES;
+    const filePath = path.join(modelPath, filename);
     const partialPath = filePath + '.partial';
 
     // Check disk space
@@ -187,11 +220,50 @@ class ModelDownloadManager {
 
       const finalizeFailure = (error, status = 'error', cleanupPartial = false) => {
         if (settled) return;
-        settled = true;
         downloadState.status = status;
         if (this._downloads.has(filename)) this._downloads.delete(filename);
         const cleanup = cleanupPartial ? this._cleanupPartialFile(partialPath) : Promise.resolve();
-        cleanup.finally(() => reject(error));
+        cleanup
+          .then(async () => {
+            const canRetry =
+              retryAttempt < maxRetries &&
+              this._isRetryableDownloadError(error, status, {
+                externalSignal: signal,
+                internalSignal: internalAbortController.signal
+              });
+
+            if (!canRetry) {
+              if (settled) return;
+              settled = true;
+              reject(error);
+              return;
+            }
+
+            const nextAttempt = retryAttempt + 1;
+            const retryDelayMs = Math.min(3000, RETRY_BASE_DELAY_MS * nextAttempt);
+            logger.warn(
+              `[Download] Attempt ${nextAttempt}/${maxRetries} retrying ${filename} after failure`,
+              {
+                status,
+                error: error?.message || String(error),
+                retryDelayMs
+              }
+            );
+            if (retryDelayMs > 0) {
+              await new Promise((r) => setTimeout(r, retryDelayMs));
+            }
+            this.downloadModel(filename, {
+              ...options,
+              _attempt: nextAttempt
+            })
+              .then(finalizeSuccess)
+              .catch(reject);
+          })
+          .catch(() => {
+            if (settled) return;
+            settled = true;
+            reject(error);
+          });
       };
 
       // Honor already-aborted external signals before opening sockets/streams.
@@ -260,12 +332,24 @@ class ModelDownloadManager {
           isResume = false;
         }
 
+        // Prefer the server's Content-Length for size validation.
+        // Catalog sizes are informational estimates (e.g. "~21MB") and may
+        // not match the real file byte-for-byte, causing spurious mismatches.
+        const contentLength = parseInt(response.headers['content-length'], 10);
+        const serverExpectedBytes =
+          Number.isFinite(contentLength) && contentLength > 0
+            ? isResume
+              ? contentLength + startByte
+              : contentLength
+            : null;
+        const expectedBytes = serverExpectedBytes || modelInfo.size;
+
         const writeStream = createWriteStream(partialPath, {
           flags: isResume ? 'a' : 'w'
         });
 
         let downloaded = startByte;
-        const total = modelInfo.size;
+        const total = expectedBytes;
 
         response.on('data', (chunk) => {
           downloaded += chunk.length;
@@ -288,11 +372,13 @@ class ModelDownloadManager {
 
         writeStream.on('finish', async () => {
           try {
-            // Verify file size
+            // Verify file size against server-reported Content-Length (or catalog fallback).
             const stats = await fs.stat(partialPath);
-            if (stats.size !== modelInfo.size) {
+            if (stats.size !== expectedBytes) {
               finalizeFailure(
-                new Error('Download incomplete - file size mismatch'),
+                new Error(
+                  `Download incomplete - file size mismatch (got ${stats.size}, expected ${expectedBytes})`
+                ),
                 'incomplete',
                 true
               );
@@ -322,7 +408,7 @@ class ModelDownloadManager {
 
             // Auto-download clipModel companion (mmproj) for vision models
             if (modelInfo.clipModel && modelInfo.clipModel.name && modelInfo.clipModel.url) {
-              const companionPath = path.join(this._modelPath, modelInfo.clipModel.name);
+              const companionPath = path.join(modelPath, modelInfo.clipModel.name);
               try {
                 await fs.access(companionPath);
                 logger.info(`[Download] Companion already exists: ${modelInfo.clipModel.name}`);
@@ -409,6 +495,16 @@ class ModelDownloadManager {
   }
 
   /**
+   * Check if a model is currently being downloaded.
+   * @param {string} filename - Model filename
+   * @returns {boolean}
+   */
+  isDownloading(filename) {
+    const state = this._downloads.get(filename);
+    return !!state && (state.status === 'downloading' || state.status === 'redirecting');
+  }
+
+  /**
    * Cancel an in-progress download
    */
   cancelDownload(filename) {
@@ -424,7 +520,8 @@ class ModelDownloadManager {
    * Delete a downloaded model
    */
   async deleteModel(filename) {
-    const filePath = path.join(this._modelPath, filename);
+    const modelPath = await this._ensureModelPath();
+    const filePath = path.join(modelPath, filename);
     const partialPath = filePath + '.partial';
 
     try {
@@ -515,6 +612,19 @@ class ModelDownloadManager {
     } catch {
       // Best-effort cleanup: file may not exist if write failed before creation.
     }
+  }
+
+  _isRetryableDownloadError(error, status, signals = {}) {
+    if (status === 'cancelled') return false;
+    if (signals?.externalSignal?.aborted || signals?.internalSignal?.aborted) return false;
+    if (status === 'incomplete' || status === 'corrupted') return true;
+    const message = String(error?.message || '').toLowerCase();
+    const code = String(error?.code || '').toUpperCase();
+    if (message.includes('timeout') || message.includes('file size mismatch')) return true;
+    if (/^http 5\d{2}/i.test(String(error?.message || ''))) return true;
+    return ['ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'EPIPE', 'ETIMEDOUT', 'EAI_AGAIN'].includes(
+      code
+    );
   }
 }
 

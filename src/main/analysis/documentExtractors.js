@@ -64,12 +64,20 @@ async function getUnpdfRenderer() {
       return null;
     }
 
-    ensurePromiseResolversPolyfill();
-    try {
-      await definePDFJSModule(() => import('pdfjs-dist/legacy/build/pdf.mjs'));
-    } catch (error) {
-      logger.warn('[OCR] Failed to load pdfjs-dist renderer', { error: error.message });
-      return null;
+    // IMPORTANT:
+    // Unpdf ships with a serverless PDF.js bundle where API and worker versions are aligned.
+    // Forcing a custom pdfjs-dist build here can cause mismatches such as:
+    // "API version X does not match Worker version Y" and break scanned-PDF OCR.
+    // Default behavior uses unpdf's bundled PDF.js unless explicitly overridden.
+    const useOfficialPdfjs = String(process.env.STRATOSORT_USE_OFFICIAL_PDFJS || '').toLowerCase();
+    if (useOfficialPdfjs === 'true') {
+      ensurePromiseResolversPolyfill();
+      try {
+        await definePDFJSModule(() => import('pdfjs-dist/legacy/build/pdf.mjs'));
+      } catch (error) {
+        logger.warn('[OCR] Failed to load official pdfjs-dist renderer', { error: error.message });
+        return null;
+      }
     }
 
     unpdfRenderer = { renderPageAsImage };
@@ -407,7 +415,7 @@ async function extractTextFromPdf(filePath, fileName) {
   // Fixed: Check file size before loading into memory
   await checkFileSize(filePath, fileName);
 
-  let dataBuffer = null;
+  let dataBuffer;
   try {
     const rawBuffer = await fs.readFile(filePath);
     // FIX: unpdf (pdf.js) requires Uint8Array, not Node.js Buffer.
@@ -456,15 +464,16 @@ async function extractTextFromPdf(filePath, fileName) {
     }
     throw error;
   } finally {
-    // Ensure buffer is dereferenced even on error
+    // Ensure buffer is dereferenced even on error (intentional cleanup for GC)
+    // eslint-disable-next-line no-useless-assignment -- cleanup before scope exit
     dataBuffer = null;
   }
 }
 
 async function ocrPdfIfNeeded(filePath) {
   const sharp = require('sharp');
-  let pdfBuffer = null;
-  let rasterPng = null;
+  let pdfBuffer;
+  let rasterPng;
 
   // FIX P1-8: OCR memory constraints to prevent memory exhaustion
   // Cap density to 150 DPI (was 200) - still good for OCR, but reduces memory 44%
@@ -577,8 +586,10 @@ async function ocrPdfIfNeeded(filePath) {
     });
     return '';
   } finally {
-    // Explicit cleanup
+    // Explicit cleanup (intentional for GC)
+    // eslint-disable-next-line no-useless-assignment -- cleanup before scope exit
     pdfBuffer = null;
+    // eslint-disable-next-line no-useless-assignment -- cleanup before scope exit
     rasterPng = null;
   }
 }
@@ -841,7 +852,7 @@ async function extractTextFromDocx(filePath) {
           if (ocrText && ocrText.length > 0) {
             return truncateText(cleanWhitespace(ocrText));
           }
-          throw new Error('No text content in DOCX (fallback)');
+          throw new Error('No text content in DOCX (fallback)', { cause: error });
         }
         return truncateText(cleanWhitespace(text));
       } catch (fallbackError) {
@@ -901,7 +912,7 @@ async function extractTextFromDocx(filePath) {
         if (ocrText && ocrText.length > 0) {
           return truncateText(cleanWhitespace(ocrText));
         }
-        throw new Error('No text content in DOCX (fallback)');
+        throw new Error('No text content in DOCX (fallback)', { cause: error });
       }
       return truncateText(cleanWhitespace(text));
     } catch (fallbackError) {
@@ -921,7 +932,7 @@ async function extractTextFromXlsx(filePath) {
   // Fixed: Check file size before loading workbook
   await checkFileSize(filePath, filePath);
 
-  let workbook = null;
+  let workbook;
   let allText = '';
   let primaryMethodFailed = false;
 
@@ -1067,7 +1078,8 @@ async function extractTextFromXlsx(filePath) {
     logger.warn('[XLSX] Primary extraction failed', { error: primaryError.message });
     primaryMethodFailed = true;
   } finally {
-    // Explicit cleanup
+    // Explicit cleanup (intentional for GC)
+    // eslint-disable-next-line no-useless-assignment -- cleanup before scope exit
     workbook = null;
   }
 
@@ -1304,7 +1316,7 @@ async function extractTextFromEpub(filePath) {
   // Fixed: Check file size before processing
   await checkFileSize(filePath, filePath);
 
-  let zip = null;
+  let zip;
   try {
     zip = new AdmZip(filePath);
     const entries = zip.getEntries();
@@ -1334,9 +1346,10 @@ async function extractTextFromEpub(filePath) {
     }
 
     const result = text.trim();
-    zip = null; // Explicit cleanup
     return truncateText(result);
   } finally {
+    // Explicit cleanup (intentional for GC)
+    // eslint-disable-next-line no-useless-assignment -- cleanup before scope exit
     zip = null;
   }
 }

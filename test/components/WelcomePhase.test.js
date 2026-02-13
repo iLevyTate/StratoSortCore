@@ -72,4 +72,33 @@ describe('WelcomePhase', () => {
     });
     expect(screen.queryByTestId('model-setup-wizard')).not.toBeInTheDocument();
   });
+
+  test('shows background downloading state when missing models are actively downloading', async () => {
+    window.electronAPI = {
+      llama: {
+        getModels: jest.fn(async () => ({ models: ['unrelated.gguf'] })),
+        getConfig: jest.fn(async () => ({
+          success: true,
+          config: {
+            embeddingModel: 'embed-required.gguf',
+            textModel: 'text-required.gguf'
+          }
+        })),
+        getDownloadStatus: jest.fn(async () => ({
+          success: true,
+          status: {
+            active: 1,
+            downloads: [{ filename: 'embed-required.gguf', status: 'downloading' }]
+          }
+        }))
+      }
+    };
+
+    render(<WelcomePhase />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Downloading AI Models/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('model-setup-wizard')).not.toBeInTheDocument();
+  });
 });

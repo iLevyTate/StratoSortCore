@@ -19,6 +19,29 @@ async function runCommand(cmd, args = [], options = {}) {
   }
 }
 
+function parseNvidiaSmiGpuInfo(output) {
+  if (!output || typeof output !== 'string') return null;
+  const firstLine = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  if (!firstLine) return null;
+
+  const [rawName, rawVram] = firstLine.split(',');
+  const name = (rawName || '').trim() || 'NVIDIA GPU';
+  const vramMB = Number.parseInt((rawVram || '').trim(), 10);
+  if (!Number.isFinite(vramMB) || vramMB < 0) {
+    return null;
+  }
+
+  return {
+    type: 'cuda',
+    name,
+    vramBytes: vramMB * 1024 * 1024,
+    vramMB
+  };
+}
+
 const logger = createLogger('GPUMonitor');
 
 class GPUMonitor {
@@ -102,16 +125,10 @@ class GPUMonitor {
       '--format=csv,noheader,nounits'
     ]);
     if (nvidiaSmi) {
-      const [name, vram] = nvidiaSmi
-        .trim()
-        .split(',')
-        .map((s) => s.trim());
-      return {
-        type: 'cuda',
-        name,
-        vramBytes: parseInt(vram) * 1024 * 1024,
-        vramMB: parseInt(vram)
-      };
+      const parsedNvidia = parseNvidiaSmiGpuInfo(nvidiaSmi);
+      if (parsedNvidia) {
+        return parsedNvidia;
+      }
     }
 
     // FIX Bug #30: Use PowerShell Get-CimInstance for modern Windows support
@@ -217,16 +234,10 @@ class GPUMonitor {
       '--format=csv,noheader,nounits'
     ]);
     if (nvidiaSmi) {
-      const [name, vram] = nvidiaSmi
-        .trim()
-        .split(',')
-        .map((s) => s.trim());
-      return {
-        type: 'cuda',
-        name,
-        vramBytes: parseInt(vram) * 1024 * 1024,
-        vramMB: parseInt(vram)
-      };
+      const parsedNvidia = parseNvidiaSmiGpuInfo(nvidiaSmi);
+      if (parsedNvidia) {
+        return parsedNvidia;
+      }
     }
 
     // Try lspci for AMD/Intel

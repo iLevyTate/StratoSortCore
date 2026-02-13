@@ -34,14 +34,14 @@ describe('resolveEmbeddingDimension', () => {
     expect(resolveEmbeddingDimension('snowflake-arctic-embed-m.gguf')).toBe(1024);
   });
 
-  test('returns default dimension (768) for completely unknown models', () => {
-    expect(resolveEmbeddingDimension('totally-unknown-model.gguf')).toBe(768);
+  test('returns default dimension (384) for completely unknown models', () => {
+    expect(resolveEmbeddingDimension('totally-unknown-model.gguf')).toBe(384);
   });
 
   test('returns default dimension when modelName is null/undefined/empty', () => {
-    expect(resolveEmbeddingDimension(null)).toBe(768);
-    expect(resolveEmbeddingDimension(undefined)).toBe(768);
-    expect(resolveEmbeddingDimension('')).toBe(768);
+    expect(resolveEmbeddingDimension(null)).toBe(384);
+    expect(resolveEmbeddingDimension(undefined)).toBe(384);
+    expect(resolveEmbeddingDimension('')).toBe(384);
   });
 
   test('respects custom defaultDimension option', () => {
@@ -55,8 +55,8 @@ describe('resolveEmbeddingDimension', () => {
   });
 
   test('handles non-string modelName gracefully', () => {
-    expect(resolveEmbeddingDimension(123)).toBe(768);
-    expect(resolveEmbeddingDimension({})).toBe(768);
+    expect(resolveEmbeddingDimension(123)).toBe(384);
+    expect(resolveEmbeddingDimension({})).toBe(384);
   });
 });
 

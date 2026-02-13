@@ -41,10 +41,16 @@ jest.mock('../src/main/utils/jsonRepair', () => ({
   extractAndParseJSON: jest.fn()
 }));
 
+// Mock LLM-based JSON repair
+jest.mock('../src/main/utils/llmJsonRepair', () => ({
+  attemptJsonRepairWithLlama: jest.fn()
+}));
+
 describe('llmSuggester', () => {
   let getLLMAlternativeSuggestions;
   let MAX_RESPONSE_SIZE;
   let extractAndParseJSON;
+  let attemptJsonRepairWithLlama;
 
   const testFile = {
     name: 'document.pdf',
@@ -67,6 +73,9 @@ describe('llmSuggester', () => {
     jest.clearAllMocks();
 
     extractAndParseJSON = require('../src/main/utils/jsonRepair').extractAndParseJSON;
+    attemptJsonRepairWithLlama =
+      require('../src/main/utils/llmJsonRepair').attemptJsonRepairWithLlama;
+    attemptJsonRepairWithLlama.mockResolvedValue(null);
 
     // Default mock responses
     mockDeduplicator.deduplicate.mockImplementation((key, fn) => fn());
@@ -137,6 +146,12 @@ describe('llmSuggester', () => {
     expect(suggestions).toEqual([]);
   });
 
+  test('returns empty array when no valid smart folders are configured', async () => {
+    const suggestions = await getLLMAlternativeSuggestions(testFile, [{}, { name: '   ' }]);
+    expect(suggestions).toEqual([]);
+    expect(mockLlamaService.generateText).not.toHaveBeenCalled();
+  });
+
   test('uses default model', async () => {
     const suggestions = await getLLMAlternativeSuggestions(testFile, testSmartFolders);
     expect(suggestions).toHaveLength(1);
@@ -161,10 +176,27 @@ describe('llmSuggester', () => {
   });
 
   test('returns empty array when JSON parsing fails', async () => {
-    extractAndParseJSON.mockReturnValueOnce(null);
+    extractAndParseJSON.mockReturnValue(null);
+    attemptJsonRepairWithLlama.mockResolvedValueOnce(null);
 
     const suggestions = await getLLMAlternativeSuggestions(testFile, testSmartFolders);
 
+    expect(suggestions).toEqual([]);
+  });
+
+  test('drops hallucinated folders not present in smart folder config', async () => {
+    extractAndParseJSON.mockReturnValueOnce({
+      suggestions: [
+        {
+          folder: 'MadeUpFolder',
+          reasoning: 'This folder sounds plausible',
+          confidence: 0.9,
+          strategy: 'hallucinated'
+        }
+      ]
+    });
+
+    const suggestions = await getLLMAlternativeSuggestions(testFile, testSmartFolders);
     expect(suggestions).toEqual([]);
   });
 

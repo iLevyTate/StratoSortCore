@@ -190,7 +190,10 @@ class Logger {
       this.pino = pino({
         ...pinoOptions,
         browser: {
+          // Renderer logs are forwarded to main process via transmit below.
+          // Avoid duplicate/noisy Chromium console output like "[object Object]".
           asObject: true,
+          write: () => {},
           transmit: {
             level: this.level,
             send: (level, logEvent) => {

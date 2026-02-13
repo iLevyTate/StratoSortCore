@@ -23,7 +23,9 @@ describe('SmartFoldersLLMService', () => {
       improvedDescription: 'better',
       suggestedKeywords: ['a'],
       organizationTips: 'tips',
-      confidence: 0.8
+      confidence: 0.8,
+      suggestedCategory: 'work',
+      relatedFolders: ['Receipts']
     };
     mockLlamaService.generateText.mockResolvedValue({
       response: JSON.stringify(enhancement)
@@ -34,7 +36,34 @@ describe('SmartFoldersLLMService', () => {
       () => 'model'
     );
     expect(mockLlamaService.generateText).toHaveBeenCalled();
-    expect(result).toEqual(enhancement);
+    expect(result).toMatchObject({
+      improvedDescription: 'better',
+      enhancedDescription: 'better',
+      suggestedKeywords: ['a'],
+      organizationTips: 'tips',
+      confidence: 0.8
+    });
+  });
+
+  test('enhanceSmartFolderWithLLM drops hallucinated related folders', async () => {
+    mockLlamaService.generateText.mockResolvedValue({
+      response: JSON.stringify({
+        improvedDescription: 'focused documents',
+        suggestedKeywords: ['docs'],
+        organizationTips: 'keep names consistent',
+        confidence: 83,
+        relatedFolders: ['Receipts', 'NotARealFolder']
+      })
+    });
+
+    const result = await enhanceSmartFolderWithLLM(
+      { name: 'Invoices', path: '/tmp', description: 'old' },
+      [{ name: 'Receipts', description: 'past' }],
+      () => 'model'
+    );
+
+    expect(result.relatedFolders).toEqual(['Receipts']);
+    expect(result.confidence).toBeCloseTo(0.83, 2);
   });
 
   test('calculateFolderSimilarities sorts and falls back on error', async () => {

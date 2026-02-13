@@ -97,7 +97,8 @@ module.exports = [
       'react/forbid-prop-types': 'off',
       'react/jsx-no-constructed-context-values': 'off',
       'react/sort-comp': 'off',
-      'react/jsx-filename-extension': ['warn', { extensions: ['.js', '.jsx', '.ts', '.tsx'] }],
+      // Disabled: uses context.getFilename() removed in ESLint 10 flat config
+      'react/jsx-filename-extension': 'off',
 
       // React Hooks
       'react-hooks/rules-of-hooks': 'error',

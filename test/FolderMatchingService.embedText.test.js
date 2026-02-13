@@ -156,4 +156,57 @@ describe('FolderMatchingService embedText', () => {
     // Should not fall through to single embedding generation when pooling succeeds
     expect(mockLlamaService.generateEmbedding).not.toHaveBeenCalled();
   });
+
+  test('retries with stricter truncation on embedding context overflow', async () => {
+    const { capEmbeddingInput } = require('../src/main/utils/embeddingInput');
+    capEmbeddingInput
+      .mockReturnValueOnce({
+        text: 'A'.repeat(1500),
+        wasTruncated: false,
+        estimatedTokens: 375,
+        maxTokens: 460,
+        maxChars: 1840
+      })
+      .mockReturnValueOnce({
+        text: 'A'.repeat(900),
+        wasTruncated: true,
+        estimatedTokens: 500,
+        maxTokens: 322,
+        maxChars: 966
+      });
+
+    mockLlamaService.getConfig.mockReturnValueOnce({ embeddingModel: 'all-minilm' });
+    mockLlamaService.generateEmbedding
+      .mockRejectedValueOnce(
+        new Error(
+          'Llama operation failed: Input is longer than the context size. Try to increase the context size or use another model that supports longer contexts.'
+        )
+      )
+      .mockResolvedValueOnce({
+        embedding: new Array(384).fill(0.1)
+      });
+
+    const svc = new FolderMatchingService(mockVectorDb, {
+      parallelEmbeddingService: mockParallelEmbeddingService
+    });
+    svc.embeddingCache.get = jest.fn().mockReturnValue(null);
+    svc.embeddingCache.set = jest.fn();
+
+    const result = await svc.embedText('A'.repeat(2200));
+
+    expect(result.vector).toHaveLength(384);
+    expect(mockLlamaService.generateEmbedding).toHaveBeenCalledTimes(2);
+    expect(mockLlamaService.generateEmbedding).toHaveBeenNthCalledWith(1, 'A'.repeat(1500));
+    expect(mockLlamaService.generateEmbedding).toHaveBeenNthCalledWith(2, 'A'.repeat(900));
+    expect(capEmbeddingInput).toHaveBeenNthCalledWith(2, 'A'.repeat(2200), {
+      maxTokens: 322,
+      charsPerToken: 3,
+      modelName: 'all-minilm'
+    });
+    expect(svc.embeddingCache.set).toHaveBeenCalledWith(
+      'A'.repeat(900),
+      'all-minilm',
+      result.vector
+    );
+  });
 });

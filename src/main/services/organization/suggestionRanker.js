@@ -123,15 +123,8 @@ function generateExplanation(suggestion, file) {
     cluster_batch: `Organize this cluster of ${suggestion.clusterSize || 'related'} files together`
   };
 
-  // Add confidence-based prefix
-  let prefix = '';
-  if (suggestion.confidence >= 0.8) {
-    prefix = '';
-  } else if (suggestion.confidence >= 0.5) {
-    prefix = '';
-  } else {
-    prefix = '';
-  }
+  // Add confidence-based prefix (reserved for future use)
+  const prefix = '';
 
   return (
     prefix +

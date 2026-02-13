@@ -365,7 +365,7 @@ class SettingsService {
           if (isLastAttempt) {
             const errorMsg = `Failed to create backup after ${maxBackupRetries} attempts: ${error.message}`;
             logger.error(`[SettingsService] ${errorMsg}`);
-            throw new Error(errorMsg);
+            throw new Error(errorMsg, { cause: error });
           }
           // Wait before retry with exponential backoff
           const retryMs = initialBackupDelay * 2 ** attempt;
@@ -437,7 +437,8 @@ class SettingsService {
               this._cacheTimestamp = previousTimestamp;
               logger.error('[SettingsService] Save failed, rolled back cache to previous state');
               throw new Error(
-                `Failed to save settings after ${maxSaveRetries} attempts due to file lock: ${saveError.message}`
+                `Failed to save settings after ${maxSaveRetries} attempts due to file lock: ${saveError.message}`,
+                { cause: saveError }
               );
             } else {
               // FIX: Rollback cache on non-lock error before throwing

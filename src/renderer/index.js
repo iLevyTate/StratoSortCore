@@ -170,7 +170,7 @@ function maybeRecoverFromChunkLoadFailure(err) {
 
   // Avoid infinite reload loops. Allow at most 1 auto-reload per minute.
   const key = 'stratosort:chunk-reload-at';
-  let last = 0;
+  let last;
   try {
     last = Number(sessionStorage.getItem(key) || 0);
   } catch {
@@ -316,6 +316,9 @@ function removeSplashScreen() {
       element.remove();
       logger.debug('[Splash] Splash screen removed successfully');
     }
+    // Restore overflow so app scroll works (critical CSS locks it during splash)
+    document.documentElement.style.overflow = 'visible';
+    document.body.style.overflow = 'visible';
   }, 300);
 }
 

@@ -14,12 +14,37 @@ import Button from './ui/Button';
 import Card from './ui/Card';
 import { Text, Heading } from './ui/Typography';
 import { formatBytes, formatDuration } from '../utils/format';
-import { AI_DEFAULTS } from '../../shared/constants';
-import { MODEL_CATALOG } from '../../shared/modelRegistry';
+import { AI_DEFAULTS, INSTALL_MODEL_PROFILES } from '../../shared/constants';
+import { getModel } from '../../shared/modelRegistry';
+
+const PROFILE_MODELS = {
+  base: {
+    embedding: INSTALL_MODEL_PROFILES?.BASE_SMALL?.models?.EMBEDDING,
+    text: INSTALL_MODEL_PROFILES?.BASE_SMALL?.models?.TEXT_ANALYSIS,
+    vision: INSTALL_MODEL_PROFILES?.BASE_SMALL?.models?.IMAGE_ANALYSIS
+  },
+  quality: {
+    embedding: INSTALL_MODEL_PROFILES?.BETTER_QUALITY?.models?.EMBEDDING,
+    text: INSTALL_MODEL_PROFILES?.BETTER_QUALITY?.models?.TEXT_ANALYSIS,
+    vision: INSTALL_MODEL_PROFILES?.BETTER_QUALITY?.models?.IMAGE_ANALYSIS
+  }
+};
+
+function detectProfileKey(models) {
+  if (
+    models?.embedding === PROFILE_MODELS.quality.embedding &&
+    models?.text === PROFILE_MODELS.quality.text &&
+    models?.vision === PROFILE_MODELS.quality.vision
+  ) {
+    return 'quality';
+  }
+  return 'base';
+}
 
 export default function ModelSetupWizard({ onComplete, onSkip }) {
   const [systemInfo, setSystemInfo] = useState(null);
   const [recommendations, setRecommendations] = useState(null);
+  const [selectedProfile, setSelectedProfile] = useState('base');
   const [selectedModels, setSelectedModels] = useState({});
   const [availableModels, setAvailableModels] = useState([]);
   const [downloadState, setDownloadState] = useState({});
@@ -60,15 +85,18 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     setHasApi(hasLlamaApi);
 
     const fallbackDefaults = {
-      embedding: AI_DEFAULTS?.EMBEDDING?.MODEL,
-      text: AI_DEFAULTS?.TEXT?.MODEL,
-      vision: AI_DEFAULTS?.IMAGE?.MODEL
+      embedding: PROFILE_MODELS.base.embedding || AI_DEFAULTS?.EMBEDDING?.MODEL,
+      text: PROFILE_MODELS.base.text || AI_DEFAULTS?.TEXT?.MODEL,
+      vision: PROFILE_MODELS.base.vision || AI_DEFAULTS?.IMAGE?.MODEL
     };
 
     if (!hasLlamaApi) {
       if (!isMountedRef.current) return;
-      setRecommendations(fallbackDefaults);
-      setSelectedModels(fallbackDefaults);
+      const fallbackProfile = detectProfileKey(fallbackDefaults);
+      const fallbackSelection = PROFILE_MODELS[fallbackProfile] || fallbackDefaults;
+      setSelectedProfile(fallbackProfile);
+      setRecommendations(fallbackSelection);
+      setSelectedModels(fallbackSelection);
       setSystemInfo({ gpuBackend: null, modelsPath: null });
       setInitError('AI engine is still starting. Please try again in a moment.');
       setStep('select');
@@ -80,7 +108,9 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
       const [config, modelsResponse, downloadStatus] = await Promise.all([
         llamaApi.getConfig(),
         llamaApi.getModels(),
-        typeof llamaApi.getDownloadStatus === 'function' ? llamaApi.getDownloadStatus() : null
+        typeof llamaApi.getDownloadStatus === 'function'
+          ? llamaApi.getDownloadStatus().catch(() => null)
+          : null
       ]);
       if (!isMountedRef.current) return;
 
@@ -89,6 +119,8 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
         text: config?.textModel || fallbackDefaults.text,
         vision: config?.visionModel || fallbackDefaults.vision
       };
+      const profileKey = detectProfileKey(defaults);
+      const selectedProfileModels = PROFILE_MODELS[profileKey] || defaults;
 
       const modelList = Array.isArray(modelsResponse)
         ? modelsResponse
@@ -98,8 +130,9 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
       const available = modelList.map((m) => m.name || m.filename || m).filter(Boolean);
       const availableNow = new Set(available);
 
-      setRecommendations(defaults);
-      setSelectedModels(defaults);
+      setSelectedProfile(profileKey);
+      setRecommendations(selectedProfileModels);
+      setSelectedModels(selectedProfileModels);
       setAvailableModels(available);
       setSystemInfo({
         gpuBackend: config?.gpuBackend || null,
@@ -177,12 +210,30 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     };
   }, [updateDownloadState]);
 
+  async function applySelectedProfileConfig() {
+    const updateConfig = window?.electronAPI?.llama?.updateConfig;
+    if (typeof updateConfig !== 'function') return;
+    const payload = {
+      textModel: selectedModels.text,
+      embeddingModel: selectedModels.embedding
+    };
+    if (selectedModels.vision) {
+      payload.visionModel = selectedModels.vision;
+    }
+    try {
+      await updateConfig(payload);
+    } catch (error) {
+      setInitError(error?.message || 'Could not apply selected model profile.');
+    }
+  }
+
   async function startDownloads() {
     const modelsToDownload = Object.values(selectedModels)
       .filter(Boolean)
       .filter((modelName) => !availableSet.has(modelName));
 
     if (modelsToDownload.length === 0) {
+      await applySelectedProfileConfig();
       setStep('complete');
       return;
     }
@@ -200,9 +251,15 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
       try {
         const result = await window.electronAPI.llama.downloadModel(filename);
         if (result?.success) {
-          updateDownloadState(filename, { status: 'ready', percent: 100 });
-          nextAvailable.add(filename);
-          setAvailableModels((prev) => Array.from(new Set([...(prev || []), filename])));
+          if (result?.alreadyInProgress) {
+            // Background setup already started this download; keep showing in-progress
+            // and wait for actual availability before marking complete.
+            updateDownloadState(filename, { status: 'downloading' });
+          } else {
+            updateDownloadState(filename, { status: 'ready', percent: 100 });
+            nextAvailable.add(filename);
+            setAvailableModels((prev) => Array.from(new Set([...(prev || []), filename])));
+          }
         } else {
           updateDownloadState(filename, {
             status: 'failed',
@@ -217,11 +274,56 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
       }
     }
 
+    // Refresh availability from source-of-truth after requests complete.
+    // This avoids treating "alreadyInProgress" downloads as fully installed.
+    let activeDownloads = [];
+    try {
+      const [modelsResponse, downloadStatus] = await Promise.all([
+        window.electronAPI.llama.getModels(),
+        typeof window.electronAPI.llama.getDownloadStatus === 'function'
+          ? window.electronAPI.llama.getDownloadStatus().catch(() => null)
+          : Promise.resolve(null)
+      ]);
+
+      const modelList = Array.isArray(modelsResponse)
+        ? modelsResponse
+        : Array.isArray(modelsResponse?.models)
+          ? modelsResponse.models
+          : [];
+      const latestAvailable = modelList.map((m) => m.name || m.filename || m).filter(Boolean);
+
+      latestAvailable.forEach((name) => nextAvailable.add(name));
+      if (latestAvailable.length > 0) {
+        setAvailableModels((prev) => Array.from(new Set([...(prev || []), ...latestAvailable])));
+      }
+
+      activeDownloads = downloadStatus?.status?.downloads || [];
+      activeDownloads.forEach((download) => {
+        if (!download?.filename) return;
+        updateDownloadState(download.filename, {
+          status: 'downloading',
+          percent: download.progress ?? 0,
+          downloadedBytes: download.downloadedBytes,
+          totalBytes: download.totalBytes
+        });
+      });
+    } catch {
+      // Non-fatal: fallback to local state if status refresh fails.
+    }
+
     const requiredMissing = [selectedModels.embedding, selectedModels.text]
       .filter(Boolean)
       .filter((name) => !nextAvailable.has(name));
 
-    setStep(requiredMissing.length === 0 ? 'complete' : 'select');
+    if (requiredMissing.length === 0) {
+      await applySelectedProfileConfig();
+    }
+
+    if (requiredMissing.length === 0) {
+      setStep('complete');
+    } else {
+      setStep(activeDownloads.length > 0 ? 'downloading' : 'select');
+    }
   }
 
   function toggleModel(type, filename) {
@@ -232,7 +334,7 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
   }
 
   const getModelSize = (filename) => {
-    const model = MODEL_CATALOG[filename];
+    const model = getModel(filename);
     if (!model) return 0;
     let total = model.size || 0;
     if (model.clipModel?.size) {
@@ -240,6 +342,11 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     }
     return total;
   };
+
+  const getProfileSize = (profileKey) =>
+    Object.values(PROFILE_MODELS[profileKey] || {})
+      .filter(Boolean)
+      .reduce((sum, filename) => sum + getModelSize(filename), 0);
 
   const totalDownloadSize = Object.values(selectedModels)
     .filter(Boolean)
@@ -292,6 +399,64 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
             <div>GPU: {systemInfo?.gpuBackend || 'CPU only'}</div>
             <div>Models path: {systemInfo?.modelsPath || 'Default app storage'}</div>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <Text variant="small" className="font-medium mb-2">
+            Install Profile
+          </Text>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedProfile('base');
+                setRecommendations(PROFILE_MODELS.base);
+                setSelectedModels(PROFILE_MODELS.base);
+              }}
+              className={`text-left border rounded-lg p-4 transition ${
+                selectedProfile === 'base'
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+              disabled={!hasApi || isRefreshing}
+            >
+              <Text className="font-medium">
+                {INSTALL_MODEL_PROFILES?.BASE_SMALL?.label || 'Base (Small & Fast)'}
+              </Text>
+              <Text variant="small" className="text-gray-600 mt-1">
+                {INSTALL_MODEL_PROFILES?.BASE_SMALL?.description ||
+                  'Runs on most machines with faster startup and smaller downloads.'}
+              </Text>
+              <Text variant="tiny" className="text-gray-500 mt-2">
+                Approx. download: {formatBytes(getProfileSize('base'))}
+              </Text>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedProfile('quality');
+                setRecommendations(PROFILE_MODELS.quality);
+                setSelectedModels(PROFILE_MODELS.quality);
+              }}
+              className={`text-left border rounded-lg p-4 transition ${
+                selectedProfile === 'quality'
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+              disabled={!hasApi || isRefreshing}
+            >
+              <Text className="font-medium">
+                {INSTALL_MODEL_PROFILES?.BETTER_QUALITY?.label || 'Better Quality (Larger)'}
+              </Text>
+              <Text variant="small" className="text-gray-600 mt-1">
+                {INSTALL_MODEL_PROFILES?.BETTER_QUALITY?.description ||
+                  'Higher quality output with larger models and larger downloads.'}
+              </Text>
+              <Text variant="tiny" className="text-gray-500 mt-2">
+                Approx. download: {formatBytes(getProfileSize('quality'))}
+              </Text>
+            </button>
           </div>
         </div>
 
@@ -413,9 +578,7 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
             return (
               <div key={filename} className="border rounded-lg p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <Text className="font-medium">
-                    {MODEL_CATALOG[filename]?.displayName || filename}
-                  </Text>
+                  <Text className="font-medium">{getModel(filename)?.displayName || filename}</Text>
                   <Text variant="small" className="text-gray-600">
                     {status === 'failed' ? 'Failed' : `${progress.percent || 0}%`}
                   </Text>
@@ -436,7 +599,9 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
                         : 'Starting...'}
                   </span>
                   <span>
-                    {progress.etaSeconds ? `ETA: ${formatDuration(progress.etaSeconds)}` : ''}
+                    {progress.etaSeconds
+                      ? `ETA: ${formatDuration(progress.etaSeconds * 1000)}`
+                      : ''}
                   </span>
                 </div>
                 {progress.error && (
@@ -506,7 +671,7 @@ function ModelSelector({
   const filename = recommendations?.[type];
   if (!filename) return null;
 
-  const modelInfo = MODEL_CATALOG[filename];
+  const modelInfo = getModel(filename);
   const displayName = modelInfo?.displayName || filename;
   const isInstalled = status === 'ready' || status === 'complete';
   const statusLabel = isInstalled ? 'Installed' : status === 'failed' ? 'Failed' : 'Not installed';

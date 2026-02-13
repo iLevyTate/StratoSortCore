@@ -15,12 +15,15 @@ const { app } = require('electron');
 const { EventEmitter } = require('events');
 const { createLogger } = require('../../shared/logger');
 const { createSingletonHelpers } = require('../../shared/singletonFactory');
-const { AI_DEFAULTS } = require('../../shared/constants');
+const { AI_DEFAULTS, DEFAULT_AI_MODELS } = require('../../shared/constants');
 const { getModel } = require('../../shared/modelRegistry');
 const { resolveEmbeddingDimension } = require('../../shared/embeddingDimensions');
 const { ERROR_CODES } = require('../../shared/errorCodes');
+const { categorizeModel } = require('../../shared/modelCategorization');
+const { capEmbeddingInput } = require('../utils/embeddingInput');
 const SettingsService = require('./SettingsService');
 const { getInstance: getVisionService } = require('./VisionService');
+const { ensureResolvedModelsPath } = require('./modelPathResolver');
 
 // New Managers
 const { GPUMonitor } = require('./GPUMonitor');
@@ -59,7 +62,7 @@ const isSequenceExhaustedError = (error) => {
   return message.includes('no sequences left');
 };
 
-const normalizeEmbeddingInput = (text, operationName = 'embedding') => {
+const normalizeEmbeddingInput = (text, operationName = 'embedding', modelName) => {
   if (typeof text !== 'string') {
     const error = new TypeError(
       `[LlamaService] ${operationName} expects "text" to be a string; received ${typeof text}`
@@ -71,7 +74,18 @@ const normalizeEmbeddingInput = (text, operationName = 'embedding') => {
     const error = new TypeError(`[LlamaService] ${operationName} requires non-empty text input`);
     throw attachErrorCode(error, ERROR_CODES.INVALID_INPUT);
   }
-  return normalized;
+  const capped = capEmbeddingInput(normalized, { modelName });
+  if (capped.wasTruncated) {
+    logger.warn('[LlamaService] Embedding input capped to token budget', {
+      operation: operationName,
+      model: modelName,
+      originalLength: normalized.length,
+      cappedLength: capped.text.length,
+      estimatedTokens: capped.estimatedTokens,
+      maxTokens: capped.maxTokens
+    });
+  }
+  return capped.text;
 };
 
 let _nodeLlamaModule = null;
@@ -107,11 +121,11 @@ const LOW_VRAM_VISION_RETRY_BATCH_SIZE = 512;
 const LOW_VRAM_VISION_RETRY_UBATCH_SIZE = 128;
 const LOW_VRAM_VISION_RETRY_MAX_TOKENS = 256;
 
-// Default model configuration
+// Default model configuration (from aiModelConfig)
 const DEFAULT_CONFIG = {
-  textModel: AI_DEFAULTS.TEXT?.MODEL || 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf',
-  visionModel: AI_DEFAULTS.IMAGE?.MODEL || 'llava-v1.6-mistral-7b-Q4_K_M.gguf',
-  embeddingModel: AI_DEFAULTS.EMBEDDING?.MODEL || 'nomic-embed-text-v1.5-Q8_0.gguf',
+  textModel: AI_DEFAULTS.TEXT?.MODEL ?? DEFAULT_AI_MODELS.TEXT_ANALYSIS,
+  visionModel: AI_DEFAULTS.IMAGE?.MODEL ?? DEFAULT_AI_MODELS.IMAGE_ANALYSIS,
+  embeddingModel: AI_DEFAULTS.EMBEDDING?.MODEL ?? DEFAULT_AI_MODELS.EMBEDDING,
   gpuLayers: 'auto', // 'auto' = let node-llama-cpp fit GPU layers to VRAM
   contextSize: 8192,
   threads: 0 // 0 = auto-detect
@@ -122,12 +136,17 @@ function parsePositiveInt(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-// Allowed embedding models for validation (must match MODEL_CATALOG in modelRegistry.js)
-const ALLOWED_EMBED_MODELS = [
-  'nomic-embed-text-v1.5-Q8_0.gguf',
-  'nomic-embed-text-v1.5-Q4_K_M.gguf',
-  'mxbai-embed-large-v1-f16.gguf'
-];
+/**
+ * Validate whether a model name is a recognized embedding model.
+ * Uses the model registry and pattern-based categorization instead of a
+ * hardcoded allowlist so newly-added models work without code changes.
+ */
+const _isAllowedEmbeddingModel = (name) => {
+  if (!name) return false;
+  const registryInfo = getModel(name);
+  if (registryInfo) return registryInfo.type === 'embedding';
+  return categorizeModel(name) === 'embedding';
+};
 
 // Helper to detect legacy Ollama model names
 const isLegacyModelName = (name) => {
@@ -296,16 +315,27 @@ class LlamaService extends EventEmitter {
 
   async _ensureConfigLoaded() {
     if (!this._modelsPath) {
-      const base =
-        typeof app?.getPath === 'function' && app.getPath('userData')
-          ? app.getPath('userData')
-          : os.tmpdir();
-      this._modelsPath = path.join(base, 'models');
       try {
-        await fs.mkdir(this._modelsPath, { recursive: true });
+        const resolved = await ensureResolvedModelsPath();
+        this._modelsPath = resolved.modelsPath;
+        if (resolved.source === 'legacy') {
+          logger.warn('[LlamaService] Using legacy models directory', {
+            modelsPath: resolved.modelsPath,
+            currentModelsPath: resolved.currentModelsPath
+          });
+        }
       } catch (e) {
-        // Non-fatal in tests and restricted environments; model ops will surface errors later.
-        logger.debug('[LlamaService] Could not create models directory:', e?.message);
+        const base =
+          typeof app?.getPath === 'function' && app.getPath('userData')
+            ? app.getPath('userData')
+            : os.tmpdir();
+        this._modelsPath = path.join(base, 'models');
+        try {
+          await fs.mkdir(this._modelsPath, { recursive: true });
+        } catch {
+          // Non-fatal in tests and restricted environments; model ops will surface errors later.
+        }
+        logger.debug('[LlamaService] Falling back to default models directory:', e?.message);
       }
     }
 
@@ -532,7 +562,7 @@ class LlamaService extends EventEmitter {
     if (partial.visionModel) this._selectedModels.vision = String(partial.visionModel);
     if (partial.embeddingModel) {
       const requested = String(partial.embeddingModel);
-      if (ALLOWED_EMBED_MODELS.includes(requested)) {
+      if (_isAllowedEmbeddingModel(requested)) {
         this._selectedModels.embedding = requested;
       } else {
         this._selectedModels.embedding = DEFAULT_CONFIG.embeddingModel;
@@ -1062,10 +1092,10 @@ class LlamaService extends EventEmitter {
    *
    * @param {string} modelPath - Path to the GGUF model file
    * @param {string} type - Model type ('text', 'vision', 'embedding')
-   * @returns {number|undefined} GPU layers value (999 = max, undefined = auto)
+   * @returns {Promise<number|undefined>} GPU layers value (999 = max, undefined = auto)
    * @private
    */
-  _resolveGpuLayerStrategy(modelPath, type) {
+  async _resolveGpuLayerStrategy(modelPath, type) {
     const vramMB = this._detectedGpu?.vramMB || 0;
     if (vramMB <= 0) {
       // No GPU info available — let node-llama-cpp decide
@@ -1076,7 +1106,7 @@ class LlamaService extends EventEmitter {
     // model weight memory). Falls back to rough per-type estimates.
     let modelSizeMB;
     try {
-      const stats = require('fs').statSync(modelPath);
+      const stats = await fs.stat(modelPath);
       modelSizeMB = Math.ceil(stats.size / (1024 * 1024));
     } catch {
       const TYPE_ESTIMATES_MB = { embedding: 500, text: 4096, vision: 5120 };
@@ -1192,7 +1222,7 @@ class LlamaService extends EventEmitter {
           // Compares actual model file size against available VRAM to decide
           // between max offloading (999) and auto-detection (undefined).
           // The three-tier fallback chain (max → auto → CPU) is the safety net.
-          gpuLayers = this._resolveGpuLayerStrategy(modelPath, type);
+          gpuLayers = await this._resolveGpuLayerStrategy(modelPath, type);
         }
       }
 
@@ -1491,9 +1521,12 @@ class LlamaService extends EventEmitter {
    * fallback behavior of the old OllamaService.
    */
   async generateEmbedding(text, _options = {}) {
-    const normalizedText = normalizeEmbeddingInput(text, 'generateEmbedding');
     const operationId = `embed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     await this._awaitModelReady('embedding');
+
+    const modelName =
+      this._selectedModels.embedding || this._config.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
+    const normalizedText = normalizeEmbeddingInput(text, 'generateEmbedding', modelName);
 
     return this._coordinator.withModel(
       'embedding',
@@ -1594,7 +1627,11 @@ class LlamaService extends EventEmitter {
       throw notFoundError;
     }
 
-    const normalizedText = normalizeEmbeddingInput(text, '_executeEmbeddingInferenceWithModel');
+    const normalizedText = normalizeEmbeddingInput(
+      text,
+      '_executeEmbeddingInferenceWithModel',
+      resolvedName
+    );
 
     const inferWithOptions = async (loadOptions = {}) => {
       let model = null;
@@ -1611,7 +1648,7 @@ class LlamaService extends EventEmitter {
         } else if (typeof configLayers === 'number' && configLayers >= 0) {
           gpuLayers = configLayers;
         } else {
-          gpuLayers = this._resolveGpuLayerStrategy(modelPath, 'embedding');
+          gpuLayers = await this._resolveGpuLayerStrategy(modelPath, 'embedding');
         }
 
         const modelOptions = { modelPath };
@@ -2321,19 +2358,10 @@ class LlamaService extends EventEmitter {
     try {
       const files = await fs.readdir(this._modelsPath);
       return files
-        .filter((f) => f.endsWith('.gguf'))
+        .filter((f) => /\.gguf$/i.test(f))
         .map((f) => {
-          const lower = f.toLowerCase();
-          let type = 'text';
-          if (lower.includes('embed') || lower.includes('bge') || lower.includes('nomic-embed')) {
-            type = 'embedding';
-          } else if (
-            lower.includes('vision') ||
-            lower.includes('llava') ||
-            lower.includes('bakllava')
-          ) {
-            type = 'vision';
-          }
+          const registryType = getModel(f)?.type;
+          const type = registryType || categorizeModel(f);
           return { name: f, path: path.join(this._modelsPath, f), type };
         });
     } catch (error) {
@@ -2508,6 +2536,5 @@ module.exports = {
   getInstance,
   createInstance,
   registerWithContainer,
-  resetInstance,
-  ALLOWED_EMBED_MODELS
+  resetInstance
 };

@@ -52,4 +52,43 @@ describe('batchLockManager', () => {
     releaseBatchLock('batch-waiter');
     jest.useRealTimers();
   });
+
+  test('force-releases stale lock when held past timeout', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(0);
+    const {
+      acquireBatchLock,
+      releaseBatchLock
+    } = require('../src/main/ipc/files/batchLockManager');
+
+    await acquireBatchLock('stale-batch', 10000);
+    // Advance time past BATCH_LOCK_TIMEOUT (5 min)
+    jest.advanceTimersByTime(6 * 60 * 1000);
+
+    // New batch should acquire immediately (stale was force-released)
+    const acquired = await acquireBatchLock('new-batch', 1000);
+    expect(acquired).toBe(true);
+    releaseBatchLock('new-batch');
+    jest.useRealTimers();
+  });
+
+  test('acquireBatchLock retries until acquired', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(0);
+    const {
+      acquireBatchLock,
+      releaseBatchLock
+    } = require('../src/main/ipc/files/batchLockManager');
+
+    await acquireBatchLock('holder', 100);
+    const waiterPromise = acquireBatchLock('waiter', 100);
+    // Advance past first attempt timeout
+    jest.advanceTimersByTime(150);
+    releaseBatchLock('holder');
+    jest.runOnlyPendingTimers();
+    const result = await waiterPromise;
+    expect(result).toBe(true);
+    releaseBatchLock('waiter');
+    jest.useRealTimers();
+  });
 });

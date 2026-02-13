@@ -10,6 +10,7 @@ const mockFs = {
   mkdir: jest.fn().mockResolvedValue(),
   readdir: jest.fn(),
   stat: jest.fn(),
+  statfs: jest.fn(),
   unlink: jest.fn().mockResolvedValue(),
   rename: jest.fn().mockResolvedValue(),
   access: jest.fn().mockResolvedValue()
@@ -19,10 +20,6 @@ jest.mock('fs', () => ({
   promises: mockFs,
   createWriteStream: jest.fn(),
   createReadStream: jest.fn()
-}));
-
-jest.mock('child_process', () => ({
-  execSync: jest.fn()
 }));
 
 jest.mock('https', () => ({
@@ -38,18 +35,29 @@ jest.mock('../src/shared/logger', () => ({
   })
 }));
 
-jest.mock('../src/shared/modelRegistry', () => ({
-  MODEL_CATALOG: {
+jest.mock('../src/shared/modelRegistry', () => {
+  const catalog = {
     'alpha.gguf': {
       displayName: 'Alpha',
       type: 'text',
       size: 2048,
       url: 'https://example.com/models/alpha.gguf'
     }
-  }
-}));
+  };
+  return {
+    MODEL_CATALOG: catalog,
+    getModel: (name) => {
+      if (!name) return null;
+      if (catalog[name]) return catalog[name];
+      const lower = name.toLowerCase();
+      for (const [key, value] of Object.entries(catalog)) {
+        if (key.toLowerCase() === lower) return value;
+      }
+      return null;
+    }
+  };
+});
 
-const { execSync } = require('child_process');
 const https = require('https');
 const fsModule = require('fs');
 const { ModelDownloadManager } = require('../src/main/services/ModelDownloadManager');
@@ -61,8 +69,7 @@ describe('ModelDownloadManager', () => {
     mockFs.unlink.mockReset();
     mockFs.rename.mockReset();
     mockFs.access.mockReset();
-    mockFs.access?.mockReset?.();
-    execSync.mockReset();
+    mockFs.statfs.mockReset();
     https.get.mockReset();
     fsModule.createWriteStream.mockReset();
   });
@@ -75,7 +82,7 @@ describe('ModelDownloadManager', () => {
   });
 
   test('getDownloadedModels maps gguf files with registry info', async () => {
-    mockFs.readdir.mockResolvedValueOnce(['alpha.gguf', 'note.txt']);
+    mockFs.readdir.mockResolvedValue(['alpha.gguf', 'note.txt']);
     mockFs.stat.mockResolvedValueOnce({ size: 1024 * 1024 * 2 });
 
     const manager = new ModelDownloadManager();
@@ -91,21 +98,49 @@ describe('ModelDownloadManager', () => {
     });
   });
 
-  test('checkDiskSpace returns available and sufficient', async () => {
-    execSync.mockReturnValueOnce('FreeSpace\r\n2147483648\r\n');
+  test('checkDiskSpace returns available and sufficient via fs.statfs', async () => {
+    // bfree * bsize = 2GB free space
+    mockFs.statfs.mockResolvedValueOnce({ bfree: 524288, bsize: 4096 });
     const manager = new ModelDownloadManager();
     const result = await manager.checkDiskSpace(1024);
-    expect(result.available).toBeGreaterThan(0);
+    expect(result.available).toBe(524288 * 4096);
     expect(result.sufficient).toBe(true);
   });
 
-  test('checkDiskSpace returns sufficient on failure', async () => {
-    execSync.mockImplementationOnce(() => {
-      throw new Error('fail');
-    });
+  test('checkDiskSpace returns insufficient when space is tight', async () => {
+    // bfree * bsize = 100 bytes (less than requiredBytes * 1.1)
+    mockFs.statfs.mockResolvedValueOnce({ bfree: 25, bsize: 4 });
+    const manager = new ModelDownloadManager();
+    const result = await manager.checkDiskSpace(1024);
+    expect(result.available).toBe(100);
+    expect(result.sufficient).toBe(false);
+  });
+
+  test('checkDiskSpace returns sufficient on statfs failure', async () => {
+    mockFs.statfs.mockRejectedValueOnce(new Error('fail'));
     const manager = new ModelDownloadManager();
     const result = await manager.checkDiskSpace(1024);
     expect(result.sufficient).toBe(true);
+  });
+
+  test('isDownloading returns true for active downloads and false otherwise', () => {
+    const manager = new ModelDownloadManager();
+    expect(manager.isDownloading('alpha.gguf')).toBe(false);
+
+    // Simulate an active download entry
+    manager._downloads.set('alpha.gguf', { status: 'downloading' });
+    expect(manager.isDownloading('alpha.gguf')).toBe(true);
+
+    // Redirecting counts as active
+    manager._downloads.set('alpha.gguf', { status: 'redirecting' });
+    expect(manager.isDownloading('alpha.gguf')).toBe(true);
+
+    // Completed does not count
+    manager._downloads.set('alpha.gguf', { status: 'complete' });
+    expect(manager.isDownloading('alpha.gguf')).toBe(false);
+
+    manager._downloads.delete('alpha.gguf');
+    expect(manager.isDownloading('alpha.gguf')).toBe(false);
   });
 
   test('onProgress registers and unregisters callbacks', () => {
@@ -184,10 +219,52 @@ describe('ModelDownloadManager', () => {
       return request;
     });
 
-    await expect(manager.downloadModel('alpha.gguf')).rejects.toThrow(
+    await expect(manager.downloadModel('alpha.gguf', { _maxRetries: 0 })).rejects.toThrow(
       'Download incomplete - file size mismatch'
     );
     expect(mockFs.unlink).toHaveBeenCalledWith(partialPath);
+  });
+
+  test('downloadModel retries after size mismatch and succeeds', async () => {
+    const manager = new ModelDownloadManager();
+    fsModule.createWriteStream.mockImplementation(() => {
+      const ws = new EventEmitter();
+      ws.destroy = jest.fn();
+      return ws;
+    });
+
+    // Attempt 1: no partial + mismatch. Attempt 2: no partial + correct size.
+    mockFs.stat
+      .mockRejectedValueOnce(new Error('no partial'))
+      .mockResolvedValueOnce({ size: 1234 })
+      .mockRejectedValueOnce(new Error('no partial'))
+      .mockResolvedValueOnce({ size: 2048 });
+    mockFs.unlink.mockResolvedValue(undefined);
+
+    https.get.mockImplementation((_options, onResponse) => {
+      const request = new EventEmitter();
+      request.setTimeout = jest.fn();
+      request.destroy = jest.fn();
+
+      const response = new EventEmitter();
+      response.statusCode = 200;
+      response.statusMessage = 'OK';
+      response.headers = {};
+      response.resume = jest.fn();
+      response.pipe = (ws) => {
+        setTimeout(() => ws.emit('finish'), 0);
+        return ws;
+      };
+
+      setTimeout(() => onResponse(response), 0);
+      return request;
+    });
+
+    await expect(manager.downloadModel('alpha.gguf')).resolves.toEqual(
+      expect.objectContaining({ success: true })
+    );
+    expect(https.get).toHaveBeenCalledTimes(2);
+    expect(mockFs.unlink).toHaveBeenCalledWith('C:\\fake-user-data\\models\\alpha.gguf.partial');
   });
 
   test('downloadModel resolves relative redirect locations', async () => {
@@ -267,7 +344,9 @@ describe('ModelDownloadManager', () => {
       return request;
     });
 
-    await expect(manager.downloadModel('alpha.gguf')).rejects.toThrow('Download timeout');
+    await expect(manager.downloadModel('alpha.gguf', { _maxRetries: 0 })).rejects.toThrow(
+      'Download timeout'
+    );
     expect(mockFs.unlink).not.toHaveBeenCalled();
   });
 

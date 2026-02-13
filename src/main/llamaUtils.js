@@ -8,7 +8,8 @@
  */
 
 const { createLogger } = require('../shared/logger');
-const { AI_DEFAULTS } = require('../shared/constants');
+const { AI_DEFAULTS, DEFAULT_AI_MODELS } = require('../shared/constants');
+const { resolveEmbeddingDimension } = require('../shared/embeddingDimensions');
 
 const logger = createLogger('llama-utils');
 
@@ -113,6 +114,40 @@ const isLegacyModelName = (name) => {
  */
 async function loadLlamaConfig() {
   try {
+    // Prefer the live LlamaService config first so logs and runtime use the same
+    // selected models (avoids stale settings-only drift in long-lived sessions).
+    const service = getLlamaService();
+    if (service && typeof service.getConfig === 'function') {
+      try {
+        const liveConfig = await service.getConfig();
+        if (liveConfig && typeof liveConfig === 'object') {
+          selectedTextModel = liveConfig.textModel || selectedTextModel;
+          selectedVisionModel = liveConfig.visionModel || selectedVisionModel;
+          selectedEmbeddingModel = liveConfig.embeddingModel || selectedEmbeddingModel;
+
+          logger.info('[LlamaUtils] Config loaded', {
+            textModel: selectedTextModel,
+            visionModel: selectedVisionModel,
+            embeddingModel: selectedEmbeddingModel,
+            source: 'llama-service'
+          });
+
+          return {
+            selectedTextModel,
+            selectedVisionModel,
+            selectedEmbeddingModel
+          };
+        }
+      } catch (serviceError) {
+        logger.debug(
+          '[LlamaUtils] Could not read live LlamaService config, falling back to settings',
+          {
+            error: serviceError?.message
+          }
+        );
+      }
+    }
+
     const { getInstance: getSettings } = require('./services/SettingsService');
     const settings = getSettings();
     const allSettings = settings?.getAll?.() || {};
@@ -127,21 +162,22 @@ async function loadLlamaConfig() {
     // Load model names from settings or use defaults
     selectedTextModel = resolveModel(
       allSettings.textModel,
-      AI_DEFAULTS.TEXT?.MODEL || 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf'
+      AI_DEFAULTS.TEXT?.MODEL ?? DEFAULT_AI_MODELS.TEXT_ANALYSIS
     );
     selectedVisionModel = resolveModel(
       allSettings.visionModel,
-      AI_DEFAULTS.IMAGE?.MODEL || 'llava-v1.6-mistral-7b-Q4_K_M.gguf'
+      AI_DEFAULTS.IMAGE?.MODEL ?? DEFAULT_AI_MODELS.IMAGE_ANALYSIS
     );
     selectedEmbeddingModel = resolveModel(
       allSettings.embeddingModel,
-      AI_DEFAULTS.EMBEDDING?.MODEL || 'nomic-embed-text-v1.5-Q8_0.gguf'
+      AI_DEFAULTS.EMBEDDING?.MODEL ?? DEFAULT_AI_MODELS.EMBEDDING
     );
 
     logger.info('[LlamaUtils] Config loaded', {
       textModel: selectedTextModel,
       visionModel: selectedVisionModel,
-      embeddingModel: selectedEmbeddingModel
+      embeddingModel: selectedEmbeddingModel,
+      source: 'settings'
     });
 
     return {
@@ -164,8 +200,9 @@ async function loadLlamaConfig() {
  * @returns {number}
  */
 function getEmbeddingDimensions() {
-  // nomic-embed-text v1.5 uses 768 dimensions
-  return AI_DEFAULTS.EMBEDDING?.DIMENSIONS || 768;
+  const selectedModel = getEmbeddingModel();
+  const defaultDimension = AI_DEFAULTS.EMBEDDING?.DIMENSIONS || 768;
+  return resolveEmbeddingDimension(selectedModel, { defaultDimension });
 }
 
 /**

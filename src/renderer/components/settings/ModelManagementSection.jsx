@@ -14,14 +14,14 @@ function ModelManagementSection({ newModel, setNewModel, isAddingModel, onAddMod
       <SettingRow
         layout="col"
         label="Add Model"
-        description="Download new models from the model registry."
+        description="Download new models from the model registry. Use exact filename, e.g. all-MiniLM-L6-v2-Q4_K_M.gguf"
       >
         <div className="settings-input-group">
           <Input
             type="text"
             value={newModel}
             onChange={(e) => setNewModel(e.target.value)}
-            placeholder="model:tag"
+            placeholder="e.g. Qwen2.5-7B-Instruct-Q4_K_M.gguf"
             className="w-full"
           />
           <Button

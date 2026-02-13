@@ -7,7 +7,11 @@
  */
 
 const { createLogger } = require('../../../shared/logger');
-const { AI_DEFAULTS, SETTINGS_SCHEMA_VERSION } = require('../../../shared/constants');
+const {
+  AI_DEFAULTS,
+  DEFAULT_AI_MODELS,
+  SETTINGS_SCHEMA_VERSION
+} = require('../../../shared/constants');
 
 const logger = createLogger('SettingsMigrator');
 
@@ -27,11 +31,11 @@ const KEY_MIGRATIONS = {
   enableChromaLearningDryRun: null
 };
 
-// Default values for new settings
+// Default values for new settings (from aiModelConfig)
 const NEW_DEFAULTS = {
-  textModel: AI_DEFAULTS.TEXT?.MODEL || 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf',
-  visionModel: AI_DEFAULTS.IMAGE?.MODEL || 'llava-v1.6-mistral-7b-Q4_K_M.gguf',
-  embeddingModel: AI_DEFAULTS.EMBEDDING?.MODEL || 'nomic-embed-text-v1.5-Q8_0.gguf',
+  textModel: AI_DEFAULTS.TEXT?.MODEL ?? DEFAULT_AI_MODELS.TEXT_ANALYSIS,
+  visionModel: AI_DEFAULTS.IMAGE?.MODEL ?? DEFAULT_AI_MODELS.IMAGE_ANALYSIS,
+  embeddingModel: AI_DEFAULTS.EMBEDDING?.MODEL ?? DEFAULT_AI_MODELS.EMBEDDING,
   llamaGpuLayers: -1, // Auto-detect
   llamaContextSize: 8192,
   vectorDbPersistPath: 'vector-db', // Relative to userData

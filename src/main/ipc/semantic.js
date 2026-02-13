@@ -26,6 +26,7 @@ const { createHandler, safeHandle, z } = require('./ipcWrappers');
 const { delay } = require('../../shared/promiseUtils');
 const { cosineSimilarity, padOrTruncateVector } = require('../../shared/vectorMath');
 const { validateFileOperationPath } = require('../../shared/pathSanitization');
+const { categorizeModel } = require('../../shared/modelCategorization');
 const { chunkText } = require('../utils/textChunking');
 const { normalizeText } = require('../../shared/normalization');
 const { getFileEmbeddingId } = require('../utils/fileIdUtils');
@@ -59,6 +60,57 @@ function _isOllamaStyleName(name) {
   return typeof name === 'string' && name.includes(':') && !name.endsWith('.gguf');
 }
 
+function normalizeModelName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .trim();
+}
+
+function findInstalledModelMatch(installedModelNames, model) {
+  const normalizedModel = normalizeModelName(model);
+  if (!normalizedModel) return null;
+  const validModelNames = Array.isArray(installedModelNames)
+    ? installedModelNames.map((name) => String(name || '').trim()).filter(Boolean)
+    : [];
+
+  // Exact, case-insensitive match
+  const exact = validModelNames.find((name) => normalizeModelName(name) === normalizedModel);
+  if (exact) return exact;
+
+  // Fuzzy match for legacy/stale names (e.g. "mistral" -> "mistral-7b-...gguf")
+  return (
+    validModelNames.find((name) => normalizeModelName(name).includes(normalizedModel)) ||
+    validModelNames.find((name) => normalizedModel.includes(normalizeModelName(name))) ||
+    null
+  );
+}
+
+/**
+ * Return de-duped list of installed model filenames matching the given type.
+ * Uses the model's own `type` property first, then falls back to
+ * heuristic-based `categorizeModel()`.
+ */
+function getInstalledModelNamesByType(models, targetType) {
+  const modelList = Array.isArray(models) ? models : [];
+  const names = modelList
+    .map((model) => {
+      const name = String(model?.name || model?.filename || '').trim();
+      if (!name) return null;
+      const type = String(model?.type || '').toLowerCase();
+      const category = type || categorizeModel(name);
+      return category === targetType ? name : null;
+    })
+    .filter(Boolean);
+
+  // De-dupe while preserving order
+  return [...new Set(names)];
+}
+
+/** Convenience alias kept for readability in embedding-only call-sites. */
+function getInstalledEmbeddingModelNames(models) {
+  return getInstalledModelNamesByType(models, 'embedding');
+}
+
 async function verifyEmbeddingModelAvailable(logger, preferredModel = null) {
   const cfg = await getLlamaService().getConfig();
   let model =
@@ -88,33 +140,38 @@ async function verifyEmbeddingModelAvailable(logger, preferredModel = null) {
   try {
     const models = await getLlamaService().listModels();
     const modelNames = models
-      .map((m) => (m?.name || m?.filename || '').toLowerCase().trim())
+      .map((m) => String(m?.name || m?.filename || '').trim())
       .filter(Boolean);
+    const embeddingModelNames = getInstalledEmbeddingModelNames(models);
 
     // Check if the configured model (or a variant) is installed
-    const normalizedModel = model.toLowerCase();
-
-    const isAvailable = modelNames.includes(normalizedModel);
-
-    if (!isAvailable) {
+    const matchedPrimary = findInstalledModelMatch(modelNames, model);
+    if (!matchedPrimary) {
       // Try fallback models
       const fallbackModels = AI_DEFAULTS.EMBEDDING.FALLBACK_MODELS || [];
       for (const fallback of fallbackModels) {
-        const normalizedFallback = fallback.toLowerCase();
-        const fallbackAvailable = modelNames.some(
-          (name) =>
-            name === normalizedFallback ||
-            name.startsWith(`${normalizedFallback}:`) ||
-            normalizedFallback.startsWith(name.split(':')[0])
-        );
-        if (fallbackAvailable) {
+        const matchedFallback = findInstalledModelMatch(modelNames, fallback);
+        if (matchedFallback) {
           logger.info('[EMBEDDINGS] Primary model not found, using fallback', {
             primary: model,
-            fallback,
+            fallback: matchedFallback,
             availableModels: modelNames.slice(0, 10)
           });
-          return { available: true, model: fallback };
+          return { available: true, model: matchedFallback };
         }
+      }
+
+      // Last resort: use any installed embedding model.
+      // This prevents hard-failing rebuild/reanalyze when the configured model
+      // is missing but another valid embedding model exists locally.
+      if (embeddingModelNames.length > 0) {
+        const autoSelected = embeddingModelNames[0];
+        logger.info('[EMBEDDINGS] Using installed embedding model fallback', {
+          primary: model,
+          autoSelected,
+          availableEmbeddingModels: embeddingModelNames.slice(0, 10)
+        });
+        return { available: true, model: autoSelected };
       }
 
       logger.error('[EMBEDDINGS] No embedding model available', {
@@ -131,7 +188,7 @@ async function verifyEmbeddingModelAvailable(logger, preferredModel = null) {
       };
     }
 
-    return { available: true, model };
+    return { available: true, model: matchedPrimary };
   } catch (error) {
     logger.error('[EMBEDDINGS] Failed to verify embedding model:', error.message);
     return {
@@ -143,19 +200,7 @@ async function verifyEmbeddingModelAvailable(logger, preferredModel = null) {
 }
 
 function isModelAvailable(modelNames, model) {
-  const normalizedModel = String(model || '').toLowerCase();
-  if (!normalizedModel) return false;
-  const validModelNames = (Array.isArray(modelNames) ? modelNames : [])
-    .map((m) =>
-      String(m || '')
-        .toLowerCase()
-        .trim()
-    )
-    .filter(Boolean);
-  // Exact match
-  if (validModelNames.includes(normalizedModel)) return true;
-  // Fuzzy match: handles stale Ollama-era names (e.g. 'mistral' matches 'mistral-7b-instruct-v0.3-q4_k_m.gguf')
-  return validModelNames.some((m) => m.includes(normalizedModel) || normalizedModel.includes(m));
+  return Boolean(findInstalledModelMatch(modelNames, model));
 }
 
 async function verifyReanalyzeModelsAvailable(logger) {
@@ -194,46 +239,107 @@ async function verifyReanalyzeModelsAvailable(logger) {
 
   try {
     const models = await getLlamaService().listModels();
+    // Preserve original casing from fs.readdir so returned matches can load
+    // on case-sensitive filesystems (Linux/macOS).
     const modelNames = models
-      .map((m) => (m?.name || m?.filename || '').toLowerCase().trim())
+      .map((m) => String(m?.name || m?.filename || '').trim())
       .filter(Boolean);
 
+    // --- Text model: try configured → fallback list → any installed text model ---
     if (!isModelAvailable(modelNames, textModel)) {
-      return {
-        available: false,
-        model: textModel,
-        modelType: 'text',
-        error: `Text model "${textModel}" not downloaded. Download it in Settings > Models.`
-      };
+      const textFallbacks = AI_DEFAULTS.TEXT.FALLBACK_MODELS || [];
+      const matchedTextFallback = textFallbacks
+        .map((candidate) => findInstalledModelMatch(modelNames, candidate))
+        .find(Boolean);
+
+      if (matchedTextFallback) {
+        logger.info('[REANALYZE] Primary text model not found, using fallback', {
+          primary: textModel,
+          fallback: matchedTextFallback
+        });
+        textModel = matchedTextFallback;
+      } else {
+        const installedTextModels = getInstalledModelNamesByType(models, 'text');
+        if (installedTextModels.length > 0) {
+          logger.info('[REANALYZE] Using any installed text model as last-resort fallback', {
+            primary: textModel,
+            autoSelected: installedTextModels[0]
+          });
+          textModel = installedTextModels[0];
+        } else {
+          return {
+            available: false,
+            model: textModel,
+            modelType: 'text',
+            error: `Text model "${textModel}" not downloaded. Download it in Settings > Models.`
+          };
+        }
+      }
     }
 
+    // --- Vision model: try configured → fallback list → any installed vision model ---
     if (!isModelAvailable(modelNames, visionModel)) {
-      return {
-        available: false,
-        model: visionModel,
-        modelType: 'vision',
-        error: `Vision model "${visionModel}" not downloaded. Download it in Settings > Models.`
-      };
+      const visionFallbacks = AI_DEFAULTS.IMAGE.FALLBACK_MODELS || [];
+      const matchedVisionFallback = visionFallbacks
+        .map((candidate) => findInstalledModelMatch(modelNames, candidate))
+        .find(Boolean);
+
+      if (matchedVisionFallback) {
+        logger.info('[REANALYZE] Primary vision model not found, using fallback', {
+          primary: visionModel,
+          fallback: matchedVisionFallback
+        });
+        visionModel = matchedVisionFallback;
+      } else {
+        const installedVisionModels = getInstalledModelNamesByType(models, 'vision');
+        if (installedVisionModels.length > 0) {
+          logger.info('[REANALYZE] Using any installed vision model as last-resort fallback', {
+            primary: visionModel,
+            autoSelected: installedVisionModels[0]
+          });
+          visionModel = installedVisionModels[0];
+        } else {
+          return {
+            available: false,
+            model: visionModel,
+            modelType: 'vision',
+            error: `Vision model "${visionModel}" not downloaded. Download it in Settings > Models.`
+          };
+        }
+      }
     }
 
-    let embeddingModelToUse = embeddingModel;
-    if (!isModelAvailable(modelNames, embeddingModelToUse)) {
+    let embeddingModelToUse = findInstalledModelMatch(modelNames, embeddingModel);
+    if (!embeddingModelToUse) {
       const fallbackModels = AI_DEFAULTS.EMBEDDING.FALLBACK_MODELS || [];
-      const fallback = fallbackModels.find((candidate) => isModelAvailable(modelNames, candidate));
-      if (fallback) {
+      const matchedFallback = fallbackModels
+        .map((candidate) => findInstalledModelMatch(modelNames, candidate))
+        .find(Boolean);
+
+      if (matchedFallback) {
         logger.info('[EMBEDDINGS] Primary model not found, using fallback', {
           primary: embeddingModel,
-          fallback,
+          fallback: matchedFallback,
           availableModels: modelNames.slice(0, 10)
         });
-        embeddingModelToUse = fallback;
+        embeddingModelToUse = matchedFallback;
       } else {
-        return {
-          available: false,
-          model: embeddingModel,
-          modelType: 'embedding',
-          error: `Embedding model "${embeddingModel}" not downloaded. Download it in Settings > Models.`
-        };
+        const embeddingModelNames = getInstalledEmbeddingModelNames(models);
+        if (embeddingModelNames.length > 0) {
+          embeddingModelToUse = embeddingModelNames[0];
+          logger.info('[EMBEDDINGS] Using installed embedding model fallback for reanalyze', {
+            primary: embeddingModel,
+            autoSelected: embeddingModelToUse,
+            availableEmbeddingModels: embeddingModelNames.slice(0, 10)
+          });
+        } else {
+          return {
+            available: false,
+            model: embeddingModel,
+            modelType: 'embedding',
+            error: `Embedding model "${embeddingModel}" not downloaded. Download it in Settings > Models.`
+          };
+        }
       }
     }
 
@@ -503,7 +609,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
               initState = INIT_STATES.FAILED;
               initFailureReason = 'Vector DB initialization failed';
               initFailedAt = Date.now();
-              throw new Error(initFailureReason);
+              throw new Error(initFailureReason, { cause: error });
             }
           }
         }
@@ -836,8 +942,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
           // Track results for files
           const fileResults = {
-            success: 0,
+            prepared: 0,
+            persisted: 0,
             failed: 0,
+            persistFailed: 0,
             errors: [],
             chunkFailures: 0,
             chunkFailureSamples: []
@@ -946,7 +1054,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
                 },
                 updatedAt: new Date().toISOString()
               });
-              fileResults.success++;
+              fileResults.prepared++;
 
               // Chunk embeddings (analyzed-only): embed extracted text for deep semantic recall.
               // This is intentionally behind the \"Rebuild\" flow so users can opt in.
@@ -975,6 +1083,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
                         path: filePath,
                         name: displayName,
                         chunkIndex: c.index,
+                        startOffset: c.charStart,
+                        endOffset: c.charEnd,
+                        text: c.text,
+                        content: c.text,
                         charStart: c.charStart,
                         charEnd: c.charEnd,
                         snippet,
@@ -1023,13 +1135,28 @@ function registerEmbeddingsIpc(servicesOrParams) {
             const batch = filePayloads.slice(i, i + BATCH_SIZE);
             try {
               const result = await getOramaService().batchUpsertFiles(batch);
-              rebuilt += result?.count ?? result ?? 0;
+              const persistedCount = Number(result?.count ?? result ?? 0);
+              const safePersistedCount =
+                Number.isFinite(persistedCount) && persistedCount > 0 ? persistedCount : 0;
+              rebuilt += safePersistedCount;
+              if (safePersistedCount < batch.length) {
+                fileResults.persistFailed += batch.length - safePersistedCount;
+                logger.warn(
+                  '[EMBEDDINGS] Batch upsert persisted fewer files than prepared payloads',
+                  {
+                    prepared: batch.length,
+                    persisted: safePersistedCount
+                  }
+                );
+              }
             } catch (e) {
+              fileResults.persistFailed += batch.length;
               logger.warn('[EMBEDDINGS] Failed to batch upsert files:', e.message);
             }
             // FIX: Yield between batches to prevent UI blocking
             await new Promise((resolve) => setImmediate(resolve));
           }
+          fileResults.persisted = rebuilt;
 
           // Batch upsert chunk embeddings (in chunks to keep payloads bounded)
           let chunkRebuilt = 0;
@@ -1046,7 +1173,8 @@ function registerEmbeddingsIpc(servicesOrParams) {
           }
 
           // Return detailed status
-          const allFailed = fileResults.success === 0 && allEntries.length > 0;
+          const totalFileFailures = fileResults.failed + fileResults.persistFailed;
+          const allFailed = rebuilt === 0 && allEntries.length > 0;
 
           // Record which model/dimensions were used for the index (for UI mismatch warnings)
           try {
@@ -1070,8 +1198,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
             total: allEntries.length,
             totalUniqueFiles: uniqueHistoryFileIds.size,
             uniquePrepared: filePayloads.length,
-            succeeded: fileResults.success,
-            failed: fileResults.failed,
+            succeeded: rebuilt,
+            failed: totalFileFailures,
+            prepared: fileResults.prepared,
+            persistFailed: fileResults.persistFailed,
             errors: fileResults.errors.slice(0, 5), // Limit error details
             chunkFailures: fileResults.chunkFailures,
             chunkFailureSamples: fileResults.chunkFailureSamples.slice(0, 3),
@@ -1081,10 +1211,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
             },
             model: modelCheck.model,
             message: allFailed
-              ? `All ${fileResults.failed} file embeddings failed. Check AI engine status.`
-              : fileResults.failed > 0
-                ? `${fileResults.success} files embedded, ${fileResults.failed} failed`
-                : `Successfully embedded ${fileResults.success} files`
+              ? `All ${totalFileFailures} file embeddings failed. Check AI engine status.`
+              : totalFileFailures > 0
+                ? `${rebuilt} files embedded, ${totalFileFailures} failed`
+                : `Successfully embedded ${rebuilt} files`
           };
         } catch (e) {
           logger.error('[EMBEDDINGS] Rebuild files failed:', e);
@@ -1360,6 +1490,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
                             path: filePath,
                             name: displayName,
                             chunkIndex: chunk.index,
+                            startOffset: chunk.charStart,
+                            endOffset: chunk.charEnd,
+                            text: chunk.text,
+                            content: chunk.text,
                             charStart: chunk.charStart,
                             charEnd: chunk.charEnd,
                             snippet,

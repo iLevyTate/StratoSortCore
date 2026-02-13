@@ -3,6 +3,7 @@
  */
 const { handleBatchOrganize } = require('../src/main/ipc/files/batchOrganizeHandler');
 const { ERROR_CODES } = require('../src/shared/errorHandlingUtils');
+const { validateFileOperationPath } = require('../src/shared/pathSanitization');
 
 // Mock all dependencies
 jest.mock('fs', () => ({
@@ -228,5 +229,20 @@ describe('Batch Organize Handler', () => {
 
     const { executeRollback } = require('../src/main/ipc/files/batchRollback');
     expect(executeRollback).toHaveBeenCalled();
+  });
+
+  test('handles non-Error thrown values without crashing', async () => {
+    validateFileOperationPath.mockImplementationOnce(() => {
+      throw 'path-validation-failed';
+    });
+
+    const result = await handleBatchOrganize(params);
+
+    expect(result).toBeTruthy();
+    expect(result.failCount).toBeGreaterThan(0);
+    expect(Array.isArray(result.results)).toBe(true);
+    expect(
+      result.results.some((entry) => String(entry?.error).includes('path-validation-failed'))
+    ).toBe(true);
   });
 });

@@ -42,7 +42,8 @@ const mockDownloadManager = {
   downloadModel: jest.fn().mockResolvedValue({ success: true }),
   deleteModel: jest.fn().mockResolvedValue({ success: true }),
   getStatus: jest.fn().mockReturnValue({ active: 0 }),
-  getDownloadedModels: jest.fn().mockResolvedValue([])
+  getDownloadedModels: jest.fn().mockResolvedValue([]),
+  isDownloading: jest.fn().mockReturnValue(false)
 };
 
 jest.mock('../src/main/services/ModelDownloadManager', () => ({

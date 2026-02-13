@@ -122,4 +122,21 @@ describe('ParallelEmbeddingService Fixes', () => {
     expect(result.errors[0].error).toMatch(/Model mismatch/);
     expect(result.stats.failed).toBe(1);
   });
+
+  test('should recover from context overflow with stricter cap', async () => {
+    const LlamaService = require('../../src/main/services/LlamaService');
+    LlamaService.getInstance().generateEmbedding.mockImplementation(async (input) => {
+      if ((input || '').length > 1200) {
+        throw new Error('Input is longer than the context size of 512 tokens');
+      }
+      return { embedding: [0.11, 0.22], model: 'test-model' };
+    });
+
+    const longDenseText = 'x'.repeat(2400);
+    const result = await service.embedText(longDenseText);
+
+    expect(result.success).toBe(true);
+    expect(result.vector).toEqual([0.11, 0.22]);
+    expect(LlamaService.getInstance().generateEmbedding).toHaveBeenCalledTimes(2);
+  });
 });

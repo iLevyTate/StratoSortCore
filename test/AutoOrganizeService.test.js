@@ -177,7 +177,12 @@ describe('AutoOrganizeService', () => {
 
         expect(mockSuggestionService.recordFeedback).toHaveBeenCalledWith(
           file,
-          suggestion.primary,
+          expect.objectContaining({
+            folder: 'Documents',
+            path: '/base/Documents',
+            isSmartFolder: true,
+            folderId: 'folder-1'
+          }),
           true
         );
       });

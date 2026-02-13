@@ -3,10 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>StratoSort - AI-Powered File Organization</title>
+    <title>StratoSort Core - AI-Powered File Organization</title>
     <!-- CSP is set by the main process. Keeping meta minimal to avoid conflicts. -->
     <!-- Critical inline styles for splash screen to prevent FOUC (Flash of Unstyled Content) -->
     <style>
+      /* Lock layout from first paint to prevent resize/flash when CSS bundle loads */
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      #root {
+        min-height: 100vh;
+        width: 100%;
+      }
       /* Splash screen must be styled immediately before CSS bundle loads */
       .splash-screen {
         position: fixed;

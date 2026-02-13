@@ -28,8 +28,7 @@ const SQLITE_KEYS = {
   deadLetter: 'deadLetter'
 };
 
-let sqliteStore = null;
-let sqliteDbPath = null;
+const sqliteStores = new Map();
 const SQLITE_COMPRESSION_ENABLED =
   String(process.env.STRATOSORT_SQLITE_COMPRESS || 'true').toLowerCase() !== 'false';
 
@@ -37,11 +36,16 @@ function shouldUseSqlite() {
   return shouldUseSqliteBackend('embeddingQueue');
 }
 
+function getSqliteDbPath(filePath) {
+  return path.join(path.dirname(filePath), SQLITE_DB_NAME);
+}
+
 function getSqliteStore(filePath) {
-  if (sqliteStore) return sqliteStore;
-  const dbPath = path.join(path.dirname(filePath), SQLITE_DB_NAME);
-  sqliteDbPath = dbPath;
-  sqliteStore = createKeyValueStore({
+  const dbPath = getSqliteDbPath(filePath);
+  if (sqliteStores.has(dbPath)) {
+    return sqliteStores.get(dbPath);
+  }
+  const store = createKeyValueStore({
     dbPath,
     tableName: SQLITE_TABLE,
     serialize: (value) => {
@@ -70,22 +74,33 @@ function getSqliteStore(filePath) {
       }
     }
   });
-  return sqliteStore;
+  sqliteStores.set(dbPath, store);
+  return store;
 }
 
-function closeSqliteStore() {
-  if (sqliteStore && typeof sqliteStore.close === 'function') {
-    sqliteStore.close();
+function closeSqliteStore(filePath = null) {
+  if (filePath) {
+    const dbPath = getSqliteDbPath(filePath);
+    const store = sqliteStores.get(dbPath);
+    if (store && typeof store.close === 'function') {
+      store.close();
+    }
+    sqliteStores.delete(dbPath);
+    return;
   }
-  sqliteStore = null;
-  sqliteDbPath = null;
+
+  for (const [dbPath, store] of sqliteStores.entries()) {
+    if (store && typeof store.close === 'function') {
+      store.close();
+    }
+    sqliteStores.delete(dbPath);
+  }
 }
 
-async function backupSqliteDb(reason) {
-  const dbPath = sqliteDbPath;
-  if (!dbPath) return;
+async function backupSqliteDb(filePath, reason) {
+  const dbPath = getSqliteDbPath(filePath);
 
-  closeSqliteStore();
+  closeSqliteStore(filePath);
 
   const backupPath = `${dbPath}.corrupt.${Date.now()}`;
   try {
@@ -159,7 +174,7 @@ async function loadPersistedData(filePath, onLoad, description, options = {}) {
         error?.code === 'SQLITE_NOTADB' ||
         (error?.message && error.message.includes('file is not a database'))
       ) {
-        await backupSqliteDb(error);
+        await backupSqliteDb(filePath, error);
         // closeSqliteStore() is handled inside backupSqliteDb
       }
       logger.warn('[EmbeddingQueue] SQLite load failed, falling back to JSON', {

@@ -177,10 +177,14 @@ function EmbeddingRebuildSection({ addNotification }) {
               : res?.modelType === 'vision'
                 ? 'Vision model'
                 : 'Embedding model';
-          addNotification(
-            `${modelLabel} not available. Download it first: ${res.model || DEFAULT_AI_MODELS.EMBEDDING}`,
-            'error'
-          );
+          const modelName =
+            res.model ||
+            (res?.modelType === 'text'
+              ? DEFAULT_AI_MODELS.TEXT_ANALYSIS
+              : res?.modelType === 'vision'
+                ? DEFAULT_AI_MODELS.IMAGE_ANALYSIS
+                : DEFAULT_AI_MODELS.EMBEDDING);
+          addNotification(`${modelLabel} not available. Download it first: ${modelName}`, 'error');
         } else {
           addNotification('Full rebuild failed. Check AI engine status in Settings.', 'error');
         }
@@ -226,10 +230,20 @@ function EmbeddingRebuildSection({ addNotification }) {
         } else if (errorMsg.includes('WATCHER_NOT_AVAILABLE')) {
           addNotification('Configure smart folders first before reanalyzing.', 'error');
         } else if (errorMsg.includes('MODEL_NOT_AVAILABLE')) {
-          addNotification(
-            `Embedding model not available. Download it first: ${res.model || DEFAULT_AI_MODELS.EMBEDDING}`,
-            'error'
-          );
+          const modelLabel =
+            res?.modelType === 'text'
+              ? 'Text model'
+              : res?.modelType === 'vision'
+                ? 'Vision model'
+                : 'Embedding model';
+          const modelName =
+            res.model ||
+            (res?.modelType === 'text'
+              ? DEFAULT_AI_MODELS.TEXT_ANALYSIS
+              : res?.modelType === 'vision'
+                ? DEFAULT_AI_MODELS.IMAGE_ANALYSIS
+                : DEFAULT_AI_MODELS.EMBEDDING);
+          addNotification(`${modelLabel} not available. Download it first: ${modelName}`, 'error');
         } else {
           addNotification(
             res?.error || 'Reanalyze failed. Check AI engine status in Settings.',

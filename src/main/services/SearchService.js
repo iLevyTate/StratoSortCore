@@ -801,6 +801,19 @@ class SearchService {
         if (!fileId) continue;
 
         const score = typeof hit.score === 'number' ? hit.score : 0;
+        const snippet = meta.snippet || meta.content || hit.document || '';
+        const charStart =
+          typeof meta.charStart === 'number'
+            ? meta.charStart
+            : typeof meta.startOffset === 'number'
+              ? meta.startOffset
+              : undefined;
+        const charEnd =
+          typeof meta.charEnd === 'number'
+            ? meta.charEnd
+            : typeof meta.endOffset === 'number'
+              ? meta.endOffset
+              : undefined;
         const existing = byFile.get(fileId);
         if (!existing || score > existing.score) {
           byFile.set(fileId, {
@@ -814,10 +827,10 @@ class SearchService {
             source: 'chunk',
             matchDetails: {
               chunkScore: score,
-              bestSnippet: meta.snippet || hit.document || '',
+              bestSnippet: snippet,
               chunkIndex: meta.chunkIndex,
-              charStart: meta.charStart,
-              charEnd: meta.charEnd
+              charStart,
+              charEnd
             }
           });
         }
@@ -936,12 +949,12 @@ class SearchService {
       this.relationshipIndex;
 
     if (!enabled) {
-      return { results, meta: { enabled: false, reason: 'disabled' } };
+      return { results, meta: { enabled: false, expanded: false, reason: 'disabled' } };
     }
 
     const seedResults = (results || []).filter((r) => r?.id).slice(0, graphExpansionMaxSeeds);
     if (seedResults.length === 0) {
-      return { results, meta: { enabled: false, reason: 'no-seeds' } };
+      return { results, meta: { enabled: false, expanded: false, reason: 'no-seeds' } };
     }
 
     const seedScores = new Map(seedResults.map((r) => [r.id, r.score || 0]));
@@ -957,14 +970,14 @@ class SearchService {
       });
     } catch (error) {
       logger.debug('[SearchService] Graph expansion failed:', error?.message || error);
-      return { results, meta: { enabled: false, reason: 'error' } };
+      return { results, meta: { enabled: false, expanded: false, reason: 'error' } };
     }
 
     const edges = Array.isArray(edgeResponse?.edges) ? edgeResponse.edges : [];
     if (edges.length === 0) {
       return {
         results,
-        meta: { enabled: true, edgeCount: 0, neighborCount: 0, addedCount: 0 }
+        meta: { enabled: true, expanded: false, edgeCount: 0, neighborCount: 0, addedCount: 0 }
       };
     }
 
@@ -1060,14 +1073,16 @@ class SearchService {
     const expandedResults = Array.from(combined.values()).sort(
       (a, b) => (b.score || 0) - (a.score || 0)
     );
+    const addedCount = neighborEntries.filter((e) => !seedSet.has(e.id)).length;
     return {
       results: expandedResults,
       meta: {
         enabled: true,
+        expanded: addedCount > 0,
         seedCount: seedIds.length,
         edgeCount: edges.length,
         neighborCount: neighborEntries.length,
-        addedCount: neighborEntries.filter((e) => !seedSet.has(e.id)).length,
+        addedCount,
         weight: graphExpansionWeight,
         decay: graphExpansionDecay
       }

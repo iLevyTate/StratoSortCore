@@ -2,16 +2,16 @@
   <img src="assets/stratosort-logo.png" alt="StratoSort Logo" width="128" />
 </p>
 
-<h1 align="center">StratoSort</h1>
+<h1 align="center">StratoSort Core</h1>
 
 <p align="center">
   <strong>Intelligent File Organization with Privacy-First Local AI</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/iLevyTate/elstratosort/releases"><img src="https://img.shields.io/badge/version-2.0.0-blue?style=flat-square" alt="Version" /></a>
-  <a href="https://github.com/iLevyTate/elstratosort/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Personal_Use_Only-blue?style=flat-square" alt="License" /></a>
-  <a href="https://github.com/iLevyTate/elstratosort/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/iLevyTate/elstratosort/ci.yml?style=flat-square&label=CI" alt="CI Status" /></a>
+  <a href="https://github.com/iLevyTate/StratoSortCore/releases"><img src="https://img.shields.io/badge/version-2.0.0-blue?style=flat-square" alt="Version" /></a>
+  <a href="https://github.com/iLevyTate/StratoSortCore/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Personal_Use_Only-blue?style=flat-square" alt="License" /></a>
+  <a href="https://github.com/iLevyTate/StratoSortCore/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/iLevyTate/StratoSortCore/ci.yml?style=flat-square&label=CI" alt="CI Status" /></a>
 </p>
 
 <p align="center">
@@ -31,7 +31,7 @@
 
 ---
 
-**StratoSort** transforms file chaos into intelligent order using privacy-first local AI. It
+**StratoSort Core** transforms file chaos into intelligent order using privacy-first local AI. It
 automatically categorizes, tags, and organizes your documents completely offline—leveraging
 **built-in AI** (node-llama-cpp) for intelligence and **Orama** for semantic search—ensuring your
 data never leaves your machine. **Zero external dependencies required.**
@@ -56,6 +56,14 @@ https://github.com/user-attachments/assets/7cd1f974-33cb-4d2d-ac8d-ea30c015389b
 
 See **[CHANGELOG.md](CHANGELOG.md)** for complete release notes.
 
+## Provenance
+
+StratoSort Core is the successor to the original
+[StratoSort Stack (legacy repository)](https://github.com/iLevyTate/elstratosort). This repository
+represents a clean break starting from v2.0.0, focusing on a streamlined, in-process AI
+architecture. For versions prior to v2.0.0, or to view the legacy codebase, please visit the
+original repository.
+
 ## Features
 
 | Feature                   | Description                                                                         |
@@ -70,23 +78,31 @@ See **[CHANGELOG.md](CHANGELOG.md)** for complete release notes.
 
 ## Quick Start
 
+### End Users — One Download, No CLI
+
+1. **[Download the installer](https://github.com/iLevyTate/StratoSortCore/releases)** for Windows or
+   macOS.
+2. **Run it** — allow the app if your OS shows a security prompt (see
+   [Install Guide](docs/INSTALL_GUIDE.md)).
+3. **First launch** — approve model download in the app (~5GB, one-time).
+
+No terminal, Python, Docker, or API keys. See the full **[Install Guide](docs/INSTALL_GUIDE.md)**
+for step-by-step instructions on both platforms and how to handle unsigned-app prompts.
+
 ### Prerequisites
 
 | Requirement          | Specification                                                   |
 | :------------------- | :-------------------------------------------------------------- |
-| **Operating System** | Windows 10/11 (recommended), macOS 10.15+, or Linux             |
+| **Operating System** | Windows 10/11 (64-bit), macOS 10.15+, or Linux                  |
 | **Memory**           | 8GB RAM minimum (16GB recommended for best performance)         |
 | **Storage**          | ~5GB for AI models                                              |
 | **GPU (Optional)**   | NVIDIA CUDA, Apple Metal, or Vulkan-compatible for acceleration |
 
-> **Note:** All AI functionality is built-in. No external servers, Python, or additional software
-> required. Just install and run.
-
-### Installation
+### Developers — Build from Source
 
 ```bash
-git clone https://github.com/iLevyTate/elstratosort.git
-cd elstratosort
+git clone https://github.com/iLevyTate/StratoSortCore.git
+cd StratoSortCore
 npm ci
 npm run dev
 ```
@@ -94,8 +110,9 @@ npm run dev
 **First Launch:** The app automatically downloads required AI models (GGUF format) on first run. GPU
 acceleration is auto-detected.
 
-**Default Models:** Mistral 7B (text), LLaVA 1.6 Mistral 7B (vision), nomic-embed-text v1.5
-(embeddings). See [docs/CONFIG.md](docs/CONFIG.md#default-ai-models) for details.
+**Default Models:** Qwen2.5 7B (text), LLaVA 1.6 Mistral 7B (vision), nomic-embed-text v1.5
+(embeddings). Change defaults in `src/shared/aiModelConfig.js`. See [docs/CONFIG.md](docs/CONFIG.md)
+for details.
 
 ## Advanced Capabilities
 
@@ -107,8 +124,9 @@ understanding.
 
 ### Vision and OCR
 
-StratoSort doesn't just read text files—it uses computer vision to interpret images and Tesseract
-OCR to extract text, enabling automatic organization of receipts, screenshots, and scanned PDFs.
+StratoSort Core doesn't just read text files—it uses computer vision to interpret images and
+Tesseract OCR to extract text, enabling automatic organization of receipts, screenshots, and scanned
+PDFs.
 
 ### Semantic Search and Re-Ranking
 
@@ -128,14 +146,15 @@ See **[SECURITY.md](SECURITY.md)** for the complete security policy.
 
 ## Documentation
 
-| Document                                       | Description                      |
-| :--------------------------------------------- | :------------------------------- |
-| **[Getting Started](docs/GETTING_STARTED.md)** | Installation and setup guide     |
-| **[Architecture](docs/ARCHITECTURE.md)**       | System design and data flow      |
-| **[Learning Guide](docs/LEARNING_GUIDE.md)**   | Codebase onboarding              |
-| **[Graph Features](docs/FEATURES_GRAPH.md)**   | Knowledge Graph capabilities     |
-| **[IPC Contracts](docs/IPC_CONTRACTS.md)**     | IPC communication specifications |
-| **[Release Guide](docs/RELEASING.md)**         | Release process and checks       |
+| Document                                       | Description                              |
+| :--------------------------------------------- | :--------------------------------------- |
+| **[Install Guide](docs/INSTALL_GUIDE.md)**     | End-user install (Windows & Mac, no CLI) |
+| **[Getting Started](docs/GETTING_STARTED.md)** | Developer setup and build guide          |
+| **[Architecture](docs/ARCHITECTURE.md)**       | System design and data flow              |
+| **[Learning Guide](docs/LEARNING_GUIDE.md)**   | Codebase onboarding                      |
+| **[Graph Features](docs/FEATURES_GRAPH.md)**   | Knowledge Graph capabilities             |
+| **[IPC Contracts](docs/IPC_CONTRACTS.md)**     | IPC communication specifications         |
+| **[Release Guide](docs/RELEASING.md)**         | Release process and checks               |
 
 ## Contributing
 
@@ -167,9 +186,9 @@ See **[LICENSE](LICENSE)** for details.
 ---
 
 <p align="center">
-  <a href="https://github.com/iLevyTate/elstratosort">GitHub</a> •
-  <a href="https://github.com/iLevyTate/elstratosort/issues">Report Bug</a> •
-  <a href="https://github.com/iLevyTate/elstratosort/issues">Request Feature</a>
+  <a href="https://github.com/iLevyTate/StratoSortCore">GitHub</a> •
+  <a href="https://github.com/iLevyTate/StratoSortCore/issues">Report Bug</a> •
+  <a href="https://github.com/iLevyTate/StratoSortCore/issues">Request Feature</a>
 </p>
 
 <p align="center">

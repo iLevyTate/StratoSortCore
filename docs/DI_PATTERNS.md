@@ -1,6 +1,6 @@
 # Dependency Injection Patterns
 
-This document describes the dependency injection (DI) patterns used in the StratoSort codebase.
+This document describes the dependency injection (DI) patterns used in the StratoSort Core codebase.
 
 ## Overview
 

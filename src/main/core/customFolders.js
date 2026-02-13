@@ -274,6 +274,9 @@ async function loadCustomFolders() {
     const filePath = getCustomFoldersPath();
     const data = await fs.readFile(filePath, 'utf-8');
     const parsed = JSON.parse(data);
+    if (!Array.isArray(parsed)) {
+      throw new Error('Invalid custom folders format: expected array');
+    }
     const normalized = normalizeFolderPaths(parsed);
     const documentsDir = app.getPath('documents');
     const baseDir = path.join(documentsDir, 'StratoSort');

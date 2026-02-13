@@ -28,6 +28,7 @@ function Toast({
   mergeCount = 0
 }) {
   const [isVisible, setIsVisible] = useState(show);
+  const closeTimerRef = useRef(null);
   const animationTimerRef = useRef(null);
   // FIX: Use ref for onClose to prevent timer reset when parent re-renders with new callback
   const onCloseRef = useRef(onClose);
@@ -43,6 +44,10 @@ function Toast({
 
   useEffect(() => {
     return () => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
       if (animationTimerRef.current) {
         clearTimeout(animationTimerRef.current);
         animationTimerRef.current = null;
@@ -53,7 +58,8 @@ function Toast({
   // FIX: Removed onClose from dependency array - use ref instead
   useEffect(() => {
     if (show && duration > 0) {
-      const timer = setTimeout(() => {
+      closeTimerRef.current = setTimeout(() => {
+        closeTimerRef.current = null;
         setIsVisible(false);
         animationTimerRef.current = setTimeout(
           () => onCloseRef.current?.(),
@@ -62,7 +68,10 @@ function Toast({
       }, duration);
 
       return () => {
-        clearTimeout(timer);
+        if (closeTimerRef.current) {
+          clearTimeout(closeTimerRef.current);
+          closeTimerRef.current = null;
+        }
         if (animationTimerRef.current) {
           clearTimeout(animationTimerRef.current);
           animationTimerRef.current = null;
@@ -75,8 +84,19 @@ function Toast({
 
   const handleClose = () => {
     setIsVisible(false);
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    if (animationTimerRef.current) {
+      clearTimeout(animationTimerRef.current);
+      animationTimerRef.current = null;
+    }
     // FIX: Use ref for consistency with other timer callbacks
-    animationTimerRef.current = setTimeout(() => onCloseRef.current?.(), TIMEOUTS.ANIMATION_MEDIUM);
+    animationTimerRef.current = setTimeout(() => {
+      animationTimerRef.current = null;
+      onCloseRef.current?.();
+    }, TIMEOUTS.ANIMATION_MEDIUM);
   };
 
   const handleKeyDown = (e) => {
@@ -310,46 +330,56 @@ ToastContainer.propTypes = {
 // Hook for using toasts (with simple grouping and caps)
 export const useToast = () => {
   const [toasts, setToasts] = useState([]);
+  const toastsRef = useRef(toasts);
   // Track IDs of toasts evicted by the cap so callers can clean up external mappings
   const evictedIdsRef = useRef([]);
 
+  useEffect(() => {
+    toastsRef.current = toasts;
+  }, [toasts]);
+
   const addToast = useCallback((message, severity = 'info', duration = 3000, groupKey = null) => {
-    const id = generateSecureId();
+    const previousToasts = toastsRef.current;
     const now = Date.now();
-    let resolvedId = id;
+    const existingGroupedToast = groupKey
+      ? previousToasts.find(
+          (toast) =>
+            toast.groupKey === groupKey && now - (toast.createdAt || now) <= GROUP_WINDOW_MS
+        )
+      : null;
+    const toastId = existingGroupedToast?.id || generateSecureId();
+    let nextToasts = previousToasts;
 
-    setToasts((prev) => {
-      // If grouping, try to merge with an existing toast
-      // FIX: Instead of overwriting messages, show count to preserve awareness
-      if (groupKey) {
-        const idx = prev.findIndex(
-          (t) => t.groupKey === groupKey && now - (t.createdAt || now) <= GROUP_WINDOW_MS
-        );
-        if (idx !== -1) {
-          const existing = prev[idx];
-          const mergeCount = (existing.mergeCount || 1) + 1;
-          const updated = {
-            ...existing,
-            id: existing.id, // keep id stable for animation
-            // FIX: Preserve first message but add count indicator
-            message: existing.originalMessage || existing.message,
-            originalMessage: existing.originalMessage || existing.message,
-            mergeCount,
-            severity: getHighestSeverity(existing.severity || 'info', severity || 'info'),
-            duration: duration ?? existing.duration,
-            createdAt: existing.createdAt || now
-          };
-          resolvedId = existing.id;
-          const copy = prev.slice();
-          copy[idx] = updated;
-          return copy;
-        }
+    // If grouping, try to merge with an existing toast
+    // FIX: Instead of overwriting messages, show count to preserve awareness
+    if (groupKey) {
+      const idx = previousToasts.findIndex(
+        (toast) => toast.groupKey === groupKey && now - (toast.createdAt || now) <= GROUP_WINDOW_MS
+      );
+      if (idx !== -1) {
+        const existing = previousToasts[idx];
+        const mergeCount = (existing.mergeCount || 1) + 1;
+        const updated = {
+          ...existing,
+          id: existing.id, // keep id stable for animation
+          // FIX: Preserve first message but add count indicator
+          message: existing.originalMessage || existing.message,
+          originalMessage: existing.originalMessage || existing.message,
+          mergeCount,
+          severity: getHighestSeverity(existing.severity || 'info', severity || 'info'),
+          duration: duration ?? existing.duration,
+          createdAt: existing.createdAt || now
+        };
+        nextToasts = previousToasts.slice();
+        nextToasts[idx] = updated;
       }
+    }
 
-      const next = [
-        ...prev,
+    if (nextToasts === previousToasts) {
+      nextToasts = [
+        ...previousToasts,
         {
-          id,
+          id: toastId,
           message,
           severity,
           duration,
@@ -359,21 +389,26 @@ export const useToast = () => {
         }
       ];
       // Cap visible toasts - track evicted IDs for caller cleanup
-      while (next.length > MAX_TOASTS) {
-        const evicted = next.shift();
+      while (nextToasts.length > MAX_TOASTS) {
+        const evicted = nextToasts.shift();
         if (evicted) evictedIdsRef.current.push(evicted.id);
       }
-      return next;
-    });
+    }
 
-    return resolvedId;
+    toastsRef.current = nextToasts;
+    setToasts(nextToasts);
+
+    return toastId;
   }, []);
 
   const removeToast = useCallback((id) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    const nextToasts = toastsRef.current.filter((toast) => toast.id !== id);
+    toastsRef.current = nextToasts;
+    setToasts(nextToasts);
   }, []);
 
   const clearAllToasts = useCallback(() => {
+    toastsRef.current = [];
     setToasts([]);
   }, []);
 

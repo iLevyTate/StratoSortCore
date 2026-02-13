@@ -11,6 +11,9 @@
 const fs = require('fs').promises;
 const os = require('os');
 const path = require('path');
+const { AI_DEFAULTS } = require('../src/shared/constants');
+
+const EMBEDDING_DIM = AI_DEFAULTS?.EMBEDDING?.DIMENSIONS || 384;
 
 // Avoid Orama persistence plugin dynamic import issues in Jest.
 jest.mock('@orama/plugin-data-persistence', () => ({
@@ -70,12 +73,12 @@ jest.mock('../src/main/services/organization/feedbackMemoryStore', () => ({
 
 // Deterministic embeddings: anything invoice-ish maps to the same vector.
 const mockLlamaService = {
-  getConfig: jest.fn(() => ({ embeddingModel: 'nomic-embed-text' })),
+  getConfig: jest.fn(() => ({ embeddingModel: 'all-MiniLM-L6-v2-Q4_K_M.gguf' })),
   onModelChange: jest.fn(() => () => {}),
   generateEmbedding: jest.fn(async (text) => {
     const t = String(text || '').toLowerCase();
     const seed = t.includes('invoice') || t.includes('invoices') ? 0.25 : 0.75;
-    return { embedding: new Array(768).fill(seed) };
+    return { embedding: new Array(EMBEDDING_DIM).fill(seed) };
   })
 };
 
@@ -185,7 +188,7 @@ describe('critical flow: suggest + move', () => {
 
       await vectorDb.upsertFile({
         id: oldId,
-        vector: new Array(768).fill(0.25),
+        vector: new Array(EMBEDDING_DIM).fill(0.25),
         meta: {
           path: oldPath,
           fileName: path.win32.basename(oldPath),

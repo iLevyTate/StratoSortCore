@@ -126,13 +126,34 @@ class ProcessingStateService {
   async loadState() {
     try {
       const raw = await fs.readFile(this.statePath, 'utf8');
-      this.state = JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        const shapeError = new Error('Processing state has invalid shape');
+        shapeError.code = 'INVALID_PROCESSING_STATE_SHAPE';
+        throw shapeError;
+      }
+      this.state = parsed;
       if (!this.state.schemaVersion) {
         this.state.schemaVersion = this.SCHEMA_VERSION;
       }
     } catch (error) {
       if (isNotFoundError(error)) {
         this.state = this.createEmptyState();
+      } else if (error instanceof SyntaxError || error?.code === 'INVALID_PROCESSING_STATE_SHAPE') {
+        logger.warn(
+          '[ProcessingStateService] Corrupted processing state detected, resetting file',
+          {
+            error: error?.message
+          }
+        );
+        this.state = this.createEmptyState();
+        try {
+          await this._saveStateInternal();
+        } catch (persistError) {
+          logger.warn('[ProcessingStateService] Failed to persist reset processing state', {
+            error: persistError?.message
+          });
+        }
       } else {
         throw error;
       }

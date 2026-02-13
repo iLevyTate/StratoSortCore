@@ -1,71 +1,97 @@
-# Releasing StratoSort
+# Releasing StratoSort Core
 
-This guide documents the release process and best practices for Windows builds. It is designed to
-ensure releases are reproducible, include bundled runtimes, and publish checksums + clear notes.
+This guide covers release packaging for both Windows and macOS, plus how GitHub Actions publishes
+artifacts.
 
-## Release Checklist (Windows)
+## Release Checklist
 
-1. **Update versions**
+1. **Update release metadata**
    - Bump `version` in `package.json`
-   - Update `CHANGELOG.md` under **[Unreleased]**
-2. **Build & smoke test**
-   - `npm run dist:win`
-   - Install the generated `StratoSort-Setup-*.exe`
-
-- Confirm AI Model Setup wizard shows **Bundled** for OCR runtime
-- Confirm “Download Base Models” works (models are not bundled)
-
-5. **Generate checksums**
-   - The workflow generates `checksums.sha256` automatically
-   - If building locally, generate with:
-     ```powershell
-     Get-ChildItem release/build -File |
-       Where-Object { $_.Name -match 'StratoSort-.*|latest\\.yml|\\.blockmap' } |
-       ForEach-Object {
-         $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
-         "$hash *$($_.Name)"
-       } | Out-File release/build/checksums.sha256 -Encoding ASCII
-     ```
-6. **Release notes**
-   - Summarize major changes
-   - Explicitly note: bundled runtimes are included; models download after install
-   - Link to `CHANGELOG.md` for full detail
-   - The release workflow pulls the matching `CHANGELOG.md` section into the release body
+   - Move release notes from `CHANGELOG.md` **[Unreleased]** to the new version section
+2. **Run quality gates**
+   - `npm run ci`
+3. **Smoke-test installers**
+   - Windows: run `npm run dist:win`, install `StratoSortCore-Setup-*.exe`
+   - macOS: run `npm run dist:mac`, open `StratoSortCore-*.dmg`
+4. **Verify first-run experience**
+   - AI setup confirms bundled OCR runtime availability
+   - Base-model download works from the app UI
+5. **Confirm docs**
+   - Ensure `docs/INSTALL_GUIDE.md` matches current installer names and OS prompts
 
 ## Tag-Triggered Releases (Recommended)
 
-1. Create the tag:
-   ```bash
-   git tag vX.Y.Z
-   git push origin vX.Y.Z
-   ```
-2. The **Release** workflow will:
-   - Build the Windows installer
-   - Publish artifacts + `checksums.sha256`
+Push a semver tag:
 
-## Publishing Notes
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
 
-- Release publishing is handled by GitHub Actions workflows.
-- Local builds use `--publish never` and do not upload artifacts.
-- `electron-builder.json` publish metadata is used for update metadata, not for CI publishing.
+This triggers both workflows:
 
-## Manual Windows Build (Local)
+- `release.yml` (Windows)
+- `mac-release.yml` (macOS)
+
+Both upload artifacts to the GitHub release for the tag.
+
+## Published Artifacts
+
+Windows workflow publishes:
+
+- `StratoSortCore-Setup-*.exe`
+- `StratoSortCore-*-win-*.exe` (portable)
+- `latest.yml`
+- `*.blockmap`
+- `checksums-windows.sha256`
+
+macOS workflow publishes:
+
+- `StratoSortCore-*.dmg`
+- `StratoSortCore-*.zip`
+- `latest*.yml` (for updater metadata)
+- `checksums-macos.sha256`
+
+## Manual Dist Workflow
+
+Use `.github/workflows/manual-dist.yml` (`workflow_dispatch`) when you need:
+
+- Windows-only or macOS-only rebuilds
+- A draft release with combined artifacts
+- Ad-hoc release testing without tagging
+
+## Local Dist Commands
 
 ```powershell
 npm ci
 npm run dist:win
+npm run dist:mac
 ```
 
-Artifacts are under `release/build/`:
+All artifacts are written to `release/build/`.
 
-- `StratoSort-Setup-*.exe`
-- `StratoSort-*-win-*.exe` (portable)
-- `latest.yml`
-- `*.blockmap`
-- `checksums.sha256`
+## Local Checksum Commands
 
-## Notes on AI Stack
+Windows checksum file:
 
-- The AI stack (node-llama-cpp, Orama) runs fully in-process. No external runtimes are bundled.
-- Models are **not** bundled. The app provides a one-click model download in the Settings panel.
-- Tesseract OCR auto-installs or falls back to bundled `tesseract.js`.
+```powershell
+Get-ChildItem release/build -File |
+  Where-Object { $_.Name -match '^StratoSortCore-.*\.(exe|blockmap)$|^latest\.yml$' } |
+  ForEach-Object {
+    $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+    "$hash *$($_.Name)"
+  } | Out-File release/build/checksums-windows.sha256 -Encoding ASCII
+```
+
+macOS checksum file:
+
+```bash
+cd release/build
+shasum -a 256 StratoSortCore-*.dmg StratoSortCore-*.zip > checksums-macos.sha256
+```
+
+## Notes on AI Packaging
+
+- The AI stack (node-llama-cpp + Orama) runs in-process.
+- AI models are **not** bundled in installers; users download them in-app.
+- OCR runtime support is bundled/fallback-ready via packaged runtime assets.

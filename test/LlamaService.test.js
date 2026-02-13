@@ -155,7 +155,7 @@ describe('LlamaService', () => {
       service._ensureConfigLoaded = jest.fn().mockResolvedValue(undefined);
 
       const res = await service.updateConfig(
-        { embeddingModel: 'not-a-real-embed-model.gguf' },
+        { embeddingModel: 'not-a-real-text-model.gguf' },
         { skipSave: true }
       );
 
@@ -350,7 +350,7 @@ describe('LlamaService', () => {
       // Primary is the first fallback model — should skip it and try the second
       const originalFallbacks = [...AI_DEFAULTS.EMBEDDING.FALLBACK_MODELS];
       AI_DEFAULTS.EMBEDDING.FALLBACK_MODELS = [
-        originalFallbacks[0],
+        'nomic-embed-text-v1.5-Q4_K_M.gguf',
         'nomic-embed-text-v1.5-Q8_0.gguf'
       ];
 

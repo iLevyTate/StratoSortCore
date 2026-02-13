@@ -15,8 +15,8 @@ import {
 } from 'lucide-react';
 import { createLogger } from '../../shared/logger';
 import { sanitizeSettings } from '../../shared/settingsValidation';
-import { DEFAULT_SETTINGS } from '../../shared/defaultSettings';
 import { DEFAULT_AI_MODELS } from '../../shared/constants';
+import { DEFAULT_SETTINGS } from '../../shared/defaultSettings';
 import { useNotification } from '../contexts/NotificationContext';
 import { getElectronAPI, eventsIpc, llamaIpc, settingsIpc } from '../services/ipc';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
@@ -62,8 +62,6 @@ const isElectronAPIAvailable = () => {
   return getElectronAPI() != null;
 };
 
-const DEFAULT_EMBED_MODEL = DEFAULT_AI_MODELS.EMBEDDING;
-
 const stableStringify = (value) =>
   JSON.stringify(
     value,
@@ -91,6 +89,19 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     dispatch(toggleSettings());
   }, [dispatch]);
 
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        handleToggleSettings();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleToggleSettings]);
+
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [modelLists, setModelLists] = useState({
     text: [],
@@ -107,6 +118,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const [isAddingModel, setIsAddingModel] = useState(false);
   const [pullProgress, setPullProgress] = useState(null);
   const progressUnsubRef = useRef(null);
+  const pullProgressTimeoutRef = useRef(null);
 
   useEffect(() => {
     return () => {
@@ -117,6 +129,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           // Non-fatal if cleanup fails
         }
         progressUnsubRef.current = null;
+      }
+      if (pullProgressTimeoutRef.current) {
+        clearTimeout(pullProgressTimeoutRef.current);
+        pullProgressTimeoutRef.current = null;
       }
     };
   }, []);
@@ -238,25 +254,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           'model-corrections'
         );
       }
-      if (response?.selected && !response?.requiresModelConfirmation) {
-        skipAutoSaveRef.current += 1;
-        applySettingsUpdate((prev) => {
-          const desiredEmbed = response.selected.embeddingModel || prev.embeddingModel;
-          const embeddingList = categories.embedding || [];
-          // Must be an actually-installed model, not just a pattern-valid name
-          const nextEmbeddingModel =
-            desiredEmbed && embeddingList.includes(desiredEmbed)
-              ? desiredEmbed
-              : embeddingList[0] || DEFAULT_EMBED_MODEL;
-
-          return {
-            ...prev,
-            textModel: response.selected.textModel || prev.textModel,
-            visionModel: response.selected.visionModel || prev.visionModel,
-            embeddingModel: nextEmbeddingModel
-          };
-        });
-      }
+      // Important: model discovery should never mutate persisted user choices.
+      // Returning "selected" from getModels is useful for diagnostics/UI hints,
+      // but applying it here can silently overwrite user-configured models
+      // with fallback/default selections and then persist them on next save.
     } catch (error) {
       logger.error('Failed to load AI models', {
         error: error.message,
@@ -267,7 +268,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     } finally {
       setIsRefreshingModels(false);
     }
-  }, [addNotification, applySettingsUpdate]);
+  }, [addNotification]);
 
   useEffect(() => {
     if (!isApiAvailable) return undefined;
@@ -489,7 +490,11 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       }
       const res = await llamaIpc.downloadModel(newModel.trim());
       if (res?.success) {
-        addNotification(`Model "${newModel.trim()}" installed`, 'success');
+        if (res?.alreadyInProgress) {
+          addNotification(`Model "${newModel.trim()}" is already downloading`, 'info');
+        } else {
+          addNotification(`Model "${newModel.trim()}" installed`, 'success');
+        }
         setNewModel('');
         await loadModels();
       } else {
@@ -510,7 +515,13 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     } finally {
       setIsAddingModel(false);
       const NOTIFICATION_DELAY_MS = 1500;
-      setTimeout(() => setPullProgress(null), NOTIFICATION_DELAY_MS);
+      if (pullProgressTimeoutRef.current) {
+        clearTimeout(pullProgressTimeoutRef.current);
+      }
+      pullProgressTimeoutRef.current = setTimeout(() => {
+        setPullProgress(null);
+        pullProgressTimeoutRef.current = null;
+      }, NOTIFICATION_DELAY_MS);
       try {
         if (progressUnsubRef.current) progressUnsubRef.current();
         progressUnsubRef.current = null;
@@ -521,22 +532,34 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   }, [newModel, addNotification, loadModels]);
 
   const downloadRecommendedModels = useCallback(async () => {
+    // Use the user's configured models, falling back to system defaults.
+    // This avoids downloading BASE_SMALL models when the user has selected
+    // a BETTER_QUALITY profile.
     const modelsToDownload = [
-      DEFAULT_AI_MODELS.TEXT_ANALYSIS,
-      DEFAULT_AI_MODELS.IMAGE_ANALYSIS,
-      DEFAULT_AI_MODELS.EMBEDDING
+      settings.textModel || DEFAULT_AI_MODELS.TEXT_ANALYSIS,
+      settings.visionModel || DEFAULT_AI_MODELS.IMAGE_ANALYSIS,
+      settings.embeddingModel || DEFAULT_AI_MODELS.EMBEDDING
     ].filter(Boolean);
     if (modelsToDownload.length === 0) return;
 
     try {
       setIsAddingModel(true);
+      const errors = [];
       for (const modelName of modelsToDownload) {
         const res = await llamaIpc.downloadModel(modelName);
+        if (res?.alreadyInProgress) {
+          // Download started by background setup — not an error
+          continue;
+        }
         if (!res?.success) {
-          throw new Error(res?.error || `Failed to download ${modelName}`);
+          errors.push(res?.error || `Failed to download ${modelName}`);
         }
       }
-      addNotification('Recommended models downloaded', 'success');
+      if (errors.length > 0) {
+        addNotification(`Some downloads failed: ${errors.join('; ')}`, 'warning');
+      } else {
+        addNotification('Recommended models downloaded', 'success');
+      }
       await loadModels();
     } catch (error) {
       addNotification(
@@ -546,7 +569,13 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     } finally {
       setIsAddingModel(false);
     }
-  }, [addNotification, loadModels]);
+  }, [
+    settings.textModel,
+    settings.visionModel,
+    settings.embeddingModel,
+    addNotification,
+    loadModels
+  ]);
 
   const deleteModel = useCallback(
     async (modelName) => {
@@ -596,7 +625,12 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       }}
       role="presentation"
     >
-      <div className="surface-panel !p-0 w-full max-w-4xl mx-auto max-h-[86vh] flex flex-col overflow-hidden shadow-2xl animate-modal-enter pointer-events-auto">
+      <div
+        className="surface-panel !p-0 w-full max-w-4xl mx-auto max-h-[86vh] flex flex-col overflow-hidden shadow-2xl animate-modal-enter pointer-events-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+      >
         {showUnavailable ? (
           <>
             <div className="settings-modal-header px-6 py-4 border-b border-border-soft/70 bg-white flex-shrink-0 rounded-t-2xl">
@@ -836,7 +870,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 size="sm"
                 leftIcon={<X className="w-4 h-4" />}
               >
-                Cancel
+                Close
               </Button>
               <Button
                 onClick={saveSettings}

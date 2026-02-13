@@ -5,18 +5,108 @@ const { extractAndParseJSON } = require('../utils/jsonRepair');
 const { getInstance: getLlamaService } = require('./LlamaService');
 const { withAbortableTimeout } = require('../../shared/promiseUtils');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
+
+function cleanText(value, maxLength = 240) {
+  if (typeof value !== 'string') return '';
+  return value.replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
+function clamp01(value, fallback = 0.75) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  if (n > 1) return Math.max(0, Math.min(1, n / 100));
+  return Math.max(0, Math.min(1, n));
+}
+
+function normalizeName(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function sanitizeStringList(values, { maxItems = 8, maxLength = 40 } = {}) {
+  if (!Array.isArray(values)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const entry of values) {
+    const cleaned = cleanText(entry, maxLength);
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(cleaned);
+    if (out.length >= maxItems) break;
+  }
+  return out;
+}
+
+function resolveExistingFolderName(value, existingFolders = []) {
+  const cleaned = cleanText(value, 80);
+  if (!cleaned) return null;
+  const exact = existingFolders.find(
+    (folder) =>
+      typeof folder?.name === 'string' && folder.name.toLowerCase() === cleaned.toLowerCase()
+  );
+  if (exact) return exact.name;
+  const normalized = normalizeName(cleaned);
+  const normalizedMatch = existingFolders.find(
+    (folder) => typeof folder?.name === 'string' && normalizeName(folder.name) === normalized
+  );
+  return normalizedMatch?.name || null;
+}
+
+function normalizeEnhancement(raw, folderData, existingFolders = []) {
+  const suggestedCategory =
+    cleanText(raw?.suggestedCategory || '', 60).toLowerCase() ||
+    cleanText(folderData?.category || '', 60).toLowerCase() ||
+    'general';
+  const relatedFolders = sanitizeStringList(raw?.relatedFolders, { maxItems: 6, maxLength: 80 })
+    .map((name) => resolveExistingFolderName(name, existingFolders))
+    .filter(Boolean);
+  const improvedDescription =
+    cleanText(raw?.improvedDescription || raw?.enhancedDescription || '', 320) ||
+    cleanText(folderData?.description || '', 320) ||
+    `Smart folder for ${cleanText(folderData?.name || 'files', 80)}`;
+  return {
+    improvedDescription,
+    // Keep backward compatibility for older callers.
+    enhancedDescription: improvedDescription,
+    suggestedKeywords: sanitizeStringList(raw?.suggestedKeywords, { maxItems: 10, maxLength: 32 }),
+    organizationTips: cleanText(raw?.organizationTips || '', 320),
+    confidence: clamp01(raw?.confidence, 0.75),
+    suggestedCategory,
+    semanticTags: sanitizeStringList(raw?.semanticTags, { maxItems: 8, maxLength: 32 }),
+    relatedFolders
+  };
+}
+
 async function enhanceSmartFolderWithLLM(folderData, existingFolders, _getTextModel) {
   try {
     logger.info('[LLM-ENHANCEMENT] Analyzing smart folder for optimization:', folderData.name);
 
-    const existingFolderContext = existingFolders.map((f) => ({
+    const safeExistingFolders = Array.isArray(existingFolders) ? existingFolders : [];
+    const existingFolderContext = safeExistingFolders.map((f) => ({
       name: f.name,
       description: f.description,
       keywords: f.keywords || [],
       category: f.category || 'general'
     }));
+    const existingFolderNames = existingFolderContext
+      .map((f) => cleanText(f.name, 80))
+      .filter(Boolean);
+    const existingCategories = Array.from(
+      new Set(
+        existingFolderContext
+          .map((f) => cleanText(f.category, 60).toLowerCase())
+          .filter(Boolean)
+          .concat('general')
+      )
+    );
 
-    const prompt = `You are an expert file organization system. Analyze this new smart folder and provide enhancements based on existing folder structure.
+    const prompt = `You are an expert file organization system.
+Analyze this new smart folder and provide practical enhancements grounded ONLY in the provided data.
+Do not invent company names, projects, or processes.
 
 NEW FOLDER:
 Name: "${folderData.name}"
@@ -26,12 +116,21 @@ Description: "${folderData.description || ''}"
 EXISTING FOLDERS:
 ${existingFolderContext.map((f) => `- ${f.name}: ${f.description} (Category: ${f.category})`).join('\n')}
 
-Please provide a JSON response with the following enhancements:
+ALLOWED RELATED FOLDERS (must match exactly, or use []):
+${existingFolderNames.join(', ') || '(none)'}
+
+ALLOWED CATEGORY VALUES:
+${existingCategories.join(', ')}
+
+Return ONLY valid JSON with this exact shape:
 {
   "improvedDescription": "enhanced description",
   "suggestedKeywords": ["keyword1", "keyword2"],
   "organizationTips": "tips for better organization",
-  "confidence": 0.8
+  "confidence": 0.8,
+  "suggestedCategory": "one allowed category",
+  "semanticTags": ["tag1", "tag2"],
+  "relatedFolders": ["exact existing folder name"]
 }`;
 
     try {
@@ -48,9 +147,10 @@ Please provide a JSON response with the following enhancements:
         TIMEOUTS.AI_ANALYSIS_MEDIUM,
         `Smart folder enhancement (${folderData.name || 'unnamed'})`
       );
-      const enhancement = extractAndParseJSON(result?.response, null);
+      const parsed = extractAndParseJSON(result?.response, null);
 
-      if (enhancement && typeof enhancement === 'object') {
+      if (parsed && typeof parsed === 'object') {
+        const enhancement = normalizeEnhancement(parsed, folderData, safeExistingFolders);
         logger.info('[LLM-ENHANCEMENT] Successfully enhanced smart folder');
         return enhancement;
       }

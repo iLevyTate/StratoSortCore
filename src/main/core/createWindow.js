@@ -1,4 +1,5 @@
 const { BrowserWindow, shell, app } = require('electron');
+const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const { createLogger } = require('../../shared/logger');
@@ -57,6 +58,132 @@ function getRendererIndexPath() {
     return directCandidate;
   }
   return distCandidate;
+}
+
+const RENDERER_CONTENT_TYPES = Object.freeze({
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.cjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf'
+});
+
+function getRendererContentType(filePath) {
+  return RENDERER_CONTENT_TYPES[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+}
+
+function isSubPath(candidatePath, parentPath) {
+  const candidate = path.resolve(candidatePath);
+  const parent = path.resolve(parentPath);
+  const relative = path.relative(parent, candidate);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function resolveRendererAssetPath(rendererRoot, requestPathname) {
+  const normalizedPathname =
+    typeof requestPathname === 'string' && requestPathname.length > 0 ? requestPathname : '/';
+  const decodedPathname = decodeURIComponent(normalizedPathname);
+  const candidateRelativePath = decodedPathname === '/' ? 'index.html' : decodedPathname.slice(1);
+  const normalizedRelativePath = path.normalize(candidateRelativePath);
+  const resolvedPath = path.resolve(rendererRoot, normalizedRelativePath);
+
+  if (!isSubPath(resolvedPath, rendererRoot)) {
+    return null;
+  }
+
+  return resolvedPath;
+}
+
+function startLocalRendererServer(rendererRootPath) {
+  const rendererRoot = path.resolve(rendererRootPath);
+
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((request, response) => {
+      try {
+        if (request.method !== 'GET' && request.method !== 'HEAD') {
+          response.statusCode = 405;
+          response.setHeader('Content-Type', 'text/plain; charset=utf-8');
+          response.end('Method Not Allowed');
+          return;
+        }
+
+        const requestUrl = new URL(request.url || '/', 'http://127.0.0.1');
+        let assetPath = resolveRendererAssetPath(rendererRoot, requestUrl.pathname);
+        if (!assetPath) {
+          response.statusCode = 403;
+          response.end('Forbidden');
+          return;
+        }
+
+        if (fs.existsSync(assetPath) && fs.statSync(assetPath).isDirectory()) {
+          assetPath = path.join(assetPath, 'index.html');
+        }
+
+        // Support SPA-style client navigation by falling back to index.html.
+        if (!fs.existsSync(assetPath) && !path.extname(assetPath)) {
+          assetPath = path.join(rendererRoot, 'index.html');
+        }
+
+        if (!fs.existsSync(assetPath) || !isSubPath(assetPath, rendererRoot)) {
+          response.statusCode = 404;
+          response.end('Not Found');
+          return;
+        }
+
+        response.statusCode = 200;
+        response.setHeader('Content-Type', getRendererContentType(assetPath));
+        response.setHeader('Cache-Control', 'no-store');
+
+        if (request.method === 'HEAD') {
+          response.end();
+          return;
+        }
+
+        fs.createReadStream(assetPath)
+          .on('error', (streamError) => {
+            logger.warn('[WINDOW] Failed to stream renderer asset', {
+              assetPath,
+              error: streamError.message
+            });
+            if (!response.headersSent) {
+              response.statusCode = 500;
+            }
+            response.end('Internal Server Error');
+          })
+          .pipe(response);
+      } catch (error) {
+        logger.warn('[WINDOW] Renderer HTTP request failed', { error: error.message });
+        response.statusCode = 500;
+        response.end('Internal Server Error');
+      }
+    });
+
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address !== 'object' || typeof address.port !== 'number') {
+        server.close(() => reject(new Error('Renderer server failed to bind to a local port')));
+        return;
+      }
+
+      resolve({
+        server,
+        url: `http://127.0.0.1:${address.port}`
+      });
+    });
+  });
 }
 
 function createMainWindow() {
@@ -205,6 +332,21 @@ function createMainWindow() {
 
   // CRITICAL FIX: Add longer delay and webContents readiness check to prevent Mojo errors
   // Wait for webContents to be fully ready before loading content
+  let rendererStaticServer = null;
+  let isWindowClosed = false;
+
+  const closeRendererStaticServer = (server = rendererStaticServer) => {
+    if (!server) return;
+    try {
+      server.close();
+    } catch (error) {
+      logger.debug('[WINDOW] Failed to close renderer static server', { error: error.message });
+    }
+    if (rendererStaticServer === server) {
+      rendererStaticServer = null;
+    }
+  };
+
   const loadContent = () => {
     const renderMissingBundle = (reason, attemptedPath) => {
       logger.error('[WINDOW] Renderer bundle missing', { reason, attemptedPath });
@@ -215,27 +357,53 @@ function createMainWindow() {
       win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => {});
     };
 
-    const loadRendererFromFile = () => {
+    const loadRendererFromLocalServer = () => {
       const distPath = getRendererIndexPath();
       if (!fs.existsSync(distPath)) {
         renderMissingBundle('Renderer bundle not found.', distPath);
         return;
       }
-      win.loadFile(distPath).catch((error) => {
-        renderMissingBundle('Failed to load renderer bundle.', distPath);
-        logger.error('Failed to load renderer bundle:', error);
-      });
+
+      const rendererRoot = path.dirname(distPath);
+      startLocalRendererServer(rendererRoot)
+        .then(({ server, url }) => {
+          if (isWindowClosed || win.isDestroyed()) {
+            closeRendererStaticServer(server);
+            return;
+          }
+          if (rendererStaticServer && rendererStaticServer !== server) {
+            closeRendererStaticServer(rendererStaticServer);
+          }
+          rendererStaticServer = server;
+          win.loadURL(url).catch((error) => {
+            logger.error('Failed to load renderer over local HTTP, falling back to file://', {
+              error: error.message
+            });
+            closeRendererStaticServer(server);
+            win.loadFile(distPath).catch((fallbackError) => {
+              renderMissingBundle('Failed to load renderer bundle.', distPath);
+              logger.error('Failed to load renderer bundle:', fallbackError);
+            });
+          });
+        })
+        .catch((error) => {
+          logger.error('Failed to start local renderer server:', error);
+          win.loadFile(distPath).catch((fallbackError) => {
+            renderMissingBundle('Failed to load renderer bundle.', distPath);
+            logger.error('Failed to load renderer bundle:', fallbackError);
+          });
+        });
     };
 
     const useDevServer = isDev && getEnvBool('USE_DEV_SERVER');
     if (useDevServer) {
       win.loadURL('http://localhost:3000').catch((error) => {
         logger.info('Development server not available:', error.message);
-        logger.info('Loading from built files instead...');
-        loadRendererFromFile();
+        logger.info('Loading from local renderer HTTP server instead...');
+        loadRendererFromLocalServer();
       });
     } else {
-      loadRendererFromFile();
+      loadRendererFromLocalServer();
     }
   };
 
@@ -252,6 +420,8 @@ function createMainWindow() {
     scheduleLoad();
   }
   win.once('closed', () => {
+    isWindowClosed = true;
+    closeRendererStaticServer();
     if (_loadTimerId) clearTimeout(_loadTimerId);
   });
 
@@ -363,12 +533,12 @@ function createMainWindow() {
 
   // Capture renderer console output for diagnosis (always enabled)
   // Electron 40 still passes positional args (deprecated); fall back to event properties
-  win.webContents.on('console-message', (_event, levelArg, messageArg, lineArg, sourceIdArg) => {
-    const level = typeof levelArg === 'number' ? levelArg : (_event?.level ?? 0);
+  win.webContents.on('console-message', (event, levelArg, messageArg, lineArg, sourceIdArg) => {
+    const level = typeof levelArg === 'number' ? levelArg : (event?.level ?? 0);
     const message =
-      typeof messageArg === 'string' ? messageArg : (_event?.message ?? String(messageArg));
-    const line = typeof lineArg === 'number' ? lineArg : (_event?.line ?? 0);
-    const sourceId = typeof sourceIdArg === 'string' ? sourceIdArg : (_event?.sourceId ?? '');
+      typeof messageArg === 'string' ? messageArg : (event?.message ?? String(messageArg));
+    const line = typeof lineArg === 'number' ? lineArg : (event?.line ?? 0);
+    const sourceId = typeof sourceIdArg === 'string' ? sourceIdArg : (event?.sourceId ?? '');
     const prefix = '[RENDERER]';
     const meta = { line, sourceId: sourceId ? sourceId.split('/').pop() : '' };
 
@@ -382,6 +552,10 @@ function createMainWindow() {
     // wrap the literal value in quotes, so normalize first and drop both forms.
     // Structured log payloads are already forwarded via window.electronAPI.system.log.
     if (normalizedMessage === '[object Object]') {
+      // Prevent Chromium from echoing noisy raw console payloads to the terminal.
+      if (typeof event?.preventDefault === 'function') {
+        event.preventDefault();
+      }
       return;
     }
 

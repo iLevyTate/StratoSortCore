@@ -122,4 +122,38 @@ describe('GPUMonitor.detectGPU caching', () => {
     // Called twice: initial + forced re-detect
     expect(mockExecFileAsync).toHaveBeenCalledTimes(2);
   });
+
+  test('Windows detectGPU falls back when nvidia-smi output is malformed', async () => {
+    const monitor = new GPUMonitor();
+    monitor._platform = 'win32';
+    mockExecFileAsync
+      .mockResolvedValueOnce({ stdout: 'NVIDIA GeForce RTX 4090', stderr: '' }) // malformed (no memory)
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({ Name: 'NVIDIA GeForce RTX 4090', AdapterRAM: 8589934592 }),
+        stderr: ''
+      });
+
+    const result = await monitor.detectGPU({ force: true });
+
+    expect(result).toBeTruthy();
+    expect(result.vramMB).toBe(8192);
+    expect(result.type).toBe('vulkan');
+  });
+
+  test('Linux detectGPU falls back when nvidia-smi output is malformed', async () => {
+    const monitor = new GPUMonitor();
+    monitor._platform = 'linux';
+    mockExecFileAsync
+      .mockResolvedValueOnce({ stdout: 'NVIDIA GeForce RTX 4090', stderr: '' }) // malformed (no memory)
+      .mockResolvedValueOnce({
+        stdout: '00:02.0 VGA compatible controller: NVIDIA Corporation Device 2684',
+        stderr: ''
+      });
+
+    const result = await monitor.detectGPU({ force: true });
+
+    expect(result).toBeTruthy();
+    expect(result.type).toBe('vulkan');
+    expect(result.name).toContain('NVIDIA Corporation');
+  });
 });

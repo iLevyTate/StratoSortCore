@@ -17,6 +17,8 @@ let loggedRuntimeVariant = false;
 
 // Cached result of synchronous NVIDIA GPU probe (null = not yet probed)
 let _nvidiaDetected = null;
+// Cached result of synchronous Mac GPU probe (null = not yet probed)
+let _macGpuDetected = null;
 
 /**
  * Synchronously probe for an NVIDIA GPU via nvidia-smi.
@@ -46,6 +48,61 @@ function hasNvidiaGPU() {
     // nvidia-smi not available or failed — no usable NVIDIA GPU
   }
   _nvidiaDetected = false;
+  return false;
+}
+
+/**
+ * Synchronously probe for Mac GPU via system_profiler.
+ * Matches GPUMonitor logic but keeps it synchronous for getAssetConfig.
+ */
+function detectMacGPU() {
+  if (_macGpuDetected !== null) return _macGpuDetected;
+  if (process.platform !== 'darwin') {
+    _macGpuDetected = false;
+    return false;
+  }
+
+  try {
+    const { execSync } = require('child_process');
+    const output = execSync('system_profiler SPDisplaysDataType -json', {
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    const data = JSON.parse(output.toString());
+    const gpu = data.SPDisplaysDataType?.[0];
+
+    if (gpu) {
+      const name = gpu.sppci_model || 'Unknown GPU';
+      let vram = gpu.sppci_vram;
+      const isApple = name.toLowerCase().includes('apple');
+
+      if (isApple) {
+        try {
+          const memOutput = execSync('sysctl hw.memsize').toString();
+          // hw.memsize: 17179869184
+          const totalMem = parseInt(memOutput.split(':')[1]?.trim()) || 0;
+          // Estimate 75% for unified memory (matching GPUMonitor logic)
+          const vramBytes = Math.round(totalMem * 0.75);
+          vram = `${Math.round(vramBytes / 1024 / 1024)} MB (Estimated)`;
+        } catch {
+          vram = 'Unknown (Apple Silicon)';
+        }
+      }
+
+      logger.info('[VisionService] macOS GPU detected, using Metal runtime', {
+        gpu: name,
+        vram,
+        type: 'metal'
+      });
+      _macGpuDetected = true;
+      return true;
+    }
+  } catch (error) {
+    logger.debug('[VisionService] macOS GPU detection failed', { error: error.message });
+  }
+
+  _macGpuDetected = false;
   return false;
 }
 
@@ -149,6 +206,8 @@ function getAssetConfig(tag = LLAMA_CPP_RELEASE_TAG) {
 
   if (platform === 'darwin') {
     // macOS builds include Metal GPU support by default
+    detectMacGPU();
+
     const assetName =
       arch === 'arm64'
         ? `llama-${tag}-bin-macos-arm64.tar.gz`
@@ -483,7 +542,17 @@ class VisionService {
       }
     }
 
-    // 2. Downloaded GPU-enabled runtime (preferred over bundled binary)
+    // 2. Bundled binary (packaged builds) — use immediately, no download
+    const packagedCandidate = resolveRuntimePath(SERVER_BINARY_NAME);
+    if (fs.existsSync(packagedCandidate)) {
+      logger.info('[VisionService] Using bundled runtime', {
+        binaryPath: packagedCandidate
+      });
+      this._binaryPath = packagedCandidate;
+      return packagedCandidate;
+    }
+
+    // 3. Downloaded GPU-enabled runtime in userData (from previous session or manual setup)
     try {
       const asset = getAssetConfig();
       const runtimeRoot = getRuntimeRoot(asset.tag);
@@ -507,7 +576,7 @@ class VisionService {
       // Fall through to download or bundled fallback
     }
 
-    // 3. Download the correct GPU-enabled runtime
+    // 4. Download the correct GPU-enabled runtime (dev mode or unbundled builds)
     if (!this._runtimeInit) {
       this._runtimeInit = this._downloadRuntime();
     }
@@ -517,22 +586,22 @@ class VisionService {
         return this._binaryPath;
       }
     } catch (error) {
-      logger.warn('[VisionService] Download failed, checking bundled fallback', {
+      logger.warn('[VisionService] Download failed, rechecking bundled path', {
         error: error.message
       });
     }
 
-    // 4. Bundled binary as last resort (packaged builds or download failure)
-    const packagedCandidate = resolveRuntimePath(SERVER_BINARY_NAME);
-    if (fs.existsSync(packagedCandidate)) {
+    // 5. Bundled binary as last resort (e.g. download failed but build included it)
+    const fallbackPackaged = resolveRuntimePath(SERVER_BINARY_NAME);
+    if (fs.existsSync(fallbackPackaged)) {
       logger.info('[VisionService] Using bundled runtime fallback', {
-        binaryPath: packagedCandidate
+        binaryPath: fallbackPackaged
       });
-      this._binaryPath = packagedCandidate;
-      return packagedCandidate;
+      this._binaryPath = fallbackPackaged;
+      return fallbackPackaged;
     }
 
-    throw new Error('Vision runtime not found: no downloaded, bundled, or env binary available');
+    throw new Error('Vision runtime not found: no bundled, downloaded, or env binary available');
   }
 
   async _downloadRuntime() {
@@ -1041,6 +1110,7 @@ const { getInstance, createInstance, registerWithContainer, resetInstance } =
 /** @internal Reset module-level caches (for testing only). */
 function _resetRuntimeCache() {
   _nvidiaDetected = null;
+  _macGpuDetected = null;
   loggedRuntimeVariant = false;
 }
 

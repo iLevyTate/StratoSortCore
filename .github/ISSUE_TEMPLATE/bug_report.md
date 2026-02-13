@@ -1,38 +1,39 @@
 ---
 name: Bug report
-about: Create a report to help us improve
+about: Report a reproducible issue in StratoSort Core
 title: ''
 labels: ''
 assignees: ''
-
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+**Describe the bug** Provide a clear and concise summary of the issue.
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+**To Reproduce** Steps to reproduce the behavior:
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+1. Go to `...`
+2. Click `...`
+3. Perform `...`
+4. Observe `...`
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+**Expected behavior** A clear and concise description of what you expected to happen.
 
-**Desktop (please complete the following information):**
- - OS: [e.g. iOS]
- - Browser [e.g. chrome, safari]
- - Version [e.g. 22]
+**Actual behavior** What happened instead?
 
-**Smartphone (please complete the following information):**
- - Device: [e.g. iPhone6]
- - OS: [e.g. iOS8.1]
- - Browser [e.g. stock browser, safari]
- - Version [e.g. 22]
+**Environment**
 
-**Additional context**
-Add any other context about the problem here.
+- OS and version:
+- App version/commit:
+- Installation type (installer/source):
+- Hardware notes (RAM/GPU, if relevant):
+
+**Logs**
+
+Attach relevant snippets when possible:
+
+- Windows: `%APPDATA%/stratosort/logs/`
+- macOS: `~/Library/Logs/stratosort/`
+- Linux: `~/.config/stratosort/logs/`
+
+**Screenshots / Recordings** If applicable, include UI screenshots or short recordings.
+
+**Additional context** Add any other context about the problem here.

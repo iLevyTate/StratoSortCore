@@ -141,7 +141,10 @@ class UndoRedoService {
       const actionsData = await fs.readFile(this.actionsPath, 'utf8');
       const data = JSON.parse(actionsData);
       this.actions = Array.isArray(data.actions) ? data.actions : [];
-      this.currentIndex = data.currentIndex ?? -1;
+      const rawIndex = Number.isInteger(data.currentIndex) ? data.currentIndex : -1;
+      // Clamp currentIndex to valid range to prevent out-of-bounds access on corrupted/truncated data
+      this.currentIndex =
+        this.actions.length === 0 ? -1 : Math.max(-1, Math.min(rawIndex, this.actions.length - 1));
 
       // Fixed: Recalculate memory estimate after loading
       this._recalculateMemoryEstimate();
@@ -489,7 +492,7 @@ class UndoRedoService {
       logger.error('[UndoRedoService] Failed to undo action', {
         error: error.message
       });
-      throw new Error(`Failed to undo action: ${error.message}`);
+      throw new Error(`Failed to undo action: ${error.message}`, { cause: error });
     }
   }
 
@@ -542,7 +545,7 @@ class UndoRedoService {
       logger.error('[UndoRedoService] Failed to redo action', {
         error: error.message
       });
-      throw new Error(`Failed to redo action: ${error.message}`);
+      throw new Error(`Failed to redo action: ${error.message}`, { cause: error });
     }
   }
 
@@ -1026,7 +1029,7 @@ class UndoRedoService {
           error: unlinkError.message
         });
       });
-      throw new Error(`Failed to create backup: ${error.message}`);
+      throw new Error(`Failed to create backup: ${error.message}`, { cause: error });
     }
   }
 
@@ -1084,18 +1087,19 @@ class UndoRedoService {
   }
 
   getActionDescription(actionType, actionData) {
+    const safe = actionData && typeof actionData === 'object' ? actionData : {};
     switch (actionType) {
       case 'FILE_MOVE':
-        return `Move ${path.basename(actionData.originalPath)} to ${path.dirname(actionData.newPath)}`;
+        return `Move ${path.basename(safe.originalPath || '')} to ${path.dirname(safe.newPath || '')}`;
       case 'FILE_RENAME':
-        return `Rename ${path.basename(actionData.originalPath)} to ${path.basename(actionData.newPath)}`;
+        return `Rename ${path.basename(safe.originalPath || '')} to ${path.basename(safe.newPath || '')}`;
       case 'FILE_DELETE':
-        return `Delete ${path.basename(actionData.originalPath)}`;
+        return `Delete ${path.basename(safe.originalPath || '')}`;
       case 'FOLDER_CREATE':
-        return `Create folder ${path.basename(actionData.folderPath)}`;
+        return `Create folder ${path.basename(safe.folderPath || '')}`;
       case 'BATCH_ORGANIZE':
       case 'BATCH_OPERATION':
-        return `Organize ${actionData.operations.length} files`;
+        return `Organize ${Array.isArray(safe.operations) ? safe.operations.length : 0} files`;
       default:
         return `Unknown action: ${actionType}`;
     }
