@@ -66,7 +66,8 @@ function persistCriticalEvent(actionCreator, data) {
   if (!CRITICAL_ACTION_CREATORS.has(actionCreator)) return;
 
   try {
-    const stored = JSON.parse(localStorage.getItem(CRITICAL_EVENTS_STORAGE_KEY) || '[]');
+    const parsed = JSON.parse(localStorage.getItem(CRITICAL_EVENTS_STORAGE_KEY) || '[]');
+    const stored = Array.isArray(parsed) ? parsed : [];
     stored.push({
       actionType: actionCreator?.name || 'unknown',
       data,
@@ -88,7 +89,8 @@ export function recoverPersistedCriticalEvents() {
   if (!storeRef || !isStoreReady) return;
 
   try {
-    const stored = JSON.parse(localStorage.getItem(CRITICAL_EVENTS_STORAGE_KEY) || '[]');
+    const parsed = JSON.parse(localStorage.getItem(CRITICAL_EVENTS_STORAGE_KEY) || '[]');
+    const stored = Array.isArray(parsed) ? parsed : [];
     if (stored.length === 0) return;
 
     logger.info('[IPC Middleware] Recovering persisted critical events', { count: stored.length });

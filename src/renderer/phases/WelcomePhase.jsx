@@ -14,42 +14,86 @@ function WelcomePhase() {
   const dispatch = useAppDispatch();
   const { addNotification } = useNotification();
   const [showFlowsModal, setShowFlowsModal] = useState(false);
-  const [modelCheckState, setModelCheckState] = useState('loading'); // 'loading' | 'missing' | 'ready'
+  const [modelCheckState, setModelCheckState] = useState('loading'); // 'loading' | 'missing' | 'ready' | 'downloading'
 
   // Check if required AI models are downloaded
+  // Retry once after delay when models list is empty - LlamaService may not be ready yet
   useEffect(() => {
     let cancelled = false;
-    async function checkModels() {
+    const RETRY_DELAY_MS = 1800;
+
+    async function getActiveMissingDownloadCount(missingModelNames = []) {
+      const getStatus = window?.electronAPI?.llama?.getDownloadStatus;
+      if (typeof getStatus !== 'function') return 0;
       try {
-        const getModels = window?.electronAPI?.llama?.getModels;
-        const getConfig = window?.electronAPI?.llama?.getConfig;
-        if (typeof getModels !== 'function') {
-          if (!cancelled) setModelCheckState('ready');
-          return;
+        const response = await getStatus();
+        const downloads = Array.isArray(response?.status?.downloads)
+          ? response.status.downloads
+          : [];
+        if (!Array.isArray(missingModelNames) || missingModelNames.length === 0) {
+          return downloads.length;
         }
-        const [modelsResponse, configResponse] = await Promise.all([
-          getModels(),
-          typeof getConfig === 'function' ? getConfig() : Promise.resolve(null)
-        ]);
+        const missing = new Set(missingModelNames);
+        return downloads.filter((entry) => missing.has(entry?.filename)).length;
+      } catch {
+        // Download status is best-effort and should not mask missing model state.
+        return 0;
+      }
+    }
+
+    async function doCheck() {
+      const getModels = window?.electronAPI?.llama?.getModels;
+      const getConfig = window?.electronAPI?.llama?.getConfig;
+      if (typeof getModels !== 'function') {
+        if (!cancelled) setModelCheckState('ready');
+        return;
+      }
+      const [modelsResponse, configResponse] = await Promise.all([
+        getModels(),
+        typeof getConfig === 'function' ? getConfig() : Promise.resolve(null)
+      ]);
+      if (cancelled) return;
+
+      const modelNames = Array.isArray(modelsResponse?.models)
+        ? modelsResponse.models
+        : Array.isArray(modelsResponse)
+          ? modelsResponse.map((m) => m.name || m.filename || '')
+          : [];
+      const available = new Set(modelNames.map((n) => String(n)));
+
+      const config = configResponse?.config || configResponse;
+      const required = [
+        config?.embeddingModel || AI_DEFAULTS?.EMBEDDING?.MODEL,
+        config?.textModel || AI_DEFAULTS?.TEXT?.MODEL
+      ].filter(Boolean);
+      const missing = required.filter((name) => !available.has(name));
+
+      if (missing.length === 0) {
+        if (!cancelled) setModelCheckState('ready');
+        return;
+      }
+
+      // When required models are missing but available is empty, retry once
+      // (LlamaService/filesystem may still be initializing)
+      if (available.size === 0 && missing.length > 0) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
         if (cancelled) return;
-
-        // getModels() returns { models: string[], categories, selected, ... }
-        const modelNames = Array.isArray(modelsResponse?.models)
-          ? modelsResponse.models
-          : Array.isArray(modelsResponse)
-            ? modelsResponse.map((m) => m.name || m.filename || '')
+        const retryResponse = await getModels();
+        if (cancelled) return;
+        const retryNames = Array.isArray(retryResponse?.models)
+          ? retryResponse.models
+          : Array.isArray(retryResponse)
+            ? retryResponse.map((m) => m.name || m.filename || '')
             : [];
-        const available = new Set(modelNames.map((n) => String(n)));
-
-        // getConfig() returns { success, config: { textModel, ... } }
-        const config = configResponse?.config || configResponse;
-        const required = [
-          config?.embeddingModel || AI_DEFAULTS?.EMBEDDING?.MODEL,
-          config?.textModel || AI_DEFAULTS?.TEXT?.MODEL
-        ].filter(Boolean);
-        const missing = required.filter((name) => !available.has(name));
-        setModelCheckState(missing.length > 0 ? 'missing' : 'ready');
-        if (modelsResponse?.requiresModelConfirmation) {
+        const retryAvailable = new Set(retryNames.map((n) => String(n)));
+        const retryMissing = required.filter((name) => !retryAvailable.has(name));
+        if (retryMissing.length > 0) {
+          const activeCount = await getActiveMissingDownloadCount(retryMissing);
+          if (!cancelled) setModelCheckState(activeCount > 0 ? 'downloading' : 'missing');
+        } else if (!cancelled) {
+          setModelCheckState('ready');
+        }
+        if (retryResponse?.requiresModelConfirmation) {
           addNotification(
             'Some saved AI model names are outdated. Review model selections in Settings.',
             'warning',
@@ -57,9 +101,29 @@ function WelcomePhase() {
             'model-corrections'
           );
         }
+        return;
+      }
+
+      if (missing.length > 0) {
+        const activeCount = await getActiveMissingDownloadCount(missing);
+        if (!cancelled) setModelCheckState(activeCount > 0 ? 'downloading' : 'missing');
+      } else if (!cancelled) {
+        setModelCheckState('ready');
+      }
+      if (modelsResponse?.requiresModelConfirmation) {
+        addNotification(
+          'Some saved AI model names are outdated. Review model selections in Settings.',
+          'warning',
+          6000,
+          'model-corrections'
+        );
+      }
+    }
+
+    async function checkModels() {
+      try {
+        await doCheck();
       } catch {
-        // If the IPC call fails (service not ready), treat as ready and let
-        // backgroundSetup handle downloads. Don't block the user.
         if (!cancelled) setModelCheckState('ready');
       }
     }
@@ -118,7 +182,32 @@ function WelcomePhase() {
     }
   ];
 
-  // Show ModelSetupWizard when required models are missing
+  // Show compact "downloading in background" when background setup is already downloading
+  if (modelCheckState === 'downloading') {
+    return (
+      <div className="flex flex-col flex-1 min-h-0 justify-center py-12">
+        <Card className="max-w-lg mx-auto p-8 text-center">
+          <div className="mb-6">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-blue/10 mb-4">
+              <Sparkles className="w-7 h-7 text-stratosort-blue animate-pulse" />
+            </div>
+            <Heading as="h2" variant="h2">
+              Downloading AI Models
+            </Heading>
+            <Text className="text-system-gray-600 mt-2">
+              Required models are downloading in the background. You can continue and use the app
+              while they finish.
+            </Text>
+          </div>
+          <Button onClick={handleModelSetupSkip} variant="primary">
+            Continue
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  // Show ModelSetupWizard when required models are missing and no background download
   if (modelCheckState === 'missing') {
     return (
       <div className="flex flex-col flex-1 min-h-0 justify-center py-12">

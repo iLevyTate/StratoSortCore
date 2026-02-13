@@ -14,8 +14,8 @@ function ModelManagementSection({ newModel, setNewModel, isAddingModel, onAddMod
       <SettingRow
         layout="col"
         label="Add Model"
-description="Download new models from the model registry. Use exact filename, e.g. all-MiniLM-L6-v2-Q4_K_M.gguf"
-          >
+        description="Download new models from the model registry. Use exact filename, e.g. all-MiniLM-L6-v2-Q4_K_M.gguf"
+      >
         <div className="settings-input-group">
           <Input
             type="text"

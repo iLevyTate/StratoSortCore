@@ -64,13 +64,13 @@ async function analyzeWithRetry(filePath, attempt = 1, abortSignal = null) {
     if (attempt < RETRY.MAX_ATTEMPTS_MEDIUM && isTransient) {
       // Check abort signal before waiting for retry delay
       if (abortSignal?.aborted) {
-        throw new Error('Analysis cancelled by user');
+        throw new Error('Analysis cancelled by user', { cause: error });
       }
       const delay = RETRY.INITIAL_DELAY * 2 ** (attempt - 1);
       await new Promise((r) => setTimeout(r, delay));
       // Check again after delay in case cancellation happened during wait
       if (abortSignal?.aborted) {
-        throw new Error('Analysis cancelled by user');
+        throw new Error('Analysis cancelled by user', { cause: error });
       }
       return analyzeWithRetry(filePath, attempt + 1, abortSignal);
     }
