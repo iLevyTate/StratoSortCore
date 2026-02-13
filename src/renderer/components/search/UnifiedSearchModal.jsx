@@ -4732,9 +4732,9 @@ export default function UnifiedSearchModal({
   }, [nodes, selectedNodeId, showClusters]);
 
   // Keep ReactFlow type maps stable across renders (React Flow warning #002).
-  // Even if hot reload swaps module-level bindings, these refs remain stable for this mount.
-  const rfNodeTypes = useRef(STABLE_NODE_TYPES).current;
-  const rfEdgeTypes = useRef(STABLE_EDGE_TYPES).current;
+  // Use useMemo to ensure stability.
+  const rfNodeTypes = useMemo(() => STABLE_NODE_TYPES, []);
+  const rfEdgeTypes = useMemo(() => STABLE_EDGE_TYPES, []);
 
   // FIX: Filter edges based on visible nodes to prevent "dangling" edges
   // Split into baseEdges (expensive, no hover deps) and rfEdges (lightweight hover overlay)
@@ -6273,10 +6273,11 @@ export default function UnifiedSearchModal({
                 isDragOver
                   ? 'border-stratosort-blue border-2 bg-stratosort-blue/5 ring-4 ring-stratosort-blue/20'
                   : 'border-system-gray-200'
-              }`}
+              } focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue/40`}
               role="main"
               aria-label="Graph Visualization"
               ref={graphContainerRef}
+              tabIndex={0}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleFileDrop}
@@ -6460,15 +6461,15 @@ export default function UnifiedSearchModal({
                     </div>
                     <div className="flex items-center gap-2">
                       <kbd className="px-1.5 py-0.5 rounded bg-system-gray-100 border border-system-gray-200 font-mono text-system-gray-600">
-                        Drag
+                        Arrows
                       </kbd>
-                      <span>to rearrange</span>
+                      <span>to navigate nodes</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <kbd className="px-1.5 py-0.5 rounded bg-system-gray-100 border border-system-gray-200 font-mono text-system-gray-600">
-                        Space
+                        Enter
                       </kbd>
-                      <span>to center</span>
+                      <span>to open selected file</span>
                     </div>
                   </Text>
                 </div>
@@ -6573,7 +6574,7 @@ export default function UnifiedSearchModal({
                         variant="tiny"
                         className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-system-gray-900/75 backdrop-blur-md text-white px-4 py-2 rounded-full shadow-lg pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-300 z-50 border border-white/10"
                       >
-                        Labels hidden at this zoom • Use Ctrl/Cmd + scroll or +/- to zoom in
+                        Labels hidden at this zoom • Use the zoom controls (+/-) to zoom in
                       </Text>
                     )}
 
@@ -6599,24 +6600,6 @@ export default function UnifiedSearchModal({
                         className="absolute top-4 left-1/2 -translate-x-1/2 bg-system-gray-900/80 backdrop-blur-md text-white px-3 py-1.5 rounded-full shadow-md pointer-events-none animate-in fade-in slide-in-from-top-1 duration-200 z-40 border border-white/10"
                       >
                         {performanceNotice}
-                      </Text>
-                    )}
-
-                    {/* Filter chips */}
-                    {activeClusterFilterChips.length > 0 && (
-                      <Text
-                        as="div"
-                        variant="tiny"
-                        className="absolute top-3 left-3 flex flex-wrap gap-2 text-system-gray-600"
-                      >
-                        {activeClusterFilterChips.map((chip) => (
-                          <span
-                            key={chip}
-                            className="px-2 py-0.5 bg-white/80 border border-system-gray-200 rounded-full shadow-sm"
-                          >
-                            {chip}
-                          </span>
-                        ))}
                       </Text>
                     )}
                   </ReactFlow>
