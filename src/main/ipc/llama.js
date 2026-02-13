@@ -320,8 +320,8 @@ function registerLlamaIpc(servicesOrParams) {
       context,
       schema: schemaModelName,
       handler: async (_event, modelName) => {
+        const normalizedName = typeof modelName === 'string' ? modelName.trim() : '';
         try {
-          const normalizedName = typeof modelName === 'string' ? modelName.trim() : '';
           if (!normalizedName) {
             return { success: false, error: 'Model name is required' };
           }
@@ -346,9 +346,26 @@ function registerLlamaIpc(servicesOrParams) {
             }
           };
 
+          // If backgroundSetup already started this download, piggyback on it
+          // instead of throwing a noisy error.
+          if (manager.isDownloading(normalizedName)) {
+            logger.debug('[IPC:Llama] Download already in progress, deferring to background', {
+              model: normalizedName
+            });
+            return { success: true, alreadyInProgress: true };
+          }
+
           const result = await manager.downloadModel(normalizedName, { onProgress });
           return result;
         } catch (error) {
+          // Handle race condition: download may have started between the
+          // isDownloading check and the downloadModel call.
+          if (error?.message?.includes('already in progress')) {
+            logger.debug('[IPC:Llama] Download started concurrently, deferring to background', {
+              model: normalizedName
+            });
+            return { success: true, alreadyInProgress: true };
+          }
           logger.error('[IPC:Llama] Model download failed:', error);
           return { success: false, error: error.message };
         }
