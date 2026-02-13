@@ -759,7 +759,9 @@ app.whenReady().then(async () => {
       } catch (error) {
         logger.error('[STARTUP] Failed to create default folder:', error);
         // This is critical - app should not proceed without default folder
-        throw new Error(`Failed to create default Uncategorized folder: ${error.message}`);
+        throw new Error(`Failed to create default Uncategorized folder: ${error.message}`, {
+          cause: error
+        });
       }
     } else {
       logger.info('[STARTUP] Default folder already exists, skipping creation');

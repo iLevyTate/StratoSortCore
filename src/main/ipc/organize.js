@@ -28,7 +28,7 @@ async function validateSourceFile(sourcePath) {
     return true;
   } catch (error) {
     if (isNotFoundError(error)) {
-      throw new Error(`Source file does not exist: ${sourcePath}`);
+      throw new Error(`Source file does not exist: ${sourcePath}`, { cause: error });
     }
     throw error;
   }

@@ -503,7 +503,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
               initState = INIT_STATES.FAILED;
               initFailureReason = 'Vector DB initialization failed';
               initFailedAt = Date.now();
-              throw new Error(initFailureReason);
+              throw new Error(initFailureReason, { cause: error });
             }
           }
         }

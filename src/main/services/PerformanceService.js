@@ -283,11 +283,10 @@ async function getRecommendedConcurrency() {
   // - Text analysis: ~2GB per instance
   // - Some overhead for OS/other apps: ~2GB
   let maxConcurrent = 1; // Default: sequential for best UX
-  let reason = 'Sequential processing for best UX and progress visibility';
+  let reason;
 
   if (!caps.hasGpu) {
     // CPU only - keep at 1, it's slow anyway
-    maxConcurrent = 1;
     reason = 'CPU-only mode: sequential processing recommended';
   } else if (vram >= 24000) {
     // 24GB+ (3090/4090) - can run multiple vision analyses

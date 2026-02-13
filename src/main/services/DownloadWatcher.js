@@ -1046,7 +1046,8 @@ class DownloadWatcher {
 
         if (!moved) {
           throw new Error(
-            `Could not find unique name for ${path.basename(destPath)} after 999 attempts`
+            `Could not find unique name for ${path.basename(destPath)} after 999 attempts`,
+            { cause: renameError }
           );
         }
         // Record operation after successful conflict resolution move

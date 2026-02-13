@@ -301,7 +301,7 @@ class OrganizationSuggestionServiceCore {
   }
 
   async _getEmbeddingHealth() {
-    let stats = null;
+    let stats;
     try {
       stats = await this.vectorDb.getStats();
     } catch (error) {
@@ -315,14 +315,14 @@ class OrganizationSuggestionServiceCore {
     const fileCount = Number(stats?.files ?? 0);
     const hasFileEmbeddings = fileCount > 0;
 
-    let settings = null;
+    let settings;
     try {
       settings = await this.settings?.load?.();
     } catch {
       settings = null;
     }
 
-    let embeddingIndex = null;
+    let embeddingIndex;
     try {
       embeddingIndex = await readEmbeddingIndexMetadata();
     } catch {

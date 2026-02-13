@@ -377,7 +377,7 @@ Return ONLY valid JSON:
     const baseResults = Array.isArray(searchResults.results) ? searchResults.results : [];
 
     // FIX Bug #28: Wrap chunkSearch in try/catch to prevent chat crash on index failure
-    let chunkResults = [];
+    let chunkResults;
     try {
       chunkResults = await this.searchService.chunkSearch(
         query,
@@ -394,8 +394,8 @@ Return ONLY valid JSON:
         }
       );
     } catch (chunkError) {
-      logger.warn('[ChatService] Chunk search failed (non-fatal):', chunkError.message);
       chunkResults = [];
+      logger.warn('[ChatService] Chunk search failed (non-fatal):', chunkError.message);
     }
 
     const chunkMap = new Map();

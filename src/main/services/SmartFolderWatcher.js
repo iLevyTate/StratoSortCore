@@ -684,7 +684,7 @@ class SmartFolderWatcher {
     }
 
     // FIX: When multiple candidates match, try base-name match to disambiguate
-    let match = null;
+    let match;
     if (matches.length > 1) {
       const newBaseName = path.basename(filePath).toLowerCase();
       const nameMatches = matches.filter(

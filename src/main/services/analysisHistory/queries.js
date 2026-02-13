@@ -28,7 +28,7 @@ function sortEntries(entries, sortBy, sortOrder) {
   const multiplier = sortOrder === 'desc' ? -1 : 1;
 
   return entries.sort((a, b) => {
-    let comparison = 0;
+    let comparison;
     switch (sortBy) {
       case 'timestamp':
         comparison = new Date(a.timestamp) - new Date(b.timestamp);

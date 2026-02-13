@@ -282,7 +282,9 @@ async function migrateHistory(history) {
       migratedHistory.schemaVersion = targetVersion;
     } catch (error) {
       logger.error(`[AnalysisHistoryService] Migration to v${targetVersion} failed:`, error);
-      throw new Error(`Schema migration failed at version ${targetVersion}: ${error.message}`);
+      throw new Error(`Schema migration failed at version ${targetVersion}: ${error.message}`, {
+        cause: error
+      });
     }
   }
 

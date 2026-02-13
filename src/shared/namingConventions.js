@@ -97,8 +97,7 @@ function generatePreviewName(originalName, settings) {
   const extension = dotIdx > 0 ? originalName.slice(dotIdx) : '';
   const today = new Date();
 
-  let previewName = '';
-
+  let previewName;
   switch (convention) {
     case 'subject-date':
       previewName = `${baseName}${separator}${formatDate(today, dateFormat)}`;

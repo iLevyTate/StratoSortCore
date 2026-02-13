@@ -1016,7 +1016,8 @@ Now generate a description for "${folderName}":`;
               try {
                 await fs.mkdir(normalizedPath, { recursive: true });
                 const stats = await fs.stat(normalizedPath);
-                if (!stats.isDirectory()) throw new Error('Created path is not a directory');
+                if (!stats.isDirectory())
+                  throw new Error('Created path is not a directory', { cause: statError });
                 directoryCreated = true;
               } catch (dirError) {
                 return {

@@ -555,7 +555,9 @@ function registerSettingsIpc(servicesOrParams) {
             jsonContent = JSON.stringify(exportData, null, 2);
           } catch (serializeError) {
             logger.error('[SETTINGS] Failed to serialize export data:', serializeError);
-            throw new Error('Failed to serialize settings data for export');
+            throw new Error('Failed to serialize settings data for export', {
+              cause: serializeError
+            });
           }
 
           // Write export file
@@ -657,7 +659,9 @@ function registerSettingsIpc(servicesOrParams) {
           try {
             importData = JSON.parse(fileContent);
           } catch (parseError) {
-            throw new Error(`Invalid JSON in settings file: ${parseError.message}`);
+            throw new Error(`Invalid JSON in settings file: ${parseError.message}`, {
+              cause: parseError
+            });
           }
 
           // Validate import data structure
