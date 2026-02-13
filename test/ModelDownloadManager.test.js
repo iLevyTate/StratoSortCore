@@ -10,6 +10,7 @@ const mockFs = {
   mkdir: jest.fn().mockResolvedValue(),
   readdir: jest.fn(),
   stat: jest.fn(),
+  statfs: jest.fn(),
   unlink: jest.fn().mockResolvedValue(),
   rename: jest.fn().mockResolvedValue(),
   access: jest.fn().mockResolvedValue()
@@ -19,10 +20,6 @@ jest.mock('fs', () => ({
   promises: mockFs,
   createWriteStream: jest.fn(),
   createReadStream: jest.fn()
-}));
-
-jest.mock('child_process', () => ({
-  execSync: jest.fn()
 }));
 
 jest.mock('https', () => ({
@@ -38,18 +35,29 @@ jest.mock('../src/shared/logger', () => ({
   })
 }));
 
-jest.mock('../src/shared/modelRegistry', () => ({
-  MODEL_CATALOG: {
+jest.mock('../src/shared/modelRegistry', () => {
+  const catalog = {
     'alpha.gguf': {
       displayName: 'Alpha',
       type: 'text',
       size: 2048,
       url: 'https://example.com/models/alpha.gguf'
     }
-  }
-}));
+  };
+  return {
+    MODEL_CATALOG: catalog,
+    getModel: (name) => {
+      if (!name) return null;
+      if (catalog[name]) return catalog[name];
+      const lower = name.toLowerCase();
+      for (const [key, value] of Object.entries(catalog)) {
+        if (key.toLowerCase() === lower) return value;
+      }
+      return null;
+    }
+  };
+});
 
-const { execSync } = require('child_process');
 const https = require('https');
 const fsModule = require('fs');
 const { ModelDownloadManager } = require('../src/main/services/ModelDownloadManager');
@@ -61,8 +69,7 @@ describe('ModelDownloadManager', () => {
     mockFs.unlink.mockReset();
     mockFs.rename.mockReset();
     mockFs.access.mockReset();
-    mockFs.access?.mockReset?.();
-    execSync.mockReset();
+    mockFs.statfs.mockReset();
     https.get.mockReset();
     fsModule.createWriteStream.mockReset();
   });
@@ -91,21 +98,49 @@ describe('ModelDownloadManager', () => {
     });
   });
 
-  test('checkDiskSpace returns available and sufficient', async () => {
-    execSync.mockReturnValueOnce('FreeSpace\r\n2147483648\r\n');
+  test('checkDiskSpace returns available and sufficient via fs.statfs', async () => {
+    // bfree * bsize = 2GB free space
+    mockFs.statfs.mockResolvedValueOnce({ bfree: 524288, bsize: 4096 });
     const manager = new ModelDownloadManager();
     const result = await manager.checkDiskSpace(1024);
-    expect(result.available).toBeGreaterThan(0);
+    expect(result.available).toBe(524288 * 4096);
     expect(result.sufficient).toBe(true);
   });
 
-  test('checkDiskSpace returns sufficient on failure', async () => {
-    execSync.mockImplementationOnce(() => {
-      throw new Error('fail');
-    });
+  test('checkDiskSpace returns insufficient when space is tight', async () => {
+    // bfree * bsize = 100 bytes (less than requiredBytes * 1.1)
+    mockFs.statfs.mockResolvedValueOnce({ bfree: 25, bsize: 4 });
+    const manager = new ModelDownloadManager();
+    const result = await manager.checkDiskSpace(1024);
+    expect(result.available).toBe(100);
+    expect(result.sufficient).toBe(false);
+  });
+
+  test('checkDiskSpace returns sufficient on statfs failure', async () => {
+    mockFs.statfs.mockRejectedValueOnce(new Error('fail'));
     const manager = new ModelDownloadManager();
     const result = await manager.checkDiskSpace(1024);
     expect(result.sufficient).toBe(true);
+  });
+
+  test('isDownloading returns true for active downloads and false otherwise', () => {
+    const manager = new ModelDownloadManager();
+    expect(manager.isDownloading('alpha.gguf')).toBe(false);
+
+    // Simulate an active download entry
+    manager._downloads.set('alpha.gguf', { status: 'downloading' });
+    expect(manager.isDownloading('alpha.gguf')).toBe(true);
+
+    // Redirecting counts as active
+    manager._downloads.set('alpha.gguf', { status: 'redirecting' });
+    expect(manager.isDownloading('alpha.gguf')).toBe(true);
+
+    // Completed does not count
+    manager._downloads.set('alpha.gguf', { status: 'complete' });
+    expect(manager.isDownloading('alpha.gguf')).toBe(false);
+
+    manager._downloads.delete('alpha.gguf');
+    expect(manager.isDownloading('alpha.gguf')).toBe(false);
   });
 
   test('onProgress registers and unregisters callbacks', () => {
