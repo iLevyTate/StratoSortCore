@@ -184,7 +184,6 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
     logger.debug('Failed to load llama config for signature, using default', {
       error: err.message
     });
-    modelName = defaultTextModel;
   }
 
   // Step 1: Attempt to compute file signature and check cache (non-fatal if fails)

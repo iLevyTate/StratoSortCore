@@ -468,10 +468,11 @@ async function handleBatchOrganize(params) {
               currentFile: path.basename(op.source)
             });
           } catch (error) {
+            const errorMessage = error?.message || String(error || 'Unknown error');
             await getServiceIntegration()?.processingState?.markOrganizeOpError?.(
               batchId,
               i,
-              error.message
+              errorMessage
             );
 
             // Determine if critical error
@@ -479,12 +480,12 @@ async function handleBatchOrganize(params) {
 
             if (isCriticalError) {
               shouldRollback = true;
-              rollbackReason = `Critical error on file ${i + 1}/${batch.operations.length}: ${error.message}`;
+              rollbackReason = `Critical error on file ${i + 1}/${batch.operations.length}: ${errorMessage}`;
               // FIX P0-4: Signal abort to stop all concurrent tasks immediately
               abortController.abort();
               log.error(
                 `[FILE-OPS] Critical error in batch ${batchId}, will rollback ${completedOperations.length} completed operations`,
-                { error: error.message, errorCode: error.code, file: op.source }
+                { error: errorMessage, errorCode: error?.code, file: op.source }
               );
             }
 
@@ -492,7 +493,7 @@ async function handleBatchOrganize(params) {
               success: false,
               source: op.source,
               destination: op.destination,
-              error: error.message,
+              error: errorMessage,
               operation: op.type || 'move',
               critical: isCriticalError
             });
@@ -503,7 +504,7 @@ async function handleBatchOrganize(params) {
               index: i,
               source: op.source,
               destination: op.destination,
-              error: error.message,
+              error: errorMessage,
               critical: isCriticalError
             });
           }
@@ -538,10 +539,11 @@ async function handleBatchOrganize(params) {
           );
         }
       } catch (error) {
+        const batchErrorMessage = error?.message || String(error || 'Unknown error');
         // Log the error - don't silently swallow it
         log.error('[FILE-OPS] Batch operation failed with error', {
           batchId,
-          error: error.message,
+          error: batchErrorMessage,
           successCount,
           failCount,
           completedOperations: completedOperations.length
@@ -557,15 +559,15 @@ async function handleBatchOrganize(params) {
             successCount,
             failCount,
             completedOperations: completedOperations.length,
-            summary: `Processed ${operation.operations.length} files: ${successCount} successful, ${failCount} failed (batch error: ${error.message})`,
+            summary: `Processed ${operation.operations.length} files: ${successCount} successful, ${failCount} failed (batch error: ${batchErrorMessage})`,
             batchId,
-            error: error.message
+            error: batchErrorMessage
           };
         }
 
         return {
           success: false,
-          error: error.message,
+          error: batchErrorMessage,
           errorCode: ERROR_CODES.BATCH_OPERATION_FAILED,
           results,
           successCount,
@@ -630,13 +632,17 @@ async function handleBatchOrganize(params) {
  * Check if an error is critical enough to trigger rollback
  */
 function isCriticalFileError(error) {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const message = typeof error.message === 'string' ? error.message : '';
   return (
     error.code === 'EACCES' ||
     error.code === 'EPERM' ||
     error.code === 'ENOSPC' ||
     error.code === 'EIO' ||
-    error.message.includes('checksum mismatch') ||
-    error.message.includes('verification failed')
+    message.includes('checksum mismatch') ||
+    message.includes('verification failed')
   );
 }
 
@@ -687,7 +693,6 @@ async function performFileMove(op, log, checksumFn) {
   // UUID fallback if numeric exhausted
   if (!operationComplete) {
     uniqueDestination = await performUUIDFallback(op, baseName, ext, log, checksumFn);
-    operationComplete = true;
   }
 
   return { destination: uniqueDestination };

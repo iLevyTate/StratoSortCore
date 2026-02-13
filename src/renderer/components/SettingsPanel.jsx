@@ -15,8 +15,8 @@ import {
 } from 'lucide-react';
 import { createLogger } from '../../shared/logger';
 import { sanitizeSettings } from '../../shared/settingsValidation';
-import { DEFAULT_SETTINGS } from '../../shared/defaultSettings';
 import { DEFAULT_AI_MODELS } from '../../shared/constants';
+import { DEFAULT_SETTINGS } from '../../shared/defaultSettings';
 import { useNotification } from '../contexts/NotificationContext';
 import { getElectronAPI, eventsIpc, llamaIpc, settingsIpc } from '../services/ipc';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
@@ -61,8 +61,6 @@ const logger = createLogger('SettingsPanel');
 const isElectronAPIAvailable = () => {
   return getElectronAPI() != null;
 };
-
-const DEFAULT_EMBED_MODEL = DEFAULT_AI_MODELS.EMBEDDING;
 
 const stableStringify = (value) =>
   JSON.stringify(
@@ -238,25 +236,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           'model-corrections'
         );
       }
-      if (response?.selected && !response?.requiresModelConfirmation) {
-        skipAutoSaveRef.current += 1;
-        applySettingsUpdate((prev) => {
-          const desiredEmbed = response.selected.embeddingModel || prev.embeddingModel;
-          const embeddingList = categories.embedding || [];
-          // Must be an actually-installed model, not just a pattern-valid name
-          const nextEmbeddingModel =
-            desiredEmbed && embeddingList.includes(desiredEmbed)
-              ? desiredEmbed
-              : embeddingList[0] || DEFAULT_EMBED_MODEL;
-
-          return {
-            ...prev,
-            textModel: response.selected.textModel || prev.textModel,
-            visionModel: response.selected.visionModel || prev.visionModel,
-            embeddingModel: nextEmbeddingModel
-          };
-        });
-      }
+      // Important: model discovery should never mutate persisted user choices.
+      // Returning "selected" from getModels is useful for diagnostics/UI hints,
+      // but applying it here can silently overwrite user-configured models
+      // with fallback/default selections and then persist them on next save.
     } catch (error) {
       logger.error('Failed to load AI models', {
         error: error.message,
@@ -267,7 +250,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     } finally {
       setIsRefreshingModels(false);
     }
-  }, [addNotification, applySettingsUpdate]);
+  }, [addNotification]);
 
   useEffect(() => {
     if (!isApiAvailable) return undefined;
