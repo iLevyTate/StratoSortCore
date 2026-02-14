@@ -141,6 +141,10 @@ class SearchService {
 
     // Maximum cache size in bytes (50MB) to prevent unbounded growth
     this._maxCacheSize = 50 * 1024 * 1024;
+
+    // Throttle noisy diagnostics when primary vector retrieval returns no hits.
+    this._lastZeroVectorDiagnosticsAt = 0;
+    this._ZERO_VECTOR_DIAGNOSTICS_INTERVAL_MS = 60 * 1000;
   }
 
   /**
@@ -681,6 +685,11 @@ class SearchService {
         return [];
       }
 
+      if (vectorResults.length === 0) {
+        await this._logZeroVectorDiagnostics(query, topK);
+        return [];
+      }
+
       // Extract query words for tag/category matching
       const queryWords = query
         .toLowerCase()
@@ -736,6 +745,41 @@ class SearchService {
     } catch (error) {
       logger.error('[SearchService] Vector search failed:', error);
       return [];
+    }
+  }
+
+  async _logZeroVectorDiagnostics(query, topK) {
+    const now = Date.now();
+    if (now - this._lastZeroVectorDiagnosticsAt < this._ZERO_VECTOR_DIAGNOSTICS_INTERVAL_MS) {
+      return;
+    }
+    this._lastZeroVectorDiagnosticsAt = now;
+
+    try {
+      const stats =
+        typeof this.vectorDb?.getStats === 'function' ? await this.vectorDb.getStats() : null;
+      const diagnostics =
+        typeof this.vectorDb?.getFileVectorDiagnostics === 'function'
+          ? await this.vectorDb.getFileVectorDiagnostics({ sampleSize: 3 })
+          : null;
+      const vectorHealth =
+        stats?.vectorHealth ||
+        (typeof this.vectorDb?.getVectorHealth === 'function'
+          ? this.vectorDb.getVectorHealth()
+          : null);
+
+      logger.warn('[SearchService] Vector search returned zero results', {
+        query: typeof query === 'string' ? query.slice(0, 120) : '',
+        topK,
+        fileEmbeddings: stats?.files ?? null,
+        chunkEmbeddings: stats?.fileChunks ?? null,
+        vectorHealth,
+        diagnostics
+      });
+    } catch (error) {
+      logger.debug('[SearchService] Failed to gather zero-vector diagnostics', {
+        error: error?.message
+      });
     }
   }
 
