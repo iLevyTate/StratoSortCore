@@ -3217,7 +3217,9 @@ export default function UnifiedSearchModal({
 
       if (!e.dataTransfer) return;
 
-      const { paths: droppedPaths } = extractDroppedFiles(e.dataTransfer);
+      const { paths: droppedPaths } = extractDroppedFiles(e.dataTransfer, {
+        getFilePath: window.electronAPI?.files?.getPathForFile
+      });
       if (droppedPaths.length === 0) return;
 
       setGraphStatus(

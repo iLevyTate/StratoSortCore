@@ -43,7 +43,13 @@ export function useDragAndDrop(onFilesDropped) {
         return;
       }
 
-      const { paths: uniquePaths, fileList, itemFiles } = extractDroppedFiles(e.dataTransfer);
+      const {
+        paths: uniquePaths,
+        fileList,
+        itemFiles
+      } = extractDroppedFiles(e.dataTransfer, {
+        getFilePath: window.electronAPI?.files?.getPathForFile
+      });
 
       if (uniquePaths.length > 0 && onFilesDropped) {
         const fileObjects = uniquePaths.map((pathValue) => ({

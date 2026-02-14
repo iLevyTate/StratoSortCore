@@ -47,7 +47,9 @@ export function useFileDrop(onFilesDropped) {
       // FIX: Use optional chaining consistently for defensive null checks
       if (!e.dataTransfer) return;
 
-      const { paths } = extractDroppedFiles(e.dataTransfer);
+      const { paths } = extractDroppedFiles(e.dataTransfer, {
+        getFilePath: window.electronAPI?.files?.getPathForFile
+      });
 
       const uniquePaths = paths.filter((pathValue) =>
         isAbsolutePath(pathValue, { collapseWhitespace: false })
