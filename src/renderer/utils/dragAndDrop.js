@@ -48,10 +48,36 @@ export const isFileDragEvent = (event) => {
   return false;
 };
 
-export const extractDroppedFiles = (dataTransfer) => {
+/**
+ * Extract file paths and File objects from a DataTransfer.
+ *
+ * @param {DataTransfer} dataTransfer - The drop event's dataTransfer
+ * @param {Object}       [options]
+ * @param {Function}     [options.getFilePath] - Resolve a DOM File to its
+ *   absolute filesystem path. In Electron with sandbox: true the legacy
+ *   File.path property is always empty; pass
+ *   `window.electronAPI.files.getPathForFile` to use webUtils instead.
+ * @returns {{ paths: string[], fileList: File[], itemFiles: File[] }}
+ */
+export const extractDroppedFiles = (dataTransfer, options = {}) => {
   if (!dataTransfer) {
     return { paths: [], fileList: [], itemFiles: [] };
   }
+
+  const { getFilePath } = options;
+
+  const resolveFilePath = (file) => {
+    // Prefer the Electron webUtils resolver (works in sandboxed renderers)
+    if (getFilePath) {
+      try {
+        const resolved = getFilePath(file);
+        if (resolved) return resolved;
+      } catch {
+        /* fall through to legacy path */
+      }
+    }
+    return file.path || file.name;
+  };
 
   const fileList = Array.from(dataTransfer.files || []);
   const itemFiles = Array.from(dataTransfer.items || [])
@@ -78,8 +104,8 @@ export const extractDroppedFiles = (dataTransfer) => {
           .map((line) => normalizeFileUri(line));
 
   const collectedPaths = [
-    ...fileList.map((file) => normalizeFileUri(file.path || file.name)),
-    ...itemFiles.map((file) => normalizeFileUri(file.path || file.name)),
+    ...fileList.map((file) => normalizeFileUri(resolveFilePath(file))),
+    ...itemFiles.map((file) => normalizeFileUri(resolveFilePath(file))),
     ...parsedUris,
     ...parsedPlainText
   ].filter(Boolean);
