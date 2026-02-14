@@ -299,37 +299,52 @@ function registerSystemIpc(servicesOrParams) {
     })
   );
 
-  // Export logs to a zip file
+  // Export logs to a zip file (optionally redacted for safe troubleshooting uploads)
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SYSTEM.EXPORT_LOGS,
     createHandler({
       logger,
       context,
-      handler: async () => {
+      handler: async (_event, payload) => {
         try {
           const { app, dialog } = require('electron');
           const path = require('path');
           const fs = require('fs');
+          const fsPromises = require('fs').promises;
           const AdmZip = require('adm-zip');
+          const { redactLogContent } = require('../../shared/logRedaction');
 
+          const redact = Boolean(payload?.redact);
           const logsDir = path.join(app.getPath('userData'), 'logs');
           if (!fs.existsSync(logsDir)) {
             return { success: false, error: 'No logs found' };
           }
 
           const zip = new AdmZip();
-          zip.addLocalFolder(logsDir, 'logs');
 
-          // Also include crash dumps if they exist
-          const crashDumpsDir = path.join(app.getPath('userData'), 'crash-dumps');
-          if (fs.existsSync(crashDumpsDir)) {
-            zip.addLocalFolder(crashDumpsDir, 'crash-dumps');
+          if (redact) {
+            const logFiles = await fsPromises.readdir(logsDir);
+            for (const name of logFiles) {
+              const fullPath = path.join(logsDir, name);
+              const stat = await fsPromises.stat(fullPath);
+              if (!stat.isFile() || !name.endsWith('.log')) continue;
+              const content = await fsPromises.readFile(fullPath, 'utf8');
+              const redacted = redactLogContent(content);
+              zip.addFile(`logs/${name}`, Buffer.from(redacted, 'utf8'));
+            }
+          } else {
+            zip.addLocalFolder(logsDir, 'logs');
+            const crashDumpsDir = path.join(app.getPath('userData'), 'crash-dumps');
+            if (fs.existsSync(crashDumpsDir)) {
+              zip.addLocalFolder(crashDumpsDir, 'crash-dumps');
+            }
           }
 
+          const suffix = redact ? '-redacted' : '';
           const { filePath } = await dialog.showSaveDialog({
-            title: 'Export Debug Logs',
-            defaultPath: `stratosort-logs-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`,
+            title: redact ? 'Export Logs (Redacted)' : 'Export Debug Logs',
+            defaultPath: `stratosort-logs${suffix}-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`,
             filters: [{ name: 'Zip Files', extensions: ['zip'] }]
           });
 

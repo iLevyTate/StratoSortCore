@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 const { Logger, LOG_LEVELS } = require('../shared/logger');
 const { IpcRateLimiter } = require('./ipcRateLimiter');
 const { createIpcSanitizer } = require('./ipcSanitizer');
@@ -760,6 +760,15 @@ window.addEventListener('beforeunload', () => {
 contextBridge.exposeInMainWorld('electronAPI', {
   // File Operations
   files: {
+    // Resolve the absolute file-system path for a DOM File object.
+    // Required because sandbox: true makes File.path empty.
+    getPathForFile: (file) => {
+      try {
+        return webUtils.getPathForFile(file);
+      } catch {
+        return '';
+      }
+    },
     select: () => secureIPC.safeInvoke(IPC_CHANNELS.FILES.SELECT),
     selectDirectory: () => secureIPC.safeInvoke(IPC_CHANNELS.FILES.SELECT_DIRECTORY),
     getDocumentsPath: () => secureIPC.safeInvoke(IPC_CHANNELS.FILES.GET_DOCUMENTS_PATH),
@@ -1058,7 +1067,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_RECOMMENDED_CONCURRENCY),
     log: (level, message, data) =>
       secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.LOG, { level, message, data }),
-    exportLogs: () => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.EXPORT_LOGS),
+    exportLogs: (redact = false) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.EXPORT_LOGS, {
+        redact: Boolean(redact)
+      }),
     onOpenSemanticSearch: (callback) => secureIPC.safeOn('open-semantic-search', callback)
   },
 
