@@ -42,13 +42,11 @@ npm run dev
 
 ## Where to Learn the Codebase
 
-| Document                                       | Purpose                       |
-| ---------------------------------------------- | ----------------------------- |
-| [Learning Guide](docs/LEARNING_GUIDE.md)       | Onboarding and glossary       |
-| [Architecture](docs/ARCHITECTURE.md)           | System design and data flow   |
-| [DI Patterns](docs/DI_PATTERNS.md)             | Dependency injection patterns |
-| [Error Handling](docs/ERROR_HANDLING_GUIDE.md) | Error handling standards      |
-| [Code Quality](docs/CODE_QUALITY_STANDARDS.md) | Style and review expectations |
+| Document                                       | Purpose                     |
+| ---------------------------------------------- | --------------------------- |
+| [Architecture](docs/ARCHITECTURE.md)           | System design and data flow |
+| [Error Handling](docs/ERROR_HANDLING_GUIDE.md) | Error handling standards    |
+| [IPC Contracts](docs/IPC_CONTRACTS.md)         | IPC communication specs     |
 
 ## Development Workflow
 

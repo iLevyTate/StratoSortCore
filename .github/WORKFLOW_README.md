@@ -55,20 +55,20 @@ git push origin v1.0.0
 
 ### Windows
 
-- **NSIS Installer**: `StratoSort-<version>-win-x64.exe`
-- **Portable**: `StratoSort-<version>-win-x64.portable.exe`
+- **NSIS Installer**: `StratoSortCore-Setup-<version>.exe`
+- **Portable**: `StratoSortCore-<version>-win-x64.exe`
 - **Checksums**: `checksums.sha256`
 - **Updater metadata**: `latest.yml`, `*.blockmap`
 
 ### macOS (manual only)
 
-- **DMG**: `StratoSort-<version>-mac-<arch>.dmg`
-- **ZIP**: `StratoSort-<version>-mac-<arch>.zip`
+- **DMG**: `StratoSortCore-<version>-mac-<arch>.dmg`
+- **ZIP**: `StratoSortCore-<version>-mac-<arch>.zip`
 
 ### Linux (manual only)
 
-- **AppImage**: `StratoSort-<version>-linux-x64.AppImage`
-- **DEB**: `StratoSort-<version>-linux-x64.deb`
+- **AppImage**: `StratoSortCore-<version>-linux-x64.AppImage`
+- **DEB**: `StratoSortCore-<version>-linux-x64.deb`
 
 ## Configuration Files
 
@@ -76,7 +76,7 @@ git push origin v1.0.0
 
 - Configures build outputs and installer settings
 - Publishing is handled by GitHub Actions; build commands use `--publish never`
-- Clean artifact naming: `StratoSort-${version}-${os}-${arch}.${ext}`
+- Clean artifact naming: `StratoSortCore-${version}-${os}-${arch}.${ext}`
 
 ## Required Secrets
 

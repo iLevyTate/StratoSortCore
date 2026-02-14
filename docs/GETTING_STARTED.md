@@ -205,7 +205,7 @@ Once setup is complete, you're ready to start organizing your files:
 2. **Enable Auto-Organization** - Turn on folder watching in Settings
 3. **Explore the Knowledge Graph** - Visualize relationships between your files
 
-For more information, see the [main README](../README.md) or explore the [documentation](README.md).
+For more information, see the [main README](../README.md).
 
 ---
 

@@ -36,13 +36,11 @@ The graph doesn't just show files; it shows _meaning_.
 
 ### Frontend (`Renderer`)
 
-- `GraphView.jsx`: Main container component.
-- `useGraphState.js`: Manages the complex state of nodes and edges.
 - `UnifiedSearchModal.jsx`: Bridges the search experience with graph visualization.
+- `useGraphState.js`: Manages the complex state of nodes and edges.
 
 ### Backend (`Main Process`)
 
-- `GraphService.js`: Handles the heavy lifting of graph construction.
 - `OramaVectorService`: Provides the raw vector data and similarity scores.
 - `ReRankerService`: Refines connections to ensure high-quality edges.
 
