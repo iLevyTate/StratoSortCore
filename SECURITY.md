@@ -9,9 +9,9 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.1.x   | :white_check_mark: |
-| 1.0.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+| 2.0.x   | :white_check_mark: |
+| 1.1.x   | :x:                |
+| < 1.1   | :x:                |
 
 ## Security Design Principles
 
@@ -112,4 +112,4 @@ Contributors who report valid security issues will be acknowledged here (with pe
 
 ---
 
-_Last updated: January 2026_
+_Last updated: February 2026_

@@ -258,9 +258,4 @@ We maintain separate queues to manage different types of bottlenecks:
 
 ## Code Standards
 
-For information on coding patterns, error handling, and dependency injection, refer to the other
-documentation files:
-
-- [CODE_QUALITY_STANDARDS.md](CODE_QUALITY_STANDARDS.md)
-- [DI_PATTERNS.md](DI_PATTERNS.md)
-- [ERROR_HANDLING_GUIDE.md](ERROR_HANDLING_GUIDE.md)
+For error handling patterns and utilities, see [ERROR_HANDLING_GUIDE.md](ERROR_HANDLING_GUIDE.md).

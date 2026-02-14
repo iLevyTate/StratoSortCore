@@ -51,7 +51,7 @@ Users can add new models via **Settings → Local AI Engine**:
 
 All installable models must be in `modelRegistry.js`; the catalog lists download URLs and metadata.
 
-### Fastest Models with Best Performance (2025)
+### Fastest Models with Best Performance
 
 Based on node-llama-cpp docs and llama.cpp ecosystem:
 

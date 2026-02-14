@@ -151,3 +151,10 @@ StratoSort Core:
 
 The "developer cannot be verified" / SmartScreen warnings appear because the app is not yet signed
 with a publisher certificate. That affects trust prompts only—not how the app works.
+
+---
+
+## Next Steps
+
+- **Learn the app:** [User Guide](./USER_GUIDE.md)
+- **Help test and report bugs:** [Beta Tester Guide](./BETA_TESTER_GUIDE.md)

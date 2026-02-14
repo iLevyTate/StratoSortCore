@@ -215,7 +215,7 @@ notes.
 - Accessibility: Added `aria-live="polite"` to AnalysisProgress for screen readers
 - Replaced hardcoded timeout values with centralized constants
 
-## [1.0.0] - 2024-12-XX
+## [1.0.0] - 2024-12-01
 
 ### Added
 

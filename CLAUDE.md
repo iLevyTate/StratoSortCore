@@ -65,7 +65,8 @@ npm run dist:win         # Build Windows installer
 
 - **IPC channels** are defined in `src/shared/constants.js` and validated in preload. Run
   `npm run generate:channels:check` to verify channel consistency.
-- **Services** follow dependency injection patterns documented in `docs/DI_PATTERNS.md`.
+- **Services** follow dependency injection via `ServiceContainer`
+  (`src/main/services/ServiceContainer.js`).
 - **Error handling** uses custom error types in `src/main/errors/` with a centralized error
   classifier.
 - **File operations** use atomic writes via `src/shared/atomicFileOperations.js` (write-to-temp then
@@ -101,21 +102,20 @@ These are tracked gaps that the project slash commands help address:
 - ~~Test coverage unknown~~ - 50% global thresholds (branches/functions/lines/statements) enforced
   in `test/jest.config.js`; 346 suites / 5,500+ tests passing.
 
-## Cursor Rules & Commands
+## Audits & Checks
 
-The following capabilities are available as Cursor Rules. You can invoke them by asking for the
-specific audit or check in natural language.
+The following audits can be invoked by asking in natural language:
 
-| Request               | Purpose                               | Rule File                               |
-| :-------------------- | :------------------------------------ | :-------------------------------------- |
-| "Run security audit"  | Full Electron security audit          | `.cursor/rules/audit-security.mdc`      |
-| "Harden electron"     | Verify sandbox, CSP, webPreferences   | `.cursor/rules/harden-electron.mdc`     |
-| "Audit IPC"           | Validate IPC contracts and security   | `.cursor/rules/audit-ipc.mdc`           |
-| "Check test coverage" | Run tests, analyze coverage gaps      | `.cursor/rules/check-coverage.mdc`      |
-| "Pre-release check"   | Pre-release checklist validation      | `.cursor/rules/check-prerelease.mdc`    |
-| "Performance audit"   | Performance and memory analysis       | `.cursor/rules/audit-perf.mdc`          |
-| "Accessibility audit" | Accessibility/WCAG compliance audit   | `.cursor/rules/audit-a11y.mdc`          |
-| "Dependency audit"    | Dependency security and license audit | `.cursor/rules/audit-deps.mdc`          |
-| "Check build"         | Build config and packaging validation | `.cursor/rules/check-build.mdc`         |
-| "Validate state"      | State persistence and migration audit | `.cursor/rules/validate-state.mdc`      |
-| "Fix production gaps" | Interactive production gap fixer      | `.cursor/rules/fix-production-gaps.mdc` |
+| Request               | Purpose                               |
+| :-------------------- | :------------------------------------ |
+| "Run security audit"  | Full Electron security audit          |
+| "Harden electron"     | Verify sandbox, CSP, webPreferences   |
+| "Audit IPC"           | Validate IPC contracts and security   |
+| "Check test coverage" | Run tests, analyze coverage gaps      |
+| "Pre-release check"   | Pre-release checklist validation      |
+| "Performance audit"   | Performance and memory analysis       |
+| "Accessibility audit" | Accessibility/WCAG compliance audit   |
+| "Dependency audit"    | Dependency security and license audit |
+| "Check build"         | Build config and packaging validation |
+| "Validate state"      | State persistence and migration audit |
+| "Fix production gaps" | Interactive production gap fixer      |
