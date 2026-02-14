@@ -397,8 +397,12 @@
   }
 
   .phase-nav {
-    @apply flex items-center overflow-x-auto flex-shrink min-w-0 pointer-events-auto;
+    @apply flex items-center overflow-x-auto flex-shrink min-w-0 pointer-events-auto rounded-full;
     gap: var(--spacing-compact);
+    padding: 0.25rem;
+    border: 1px solid color-mix(in srgb, var(--color-system-gray-300) 58%, transparent);
+    background-color: color-mix(in srgb, var(--surface-primary) 88%, transparent);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
     scrollbar-width: none;
     -ms-overflow-style: none;
   }
@@ -408,20 +412,51 @@
   }
 
   .phase-nav-tab {
-    @apply relative flex flex-col sm:flex-row items-center rounded-full font-medium whitespace-nowrap flex-shrink-0 transition-all duration-200 ease-out;
+    @apply relative flex flex-col sm:flex-row items-center justify-center rounded-full whitespace-nowrap flex-shrink-0 transition-all duration-200 ease-out;
     padding: var(--nav-tab-padding-y) var(--nav-tab-padding-x);
     gap: var(--nav-tab-gap);
     min-height: var(--nav-tab-min-height);
+    min-width: clamp(5.25rem, 8vw, 6.5rem);
+    font-weight: 500;
+    color: var(--color-system-gray-600);
+  }
+
+  .phase-nav-tab-active {
+    @apply border bg-white text-stratosort-blue;
+    border-color: color-mix(
+      in srgb,
+      var(--color-stratosort-blue) 18%,
+      var(--color-system-gray-200)
+    );
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.08),
+      0 0 0 1px color-mix(in srgb, var(--color-stratosort-blue) 8%, transparent);
+  }
+
+  .phase-nav-tab-interactive {
+    @apply border border-transparent;
+  }
+
+  .phase-nav-tab-interactive:hover {
+    @apply bg-white text-system-gray-900;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  }
+
+  .phase-nav-tab-disabled {
+    @apply border border-transparent cursor-not-allowed;
+    color: var(--color-system-gray-400);
   }
 
   .phase-nav-icon {
     width: var(--nav-icon-size);
     height: var(--nav-icon-size);
+    opacity: 0.82;
   }
 
   .phase-nav-label {
     font-size: var(--nav-label-size);
-    line-height: 1.1;
+    line-height: 1.15;
+    letter-spacing: 0.01em;
   }
 
   @media (min-width: 640px) {
@@ -434,6 +469,22 @@
     .phase-nav-label {
       display: none;
     }
+  }
+
+  /* macOS: cleaner phase buttons for tighter desktop chrome */
+  .platform-darwin .phase-nav {
+    padding: 0.3rem;
+    background-color: color-mix(in srgb, var(--surface-primary) 92%, transparent);
+  }
+
+  .platform-darwin .phase-nav-tab {
+    min-height: 2.5rem;
+    padding: 0.48rem 0.95rem;
+  }
+
+  .platform-darwin .phase-nav-label {
+    font-size: 0.8125rem;
+    line-height: 1.2;
   }
 
   .page-action-bar {
@@ -858,10 +909,6 @@
     overflow-x: auto;
     white-space: pre-wrap;
     word-break: break-word;
-  }
-
-  .skip-link {
-    @apply sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:px-4 focus:py-2 focus:bg-stratosort-blue focus:text-white focus:rounded-lg;
   }
 
   .badge-soft {

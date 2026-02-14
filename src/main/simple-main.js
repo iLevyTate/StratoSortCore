@@ -8,6 +8,14 @@ try {
 
 const { app, BrowserWindow, ipcMain, dialog, shell, crashReporter } = require('electron');
 
+// Set the application name as early as possible.
+// On macOS this controls the dock label and application menu title.
+// Electron defaults to package.json "productName" → "name", but the raw Electron
+// binary in development reports itself as "Electron" to the OS.  An explicit
+// assignment ensures the correct name in all contexts (dock, Activity Monitor menu
+// label, window title fallback) regardless of dev vs packaged mode.
+app.name = 'StratoSort Core';
+
 const isDev = process.env.NODE_ENV === 'development';
 
 // Logging utility
@@ -543,6 +551,28 @@ if (gotTheLock || process.env.STRATOSORT_FORCE_LAUNCH === '1') {
 // Initialize services after app is ready
 app.whenReady().then(async () => {
   logger.info('[STARTUP] app.whenReady resolved');
+
+  // macOS: Set the dock icon to the StratoSort logo so it replaces the default
+  // Electron atom icon during development.  In production (packaged) builds
+  // electron-builder bakes the icon into the .app bundle so this is a no-op.
+  if (process.platform === 'darwin' && app.dock) {
+    try {
+      const { nativeImage } = require('electron');
+      const iconPath = path.join(__dirname, '..', 'assets', 'icons', 'png', '512x512.png');
+      // Resolve from repo root in dev, or from resources in packaged build
+      const resolvedIcon = app.isPackaged
+        ? path.join(process.resourcesPath, 'assets', 'icons', 'png', '512x512.png')
+        : path.resolve(iconPath);
+      const fsSync = require('fs');
+      if (fsSync.existsSync(resolvedIcon)) {
+        app.dock.setIcon(nativeImage.createFromPath(resolvedIcon));
+        logger.info('[DOCK] Set macOS dock icon from', resolvedIcon);
+      }
+    } catch (dockErr) {
+      logger.debug('[DOCK] Could not set macOS dock icon:', dockErr?.message);
+    }
+  }
+
   // FIX: Create a referenced interval to keep the event loop alive during startup
   // This prevents premature exit when async operations use unreferenced timeouts
   const startupKeepalive = trackInterval(() => {}, 1000);
