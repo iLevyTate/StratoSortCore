@@ -990,79 +990,20 @@ Now generate a description for "${folderName}":`;
             };
           }
 
-          let llmEnhancedData = {};
-          try {
-            const llmAnalysis = await enhanceSmartFolderWithLLM(
-              folder,
-              customFolders,
-              getTextModel
-            );
-            if (llmAnalysis && !llmAnalysis.error) llmEnhancedData = llmAnalysis;
-          } catch (e) {
-            logger.warn(
-              '[SMART-FOLDERS] LLM enhancement failed, continuing with basic data:',
-              e.message
-            );
-          }
-
-          const descriptionFromLlm =
-            (typeof llmEnhancedData.improvedDescription === 'string' &&
-              llmEnhancedData.improvedDescription.trim()) ||
-            (typeof llmEnhancedData.enhancedDescription === 'string' &&
-              llmEnhancedData.enhancedDescription.trim()) ||
-            '';
-          const keywordsFromLlm = Array.isArray(llmEnhancedData.suggestedKeywords)
-            ? llmEnhancedData.suggestedKeywords
-                .map((v) => String(v || '').trim())
-                .filter(Boolean)
-                .slice(0, 12)
-            : [];
-          const semanticTagsFromLlm = Array.isArray(llmEnhancedData.semanticTags)
-            ? llmEnhancedData.semanticTags
-                .map((v) => String(v || '').trim())
-                .filter(Boolean)
-                .slice(0, 12)
-            : [];
-          const existingFolderNameLookup = new Map(
-            customFolders
-              .filter((f) => f && typeof f.name === 'string' && f.name.trim())
-              .map((f) => [f.name.toLowerCase(), f.name])
-          );
-          const relatedFoldersFromLlm = Array.isArray(llmEnhancedData.relatedFolders)
-            ? llmEnhancedData.relatedFolders
-                .map((v) => String(v || '').trim())
-                .filter(Boolean)
-                .map((name) => existingFolderNameLookup.get(name.toLowerCase()) || null)
-                .filter(Boolean)
-                .slice(0, 8)
-            : [];
-          const confidenceFromLlm = Number(llmEnhancedData.confidence);
-          const normalizedConfidence = Number.isFinite(confidenceFromLlm)
-            ? Math.max(
-                0,
-                Math.min(1, confidenceFromLlm > 1 ? confidenceFromLlm / 100 : confidenceFromLlm)
-              )
-            : 0.8;
-          const categoryFromLlm =
-            typeof llmEnhancedData.suggestedCategory === 'string' &&
-            llmEnhancedData.suggestedCategory.trim()
-              ? llmEnhancedData.suggestedCategory.trim().toLowerCase().slice(0, 60)
-              : 'general';
+          // Build folder immediately with basic data — no LLM blocking.
+          // LLM enhancement runs in the background after the folder is saved.
           const newFolder = {
             id: `sf-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
             name: sanitizedName,
             path: normalizedPath,
-            description:
-              descriptionFromLlm ||
-              folder.description?.trim() ||
-              `Smart folder for ${sanitizedName}`,
-            keywords: keywordsFromLlm,
-            category: categoryFromLlm,
+            description: folder.description?.trim() || `Smart folder for ${sanitizedName}`,
+            keywords: [],
+            category: 'general',
             isDefault: folder.isDefault || false,
             createdAt: new Date().toISOString(),
-            semanticTags: semanticTagsFromLlm,
-            relatedFolders: relatedFoldersFromLlm,
-            confidenceScore: normalizedConfidence,
+            semanticTags: [],
+            relatedFolders: [],
+            confidenceScore: 0.8,
             usageCount: 0,
             lastUsed: null
           };
@@ -1119,6 +1060,102 @@ Now generate a description for "${folderName}":`;
               'Existed:',
               directoryExisted
             );
+
+            // Fire-and-forget: enhance with LLM in the background.
+            // The folder is already saved and visible to the user.
+            const folderId = newFolder.id;
+            const folderSnapshot = { ...folder };
+            const foldersSnapshot = customFolders.map((f) => ({ ...f }));
+            setImmediate(() => {
+              enhanceSmartFolderWithLLM(folderSnapshot, foldersSnapshot, getTextModel)
+                .then(async (llmAnalysis) => {
+                  if (!llmAnalysis || llmAnalysis.error) {
+                    logger.info(
+                      '[SMART-FOLDERS] Background LLM enhancement skipped or failed:',
+                      llmAnalysis?.error || 'no result'
+                    );
+                    return;
+                  }
+
+                  // Apply LLM data to the live folder list
+                  const currentFolders = getCustomFolders();
+                  const idx = currentFolders.findIndex((f) => f.id === folderId);
+                  if (idx === -1) {
+                    logger.warn(
+                      '[SMART-FOLDERS] Folder removed before LLM enhancement completed:',
+                      folderId
+                    );
+                    return;
+                  }
+
+                  const descriptionFromLlm =
+                    (typeof llmAnalysis.improvedDescription === 'string' &&
+                      llmAnalysis.improvedDescription.trim()) ||
+                    (typeof llmAnalysis.enhancedDescription === 'string' &&
+                      llmAnalysis.enhancedDescription.trim()) ||
+                    '';
+                  const keywordsFromLlm = Array.isArray(llmAnalysis.suggestedKeywords)
+                    ? llmAnalysis.suggestedKeywords
+                        .map((v) => String(v || '').trim())
+                        .filter(Boolean)
+                        .slice(0, 12)
+                    : [];
+                  const semanticTagsFromLlm = Array.isArray(llmAnalysis.semanticTags)
+                    ? llmAnalysis.semanticTags
+                        .map((v) => String(v || '').trim())
+                        .filter(Boolean)
+                        .slice(0, 12)
+                    : [];
+                  const existingFolderNameLookup = new Map(
+                    currentFolders
+                      .filter((f) => f && typeof f.name === 'string' && f.name.trim())
+                      .map((f) => [f.name.toLowerCase(), f.name])
+                  );
+                  const relatedFoldersFromLlm = Array.isArray(llmAnalysis.relatedFolders)
+                    ? llmAnalysis.relatedFolders
+                        .map((v) => String(v || '').trim())
+                        .filter(Boolean)
+                        .map((name) => existingFolderNameLookup.get(name.toLowerCase()) || null)
+                        .filter(Boolean)
+                        .slice(0, 8)
+                    : [];
+                  const confidenceFromLlm = Number(llmAnalysis.confidence);
+                  const normalizedConfidence = Number.isFinite(confidenceFromLlm)
+                    ? Math.max(
+                        0,
+                        Math.min(
+                          1,
+                          confidenceFromLlm > 1 ? confidenceFromLlm / 100 : confidenceFromLlm
+                        )
+                      )
+                    : 0.8;
+                  const categoryFromLlm =
+                    typeof llmAnalysis.suggestedCategory === 'string' &&
+                    llmAnalysis.suggestedCategory.trim()
+                      ? llmAnalysis.suggestedCategory.trim().toLowerCase().slice(0, 60)
+                      : undefined;
+
+                  // Merge LLM data into the existing folder
+                  const target = currentFolders[idx];
+                  if (descriptionFromLlm) target.description = descriptionFromLlm;
+                  if (keywordsFromLlm.length) target.keywords = keywordsFromLlm;
+                  if (semanticTagsFromLlm.length) target.semanticTags = semanticTagsFromLlm;
+                  if (relatedFoldersFromLlm.length) target.relatedFolders = relatedFoldersFromLlm;
+                  if (categoryFromLlm) target.category = categoryFromLlm;
+                  target.confidenceScore = normalizedConfidence;
+
+                  setCustomFolders(currentFolders);
+                  await saveCustomFolders(currentFolders);
+                  logger.info(
+                    '[SMART-FOLDERS] Background LLM enhancement applied to folder:',
+                    folderId
+                  );
+                })
+                .catch((err) => {
+                  logger.warn('[SMART-FOLDERS] Background LLM enhancement error:', err.message);
+                });
+            });
+
             return {
               success: true,
               folder: newFolder,
@@ -1128,7 +1165,7 @@ Now generate a description for "${folderName}":`;
                 : 'Smart folder added (directory already existed)',
               directoryCreated,
               directoryExisted,
-              llmEnhanced: !!llmEnhancedData.enhancedDescription
+              llmEnhanced: false
             };
           } catch (saveError) {
             setCustomFolders(originalFolders);
