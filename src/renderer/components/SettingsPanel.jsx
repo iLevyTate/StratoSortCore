@@ -89,18 +89,27 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     dispatch(toggleSettings());
   }, [dispatch]);
 
+  // Use capture phase so this fires BEFORE other document-level ESC handlers
+  // (e.g. useKeyboardShortcuts, Modal). stopImmediatePropagation prevents them
+  // from cascading and accidentally closing the entire settings panel.
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        handleToggleSettings();
+        event.stopImmediatePropagation();
+        // If a sub-modal is open, close it instead of the settings panel
+        if (showAnalysisHistory) {
+          setShowAnalysisHistory(false);
+        } else {
+          handleToggleSettings();
+        }
       }
     };
-    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keydown', handleKeyDown, true);
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keydown', handleKeyDown, true);
     };
-  }, [handleToggleSettings]);
+  }, [handleToggleSettings, showAnalysisHistory]);
 
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [modelLists, setModelLists] = useState({
@@ -621,6 +630,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         paddingBottom: '1.5rem'
       }}
       onMouseDown={(e) => {
+        if (showAnalysisHistory) return;
         if (e.target === e.currentTarget) handleToggleSettings();
       }}
       role="presentation"
