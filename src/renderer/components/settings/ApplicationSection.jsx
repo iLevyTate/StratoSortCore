@@ -27,24 +27,27 @@ function ApplicationSection({ settings, setSettings }) {
     }
   }, [isOpeningLogs]);
 
-  const handleExportLogs = React.useCallback(async () => {
-    if (isExportingLogs) return;
-    if (!window?.electronAPI?.system?.exportLogs) return;
+  const handleExportLogs = React.useCallback(
+    async (redact = false) => {
+      if (isExportingLogs) return;
+      if (!window?.electronAPI?.system?.exportLogs) return;
 
-    setIsExportingLogs(true);
-    try {
-      const result = await window.electronAPI.system.exportLogs();
-      if (result?.success) {
-        // Success notification handled by caller if needed, or we can add one here
-      } else if (result?.error) {
-        logger.error('[Settings] Failed to export logs', { error: result.error });
+      setIsExportingLogs(true);
+      try {
+        const result = await window.electronAPI.system.exportLogs(redact);
+        if (result?.success) {
+          // Success notification handled by caller if needed
+        } else if (result?.error) {
+          logger.error('[Settings] Failed to export logs', { error: result.error });
+        }
+      } catch (error) {
+        logger.error('[Settings] Failed to export logs', { error });
+      } finally {
+        setIsExportingLogs(false);
       }
-    } catch (error) {
-      logger.error('[Settings] Failed to export logs', { error });
-    } finally {
-      setIsExportingLogs(false);
-    }
-  }, [isExportingLogs]);
+    },
+    [isExportingLogs]
+  );
 
   return (
     <SettingsCard
@@ -68,9 +71,9 @@ function ApplicationSection({ settings, setSettings }) {
 
       <SettingRow
         label="Troubleshooting Logs"
-        description="Manage application logs for debugging and support."
+        description="Manage application logs for debugging and support. Use 'Export (Redacted)' before uploading to remove file names and analysis content."
       >
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="subtle"
             size="sm"
@@ -83,11 +86,22 @@ function ApplicationSection({ settings, setSettings }) {
           <Button
             variant="subtle"
             size="sm"
-            onClick={handleExportLogs}
+            onClick={() => handleExportLogs(false)}
             disabled={!window?.electronAPI?.system?.exportLogs}
             isLoading={isExportingLogs}
+            title="Export full logs (includes paths and crash dumps)"
           >
-            Export Logs
+            Export Full
+          </Button>
+          <Button
+            variant="subtle"
+            size="sm"
+            onClick={() => handleExportLogs(true)}
+            disabled={!window?.electronAPI?.system?.exportLogs}
+            isLoading={isExportingLogs}
+            title="Redact file paths and analysis content for safe upload"
+          >
+            Export (Redacted)
           </Button>
         </div>
       </SettingRow>
