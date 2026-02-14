@@ -259,13 +259,13 @@ describe('Smart Folders IPC', () => {
       expect(mockFoldersService.setCustomFolders).toHaveBeenCalled();
       expect(mockFoldersService.saveCustomFolders).toHaveBeenCalled();
 
-      // Check that the new folder was added
+      // Initial save uses fallback description; LLM enhancement runs in background
       const savedFolders = mockFoldersService.setCustomFolders.mock.calls[0][0];
       expect(savedFolders).toHaveLength(3); // 2 existing + 1 new
       expect(savedFolders[2].name).toBe('Projects');
-      expect(savedFolders[2].description).toBe('Project files and planning docs');
-      expect(savedFolders[2].confidenceScore).toBeCloseTo(0.92, 2);
-      expect(savedFolders[2].relatedFolders).toEqual(['Work']);
+      expect(savedFolders[2].description).toBe('Smart folder for Projects');
+      expect(savedFolders[2].confidenceScore).toBeCloseTo(0.8, 2);
+      expect(savedFolders[2].relatedFolders).toEqual([]);
     });
 
     test('validates folder name characters', async () => {
