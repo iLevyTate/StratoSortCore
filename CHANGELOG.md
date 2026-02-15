@@ -12,6 +12,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-02-15
+
+### Changed
+
+- **Release pipeline run**: Prepared a patch release to trigger fresh Windows and macOS release
+  workflows with the current packaging pipeline and artifact conventions.
+
 ## Release Checklist
 
 See [docs/RELEASING.md](docs/RELEASING.md) for versioning, runtime staging, checksums, and release
