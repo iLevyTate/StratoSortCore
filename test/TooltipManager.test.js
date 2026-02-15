@@ -130,4 +130,23 @@ describe('TooltipManager', () => {
       value: false
     });
   });
+
+  it('should convert native title attributes to data-tooltip', () => {
+    const { unmount } = render(<TooltipManager />);
+
+    const testElement = document.createElement('button');
+    testElement.setAttribute('title', 'Refresh models');
+    document.body.appendChild(testElement);
+
+    expect(testElement.getAttribute('title')).toBeNull();
+    expect(testElement.getAttribute('data-tooltip')).toBe('Refresh models');
+
+    // Ensure property assignment is also redirected
+    testElement.title = 'Toggle model list';
+    expect(testElement.getAttribute('title')).toBeNull();
+    expect(testElement.getAttribute('data-tooltip')).toBe('Toggle model list');
+
+    unmount();
+    document.body.removeChild(testElement);
+  });
 });

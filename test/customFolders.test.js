@@ -69,7 +69,7 @@ describe('Custom Folders', () => {
   });
 
   describe('loadCustomFolders', () => {
-    test('loads and parses saved folders', async () => {
+    test('loads and parses saved folders, only ensures Uncategorized', async () => {
       const savedFolders = [
         {
           id: 'folder1',
@@ -89,24 +89,25 @@ describe('Custom Folders', () => {
       const folders = await customFolders.loadCustomFolders();
 
       expect(folders.some((f) => f.name === 'Documents')).toBe(true);
-      expect(folders.some((f) => f.name === 'Archives')).toBe(true);
       expect(folders.some((f) => f.name === 'Uncategorized')).toBe(true);
+      // Should NOT inject extra defaults the user didn't add
+      expect(folders.some((f) => f.name === 'Archives')).toBe(false);
+      expect(folders).toHaveLength(2);
     });
 
-    test('creates default smart folders when file does not exist', async () => {
+    test('creates only Uncategorized when file does not exist (first launch)', async () => {
       mockFs.readFile.mockRejectedValueOnce(new Error('ENOENT'));
 
       const folders = await customFolders.loadCustomFolders();
 
-      // Now creates 8 default folders: Documents, Images, Videos, Music, Spreadsheets, Presentations, Archives, Uncategorized
-      expect(folders).toHaveLength(8);
-      expect(folders.some((f) => f.name === 'Documents')).toBe(true);
-      expect(folders.some((f) => f.name === 'Uncategorized')).toBe(true);
-      expect(folders.every((f) => f.isDefault)).toBe(true);
+      // First launch: only Uncategorized is created; user builds their own structure
+      expect(folders).toHaveLength(1);
+      expect(folders[0].name).toBe('Uncategorized');
+      expect(folders[0].isDefault).toBe(true);
       expect(mockFs.mkdir).toHaveBeenCalled();
     });
 
-    test('adds missing default folders if saved data is incomplete', async () => {
+    test('adds only Uncategorized if it is missing from saved data', async () => {
       const savedFolders = [
         {
           id: 'folder1',
@@ -119,10 +120,11 @@ describe('Custom Folders', () => {
 
       const folders = await customFolders.loadCustomFolders();
 
-      // Should have full default set when defaults are partially present
-      expect(folders).toHaveLength(8);
+      // Should add Uncategorized but NOT other defaults
+      expect(folders).toHaveLength(2);
+      expect(folders.some((f) => f.name === 'Documents')).toBe(true);
       expect(folders.some((f) => f.name.toLowerCase() === 'uncategorized')).toBe(true);
-      expect(folders.some((f) => f.name === 'Archives')).toBe(true);
+      expect(folders.some((f) => f.name === 'Archives')).toBe(false);
     });
 
     test('normalizes folder paths', async () => {
@@ -218,9 +220,9 @@ describe('Custom Folders', () => {
 
       const folders = await customFolders.loadCustomFolders();
 
-      // Should create all 8 default folders when JSON is invalid
-      expect(folders).toHaveLength(8);
-      expect(folders.some((f) => f.name === 'Uncategorized')).toBe(true);
+      // Should create only Uncategorized when JSON is invalid
+      expect(folders).toHaveLength(1);
+      expect(folders[0].name).toBe('Uncategorized');
     });
 
     test('handles non-array JSON payload gracefully', async () => {
@@ -228,8 +230,8 @@ describe('Custom Folders', () => {
 
       const folders = await customFolders.loadCustomFolders();
 
-      expect(folders).toHaveLength(8);
-      expect(folders.some((f) => f.name === 'Uncategorized')).toBe(true);
+      expect(folders).toHaveLength(1);
+      expect(folders[0].name).toBe('Uncategorized');
     });
   });
 

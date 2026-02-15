@@ -28,19 +28,6 @@ function normalizeImageSource(value) {
   return trimmed;
 }
 
-function formatLocation(source = {}) {
-  const parts = [];
-  const page = source.page || source.pageNumber;
-  const line = source.line || source.lineNumber;
-  const offset = source.offset || source.charOffset;
-  const section = source.section || source.heading;
-  if (page) parts.push(`Page ${page}`);
-  if (section) parts.push(`Section ${section}`);
-  if (line) parts.push(`Line ${line}`);
-  if (offset) parts.push(`Offset ${offset}`);
-  return parts.join(' • ');
-}
-
 function buildAssistantText(message) {
   if (!message || message.role !== 'assistant') return '';
   if (typeof message.text === 'string' && message.text.trim().length > 0) {
@@ -117,7 +104,7 @@ function SourceList({ sources, onOpenSource }) {
         tone="neutral"
         size="sm"
         align="left"
-        title="No sources found for this response."
+        title="No matching documents found."
         className="mt-3 px-3 py-3 rounded-lg border border-system-gray-200 bg-white"
       />
     );
@@ -134,44 +121,60 @@ function SourceList({ sources, onOpenSource }) {
     return [];
   };
 
+  /** Build a concise one-liner describing what the source is about. */
+  const buildContext = (source) => {
+    const parts = [];
+    if (source.category) parts.push(source.category);
+    if (source.documentType && source.documentType !== source.category)
+      parts.push(source.documentType);
+    if (source.project) parts.push(source.project);
+    if (source.entity) parts.push(source.entity);
+    if (source.documentDate) parts.push(source.documentDate);
+    return parts.join(' · ');
+  };
+
   return (
     <div className="mt-3 rounded-lg border border-system-gray-200 bg-white">
-      <Text
-        as="div"
-        variant="tiny"
-        className="px-3 py-2 font-semibold text-system-gray-500 uppercase tracking-wide"
-      >
-        Sources
-      </Text>
       <div className="divide-y divide-system-gray-100">
         {sources.map((source) => {
-          const tags = normalizeList(source.tags).slice(0, 3);
-          const entities = normalizeList(source.entities).slice(0, 3);
-          const dates = normalizeList(source.dates).slice(0, 2);
-          const matchSources = normalizeList(source.matchDetails?.sources).slice(0, 3);
-          const score =
-            typeof source.score === 'number' ? `${Math.round(source.score * 100)}%` : '';
-          const location = formatLocation(source);
+          const tags = normalizeList(source.tags).slice(0, 5);
+          // Prefer semanticScore (raw cosine similarity) over the inflated
+          // fused score. semanticScore reflects actual embedding relevance.
+          const rawSemantic =
+            typeof source.semanticScore === 'number' ? source.semanticScore : source.score;
+          const scorePct = typeof rawSemantic === 'number' ? Math.round(rawSemantic * 100) : 0;
           const imageSrc = normalizeImageSource(
             source.previewImage || source.imagePath || source.thumbnail || source.image
           );
+          const context = buildContext(source);
 
           return (
-            <div key={source.id} className="flex items-start gap-compact px-3 py-2 text-sm">
-              <Text as="div" variant="tiny" className="mt-0.5 font-semibold text-system-gray-400">
-                {source.id}
-              </Text>
-              <div className="flex-1">
-                <div className="font-medium text-system-gray-800">
+            <div key={source.id} className="flex items-start gap-compact px-3 py-2.5 text-sm">
+              {/* Semantic relevance indicator (raw cosine similarity) */}
+              <div className="flex flex-col items-center gap-0.5 pt-0.5 flex-shrink-0 w-8">
+                <div
+                  className={`text-[10px] font-bold leading-none ${
+                    scorePct >= 70
+                      ? 'text-stratosort-success'
+                      : scorePct >= 50
+                        ? 'text-stratosort-blue'
+                        : 'text-system-gray-400'
+                  }`}
+                >
+                  {scorePct}%
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-system-gray-800 truncate">
                   {source.name || source.fileId}
                 </div>
-                {location ? (
-                  <Text as="div" variant="tiny" className="mt-0.5 text-system-gray-500">
-                    {location}
+                {context ? (
+                  <Text as="div" variant="tiny" className="mt-0.5 text-system-gray-500 truncate">
+                    {context}
                   </Text>
                 ) : null}
                 {source.snippet ? (
-                  <Text as="div" variant="tiny" className="mt-1 text-system-gray-500 line-clamp-3">
+                  <Text as="div" variant="tiny" className="mt-1 text-system-gray-600 line-clamp-2">
                     {source.snippet}
                   </Text>
                 ) : null}
@@ -186,26 +189,17 @@ function SourceList({ sources, onOpenSource }) {
                   </div>
                 ) : null}
                 {tags.length > 0 ? (
-                  <Text as="div" variant="tiny" className="mt-2 text-system-gray-500">
-                    Tags: {tags.join(', ')}
-                  </Text>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-block px-1.5 py-0.5 text-[10px] font-medium bg-system-gray-100 text-system-gray-600 rounded"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
                 ) : null}
-                {entities.length > 0 ? (
-                  <Text as="div" variant="tiny" className="mt-1 text-system-gray-500">
-                    Entities: {entities.join(', ')}
-                  </Text>
-                ) : null}
-                {dates.length > 0 ? (
-                  <Text as="div" variant="tiny" className="mt-1 text-system-gray-500">
-                    Dates: {dates.join(', ')}
-                  </Text>
-                ) : null}
-                {(matchSources.length > 0 || score) && (
-                  <Text as="div" variant="tiny" className="mt-1 text-system-gray-500">
-                    Why: {matchSources.length > 0 ? matchSources.join(' + ') : 'matched'}{' '}
-                    {score ? `(${score})` : ''}
-                  </Text>
-                )}
               </div>
               {source.path ? (
                 <Button
@@ -213,6 +207,7 @@ function SourceList({ sources, onOpenSource }) {
                   size="sm"
                   onClick={() => onOpenSource(source)}
                   title="Open source file"
+                  className="flex-shrink-0"
                 >
                   <FileText className="w-4 h-4" />
                 </Button>
@@ -408,8 +403,8 @@ export default function ChatPanel({
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-default chat-thread">
         {messages.length === 0 ? (
           <Text variant="small" className="text-system-gray-500">
-            Ask about your documents. Responses will separate document evidence from model
-            knowledge.
+            Ask me anything about your documents — search by meaning, summarize, or explore
+            connections.
           </Text>
         ) : null}
 
@@ -418,8 +413,6 @@ export default function ChatPanel({
           const assistantText = buildAssistantText(message);
           const hasDocumentAnswer =
             Array.isArray(message.documentAnswer) && message.documentAnswer.length > 0;
-          const hasModelAnswer =
-            Array.isArray(message.modelAnswer) && message.modelAnswer.length > 0;
           const hasSources = Array.isArray(message.sources) && message.sources.length > 0;
 
           return (
@@ -443,40 +436,34 @@ export default function ChatPanel({
                           ? 'Thinking...'
                           : 'I could not find an answer in the selected documents.')}
                     </div>
-                    {(hasDocumentAnswer || hasModelAnswer) && (
-                      <div className="space-y-2">
-                        {hasDocumentAnswer ? (
-                          <details className="chat-details">
-                            <summary>
-                              Evidence from documents ({message.documentAnswer.length})
-                            </summary>
-                            <div className="chat-details-body">
-                              <AnswerBlock
-                                title="Evidence"
-                                items={message.documentAnswer}
-                                showTitle={false}
-                                sources={message.sources}
-                                onOpenSource={onOpenSource}
-                              />
-                            </div>
-                          </details>
-                        ) : null}
-                        {hasModelAnswer ? (
-                          <details className="chat-details">
-                            <summary>Model knowledge ({message.modelAnswer.length})</summary>
-                            <div className="chat-details-body">
-                              <AnswerBlock
-                                title="Model"
-                                items={message.modelAnswer}
-                                showTitle={false}
-                                sources={message.sources}
-                                onOpenSource={onOpenSource}
-                              />
-                            </div>
-                          </details>
-                        ) : null}
-                      </div>
-                    )}
+                    {/* Only show the citations detail panel when document answers
+                        actually have citation links — otherwise the collapsible sections
+                        just duplicate the main text and add visual noise. */}
+                    {hasDocumentAnswer &&
+                      message.documentAnswer.some(
+                        (item) => item.citations && item.citations.length > 0
+                      ) && (
+                        <details className="chat-details">
+                          <summary>
+                            Cited sources (
+                            {
+                              new Set(
+                                message.documentAnswer.flatMap((item) => item.citations || [])
+                              ).size
+                            }
+                            )
+                          </summary>
+                          <div className="chat-details-body">
+                            <AnswerBlock
+                              title="Citations"
+                              items={message.documentAnswer}
+                              showTitle={false}
+                              sources={message.sources}
+                              onOpenSource={onOpenSource}
+                            />
+                          </div>
+                        </details>
+                      )}
                     {Array.isArray(message.followUps) && message.followUps.length > 0 ? (
                       <div className="space-y-2">
                         <div className="flex justify-between items-center">
@@ -485,7 +472,7 @@ export default function ChatPanel({
                             variant="tiny"
                             className="font-semibold text-system-gray-500 uppercase tracking-wide"
                           >
-                            Suggested follow-ups
+                            Try next
                           </Text>
                           {idx === messages.length - 1 && (
                             <Button
