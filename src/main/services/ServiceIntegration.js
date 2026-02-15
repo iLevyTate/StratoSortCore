@@ -616,6 +616,7 @@ class ServiceIntegration {
           vectorDbService: c.resolve(ServiceIds.ORAMA_VECTOR),
           analysisHistoryService: c.resolve(ServiceIds.ANALYSIS_HISTORY),
           parallelEmbeddingService: c.resolve(ServiceIds.PARALLEL_EMBEDDING),
+          llamaService: c.tryResolve(ServiceIds.LLAMA_SERVICE),
           relationshipIndexService: c.tryResolve(ServiceIds.RELATIONSHIP_INDEX)
         });
       });

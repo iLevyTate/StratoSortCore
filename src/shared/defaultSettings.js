@@ -76,8 +76,9 @@ const DEFAULT_SETTINGS = {
   workflowRestoreMaxAge: 60 * 60 * 1000, // 1 hour - how long to keep workflow state
   saveDebounceMs: 1000, // Debounce delay for auto-save
 
-  // Chunking: auto-generate chunk embeddings during file analysis (opt-in)
-  autoChunkOnAnalysis: false,
+  // Chunking: auto-generate chunk embeddings during file analysis.
+  // Enabled by default to improve chat/document retrieval depth out of the box.
+  autoChunkOnAnalysis: true,
   // Graph-aware retrieval (GraphRAG-lite)
   graphExpansionEnabled: true,
   graphExpansionWeight: 0.2,

@@ -1176,8 +1176,54 @@ class OramaVectorService extends EventEmitter {
   }
 
   async _fallbackQuerySimilarFiles(queryEmbedding, topK) {
-    const docs = await this._getAllFileDocuments();
+    const normalizedTopK = Number.isFinite(topK) && topK > 0 ? Math.max(1, Math.floor(topK)) : 10;
+    const embStore = this._embeddingStore?.files;
     const scored = [];
+
+    // Fast path: use in-memory sidecar vectors and only fetch metadata for top candidates.
+    if (embStore instanceof Map && embStore.size > 0) {
+      for (const [docId, rawVector] of embStore.entries()) {
+        const emb = this._normalizeEmbeddingVector(rawVector, queryEmbedding.length);
+        if (!Array.isArray(emb) || emb.length !== queryEmbedding.length) continue;
+        if (emb[0] === 0 && emb.every((v) => v === 0)) continue;
+        const score = this._cosineSimilarity(queryEmbedding, emb);
+        if (!Number.isFinite(score) || score <= 0) continue;
+        scored.push({ id: docId, score });
+      }
+
+      scored.sort((a, b) => b.score - a.score);
+      const candidates = scored.slice(0, Math.max(normalizedTopK * 3, normalizedTopK));
+      const results = [];
+
+      for (const candidate of candidates) {
+        const doc = await getByID(this._databases.files, candidate.id);
+        if (!doc || doc.isOrphaned || doc.hasVector === false) continue;
+        results.push({
+          id: doc.id,
+          score: candidate.score,
+          distance: 1 - candidate.score,
+          metadata: {
+            path: doc.filePath,
+            filePath: doc.filePath,
+            fileName: doc.fileName,
+            fileType: doc.fileType,
+            analyzedAt: doc.analyzedAt,
+            suggestedName: doc.suggestedName,
+            keywords: doc.keywords,
+            tags: doc.tags
+          }
+        });
+        if (results.length >= normalizedTopK) break;
+      }
+
+      if (results.length > 0) {
+        return results;
+      }
+    }
+
+    // Slow path fallback for edge cases where sidecar map is unavailable.
+    const docs = await this._getAllFileDocuments();
+    const scoredDocs = [];
     for (const doc of docs) {
       if (doc?.isOrphaned) continue;
       const emb = this._normalizeEmbeddingVector(
@@ -1188,10 +1234,10 @@ class OramaVectorService extends EventEmitter {
       if (emb[0] === 0 && emb.every((v) => v === 0)) continue;
       const score = this._cosineSimilarity(queryEmbedding, emb);
       if (!Number.isFinite(score) || score <= 0) continue;
-      scored.push({ doc, score });
+      scoredDocs.push({ doc, score });
     }
-    scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, topK).map(({ doc, score }) => ({
+    scoredDocs.sort((a, b) => b.score - a.score);
+    return scoredDocs.slice(0, normalizedTopK).map(({ doc, score }) => ({
       id: doc.id,
       score,
       distance: 1 - score,
@@ -1522,7 +1568,17 @@ class OramaVectorService extends EventEmitter {
         );
         return await this._fallbackQuerySimilarFiles(queryEmbedding, topK);
       }
-      return [];
+
+      // Even if the self-check passes, some Orama states can still return empty vector hits
+      // for regular queries. Use a cosine fallback scorer so semantic retrieval remains useful.
+      logger.debug(
+        '[OramaVectorService] Primary vector query returned no hits; using fallback scorer',
+        {
+          topK,
+          health
+        }
+      );
+      return await this._fallbackQuerySimilarFiles(queryEmbedding, topK);
     } catch (error) {
       throw attachErrorCode(error, ERROR_CODES.VECTOR_DB_QUERY_FAILED);
     }
@@ -2723,6 +2779,78 @@ class OramaVectorService extends EventEmitter {
         size: this._queryCache.size,
         maxSize: this._queryCacheMaxSize
       }
+    };
+  }
+
+  /**
+   * Diagnose eligibility for primary file-level vector search.
+   * Helps explain cases where file embeddings exist but vector retrieval returns no hits.
+   *
+   * @param {{ sampleSize?: number }} [options]
+   * @returns {Promise<Object>}
+   */
+  async getFileVectorDiagnostics(options = {}) {
+    await this.initialize();
+
+    const sampleSize = Math.max(1, Math.min(Number(options?.sampleSize) || 5, 20));
+    const docs = await this._getAllFileDocuments();
+    const embStore = this._embeddingStore?.files;
+    const sidecarSize = embStore instanceof Map ? embStore.size : 0;
+
+    let hasVectorTrue = 0;
+    let hasVectorFalse = 0;
+    let orphaned = 0;
+    let missingEmbedding = 0;
+    let placeholderVectors = 0;
+    let eligibleForPrimaryVector = 0;
+    const ineligibleSample = [];
+
+    for (const doc of docs) {
+      const hasVector = doc?.hasVector === true;
+      const isOrphaned = doc?.isOrphaned === true;
+
+      if (hasVector) hasVectorTrue++;
+      else hasVectorFalse++;
+      if (isOrphaned) orphaned++;
+
+      const normalizedEmbedding = this._normalizeEmbeddingVector(
+        (embStore instanceof Map ? embStore.get(doc?.id) : null) || doc?.embedding,
+        this._dimension
+      );
+      const hasEmbedding =
+        Array.isArray(normalizedEmbedding) && normalizedEmbedding.length === this._dimension;
+      const isPlaceholder =
+        hasEmbedding &&
+        normalizedEmbedding[0] === 0 &&
+        normalizedEmbedding.every((value) => value === 0);
+
+      if (!hasEmbedding) missingEmbedding++;
+      if (isPlaceholder) placeholderVectors++;
+
+      const eligible = hasVector && !isOrphaned && hasEmbedding && !isPlaceholder;
+      if (eligible) {
+        eligibleForPrimaryVector++;
+      } else if (ineligibleSample.length < sampleSize) {
+        ineligibleSample.push({
+          id: doc?.id,
+          hasVector,
+          isOrphaned,
+          hasEmbedding,
+          isPlaceholder
+        });
+      }
+    }
+
+    return {
+      totalFiles: docs.length,
+      eligibleForPrimaryVector,
+      hasVectorTrue,
+      hasVectorFalse,
+      orphaned,
+      missingEmbedding,
+      placeholderVectors,
+      sidecarEmbeddings: sidecarSize,
+      ineligibleSample
     };
   }
 
