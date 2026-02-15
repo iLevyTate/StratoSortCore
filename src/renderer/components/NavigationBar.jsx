@@ -231,10 +231,10 @@ const NavTab = memo(function NavTab({
         focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2
         ${
           isActive
-            ? 'bg-white text-stratosort-blue shadow-sm border border-system-gray-200'
+            ? 'phase-nav-tab-active'
             : canNavigate
-              ? 'text-system-gray-600 hover:text-system-gray-900 hover:bg-white/60 border border-transparent'
-              : 'text-system-gray-400 cursor-not-allowed border border-transparent'
+              ? 'phase-nav-tab-interactive'
+              : 'phase-nav-tab-disabled'
         }
       `}
       aria-label={metadata?.title}
@@ -631,7 +631,10 @@ function NavigationBar() {
     >
       <div className="relative flex h-[var(--app-nav-height)] items-center px-4 lg:px-6">
         {/* Left: Brand */}
-        <div className="flex-shrink-0 z-20" style={{ WebkitAppRegion: 'no-drag' }}>
+        <div
+          className={`flex-shrink-0 z-20 ${isMac ? 'ml-[78px] lg:ml-[84px]' : ''}`}
+          style={{ WebkitAppRegion: 'no-drag' }}
+        >
           <Brand status={connectionStatus} />
         </div>
 
@@ -640,7 +643,7 @@ function NavigationBar() {
         {/* the inner <nav> restores pointer-events via .phase-nav CSS class. */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <nav
-            className="phase-nav max-w-[60vw]"
+            className="phase-nav max-w-[64vw] xl:max-w-[44rem]"
             style={{ WebkitAppRegion: 'no-drag' }}
             aria-label="Phase navigation"
           >

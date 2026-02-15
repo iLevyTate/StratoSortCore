@@ -53,6 +53,17 @@ function main(
     }
   }
 
+  // On macOS, patch the Electron.app Info.plist so the dock label and Activity
+  // Monitor show "StratoSort Core" instead of "Electron" during development.
+  if (platform === 'darwin') {
+    try {
+      const { main: patchMac } = require('./patch-electron-mac');
+      patchMac();
+    } catch (e) {
+      log.warn(`[postinstall] macOS Electron patch skipped: ${e.message}`);
+    }
+  }
+
   log.log('\n[StratoSort] Setup complete!');
   log.log('  Run: npm run dev');
   log.log('  The app will use local AI engine (node-llama-cpp + Orama).\n');
