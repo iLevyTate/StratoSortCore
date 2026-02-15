@@ -297,6 +297,7 @@ if (!z) {
       // Embedding workflow controls
       embeddingTiming: z.enum(['during_analysis', 'after_organize', 'manual']).nullish(),
       defaultEmbeddingPolicy: z.enum(['embed', 'skip', 'web_only']).nullish(),
+      embeddingScope: z.enum(['all_analyzed', 'smart_folders_only']).nullish(),
       chatPersona: chatPersonaSchema,
       chatResponseMode: z.enum(['fast', 'deep']).nullish(),
       // Application Behavior
@@ -374,6 +375,23 @@ if (!z) {
       // UI limits
       workflowRestoreMaxAge: z.number().int().min(60000).nullish(),
       saveDebounceMs: z.number().int().min(100).nullish(),
+
+      // Graph-aware retrieval (GraphRAG-lite)
+      graphExpansionEnabled: z.boolean().nullish(),
+      graphExpansionWeight: z.number().min(0).max(1).nullish(),
+      graphExpansionMaxNeighbors: z.number().int().min(10).max(500).nullish(),
+      chunkContextEnabled: z.boolean().nullish(),
+      chunkContextMaxNeighbors: z.number().int().min(0).max(3).nullish(),
+
+      // Llama engine tuning
+      llamaGpuLayers: z.number().int().min(-1).nullish(),
+      llamaContextSize: z.number().int().min(512).max(131072).nullish(),
+
+      // Vector DB persistence (relative to userData)
+      vectorDbPersistPath: z.string().min(1).max(200).nullish(),
+
+      // Internal schema version for settings migrations
+      settingsSchemaVersion: z.number().int().min(1).nullish(),
 
       // Deprecated settings (kept for backward compatibility)
       smartFolderWatchEnabled: z.boolean().nullish()

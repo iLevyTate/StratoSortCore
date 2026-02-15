@@ -4,12 +4,13 @@
  * Handles IPC progress updates and chunked result delivery.
  */
 
+const { IPC_EVENTS } = require('../../../shared/constants');
 const { safeSend } = require('../ipcWrappers');
 
 function sendOperationProgress(getMainWindow, payload) {
   const win = getMainWindow();
   if (win && !win.isDestroyed()) {
-    safeSend(win.webContents, 'operation-progress', payload);
+    safeSend(win.webContents, IPC_EVENTS.OPERATION_PROGRESS, payload);
   }
 }
 
@@ -40,7 +41,7 @@ async function sendChunkedResults(getMainWindow, batchId, results, maxPerChunk) 
     const chunk = results.slice(i, i + maxPerChunk);
     const chunkIndex = Math.floor(i / maxPerChunk);
 
-    safeSend(win.webContents, 'batch-results-chunk', {
+    safeSend(win.webContents, IPC_EVENTS.BATCH_RESULTS_CHUNK, {
       batchId,
       chunk,
       chunkIndex,

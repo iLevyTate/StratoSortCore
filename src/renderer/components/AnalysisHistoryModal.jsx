@@ -9,6 +9,7 @@ import Card from './ui/Card';
 import { Heading, Text } from './ui/Typography';
 import { StatusBadge, StateMessage } from './ui';
 import { Inline, Stack } from './layout';
+import { nextRequestId, isCurrentRequest } from '../utils/requestGuard';
 
 const logger = createLogger('AnalysisHistoryModal');
 function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
@@ -18,6 +19,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
   const [selectedTab, setSelectedTab] = useState('statistics');
   const hasLoadedRef = React.useRef(false);
   const isMountedRef = React.useRef(true);
+  const loadRequestIdRef = React.useRef(0);
   const [isClearing, setIsClearing] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -30,12 +32,14 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
   }, []);
 
   const loadAnalysisData = useCallback(async () => {
+    const requestId = nextRequestId(loadRequestIdRef);
     setIsLoading(true);
 
     let loadedCount = 0;
     const totalLoads = 2;
 
     const markLoaded = () => {
+      if (!isCurrentRequest(loadRequestIdRef, requestId)) return;
       loadedCount++;
       if (loadedCount >= totalLoads && isMountedRef.current) {
         setIsLoading(false);
@@ -46,12 +50,12 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
     if (statsPromise && typeof statsPromise.then === 'function') {
       statsPromise
         .then((stats) => {
-          if (isMountedRef.current) {
+          if (isMountedRef.current && isCurrentRequest(loadRequestIdRef, requestId)) {
             setAnalysisStats(stats);
           }
         })
         .catch((error) => {
-          if (isMountedRef.current) {
+          if (isMountedRef.current && isCurrentRequest(loadRequestIdRef, requestId)) {
             logger.warn('Failed to load statistics', { error: error?.message });
           }
         })
@@ -64,7 +68,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
     if (historyPromise && typeof historyPromise.then === 'function') {
       historyPromise
         .then((history) => {
-          if (!isMountedRef.current) return;
+          if (!isMountedRef.current || !isCurrentRequest(loadRequestIdRef, requestId)) return;
           if (Array.isArray(history)) {
             setHistoryData(history);
           } else {
@@ -76,7 +80,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
           }
         })
         .catch((error) => {
-          if (isMountedRef.current) {
+          if (isMountedRef.current && isCurrentRequest(loadRequestIdRef, requestId)) {
             addNotification('Failed to load analysis history', 'error');
             logger.warn('Failed to load history', { error: error?.message });
           }

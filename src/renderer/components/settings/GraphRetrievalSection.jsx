@@ -114,9 +114,9 @@ function GraphRetrievalSection({ settings, setSettings }) {
         } else {
           setStats(null);
         }
-        if (historyResponse && !historyResponse?.success) {
-          setHistoryStats(null);
-        } else if (historyResponse) {
+        // Check for explicit failure (success: false), not absence of success flag.
+        // Statistics may arrive without a success wrapper from older IPC paths.
+        if (historyResponse && historyResponse.success !== false) {
           setHistoryStats(historyResponse);
         } else {
           setHistoryStats(null);
@@ -258,8 +258,19 @@ function GraphRetrievalSection({ settings, setSettings }) {
       >
         <SettingsGroup gap="compact">
           <div className="flex items-center justify-between">
-            <Text variant="small" className="text-system-gray-700">
-              {stats?.edgeCount != null ? `${stats.edgeCount} edges (max 2000)` : 'No index yet'}
+            <Text
+              variant="small"
+              className={
+                stats?.edgeCount != null && stats.edgeCount >= 2000
+                  ? 'text-amber-600 dark:text-amber-400'
+                  : 'text-system-gray-700'
+              }
+            >
+              {stats?.edgeCount != null
+                ? stats.edgeCount >= 2000
+                  ? `${stats.edgeCount} edges (at capacity)`
+                  : `${stats.edgeCount} edges (max 2000)`
+                : 'No index yet'}
             </Text>
             <Button
               variant="ghost"

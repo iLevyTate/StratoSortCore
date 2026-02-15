@@ -217,7 +217,7 @@ const ClusterNode = memo(({ data, selected }) => {
           height: 10,
           background: 'transparent',
           border: 'none',
-          zIndex: -1
+          zIndex: 0
         }}
       />
 
@@ -243,7 +243,7 @@ const ClusterNode = memo(({ data, selected }) => {
           />
         ) : (
           <div
-            className="text-xs font-bold text-system-gray-800 line-clamp-2 leading-tight group/label"
+            className="text-xs font-bold text-system-gray-800 line-clamp-2 leading-tight break-words group/label"
             title={label}
           >
             {label}
@@ -260,7 +260,7 @@ const ClusterNode = memo(({ data, selected }) => {
       {/* Top terms / why (kept inside the hub to avoid clipping) */}
       {topTerms.length > 0 && (
         <div
-          className="mt-1 px-5 text-center text-[10px] leading-snug text-amber-700 font-medium line-clamp-2"
+          className="mt-1 px-5 text-center text-[10px] leading-snug text-amber-700 font-medium line-clamp-2 break-all"
           title={`Shared terms: ${topTerms.join(', ')}`}
         >
           {topTerms.join(' • ')}
@@ -298,7 +298,7 @@ const ClusterNode = memo(({ data, selected }) => {
           height: 10,
           background: 'transparent',
           border: 'none',
-          zIndex: -1
+          zIndex: 0
         }}
       />
     </div>

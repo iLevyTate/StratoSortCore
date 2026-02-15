@@ -6,7 +6,7 @@
 const { app, dialog, BrowserWindow } = require('electron');
 const fs = require('fs').promises;
 const path = require('path');
-const { ERROR_TYPES } = require('../../shared/constants');
+const { ERROR_TYPES, IPC_EVENTS } = require('../../shared/constants');
 const { createLogger, sanitizeLogData } = require('../../shared/logger');
 const { parseJsonLines } = require('../../shared/safeJsonOps');
 const { safeSend } = require('../ipc/ipcWrappers');
@@ -311,7 +311,7 @@ class ErrorHandler {
 
     if (mainWindow && !mainWindow.isDestroyed()) {
       // Send to renderer process with validated payload
-      safeSend(mainWindow.webContents, 'app:error', {
+      safeSend(mainWindow.webContents, IPC_EVENTS.APP_ERROR, {
         message,
         type,
         timestamp: new Date().toISOString()

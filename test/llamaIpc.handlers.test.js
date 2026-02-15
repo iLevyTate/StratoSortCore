@@ -61,7 +61,17 @@ describe('llama IPC – extended handlers', () => {
 
     registerLlamaIpc({
       ipcMain: {},
-      IPC_CHANNELS: { LLAMA: {} },
+      IPC_CHANNELS: {
+        LLAMA: {
+          GET_MODELS: 'llama:get-models',
+          GET_CONFIG: 'llama:get-config',
+          UPDATE_CONFIG: 'llama:update-config',
+          TEST_CONNECTION: 'llama:test-connection',
+          DOWNLOAD_MODEL: 'llama:download-model',
+          DELETE_MODEL: 'llama:delete-model',
+          GET_DOWNLOAD_STATUS: 'llama:get-download-status'
+        }
+      },
       logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
       systemAnalytics: {},
       getMainWindow: () => null
@@ -156,25 +166,33 @@ describe('llama IPC – extended handlers', () => {
       expect(backslashResult.error).toContain('Invalid');
     });
 
-    test('downloads model successfully', async () => {
+    test('starts model download and returns immediately', async () => {
       const handler = getHandler('download-model');
       const result = await handler({}, 'llama-3.gguf');
 
       expect(result.success).toBe(true);
+      expect(result.started).toBe(true);
       expect(mockDownloadManager.downloadModel).toHaveBeenCalledWith(
         'llama-3.gguf',
         expect.objectContaining({ onProgress: expect.any(Function) })
       );
     });
 
-    test('returns error on download failure', async () => {
+    test('returns success immediately even when download will fail (non-blocking)', async () => {
+      // The download handler is non-blocking: it starts the download in the
+      // background and returns { success: true, started: true } immediately.
+      // Errors are reported via IPC OPERATION_PROGRESS events, not the return value.
       const handler = getHandler('download-model');
       mockDownloadManager.downloadModel.mockRejectedValueOnce(new Error('network error'));
 
       const result = await handler({}, 'model.gguf');
 
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('network error');
+      expect(result.success).toBe(true);
+      expect(result.started).toBe(true);
+      expect(mockDownloadManager.downloadModel).toHaveBeenCalledWith(
+        'model.gguf',
+        expect.objectContaining({ onProgress: expect.any(Function) })
+      );
     });
   });
 

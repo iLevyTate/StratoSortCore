@@ -269,11 +269,33 @@ function getErrorMessage(error, fallback = 'Unknown error') {
   }
 }
 
+/**
+ * Safely attach an error code to an error object.
+ * If the error is not an object, wraps it in a new Error.
+ * Preserves any existing error code to avoid masking the root cause.
+ *
+ * @param {*} error - The error (or error-like value) to attach a code to
+ * @param {string} code - The error code to attach
+ * @returns {Error} The error object with the code attached
+ */
+function attachErrorCode(error, code) {
+  if (error && typeof error === 'object') {
+    if (!error.code) {
+      error.code = code;
+    }
+    return error;
+  }
+  const wrapped = new Error(String(error || 'Unknown error'));
+  wrapped.code = code;
+  return wrapped;
+}
+
 module.exports = {
   ERROR_CODES,
   createErrorResponse,
   createSuccessResponse,
   withRetry,
   logFallback,
-  getErrorMessage
+  getErrorMessage,
+  attachErrorCode
 };

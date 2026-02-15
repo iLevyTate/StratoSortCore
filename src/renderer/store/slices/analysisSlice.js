@@ -38,8 +38,7 @@ const initialState = {
     total: 0,
     lastActivity: 0
   },
-  results: [], // Analysis results
-  stats: null // Historical stats
+  results: [] // Analysis results
 };
 
 const analysisSlice = createSlice({
@@ -122,9 +121,6 @@ const analysisSlice = createSlice({
     setAnalysisResults: (state, action) => {
       state.results = action.payload;
       enforceResultsLimit(state.results);
-    },
-    setAnalysisStats: (state, action) => {
-      state.stats = action.payload;
     },
     updateAnalysisResult: (state, action) => {
       const { path, changes } = action.payload;
@@ -225,7 +221,6 @@ export const {
   analysisFailure,
   stopAnalysis,
   setAnalysisResults,
-  setAnalysisStats,
   updateAnalysisResult,
   updateEmbeddingState,
   resetAnalysisState,

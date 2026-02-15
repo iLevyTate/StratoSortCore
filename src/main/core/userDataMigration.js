@@ -5,7 +5,11 @@ const { createLogger } = require('../../shared/logger');
 
 const logger = createLogger('UserDataMigration');
 // Legacy folder names are intentionally preserved here for backward-compatible migrations.
+// Includes 'stratosort-core' (package.json name used in dev) so that models downloaded
+// by the setup script are discoverable when running production builds (which use
+// productName 'StratoSort Core' from electron-builder.json).
 const LEGACY_USERDATA_FOLDERS = [
+  'stratosort-core',
   'StratoSort',
   'stratosort',
   'elstratosort',

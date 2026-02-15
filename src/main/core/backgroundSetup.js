@@ -23,7 +23,7 @@ const { createLogger } = require('../../shared/logger');
 const { safeSend } = require('../ipc/ipcWrappers');
 const { getInstance: getModelDownloadManager } = require('../services/ModelDownloadManager');
 const { getInstance: getLlamaService } = require('../services/LlamaService');
-const { AI_DEFAULTS } = require('../../shared/constants');
+const { AI_DEFAULTS, IPC_EVENTS } = require('../../shared/constants');
 const { getModel } = require('../../shared/modelRegistry');
 
 const logger = createLogger('BackgroundSetup');
@@ -54,7 +54,10 @@ function emitDependencyProgress(payload) {
     const win = BrowserWindow.getAllWindows()[0];
     if (win && !win.isDestroyed()) {
       // FIX: Use safeSend for validated IPC event sending
-      safeSend(win.webContents, 'operation-progress', { type: 'dependency', ...(payload || {}) });
+      safeSend(win.webContents, IPC_EVENTS.OPERATION_PROGRESS, {
+        type: 'dependency',
+        ...(payload || {})
+      });
     }
   } catch (error) {
     logger.debug('[BACKGROUND] Could not emit dependency progress:', error.message);
@@ -153,7 +156,7 @@ async function downloadMissingModels() {
             try {
               const win = BrowserWindow.getAllWindows()[0];
               if (win && !win.isDestroyed()) {
-                safeSend(win.webContents, 'operation-progress', {
+                safeSend(win.webContents, IPC_EVENTS.OPERATION_PROGRESS, {
                   type: 'model-download',
                   model: modelName,
                   percent: progress.percent,

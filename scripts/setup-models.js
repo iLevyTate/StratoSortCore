@@ -48,9 +48,31 @@ function buildRecommendedModels() {
 // Model registry (derived from shared model registry)
 const RECOMMENDED_MODELS = buildRecommendedModels();
 
-// Get user data directory
+/**
+ * Resolve the app name from package.json `name` field.
+ * This matches Electron's dev-mode `app.name` (which reads `name` from package.json).
+ * In production builds, electron-builder injects `productName` and the app itself
+ * handles model downloads via ModelDownloadManager (not this script).
+ */
+function getAppName() {
+  try {
+    const pkg = require('../package.json');
+    return pkg.name || 'stratosort-core';
+  } catch {
+    return 'stratosort-core';
+  }
+}
+
+/**
+ * Get the models directory, matching Electron's `app.getPath('userData')/models`.
+ *
+ * Platform conventions (mirrors Electron's path resolution):
+ *   Windows: %APPDATA%/<appName>/models
+ *   macOS:   ~/Library/Application Support/<appName>/models
+ *   Linux:   $XDG_CONFIG_HOME/<appName>/models  (defaults to ~/.config)
+ */
 function getModelsPath() {
-  const appName = 'stratosort-core';
+  const appName = getAppName();
   const home = process.env.HOME || process.env.USERPROFILE;
 
   if (process.platform === 'win32') {
@@ -62,11 +84,8 @@ function getModelsPath() {
   } else if (process.platform === 'darwin') {
     return path.join(home, 'Library', 'Application Support', appName, 'models');
   } else {
-    return path.join(
-      process.env.XDG_DATA_HOME || path.join(home, '.local', 'share'),
-      appName,
-      'models'
-    );
+    // Electron uses XDG_CONFIG_HOME (not XDG_DATA_HOME) for app.getPath('userData')
+    return path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), appName, 'models');
   }
 }
 
@@ -119,11 +138,10 @@ async function downloadFile(url, destPath) {
 
     const headers = startByte > 0 ? { Range: `bytes=${startByte}-` } : {};
     const request = https.get(url, { followRedirect: false, headers }, (response) => {
-      // Handle redirects
+      // Handle redirects — preserve partial file for resume support
       if (response.statusCode === 301 || response.statusCode === 302) {
         const redirectUrl = response.headers.location;
         file.close();
-        fs.unlink(destPath).catch(() => {});
         downloadFile(redirectUrl, destPath).then(resolve).catch(reject);
         return;
       }

@@ -23,6 +23,8 @@
 
 <p align="center">
   <a href="#features">Features</a> •
+  <a href="#download">Download</a> •
+  <a href="#support-and-feedback">Support</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#documentation">Documentation</a> •
   <a href="#contributing">Contributing</a> •
@@ -31,10 +33,35 @@
 
 ---
 
-**StratoSort Core** transforms file chaos into intelligent order using privacy-first local AI. It
-automatically categorizes, tags, and organizes your documents completely offline—leveraging
-**built-in AI** (node-llama-cpp) for intelligence and **Orama** for semantic search—ensuring your
-data never leaves your machine. **Zero external dependencies required.**
+StratoSort Core helps you organize messy files with local AI that runs on your machine. It analyzes
+content (not just filenames), suggests where files belong, and gives you semantic search with
+Knowledge OS and graph tools. Your data stays local, and you can start with a normal installer - no
+CLI setup required.
+
+## Download
+
+### End Users (No CLI)
+
+<p>
+  <a href="https://github.com/iLevyTate/StratoSortCore/releases"><img src="https://img.shields.io/badge/Download-Latest%20Release-2ea44f?style=for-the-badge" alt="Download Latest Release" /></a>
+</p>
+
+- **Windows/macOS installers:**
+  [GitHub Releases](https://github.com/iLevyTate/StratoSortCore/releases)
+- **Step-by-step install help:** [Install Guide](docs/INSTALL_GUIDE.md)
+- **How to use the app:** [User Guide](docs/USER_GUIDE.md)
+- **Want to help test?** [Beta Tester Guide](docs/BETA_TESTER_GUIDE.md)
+
+## Support and Feedback
+
+If you run into an issue or have an idea, these links are the fastest way to help:
+
+- **Issues tab:** [View all issues](https://github.com/iLevyTate/StratoSortCore/issues)
+- **Report a bug:**
+  [Open bug report template](https://github.com/iLevyTate/StratoSortCore/issues/new?template=bug_report.md)
+- **Request a feature:**
+  [Open feature request issue](https://github.com/iLevyTate/StratoSortCore/issues/new)
+- **Contributing guide:** [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## Demo
 
@@ -84,7 +111,7 @@ original repository.
    macOS.
 2. **Run it** — allow the app if your OS shows a security prompt (see
    [Install Guide](docs/INSTALL_GUIDE.md)).
-3. **First launch** — approve model download in the app (~5GB, one-time).
+3. **First launch** — choose a model profile and approve the download (~2-5GB, one-time).
 
 No terminal, Python, Docker, or API keys. See the full **[Install Guide](docs/INSTALL_GUIDE.md)**
 for step-by-step instructions on both platforms and how to handle unsigned-app prompts.
@@ -95,7 +122,7 @@ for step-by-step instructions on both platforms and how to handle unsigned-app p
 | :------------------- | :-------------------------------------------------------------- |
 | **Operating System** | Windows 10/11 (64-bit), macOS 10.15+, or Linux                  |
 | **Memory**           | 8GB RAM minimum (16GB recommended for best performance)         |
-| **Storage**          | ~5GB for AI models                                              |
+| **Storage**          | ~2-5GB for AI models (depends on profile chosen)                |
 | **GPU (Optional)**   | NVIDIA CUDA, Apple Metal, or Vulkan-compatible for acceleration |
 
 ### Developers — Build from Source
@@ -110,9 +137,9 @@ npm run dev
 **First Launch:** The app automatically downloads required AI models (GGUF format) on first run. GPU
 acceleration is auto-detected.
 
-**Default Models:** Qwen2.5 7B (text), LLaVA 1.6 Mistral 7B (vision), nomic-embed-text v1.5
-(embeddings). Change defaults in `src/shared/aiModelConfig.js`. See [docs/CONFIG.md](docs/CONFIG.md)
-for details.
+**Default Models (Base Small):** Llama 3.2 3B (text), LLaVA Phi-3 Mini (vision), all-MiniLM-L6-v2
+(embeddings). A "Better Quality" profile with larger models is available during setup. Change
+defaults in `src/shared/aiModelConfig.js`. See [docs/CONFIG.md](docs/CONFIG.md) for details.
 
 ## Advanced Capabilities
 
@@ -146,15 +173,16 @@ See **[SECURITY.md](SECURITY.md)** for the complete security policy.
 
 ## Documentation
 
-| Document                                       | Description                              |
-| :--------------------------------------------- | :--------------------------------------- |
-| **[Install Guide](docs/INSTALL_GUIDE.md)**     | End-user install (Windows & Mac, no CLI) |
-| **[Getting Started](docs/GETTING_STARTED.md)** | Developer setup and build guide          |
-| **[Architecture](docs/ARCHITECTURE.md)**       | System design and data flow              |
-| **[Learning Guide](docs/LEARNING_GUIDE.md)**   | Codebase onboarding                      |
-| **[Graph Features](docs/FEATURES_GRAPH.md)**   | Knowledge Graph capabilities             |
-| **[IPC Contracts](docs/IPC_CONTRACTS.md)**     | IPC communication specifications         |
-| **[Release Guide](docs/RELEASING.md)**         | Release process and checks               |
+| Document                                           | Description                              |
+| :------------------------------------------------- | :--------------------------------------- |
+| **[Install Guide](docs/INSTALL_GUIDE.md)**         | End-user install (Windows & Mac, no CLI) |
+| **[User Guide](docs/USER_GUIDE.md)**               | Feature walkthrough for everyday use     |
+| **[Beta Tester Guide](docs/BETA_TESTER_GUIDE.md)** | Testing + bug reporting for contributors |
+| **[Getting Started](docs/GETTING_STARTED.md)**     | Developer setup and build guide          |
+| **[Architecture](docs/ARCHITECTURE.md)**           | System design and data flow              |
+| **[Graph Features](docs/FEATURES_GRAPH.md)**       | Knowledge Graph capabilities             |
+| **[IPC Contracts](docs/IPC_CONTRACTS.md)**         | IPC communication specifications         |
+| **[Release Guide](docs/RELEASING.md)**             | Release process and checks               |
 
 ## Contributing
 

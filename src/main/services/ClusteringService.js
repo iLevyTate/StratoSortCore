@@ -782,9 +782,14 @@ class ClusteringService {
   /**
    * Generate a label for a single cluster using LLM
    * Uses metadata as context to help LLM generate better names
+   *
    * @private
+   * @param {Object} cluster - Cluster object with members
+   * @param {Object} options - Label generation options
+   * @param {boolean} [options.skipLLM=false] - Skip LLM inference, use metadata-based labels only
    */
-  async _generateSingleClusterLabel(cluster) {
+  async _generateSingleClusterLabel(cluster, options = {}) {
+    const { skipLLM = false } = options;
     const members = cluster.members || [];
     if (members.length === 0) {
       return {
@@ -803,8 +808,8 @@ class ClusteringService {
     // 2. Extract common tags (appear in >40% of files)
     const commonTags = this._getCommonTags(members, 0.4);
 
-    // 3. Always use LLM to generate cluster name (if available)
-    if (this.llama) {
+    // 3. Use LLM to generate cluster name (if available and not skipped)
+    if (this.llama && !skipLLM) {
       try {
         const fileNames = members
           .slice(0, 8)
@@ -926,6 +931,7 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
    *
    * @param {Object} options - Label generation options
    * @param {number} [options.concurrency=3] - Max concurrent LLM calls
+   * @param {boolean} [options.skipLLM=false] - Skip LLM inference, use only metadata-based labels (fast)
    * @returns {Promise<{success: boolean, labels: Map}>}
    */
   async generateClusterLabels(options = {}) {
@@ -933,7 +939,7 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
       return { success: false, error: 'No clusters computed yet' };
     }
 
-    const { concurrency = 3 } = options;
+    const { concurrency = 3, skipLLM = false } = options;
 
     try {
       const labels = new Map();
@@ -943,7 +949,7 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
         const batch = this.clusters.slice(i, i + concurrency);
 
         const batchResults = await Promise.allSettled(
-          batch.map((cluster) => this._generateSingleClusterLabel(cluster))
+          batch.map((cluster) => this._generateSingleClusterLabel(cluster, { skipLLM }))
         );
 
         // Process batch results

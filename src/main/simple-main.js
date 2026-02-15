@@ -61,7 +61,7 @@ const ServiceIntegration = require('./services/ServiceIntegration');
 const { getStartupManager } = require('./services/startup');
 
 // Import shared constants
-const { IPC_CHANNELS } = require('../shared/constants');
+const { IPC_CHANNELS, IPC_EVENTS } = require('../shared/constants');
 
 // Import path sanitization for security checks
 const { isPathDangerous } = require('../shared/pathSanitization');
@@ -958,7 +958,7 @@ app.whenReady().then(async () => {
           const win = BrowserWindow.getAllWindows()[0];
           if (!win || win.isDestroyed()) return;
           const metrics = await systemAnalytics.collectMetrics();
-          safeSend(win.webContents, 'system-metrics', metrics);
+          safeSend(win.webContents, IPC_EVENTS.SYSTEM_METRICS, metrics);
         } catch (error) {
           logger.error('[METRICS] Failed to collect or send metrics:', error);
         }

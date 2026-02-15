@@ -293,14 +293,18 @@ const FileNode = memo(({ data, selected }) => {
           {(tags.length > 0 || displaySuggestedFolder) && (
             <div className="flex flex-wrap gap-1 mt-1.5">
               {displaySuggestedFolder && (
-                <span className="px-1.5 py-0.5 rounded text-[9px] bg-black/5 text-black/60 font-medium truncate max-w-full">
+                <span
+                  className="px-1.5 py-0.5 rounded text-[9px] bg-black/5 text-black/60 font-medium truncate max-w-full inline-block"
+                  title={displaySuggestedFolder}
+                >
                   📂 {displaySuggestedFolder}
                 </span>
               )}
               {tags.map((tag, i) => (
                 <span
                   key={i}
-                  className="px-1.5 py-0.5 rounded text-[9px] bg-white/60 text-[var(--color-system-gray-600)] border border-black/5"
+                  className="px-1.5 py-0.5 rounded text-[9px] bg-white/60 text-[var(--color-system-gray-600)] border border-black/5 max-w-full truncate inline-block"
+                  title={tag}
                 >
                   #{tag}
                 </span>

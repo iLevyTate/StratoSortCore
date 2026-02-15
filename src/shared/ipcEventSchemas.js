@@ -22,7 +22,7 @@ try {
   z = null;
 }
 
-const { IPC_CHANNELS } = require('./constants');
+const { IPC_CHANNELS, IPC_EVENTS } = require('./constants');
 
 // Only define schemas if Zod is available
 const schemas = z
@@ -38,6 +38,8 @@ const schemas = z
             'batch_organize',
             'batch_analyze',
             'model-download',
+            'model-download-complete',
+            'model-download-error',
             'dependency',
             'hint',
             'analyze'
@@ -289,21 +291,21 @@ const schemas = z
  */
 const EVENT_SCHEMAS = z
   ? {
-      'operation-progress': schemas.operationProgressSchema,
+      [IPC_EVENTS.OPERATION_PROGRESS]: schemas.operationProgressSchema,
       'operation-complete': schemas.operationCompleteSchema,
       'operation-error': schemas.operationErrorSchema,
-      'file-operation-complete': schemas.fileOperationCompleteSchema,
-      'system-metrics': schemas.systemMetricsSchema,
-      notification: schemas.notificationSchema,
-      'app:error': schemas.appErrorSchema,
-      'settings-changed-external': schemas.settingsChangedExternalSchema,
+      [IPC_EVENTS.FILE_OPERATION_COMPLETE]: schemas.fileOperationCompleteSchema,
+      [IPC_EVENTS.SYSTEM_METRICS]: schemas.systemMetricsSchema,
+      [IPC_EVENTS.NOTIFICATION]: schemas.notificationSchema,
+      [IPC_EVENTS.APP_ERROR]: schemas.appErrorSchema,
+      [IPC_EVENTS.SETTINGS_CHANGED_EXTERNAL]: schemas.settingsChangedExternalSchema,
       [IPC_CHANNELS.VECTOR_DB.STATUS_CHANGED]: schemas.vectorDbStatusChangedSchema,
-      'menu-action': schemas.menuActionSchema,
-      'app:update': schemas.appUpdateSchema,
-      'open-semantic-search': schemas.openSemanticSearchSchema,
-      'batch-results-chunk': schemas.batchResultsChunkSchema,
-      'undo-redo:state-changed': schemas.undoRedoStateChangedSchema,
-      'operation-failed': schemas.operationFailedSchema
+      [IPC_EVENTS.MENU_ACTION]: schemas.menuActionSchema,
+      [IPC_EVENTS.APP_UPDATE]: schemas.appUpdateSchema,
+      [IPC_EVENTS.OPEN_SEMANTIC_SEARCH]: schemas.openSemanticSearchSchema,
+      [IPC_EVENTS.BATCH_RESULTS_CHUNK]: schemas.batchResultsChunkSchema,
+      [IPC_EVENTS.UNDO_REDO_STATE_CHANGED]: schemas.undoRedoStateChangedSchema,
+      [IPC_EVENTS.OPERATION_FAILED]: schemas.operationFailedSchema
     }
   : {};
 

@@ -21,7 +21,7 @@ const { findContainingSmartFolder } = require('../../shared/folderUtils');
 const { getCanonicalFileId } = require('../../shared/pathSanitization');
 const { getInstance: getFileOperationTracker } = require('../../shared/fileOperationTracker');
 const { isUNCPath } = require('../../shared/crossPlatformUtils');
-const { isTemporaryFile, RETRY } = require('../../shared/performanceConstants');
+const { isTemporaryFile, RETRY, DEBOUNCE } = require('../../shared/performanceConstants');
 const { delay } = require('../../shared/promiseUtils');
 const { shouldEmbed } = require('./embedding/embeddingGate');
 const { computeFileChecksum, handleDuplicateMove } = require('../utils/fileDedup');
@@ -59,7 +59,7 @@ class DownloadWatcher {
     this._startPromise = null; // Mutex: concurrent start() callers await the same promise
     this.restartAttempts = 0;
     this.maxRestartAttempts = RETRY.MAX_ATTEMPTS_MEDIUM;
-    this.restartDelay = 5000; // 5 seconds between restart attempts
+    this.restartDelay = DEBOUNCE.WATCHER_RESTART_BASE;
     this.lastError = null;
     this.processingFiles = new Set(); // Track files being processed to avoid duplicates
     this.debounceTimers = new Map(); // Debounce timers for each file

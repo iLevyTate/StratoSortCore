@@ -9,6 +9,7 @@
 
 const { BrowserWindow } = require('electron');
 const { autoUpdater } = require('electron-updater');
+const { IPC_EVENTS } = require('../../shared/constants');
 const { createLogger } = require('../../shared/logger');
 // FIX: Import safeSend for validated IPC event sending
 const { safeSend } = require('../ipc/ipcWrappers');
@@ -41,7 +42,7 @@ function notifyRenderer(payload, getMainWindow) {
         return;
       }
 
-      safeSend(win.webContents, 'app:update', updatePayload);
+      safeSend(win.webContents, IPC_EVENTS.APP_UPDATE, updatePayload);
     }
   } catch (error) {
     logger.error('[UPDATER] Failed to send update message:', error);
@@ -100,7 +101,7 @@ function handleUpdateProgress(progressObj, getMainWindow) {
   try {
     const win = (getMainWindow ? getMainWindow() : null) || BrowserWindow.getAllWindows()[0];
     if (win && !win.isDestroyed()) {
-      safeSend(win.webContents, 'app:update', {
+      safeSend(win.webContents, IPC_EVENTS.APP_UPDATE, {
         status: 'downloading',
         progress: progressObj.percent
       });

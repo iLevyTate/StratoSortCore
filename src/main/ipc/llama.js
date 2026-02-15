@@ -11,7 +11,7 @@ const { IpcServiceContext, createFromLegacyParams } = require('./IpcServiceConte
 const { createHandler, safeHandle, safeSend, z } = require('./ipcWrappers');
 const { container: serviceContainer, ServiceIds } = require('../services/ServiceContainer');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
-const { AI_DEFAULTS } = require('../../shared/constants');
+const { AI_DEFAULTS, IPC_EVENTS } = require('../../shared/constants');
 const { withTimeout } = require('../../shared/promiseUtils');
 
 /**
@@ -83,7 +83,7 @@ function registerLlamaIpc(servicesOrParams) {
   // Get available models
   safeHandle(
     ipcMain,
-    IPC_CHANNELS.LLAMA?.GET_MODELS || 'llama:get-models',
+    IPC_CHANNELS.LLAMA.GET_MODELS,
     createHandler({
       logger,
       context,
@@ -214,7 +214,7 @@ function registerLlamaIpc(servicesOrParams) {
   // Get configuration
   safeHandle(
     ipcMain,
-    IPC_CHANNELS.LLAMA?.GET_CONFIG || 'llama:get-config',
+    IPC_CHANNELS.LLAMA.GET_CONFIG,
     createHandler({
       logger,
       context,
@@ -236,7 +236,7 @@ function registerLlamaIpc(servicesOrParams) {
   // Update configuration
   safeHandle(
     ipcMain,
-    IPC_CHANNELS.LLAMA?.UPDATE_CONFIG || 'llama:update-config',
+    IPC_CHANNELS.LLAMA.UPDATE_CONFIG,
     createHandler({
       logger,
       context,
@@ -263,7 +263,7 @@ function registerLlamaIpc(servicesOrParams) {
   // Test connection / health check
   safeHandle(
     ipcMain,
-    IPC_CHANNELS.LLAMA?.TEST_CONNECTION || 'llama:test-connection',
+    IPC_CHANNELS.LLAMA.TEST_CONNECTION,
     createHandler({
       logger,
       context,
@@ -311,10 +311,10 @@ function registerLlamaIpc(servicesOrParams) {
     })
   );
 
-  // Download model
+  // Download model (non-blocking: starts download and returns immediately)
   safeHandle(
     ipcMain,
-    IPC_CHANNELS.LLAMA?.DOWNLOAD_MODEL || 'llama:download-model',
+    IPC_CHANNELS.LLAMA.DOWNLOAD_MODEL,
     createHandler({
       logger,
       context,
@@ -335,17 +335,6 @@ function registerLlamaIpc(servicesOrParams) {
           const manager = getModelDownloadManager();
           const win = typeof getMainWindow === 'function' ? getMainWindow() : null;
 
-          // Set up progress callback
-          const onProgress = (progress) => {
-            if (win && !win.isDestroyed()) {
-              safeSend(win.webContents, 'operation-progress', {
-                type: 'model-download',
-                model: normalizedName,
-                progress
-              });
-            }
-          };
-
           // If backgroundSetup already started this download, piggyback on it
           // instead of throwing a noisy error.
           if (manager.isDownloading(normalizedName)) {
@@ -355,11 +344,52 @@ function registerLlamaIpc(servicesOrParams) {
             return { success: true, alreadyInProgress: true };
           }
 
-          const result = await manager.downloadModel(normalizedName, { onProgress });
-          return result;
+          // Set up progress callback
+          const onProgress = (progress) => {
+            if (win && !win.isDestroyed()) {
+              safeSend(win.webContents, IPC_EVENTS.OPERATION_PROGRESS, {
+                type: 'model-download',
+                model: normalizedName,
+                progress
+              });
+            }
+          };
+
+          // Start download in background — do NOT await.
+          // Downloads can take minutes/hours; awaiting would exceed IPC timeout.
+          // Completion and errors are reported via OPERATION_PROGRESS events.
+          manager
+            .downloadModel(normalizedName, { onProgress })
+            .then(() => {
+              logger.info('[IPC:Llama] Model download completed', { model: normalizedName });
+              if (win && !win.isDestroyed()) {
+                safeSend(win.webContents, IPC_EVENTS.OPERATION_PROGRESS, {
+                  type: 'model-download-complete',
+                  model: normalizedName,
+                  success: true
+                });
+              }
+            })
+            .catch((error) => {
+              // Handle race condition: download may have started concurrently
+              if (error?.message?.includes('already in progress')) {
+                logger.debug('[IPC:Llama] Download started concurrently, deferring to background', {
+                  model: normalizedName
+                });
+                return;
+              }
+              logger.error('[IPC:Llama] Model download failed:', error);
+              if (win && !win.isDestroyed()) {
+                safeSend(win.webContents, IPC_EVENTS.OPERATION_PROGRESS, {
+                  type: 'model-download-error',
+                  model: normalizedName,
+                  error: error?.message || 'Download failed'
+                });
+              }
+            });
+
+          return { success: true, started: true };
         } catch (error) {
-          // Handle race condition: download may have started between the
-          // isDownloading check and the downloadModel call.
           if (error?.message?.includes('already in progress')) {
             logger.debug('[IPC:Llama] Download started concurrently, deferring to background', {
               model: normalizedName
@@ -376,7 +406,7 @@ function registerLlamaIpc(servicesOrParams) {
   // Delete model
   safeHandle(
     ipcMain,
-    IPC_CHANNELS.LLAMA?.DELETE_MODEL || 'llama:delete-model',
+    IPC_CHANNELS.LLAMA.DELETE_MODEL,
     createHandler({
       logger,
       context,
@@ -408,7 +438,7 @@ function registerLlamaIpc(servicesOrParams) {
   // Get download status
   safeHandle(
     ipcMain,
-    IPC_CHANNELS.LLAMA?.GET_DOWNLOAD_STATUS || 'llama:get-download-status',
+    IPC_CHANNELS.LLAMA.GET_DOWNLOAD_STATUS,
     createHandler({
       logger,
       context,

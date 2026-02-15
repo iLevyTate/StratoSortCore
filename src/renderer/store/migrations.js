@@ -27,6 +27,9 @@ const migrations = {
     if (!migrated.ui || typeof migrated.ui !== 'object') migrated.ui = {};
     if (!migrated.files || typeof migrated.files !== 'object') migrated.files = {};
     if (!migrated.analysis || typeof migrated.analysis !== 'object') migrated.analysis = {};
+    // System slice is not persisted (uses initialState defaults), but validate
+    // defensively in case stale data exists from an earlier version.
+    if (migrated.system && typeof migrated.system !== 'object') delete migrated.system;
 
     // Ensure critical arrays are arrays
     if (!Array.isArray(migrated.files.selectedFiles)) migrated.files.selectedFiles = [];

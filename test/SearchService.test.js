@@ -61,7 +61,7 @@ describe('SearchService', () => {
       expect(scoreMap.b.originalScore).toBe(0.75);
     });
 
-    test('returns score 1.0 when range is zero', () => {
+    test('preserves actual score when range is zero (no inflation)', () => {
       const service = createService();
       const results = [
         { id: 'a', score: 0.5 },
@@ -70,8 +70,25 @@ describe('SearchService', () => {
 
       const normalized = service._normalizeScores(results);
       normalized.forEach((r) => {
-        expect(r.score).toBe(1.0);
+        // When all scores are identical, the normalized score should equal
+        // the clamped original — NOT blindly 1.0.
+        expect(r.score).toBe(0.5);
         expect(r.originalScore).toBe(0.5);
+      });
+    });
+
+    test('clamps equal-score results to 1.0 when raw scores exceed 1', () => {
+      const service = createService();
+      // BM25 scores can be > 1; clamping should cap at 1.0
+      const results = [
+        { id: 'a', score: 3.5 },
+        { id: 'b', score: 3.5 }
+      ];
+
+      const normalized = service._normalizeScores(results);
+      normalized.forEach((r) => {
+        expect(r.score).toBe(1.0);
+        expect(r.originalScore).toBe(3.5);
       });
     });
   });

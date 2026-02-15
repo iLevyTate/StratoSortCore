@@ -410,8 +410,99 @@ async function syncEmbeddingForMove({
   return { action: 'enqueued', smartFolder: smartFolder.name };
 }
 
+/**
+ * Verify that embeddings are correctly stored after a file move.
+ * Checks that the destination file ID has a valid embedding and that
+ * no stale embedding remains at the source path.
+ *
+ * @param {Object} params
+ * @param {string} params.sourcePath - Original file path (before move)
+ * @param {string} params.destPath - Destination file path (after move)
+ * @param {string} [params.operation='move'] - Operation type ('move' or 'copy')
+ * @param {Object} [params.log] - Logger instance
+ * @returns {Promise<{valid: boolean, destHasEmbedding: boolean, sourceCleared: boolean, issues: string[]}>}
+ */
+async function verifyEmbeddingAfterMove({
+  sourcePath,
+  destPath,
+  operation = 'move',
+  log = logger
+}) {
+  const issues = [];
+  let destHasEmbedding = false;
+  let sourceCleared = true;
+
+  if (!destPath) {
+    return { valid: false, destHasEmbedding, sourceCleared, issues: ['missing-dest-path'] };
+  }
+
+  const services = resolveServices();
+  const vectorDbService = services.vectorDbService;
+
+  if (!vectorDbService) {
+    return {
+      valid: false,
+      destHasEmbedding: false,
+      sourceCleared: true,
+      issues: ['vector-db-unavailable']
+    };
+  }
+
+  try {
+    const destId = getSemanticFileId(destPath);
+
+    // Check destination has an embedding
+    if (typeof vectorDbService.getFile === 'function') {
+      const destDoc = await vectorDbService.getFile(destId);
+      if (destDoc) {
+        destHasEmbedding = true;
+        // Verify the path metadata matches the actual destination
+        const storedPath = destDoc.filePath || '';
+        const normalizedStoredPath = storedPath.replace(/\\/g, '/');
+        const normalizedDestPath = destPath.replace(/\\/g, '/');
+        if (normalizedStoredPath !== normalizedDestPath) {
+          issues.push(`path-mismatch: stored="${storedPath}" expected="${destPath}"`);
+        }
+      } else {
+        issues.push('dest-embedding-missing');
+      }
+    }
+
+    // For moves (not copies), verify source embedding was removed
+    if (operation !== 'copy' && sourcePath && sourcePath !== destPath) {
+      const sourceId = getSemanticFileId(sourcePath);
+      if (typeof vectorDbService.getFile === 'function') {
+        const sourceDoc = await vectorDbService.getFile(sourceId);
+        if (sourceDoc && !sourceDoc.isOrphaned) {
+          sourceCleared = false;
+          issues.push(`stale-source-embedding: ${sourceId}`);
+        }
+      }
+    }
+  } catch (error) {
+    issues.push(`verification-error: ${error.message}`);
+    log.debug('[EmbeddingSync] Post-move embedding verification error (non-fatal)', {
+      error: error.message,
+      destPath
+    });
+  }
+
+  const valid = destHasEmbedding && sourceCleared && issues.length === 0;
+  if (!valid && issues.length > 0) {
+    log.warn('[EmbeddingSync] Post-move embedding verification found issues', {
+      sourcePath: sourcePath ? path.basename(sourcePath) : null,
+      destPath: path.basename(destPath),
+      operation,
+      issues
+    });
+  }
+
+  return { valid, destHasEmbedding, sourceCleared, issues };
+}
+
 module.exports = {
   syncEmbeddingForMove,
   removeEmbeddingsForPath,
-  removeEmbeddingsForPathBestEffort
+  removeEmbeddingsForPathBestEffort,
+  verifyEmbeddingAfterMove
 };

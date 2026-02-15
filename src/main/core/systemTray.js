@@ -10,6 +10,7 @@
 const { app, BrowserWindow, Menu, Tray, nativeImage, globalShortcut } = require('electron');
 const path = require('path');
 const { isWindows, isMacOS } = require('../../shared/platformUtils');
+const { IPC_EVENTS } = require('../../shared/constants');
 const { createLogger } = require('../../shared/logger');
 // FIX: Import safeSend for validated IPC event sending
 const { safeSend } = require('../ipc/ipcWrappers');
@@ -121,7 +122,7 @@ async function openSemanticSearch() {
     // FIX: Store timer ID and clear on window close to prevent stale callback
     const searchTimerId = setTimeout(() => {
       if (!win.isDestroyed()) {
-        safeSend(win.webContents, 'open-semantic-search');
+        safeSend(win.webContents, IPC_EVENTS.OPEN_SEMANTIC_SEARCH);
       }
     }, 100);
     win.once('closed', () => clearTimeout(searchTimerId));

@@ -19,6 +19,7 @@ const { AI_DEFAULTS, DEFAULT_AI_MODELS } = require('../../shared/constants');
 const { getModel } = require('../../shared/modelRegistry');
 const { resolveEmbeddingDimension } = require('../../shared/embeddingDimensions');
 const { ERROR_CODES } = require('../../shared/errorCodes');
+const { attachErrorCode } = require('../../shared/errorHandlingUtils');
 const { categorizeModel } = require('../../shared/modelCategorization');
 const { capEmbeddingInput } = require('../utils/embeddingInput');
 const SettingsService = require('./SettingsService');
@@ -39,18 +40,6 @@ const {
 const { delay } = require('../../shared/promiseUtils');
 
 const logger = createLogger('LlamaService');
-
-const attachErrorCode = (error, code) => {
-  if (error && typeof error === 'object') {
-    if (!error.code) {
-      error.code = code;
-    }
-    return error;
-  }
-  const wrapped = new Error(String(error || 'Unknown error'));
-  wrapped.code = code;
-  return wrapped;
-};
 
 const isOutOfMemoryError = (error) => {
   const message = String(error?.message || error || '').toLowerCase();
