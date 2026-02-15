@@ -52,7 +52,7 @@ function registerVectorDbIpc(servicesOrParams) {
   // Get status
   safeHandle(
     ipcMain,
-    IPC_CHANNELS.VECTOR_DB?.GET_STATUS || 'vectordb:get-status',
+    IPC_CHANNELS.VECTOR_DB.GET_STATUS,
     createHandler({
       logger,
       context,
@@ -113,7 +113,7 @@ function registerVectorDbIpc(servicesOrParams) {
   // Get stats
   safeHandle(
     ipcMain,
-    IPC_CHANNELS.VECTOR_DB?.GET_STATS || 'vectordb:get-stats',
+    IPC_CHANNELS.VECTOR_DB.GET_STATS,
     createHandler({
       logger,
       context,
@@ -152,7 +152,7 @@ function registerVectorDbIpc(servicesOrParams) {
   // Health check
   safeHandle(
     ipcMain,
-    IPC_CHANNELS.VECTOR_DB?.HEALTH_CHECK || 'vectordb:health-check',
+    IPC_CHANNELS.VECTOR_DB.HEALTH_CHECK,
     createHandler({
       logger,
       context,

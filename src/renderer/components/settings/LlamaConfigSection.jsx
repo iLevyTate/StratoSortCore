@@ -17,6 +17,7 @@ import SettingRow from './SettingRow';
 function LlamaConfigSection({
   llamaHealth,
   isRefreshingModels = false,
+  isDownloading = false,
   downloadProgress,
   modelList = [],
   showAllModels,
@@ -242,9 +243,16 @@ function LlamaConfigSection({
                 onClick={onDownloadModel}
                 variant="secondary"
                 size="sm"
-                leftIcon={<Download className="w-4 h-4" />}
+                disabled={isDownloading}
+                leftIcon={
+                  isDownloading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )
+                }
               >
-                Download Recommended Models
+                {isDownloading ? 'Downloading…' : 'Download Recommended Models'}
               </Button>
             </div>
           )}
@@ -257,6 +265,7 @@ function LlamaConfigSection({
 LlamaConfigSection.propTypes = {
   llamaHealth: PropTypes.object,
   isRefreshingModels: PropTypes.bool,
+  isDownloading: PropTypes.bool,
   downloadProgress: PropTypes.object,
   modelList: PropTypes.array,
   showAllModels: PropTypes.bool.isRequired,

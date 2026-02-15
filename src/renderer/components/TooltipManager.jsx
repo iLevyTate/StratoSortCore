@@ -11,22 +11,127 @@ const TOOLTIP_CONFIG = {
 };
 
 /**
+ * Convert a single element's `title` → `data-tooltip`.
+ * This prevents the browser engine from ever rendering a native tooltip.
+ */
+function stripNativeTitle(el) {
+  if (!(el instanceof HTMLElement)) return;
+  const title = el.getAttribute('title');
+  if (!title) return;
+  // Preserve existing data-tooltip (explicitly set by components)
+  if (!el.hasAttribute('data-tooltip')) {
+    el.setAttribute('data-tooltip', title);
+  }
+  el.removeAttribute('title');
+}
+
+/**
+ * Sweep all elements with a title attribute in a subtree and convert them.
+ */
+function sweepTitles(root) {
+  if (root instanceof HTMLElement && root.hasAttribute('title')) {
+    stripNativeTitle(root);
+  }
+  const els = (root.querySelectorAll ? root : document).querySelectorAll('[title]');
+  for (let i = 0; i < els.length; i++) {
+    stripNativeTitle(els[i]);
+  }
+}
+
+/**
  * TooltipManager
- * - Replaces native title tooltips with a unified, GPU-accelerated style
- * - Uses event delegation for performance
- * - No API change: developers can keep using the title attribute
+ * - Uses a MutationObserver to proactively strip native title attributes
+ *   from the DOM, preventing the OS-native tooltip from ever appearing.
+ * - Replaces them with themed, GPU-accelerated custom tooltips.
+ * - Uses event delegation for performance.
+ * - No API change: developers keep using the title attribute; it gets
+ *   converted to data-tooltip automatically.
  */
 export default function TooltipManager() {
   const tooltipRef = useRef(null);
   const arrowRef = useRef(null);
   const currentTargetRef = useRef(null);
-  const titleCacheRef = useRef(new WeakMap());
   const rafRef = useRef(0);
-  // Bug #37: Add debouncing for rapid mouseover events
   const debounceTimerRef = useRef(null);
 
   useEffect(() => {
-    // Create tooltip container once
+    // --- 0. Patch title writes to prevent native tooltip races ---
+    // MutationObserver is async (microtask). To eliminate any race where native
+    // tooltips might still appear, redirect title writes synchronously.
+    const originalSetAttribute = Element.prototype.setAttribute;
+    const originalRemoveAttribute = Element.prototype.removeAttribute;
+    const titleDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'title');
+
+    Element.prototype.setAttribute = function patchedSetAttribute(name, value) {
+      if (this instanceof HTMLElement && String(name).toLowerCase() === 'title') {
+        const text = value == null ? '' : String(value);
+        if (text) {
+          originalSetAttribute.call(this, 'data-tooltip', text);
+        } else {
+          originalRemoveAttribute.call(this, 'data-tooltip');
+        }
+        originalRemoveAttribute.call(this, 'title');
+        return;
+      }
+      return originalSetAttribute.call(this, name, value);
+    };
+
+    const canPatchTitleProperty =
+      Boolean(titleDescriptor?.configurable) &&
+      typeof titleDescriptor?.get === 'function' &&
+      typeof titleDescriptor?.set === 'function';
+
+    if (canPatchTitleProperty) {
+      Object.defineProperty(HTMLElement.prototype, 'title', {
+        configurable: true,
+        enumerable: titleDescriptor.enumerable,
+        get() {
+          return this.getAttribute('data-tooltip') || '';
+        },
+        set(value) {
+          const text = value == null ? '' : String(value);
+          if (text) {
+            originalSetAttribute.call(this, 'data-tooltip', text);
+          } else {
+            originalRemoveAttribute.call(this, 'data-tooltip');
+          }
+          originalRemoveAttribute.call(this, 'title');
+        }
+      });
+    }
+
+    // --- 1. Proactively strip all native title attributes ---
+    // Initial sweep for any titles already in the DOM
+    sweepTitles(document);
+
+    // Watch for new elements or attribute changes that add title
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === 'childList') {
+          for (const node of mutation.addedNodes) {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              sweepTitles(node);
+            }
+          }
+        } else if (
+          mutation.type === 'attributes' &&
+          mutation.attributeName === 'title' &&
+          mutation.target instanceof HTMLElement &&
+          mutation.target.hasAttribute('title')
+        ) {
+          stripNativeTitle(mutation.target);
+        }
+      }
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['title']
+    });
+
+    // --- 2. Create custom tooltip element ---
     const tooltip = document.createElement('div');
     tooltip.className = 'tooltip-enhanced';
     tooltip.setAttribute('role', 'tooltip');
@@ -45,10 +150,9 @@ export default function TooltipManager() {
     tooltipRef.current = tooltip;
     arrowRef.current = arrow;
 
-    // Clean up on window visibility change to prevent dangling references
+    // Hide tooltip when window is hidden/minimized
     const handleVisibilityChange = () => {
       if (document.hidden && currentTargetRef.current) {
-        // Hide tooltip when window is hidden/minimized
         if (tooltipRef.current) {
           tooltipRef.current.classList.remove('show');
           tooltipRef.current.style.opacity = '0';
@@ -59,35 +163,18 @@ export default function TooltipManager() {
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    /**
-     * Schedule a callback using requestAnimationFrame for smooth updates
-     * @param {Function} cb - Callback function to execute
-     */
+    // --- 3. Tooltip display helpers ---
     const schedule = (cb) => {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(cb);
     };
 
-    /**
-     * Show tooltip for the given target element
-     * @param {HTMLElement} target - Element to show tooltip for
-     */
     const showTooltip = (target) => {
-      if (!tooltipRef.current || !titleCacheRef.current) return;
-      const title = target.getAttribute('data-tooltip') || target.getAttribute('title');
-      if (!title) return;
+      if (!tooltipRef.current) return;
+      const text = target.getAttribute('data-tooltip');
+      if (!text) return;
 
-      // Prevent native tooltip by clearing title temporarily
-      if (target.hasAttribute('title')) {
-        // FIX 82: Always update cache with current title to prevent stale restoration
-        if (titleCacheRef.current) {
-          titleCacheRef.current.set(target, title);
-        }
-        target.setAttribute('data-title', title);
-        target.removeAttribute('title');
-      }
-
-      tooltipRef.current.textContent = title;
+      tooltipRef.current.textContent = text;
       tooltipRef.current.appendChild(arrowRef.current);
       tooltipRef.current.classList.add('show');
       tooltipRef.current.style.opacity = '1';
@@ -95,43 +182,26 @@ export default function TooltipManager() {
       positionTooltip(target);
     };
 
-    /**
-     * Hide tooltip and restore original title attribute
-     * @param {HTMLElement} target - Element to hide tooltip for
-     */
-    const hideTooltip = (target) => {
+    const hideTooltip = () => {
       if (!tooltipRef.current) return;
       tooltipRef.current.classList.remove('show');
       tooltipRef.current.style.opacity = '0';
       tooltipRef.current.style.transform = 'translate3d(-10000px, -10000px, 0)';
-
-      // Restore native title - add null check before calling .get()
-      if (titleCacheRef.current) {
-        const cached = titleCacheRef.current.get(target);
-        if (cached && !target.getAttribute('title')) {
-          target.setAttribute('title', cached);
-        }
-      }
-      target.removeAttribute('data-title');
     };
 
-    /**
-     * Calculate and apply optimal tooltip position relative to target
-     * @param {HTMLElement} target - Element to position tooltip relative to
-     */
     const positionTooltip = (target) => {
       schedule(() => {
         if (!tooltipRef.current || !arrowRef.current) return;
         const rect = target.getBoundingClientRect();
-        const tooltip = tooltipRef.current;
-        const arrow = arrowRef.current;
+        const tp = tooltipRef.current;
+        const ar = arrowRef.current;
 
-        // Measure tooltip size by placing it off-screen first
-        tooltip.style.top = '0px';
-        tooltip.style.left = '0px';
-        tooltip.style.transform = 'translate3d(-10000px, -10000px, 0)';
+        // Measure tooltip size off-screen first
+        tp.style.top = '0px';
+        tp.style.left = '0px';
+        tp.style.transform = 'translate3d(-10000px, -10000px, 0)';
 
-        const { width: tw, height: th } = tooltip.getBoundingClientRect();
+        const { width: tw, height: th } = tp.getBoundingClientRect();
 
         const margin = TOOLTIP_CONFIG.TARGET_MARGIN;
         let top = rect.top - th - margin;
@@ -150,29 +220,24 @@ export default function TooltipManager() {
         if (left + tw > vw - TOOLTIP_CONFIG.VIEWPORT_PADDING)
           left = vw - TOOLTIP_CONFIG.VIEWPORT_PADDING - tw;
 
-        tooltip.style.left = `${Math.round(left)}px`;
-        tooltip.style.top = `${Math.round(top)}px`;
-        tooltip.style.transform = 'translate3d(0, 0, 0)';
+        tp.style.left = `${Math.round(left)}px`;
+        tp.style.top = `${Math.round(top)}px`;
+        tp.style.transform = 'translate3d(0, 0, 0)';
 
         // Arrow positioning
         const arrowSize = TOOLTIP_CONFIG.ARROW_SIZE;
         const arrowOffset = rect.left + rect.width / 2 - left - arrowSize / 2;
-        arrow.style.left = `${Math.max(arrowSize, Math.min(tw - arrowSize * 2, arrowOffset))}px`;
-        if (placement === 'top') {
-          arrow.style.top = `${th - arrowSize / 2}px`;
-        } else {
-          arrow.style.top = `-${arrowSize / 2}px`;
-        }
+        ar.style.left = `${Math.max(arrowSize, Math.min(tw - arrowSize * 2, arrowOffset))}px`;
+        ar.style.top = placement === 'top' ? `${th - arrowSize / 2}px` : `-${arrowSize / 2}px`;
       });
     };
 
+    // --- 4. Event delegation ---
     const delegatedMouseOver = (e) => {
-      // Check if refs are still valid before processing events
-      if (!tooltipRef.current || !titleCacheRef.current) return;
-      const target = e.target.closest('[title], [data-tooltip]');
+      if (!tooltipRef.current) return;
+      const target = e.target.closest('[data-tooltip]');
       if (!target || !(target instanceof HTMLElement)) return;
 
-      // Bug #37: Debounce rapid mouseover events (300ms delay)
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
@@ -184,10 +249,8 @@ export default function TooltipManager() {
     };
 
     const delegatedMouseOut = (e) => {
-      // Check if refs are still valid before processing events
-      if (!tooltipRef.current || !titleCacheRef.current) return;
+      if (!tooltipRef.current) return;
 
-      // Bug #37: Clear debounce timer on mouseout
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
@@ -195,27 +258,24 @@ export default function TooltipManager() {
 
       const target = currentTargetRef.current;
       if (!target) return;
-      // Only hide when leaving the element completely
       if (!target.contains(e.relatedTarget)) {
-        hideTooltip(target);
+        hideTooltip();
         currentTargetRef.current = null;
       }
     };
 
     const delegatedFocus = (e) => {
-      // Check if refs are still valid before processing events
-      if (!tooltipRef.current || !titleCacheRef.current) return;
-      const target = e.target.closest('[title], [data-tooltip]');
+      if (!tooltipRef.current) return;
+      const target = e.target.closest('[data-tooltip]');
       if (!target || !(target instanceof HTMLElement)) return;
       currentTargetRef.current = target;
       showTooltip(target);
     };
 
     const delegatedBlur = () => {
-      // Check if refs are still valid before processing events
-      if (!tooltipRef.current || !titleCacheRef.current) return;
+      if (!tooltipRef.current) return;
       if (currentTargetRef.current) {
-        hideTooltip(currentTargetRef.current);
+        hideTooltip();
         currentTargetRef.current = null;
       }
     };
@@ -224,15 +284,22 @@ export default function TooltipManager() {
     document.addEventListener('mouseout', delegatedMouseOut, true);
     document.addEventListener('focusin', delegatedFocus);
     document.addEventListener('focusout', delegatedBlur);
-    // Keep tooltip anchored on scroll/resize
+
     const handleViewportChange = () => {
       if (currentTargetRef.current) positionTooltip(currentTargetRef.current);
     };
     window.addEventListener('scroll', handleViewportChange, true);
     window.addEventListener('resize', handleViewportChange);
 
+    // --- 5. Cleanup ---
     return () => {
-      // Remove event listeners first to prevent any new events during cleanup
+      observer.disconnect();
+
+      Element.prototype.setAttribute = originalSetAttribute;
+      if (canPatchTitleProperty && titleDescriptor) {
+        Object.defineProperty(HTMLElement.prototype, 'title', titleDescriptor);
+      }
+
       document.removeEventListener('mouseover', delegatedMouseOver, true);
       document.removeEventListener('mouseout', delegatedMouseOut, true);
       document.removeEventListener('focusin', delegatedFocus);
@@ -241,33 +308,26 @@ export default function TooltipManager() {
       window.removeEventListener('scroll', handleViewportChange, true);
       window.removeEventListener('resize', handleViewportChange);
 
-      // Bug #37: Clear debounce timer on cleanup
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
       }
 
-      // Cancel any pending animations
       cancelAnimationFrame(rafRef.current);
       rafRef.current = 0;
 
-      // Hide tooltip if it's currently showing
-      if (currentTargetRef.current && titleCacheRef.current) {
-        hideTooltip(currentTargetRef.current);
+      if (currentTargetRef.current) {
+        hideTooltip();
       }
 
-      // Clear refs in the correct order
       currentTargetRef.current = null;
 
-      // Remove DOM element before clearing refs that might be accessed
       if (tooltipRef.current && tooltipRef.current.parentNode) {
         tooltipRef.current.parentNode.removeChild(tooltipRef.current);
       }
 
-      // Clear remaining refs last
       tooltipRef.current = null;
       arrowRef.current = null;
-      titleCacheRef.current = null;
     };
   }, []);
 

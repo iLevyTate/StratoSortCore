@@ -65,14 +65,17 @@ jest.mock('../src/shared/performanceConstants', () => ({
     WATCHER_RESTART_WINDOW: 10_000
   },
   DEBOUNCE: {
-    SETTINGS_SAVE: 5
+    SETTINGS_SAVE: 5,
+    WATCHER_RESTART_BASE: 100
   },
   TIMEOUTS: {
     SERVICE_STARTUP: 250
   },
   RETRY: {
     MAX_ATTEMPTS_MEDIUM: 3,
-    MAX_ATTEMPTS_HIGH: 5
+    MAX_ATTEMPTS_HIGH: 5,
+    SETTINGS_BACKUP: { initialDelay: 10 },
+    SETTINGS_SAVE: { initialDelay: 10 }
   }
 }));
 

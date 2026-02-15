@@ -22,6 +22,8 @@ let lastSavedFileStatesCount = -1;
 let lastSavedFileStatesRef = null;
 // FIX: Track UI state changes
 let lastSavedSidebarOpen = null;
+// Track namingConvention reference so naming-only changes trigger saves
+let lastSavedNamingConventionRef = null;
 // NOTE: showSettings is intentionally NOT persisted (transient overlay state).
 
 // FIX: Re-entry guard to prevent infinite loops if save triggers actions
@@ -288,6 +290,8 @@ const persistenceMiddleware = (store) => {
       const currentFileStatesCount = Object.keys(state.files.fileStates || {}).length;
       const currentFileStatesRef = getFileStatesRef(state.files.fileStates);
 
+      const currentNamingConventionRef = state.files.namingConvention;
+
       const hasRelevantChange =
         currentPhase !== lastSavedPhase ||
         currentFilesCount !== lastSavedFilesCount ||
@@ -299,7 +303,9 @@ const persistenceMiddleware = (store) => {
         currentFileStatesCount !== lastSavedFileStatesCount ||
         currentFileStatesRef !== lastSavedFileStatesRef ||
         // FIX: Check UI state changes (sidebar only; settings overlay is transient)
-        sidebarOpen !== lastSavedSidebarOpen;
+        sidebarOpen !== lastSavedSidebarOpen ||
+        // FIX: Track naming convention changes (setNamingConvention creates new ref)
+        currentNamingConventionRef !== lastSavedNamingConventionRef;
 
       if (!hasRelevantChange) {
         return result;
@@ -376,6 +382,7 @@ const persistenceMiddleware = (store) => {
             lastSavedFileStatesCount = Object.keys(freshState.files.fileStates || {}).length;
             lastSavedFileStatesRef = getFileStatesRef(freshState.files.fileStates);
             lastSavedSidebarOpen = freshState.ui.sidebarOpen;
+            lastSavedNamingConventionRef = freshState.files.namingConvention;
             firstPendingRequestTime = 0; // Reset so next debounce cycle tracks fresh
           }
         } finally {
@@ -427,6 +434,7 @@ export const cleanupPersistence = (store) => {
   lastSavedFileStatesCount = -1;
   lastSavedFileStatesRef = null;
   lastSavedSidebarOpen = null;
+  lastSavedNamingConventionRef = null;
   firstPendingRequestTime = 0;
 };
 

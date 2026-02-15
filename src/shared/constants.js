@@ -174,6 +174,28 @@ const IPC_CHANNELS = {
 };
 
 /**
+ * IPC Event Channels (main -> renderer, receive-only)
+ *
+ * These are push events sent via webContents.send() from the main process.
+ * Renderer listens via ipcRenderer.on() (exposed through preload's safeOn).
+ * They do NOT use invoke/handle and are NOT part of IPC_CHANNELS above.
+ */
+const IPC_EVENTS = {
+  SYSTEM_METRICS: 'system-metrics',
+  OPERATION_PROGRESS: 'operation-progress',
+  APP_ERROR: 'app:error',
+  APP_UPDATE: 'app:update',
+  MENU_ACTION: 'menu-action',
+  OPEN_SEMANTIC_SEARCH: 'open-semantic-search',
+  SETTINGS_CHANGED_EXTERNAL: 'settings-changed-external',
+  FILE_OPERATION_COMPLETE: 'file-operation-complete',
+  NOTIFICATION: 'notification',
+  UNDO_REDO_STATE_CHANGED: 'undo-redo:state-changed',
+  BATCH_RESULTS_CHUNK: 'batch-results-chunk',
+  OPERATION_FAILED: 'operation-failed'
+};
+
+/**
  * Action Types for Undo/Redo
  */
 const ACTION_TYPES = {
@@ -246,6 +268,8 @@ const UI_VIRTUALIZATION = {
   MEASUREMENT_PADDING: 16, // px
   PROCESSED_FILES_ITEM_HEIGHT: 64, // px
   TARGET_FOLDER_ITEM_HEIGHT: 56, // px
+  SEARCH_RESULTS_ITEM_HEIGHT: 140, // px - height for search result row in UnifiedSearchModal
+  SEARCH_RESULTS_ITEM_GAP: 8, // px
   OVERSCAN_COUNT: 5 // Number of items to render outside visible area
 };
 
@@ -548,6 +572,7 @@ const RENDERER_LIMITS = {
 
 module.exports = {
   IPC_CHANNELS,
+  IPC_EVENTS,
   ACTION_TYPES,
   INSTALL_MODEL_PROFILES,
   DEFAULT_AI_MODELS,

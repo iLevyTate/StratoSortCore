@@ -51,7 +51,8 @@ function registerAnalysisHistoryIpc(servicesOrParams) {
       context,
       serviceName: 'analysisHistory',
       getService: getHistoryService,
-      fallbackResponse: {},
+      wrapResponse: true,
+      fallbackResponse: { success: true },
       handler: async (event, service) => {
         try {
           return (await service.getStatistics()) || {};

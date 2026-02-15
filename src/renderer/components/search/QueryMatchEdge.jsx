@@ -1,7 +1,8 @@
-import React, { memo, useState, useCallback, useMemo } from 'react';
-import { BaseEdge, getSmoothStepPath } from 'reactflow';
+import React, { memo, useCallback, useMemo } from 'react';
+import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from 'reactflow';
 import PropTypes from 'prop-types';
 import BaseEdgeTooltip from './BaseEdgeTooltip';
+import { useEdgeHover } from './useEdgeInteraction';
 
 /**
  * Custom edge component for query-to-file match connections
@@ -20,7 +21,7 @@ const QueryMatchEdge = memo(
     style,
     markerEnd
   }) => {
-    const [isHovered, setIsHovered] = useState(false);
+    const { isHovered, handleMouseEnter, handleMouseLeave } = useEdgeHover();
 
     // Get the edge path
     // Position label 75% along the path (much closer to target file) to clearly associate score with file
@@ -99,9 +100,6 @@ const QueryMatchEdge = memo(
       return reasons;
     }, [matchDetails, sources]);
 
-    const handleMouseEnter = useCallback(() => setIsHovered(true), []);
-    const handleMouseLeave = useCallback(() => setIsHovered(false), []);
-
     // Dynamic styling based on hover
     const edgeStyle = {
       ...style,
@@ -124,6 +122,8 @@ const QueryMatchEdge = memo(
       default: 'text-system-gray-500'
     };
 
+    const showCompactBadge = !tooltipsEnabled;
+
     return (
       <>
         {/* Invisible wider path for easier hovering */}
@@ -141,6 +141,26 @@ const QueryMatchEdge = memo(
 
         {/* Visible edge */}
         <BaseEdge id={id} path={edgePath} style={edgeStyle} markerEnd={markerEnd} />
+
+        {/* Lightweight fallback badge for large graphs */}
+        {showCompactBadge && (
+          <EdgeLabelRenderer>
+            <div
+              style={{
+                position: 'absolute',
+                transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+                fontSize: 10,
+                pointerEvents: 'none',
+                zIndex: 6
+              }}
+              className="nodrag nopan"
+            >
+              <span className="px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200 font-medium whitespace-nowrap">
+                {scorePercent}%
+              </span>
+            </div>
+          </EdgeLabelRenderer>
+        )}
 
         {/* Edge label and tooltip */}
         {tooltipsEnabled && (

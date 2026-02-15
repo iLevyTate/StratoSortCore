@@ -76,6 +76,7 @@ const TIMEOUTS = {
   PROCESS_KILL_VERIFY: 500, // Delay to verify process termination
   IPC_HANDLER_RETRY_BASE: 100,
   IPC_HANDLER_MAX_WAIT: 2000,
+  SEARCH_INDEX_REBUILD: 5000, // Max wait for BM25 index rebuild after batch operations
   SEMANTIC_QUERY: 30000,
   FLUSH_MAX_WAIT: 30000,
   WINDOW_LOAD_DELAY: 100, // Delay before loading window content
@@ -110,6 +111,8 @@ const RETRY = {
   IPC_HANDLER: { maxAttempts: 5, initialDelay: 100 },
   LLAMA_API: { maxAttempts: 3, initialDelay: 1000, maxDelay: 4000 },
   VECTOR_DB: { maxAttempts: 3, initialDelay: 500, maxDelay: 5000 },
+  SETTINGS_BACKUP: { initialDelay: 100 }, // Start delay for exponential backoff during settings backup
+  SETTINGS_SAVE: { initialDelay: 200 }, // Start delay for exponential backoff during settings save
   DATABASE_OFFLINE_MAX: 10,
   ITEM_MAX_RETRIES: 3,
   BACKOFF_BASE_MS: 5000,
@@ -315,11 +318,13 @@ const NETWORK = {
 
 const DEBOUNCE = {
   SETTINGS_SAVE: 1000,
+  SETTINGS_HYDRATION: 10000, // Max wait for settings hydration from main process
   PATTERN_SAVE_THROTTLE: 5000,
   CACHE_BATCH_WAIT: 100,
   CACHE_BATCH_MAX_WAIT: 5000,
   REFRESH_INTERVAL: 60000,
   ERROR_RETRY_INTERVAL: 5000,
+  WATCHER_RESTART_BASE: 5000, // Base delay for watcher restart exponential backoff
   // FIX LOW-10: Centralized learning/feedback throttling constants
   LEARNING_DEDUPE_WINDOW: 5000, // Prevent duplicate learning for same file within 5s
   FEEDBACK_MEMORY_SAVE: 5000, // Throttle feedback memory persistence

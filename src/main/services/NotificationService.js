@@ -13,6 +13,7 @@
 const { Notification, BrowserWindow } = require('electron');
 const { randomUUID } = require('crypto');
 const { createLogger } = require('../../shared/logger');
+const { IPC_EVENTS } = require('../../shared/constants');
 const { safeSend } = require('../ipc/ipcWrappers');
 const {
   NotificationType,
@@ -123,7 +124,7 @@ class NotificationService {
       const windows = BrowserWindow.getAllWindows();
       for (const win of windows) {
         if (win && !win.isDestroyed()) {
-          safeSend(win.webContents, 'notification', standardized);
+          safeSend(win.webContents, IPC_EVENTS.NOTIFICATION, standardized);
         }
       }
 

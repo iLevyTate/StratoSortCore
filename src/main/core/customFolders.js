@@ -44,56 +44,39 @@ function normalizeFolderPaths(folders) {
   }
 }
 
-async function ensureDefaultSmartFolders(folders) {
+/**
+ * Ensure the essential Uncategorized fallback folder exists.
+ * We no longer auto-inject the full default set — users choose their own
+ * folder structure. The full defaults are only applied via "Reset to Defaults".
+ */
+async function ensureUncategorizedFolder(folders) {
   const safeFolders = Array.isArray(folders) ? folders : [];
+  const hasUncategorized = safeFolders.some(
+    (folder) => normalizeName(folder?.name) === 'uncategorized'
+  );
+
+  if (hasUncategorized) return safeFolders;
+
   const documentsDir = app.getPath('documents');
   const baseDir = path.join(documentsDir, 'StratoSort');
-  const defaultFolders = getDefaultSmartFolders(baseDir);
-  const defaultNameSet = new Set(defaultFolders.map((folder) => normalizeName(folder.name)));
-  const existingNameSet = new Set(safeFolders.map((folder) => normalizeName(folder?.name)));
-  const isDefaultName = (nameKey) =>
-    nameKey && nameKey !== 'uncategorized' && defaultNameSet.has(nameKey);
-  const hasDefaultFlag = safeFolders.some(
-    (folder) => folder?.isDefault && isDefaultName(normalizeName(folder?.name))
-  );
-  const hasDefaultName = safeFolders.some((folder) => isDefaultName(normalizeName(folder?.name)));
-  const hasCustom = safeFolders.some((folder) => {
-    const nameKey = normalizeName(folder?.name);
-    return nameKey && !defaultNameSet.has(nameKey);
-  });
-  const shouldEnsureDefaults =
-    !hasCustom && (hasDefaultFlag || hasDefaultName || !safeFolders.length);
+  const uncategorized = createUncategorizedFolder(baseDir);
 
-  const missingDefaults = defaultFolders.filter((folder) => {
-    const nameKey = normalizeName(folder.name);
-    if (existingNameSet.has(nameKey)) return false;
-    if (!shouldEnsureDefaults && nameKey !== 'uncategorized') return false;
-    return true;
-  });
+  logger.info('[STORAGE] Adding missing Uncategorized fallback folder');
 
-  if (missingDefaults.length === 0) return safeFolders;
-
-  logger.info('[STORAGE] Adding missing default smart folders:', {
-    count: missingDefaults.length,
-    names: missingDefaults.map((folder) => folder.name)
-  });
-
-  for (const folder of missingDefaults) {
-    try {
-      await fs.mkdir(folder.path, { recursive: true });
-      logger.info(`[STORAGE] Created physical ${folder.name} directory at:`, folder.path);
-    } catch (error) {
-      logger.error(`[STORAGE] Failed to create ${folder.name} directory:`, error);
-    }
+  try {
+    await fs.mkdir(uncategorized.path, { recursive: true });
+    logger.info('[STORAGE] Created Uncategorized directory at:', uncategorized.path);
+  } catch (error) {
+    logger.error('[STORAGE] Failed to create Uncategorized directory:', error);
   }
 
-  const updatedFolders = [...safeFolders, ...missingDefaults];
+  const updatedFolders = [...safeFolders, uncategorized];
 
   try {
     await saveCustomFolders(updatedFolders);
-    logger.info('[STORAGE] Persisted default smart folder updates to custom-folders.json');
+    logger.info('[STORAGE] Persisted Uncategorized folder to custom-folders.json');
   } catch (error) {
-    logger.error('[STORAGE] Failed to persist default folders:', error);
+    logger.error('[STORAGE] Failed to persist Uncategorized folder:', error);
   }
 
   return updatedFolders;
@@ -178,8 +161,25 @@ async function recoverLegacyCustomFolders(currentFolders, defaultNameSet) {
 }
 
 /**
- * Default smart folders that match the categorization system in fallbackUtils.js
- * These provide a good starting point for file organization
+ * Create a single Uncategorized folder entry.
+ * Used for first-launch bootstrapping and the ensureUncategorizedFolder guard.
+ */
+function createUncategorizedFolder(baseDir) {
+  return {
+    id: `default-uncategorized-${crypto.randomUUID().slice(0, 8)}`,
+    name: 'Uncategorized',
+    path: path.join(baseDir, 'Uncategorized'),
+    description: "Default folder for files that don't match any smart folder",
+    keywords: [],
+    category: 'uncategorized',
+    isDefault: true,
+    createdAt: new Date().toISOString()
+  };
+}
+
+/**
+ * Full default smart folders that match the categorization system in fallbackUtils.js
+ * Only used when the user explicitly clicks "Reset to Defaults"
  */
 function getDefaultSmartFolders(baseDir) {
   // FIX (M-8): Use crypto.randomUUID() instead of Date.now() offsets.
@@ -286,8 +286,8 @@ async function loadCustomFolders() {
 
     const recovered = await recoverLegacyCustomFolders(normalized, defaultNameSet);
 
-    // Ensure missing defaults (including Uncategorized) are added as needed
-    return await ensureDefaultSmartFolders(recovered);
+    // Only ensure the essential Uncategorized fallback exists
+    return await ensureUncategorizedFolder(recovered);
   } catch {
     const documentsDir = app.getPath('documents');
     const baseDir = path.join(documentsDir, 'StratoSort');
@@ -302,38 +302,35 @@ async function loadCustomFolders() {
         normalizedBackup,
         defaultNameSet
       );
-      return await ensureDefaultSmartFolders(recoveredFromBackup);
+      return await ensureUncategorizedFolder(recoveredFromBackup);
     }
 
     const recoveredLegacy = await recoverLegacyCustomFolders([], defaultNameSet);
     if (recoveredLegacy.length > 0) {
-      return await ensureDefaultSmartFolders(recoveredLegacy);
+      return await ensureUncategorizedFolder(recoveredLegacy);
     }
 
-    logger.info('[STARTUP] No saved custom folders found, creating default smart folders');
+    logger.info('[STARTUP] No saved custom folders found, creating Uncategorized fallback');
 
-    // Create all default smart folders that match the categorization system
-    const defaultFolders = getDefaultSmartFolders(baseDir);
+    // First launch: only create the essential Uncategorized folder.
+    // Users build their own folder structure; full defaults are available via "Reset to Defaults".
+    const uncategorized = createUncategorizedFolder(baseDir);
 
-    // Create physical directories for each folder
-    for (const folder of defaultFolders) {
-      try {
-        await fs.mkdir(folder.path, { recursive: true });
-        logger.info(`[STARTUP] Created directory: ${folder.name}`);
-      } catch (err) {
-        logger.error(`[STARTUP] Failed to create ${folder.name} directory:`, err);
-      }
-    }
-
-    // Save the default folders
     try {
-      await saveCustomFolders(defaultFolders);
-      logger.info('[STARTUP] Saved default smart folders to disk');
+      await fs.mkdir(uncategorized.path, { recursive: true });
+      logger.info('[STARTUP] Created Uncategorized directory');
     } catch (err) {
-      logger.error('[STARTUP] Failed to save default folders:', err);
+      logger.error('[STARTUP] Failed to create Uncategorized directory:', err);
     }
 
-    return defaultFolders;
+    try {
+      await saveCustomFolders([uncategorized]);
+      logger.info('[STARTUP] Saved Uncategorized folder to disk');
+    } catch (err) {
+      logger.error('[STARTUP] Failed to save Uncategorized folder:', err);
+    }
+
+    return [uncategorized];
   }
 }
 

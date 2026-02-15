@@ -377,7 +377,8 @@ class SearchService {
 
         indexDocs.push(indexDoc);
 
-        // Store document metadata for result enrichment
+        // Store document metadata for result enrichment (including extractedText
+        // so the chat/RAG pipeline can feed actual document content to the LLM)
         nextDocumentMap.set(canonicalId, {
           id: canonicalId,
           analysisId: doc.id,
@@ -396,7 +397,8 @@ class SearchService {
           reasoning: analysis.reasoning || null,
           confidence: analysis.confidence,
           keyEntities: normalizedKeyEntities,
-          dates: analysis.dates || []
+          dates: analysis.dates || [],
+          extractedText: this._truncateText(analysis.extractedText, 3000) || null
         });
       }
 
@@ -1134,13 +1136,13 @@ class SearchService {
   }
 
   /**
-   * Enrich results with metadata from documentMap (AnalysisHistory)
-   * This ensures we have the latest category/confidence even if the search source (e.g. vector) is stale
+   * Enrich results with metadata from documentMap (AnalysisHistory).
+   * This ensures we have the latest category, confidence, extractedText, etc.
+   * even if the search source (e.g. vector DB) only stores basic fields.
    *
-   * @param {Array} results - Search results to enrich
-   * @private
+   * @param {Array} results - Search results to enrich (mutated in place)
    */
-  _enrichResults(results) {
+  enrichResults(results) {
     if (!results || !Array.isArray(results) || this.documentMap.size === 0) return;
 
     for (const r of results) {
@@ -1148,10 +1150,15 @@ class SearchService {
       const doc = this.documentMap.get(r.id);
       if (doc) {
         // Merge metadata, preferring documentMap (latest analysis) over vector metadata (embed time)
-        // This ensures category, confidence, etc are up to date
+        // This ensures category, confidence, extractedText, etc. are up to date
         r.metadata = { ...r.metadata, ...doc };
       }
     }
+  }
+
+  /** @private @deprecated Use enrichResults instead */
+  _enrichResults(results) {
+    return this.enrichResults(results);
   }
 
   /**
@@ -1173,9 +1180,13 @@ class SearchService {
     }
     const range = maxScore - minScore;
 
-    // If all scores are the same, return with score 1.0
+    // If all scores are identical, preserve the actual score clamped to [0, 1].
+    // Returning 1.0 unconditionally would make five 0.1-similarity results look
+    // like perfect matches — destroying the absolute quality signal that
+    // downstream consumers (especially chat/RAG) rely on.
     if (range === 0) {
-      return results.map((r) => ({ ...r, score: 1.0, originalScore: r.score }));
+      const clamped = Math.min(1.0, Math.max(0, maxScore));
+      return results.map((r) => ({ ...r, score: clamped, originalScore: r.score }));
     }
 
     return results.map((r) => ({

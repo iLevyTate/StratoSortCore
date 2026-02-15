@@ -78,9 +78,26 @@
   --border-soft: #e2e8f0;
   --border-strong: #cbd5e1;
   --border-subtle: #e5e7eb;
-  --shadow-soft: 0 30px 45px rgba(15, 23, 42, 0.12);
+  /* Shared elevation scale: use these to keep depth consistent app-wide */
+  --shadow-elev-1: 0 1px 2px color-mix(in srgb, var(--surface-contrast) 10%, transparent);
+  --shadow-elev-2:
+    0 2px 4px color-mix(in srgb, var(--surface-contrast) 8%, transparent),
+    0 1px 2px color-mix(in srgb, var(--surface-contrast) 6%, transparent);
+  --shadow-elev-3:
+    0 8px 16px color-mix(in srgb, var(--surface-contrast) 10%, transparent),
+    0 2px 4px color-mix(in srgb, var(--surface-contrast) 6%, transparent);
+  --shadow-elev-4:
+    0 14px 28px color-mix(in srgb, var(--surface-contrast) 12%, transparent),
+    0 4px 10px color-mix(in srgb, var(--surface-contrast) 7%, transparent);
+  --shadow-elev-5:
+    0 22px 44px color-mix(in srgb, var(--surface-contrast) 14%, transparent),
+    0 8px 18px color-mix(in srgb, var(--surface-contrast) 8%, transparent);
+  --shadow-elev-6:
+    0 30px 60px color-mix(in srgb, var(--surface-contrast) 16%, transparent),
+    0 12px 24px color-mix(in srgb, var(--surface-contrast) 9%, transparent);
+  --shadow-soft: var(--shadow-elev-4);
   --shadow-glow: 0 25px 55px rgba(37, 99, 235, 0.35);
-  --shadow-ambient: 0 18px 48px rgba(15, 23, 42, 0.14);
+  --shadow-ambient: var(--shadow-elev-5);
   --blur-strength: 18px;
   --radius-panel: 18px;
   --radius-card: 16px;
@@ -97,6 +114,7 @@
   --scrollbar-thumb: var(--color-system-gray-400);
   --scrollbar-thumb-hover: var(--color-system-gray-500);
   --scrollbar-track: color-mix(in srgb, var(--color-system-gray-100) 60%, transparent);
+  --scrollbar-radius: 4px;
 
   /* Layout guardrails */
   --page-max-width: 1200px;
@@ -334,14 +352,26 @@
     background-color: var(--surface-primary) !important;
   }
 
-  /* Global: disable blur overlays to prevent native dropdown flicker on Windows/Electron */
+  /* Global: disable blur overlays to prevent native dropdown flicker on Windows/Electron.
+     Also kill backdrop-saturate which is meaningless without blur. */
   .backdrop-blur,
   .backdrop-blur-sm,
   .backdrop-blur-md,
   .backdrop-blur-lg,
-  .backdrop-blur-xl {
+  .backdrop-blur-xl,
+  .backdrop-saturate-100,
+  .backdrop-saturate-125,
+  .backdrop-saturate-150,
+  .backdrop-saturate-200 {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
+  }
+
+  /* When backdrop-blur is disabled the semi-transparent header backgrounds
+     let the cool-gray page surface bleed through, producing a blue tint.
+     Force the header to solid white so the brand/badge area stays clean. */
+  header.backdrop-blur-xl {
+    background-color: #ffffff !important;
   }
 
   /* Settings modal: disable blur/alpha surfaces to avoid native select flicker on Windows */
@@ -384,11 +414,11 @@
   }
 
   .glass-panel {
-    background: var(--glass-layer);
+    background: var(--surface-primary);
     border: 1px solid var(--glass-border);
     box-shadow: var(--shadow-soft);
-    backdrop-filter: blur(var(--blur-strength));
-    -webkit-backdrop-filter: blur(var(--blur-strength));
+    /* backdrop-filter disabled globally to prevent Windows/Electron flicker;
+       use solid surface-primary instead of translucent glass-layer */
     border-radius: var(--radius-panel);
   }
 
@@ -798,38 +828,33 @@
   }
 
   .tooltip-enhanced {
-    @apply text-xs py-2 px-3.5 pointer-events-none opacity-0 transition-all text-system-gray-800 font-medium;
+    @apply text-xs py-2 px-3.5 pointer-events-none opacity-0 text-system-gray-800 font-medium;
     z-index: var(--z-toast);
     position: fixed;
     background: var(--surface-primary);
     border: 1px solid var(--border-soft);
-    border-radius: 12px;
-    transform: translate3d(0, -6px, 0);
-    transition-duration: var(--duration-fast);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    will-change: transform, opacity;
-    box-shadow:
-      0 4px 6px -1px color-mix(in srgb, var(--surface-contrast) 8%, transparent),
-      0 10px 15px -3px color-mix(in srgb, var(--surface-contrast) 8%, transparent),
-      0 0 0 1px color-mix(in srgb, var(--surface-contrast) 4%, transparent);
+    border-radius: var(--radius-md);
+    transition: opacity 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+    box-shadow: var(--shadow-elev-4);
     max-width: 280px;
     line-height: 1.4;
   }
   .tooltip-enhanced.show {
     @apply opacity-100;
-    transform: translate3d(0, 0, 0);
   }
   .tooltip-arrow {
     position: absolute;
     width: 10px;
     height: 10px;
     background: var(--surface-primary);
-    box-shadow:
-      1px 1px 3px color-mix(in srgb, var(--surface-contrast) 5%, transparent),
-      0 0 0 1px color-mix(in srgb, var(--surface-contrast) 4%, transparent);
+    box-shadow: var(--shadow-elev-1);
     border-radius: 2px;
     transform: rotate(45deg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tooltip-enhanced {
+      transition-duration: 1ms !important;
+    }
   }
 
   .status-dot {
@@ -859,8 +884,8 @@
     max-width: 400px;
     padding: 2rem;
     background: color-mix(in srgb, var(--surface-primary) 95%, transparent);
-    border-radius: 1rem;
-    box-shadow: 0 20px 50px color-mix(in srgb, var(--surface-contrast) 10%, transparent);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-elev-5);
     border: 1px solid color-mix(in srgb, var(--color-stratosort-danger) 20%, transparent);
   }
 
@@ -903,7 +928,7 @@
     padding: 0.75rem;
     background: var(--surface-muted);
     border: 1px solid var(--border-soft);
-    border-radius: 0.5rem;
+    border-radius: var(--radius-sm);
     font-size: 0.75rem;
     color: var(--text-secondary);
     overflow-x: auto;
@@ -992,7 +1017,7 @@
   }
   .panel-scroll::-webkit-scrollbar-thumb {
     background: var(--scrollbar-thumb);
-    border-radius: 4px;
+    border-radius: var(--scrollbar-radius);
   }
   .panel-scroll::-webkit-scrollbar-thumb:hover {
     background: var(--scrollbar-thumb-hover);
@@ -1207,7 +1232,7 @@
   }
   .flex-scroll-child::-webkit-scrollbar-thumb {
     background: var(--scrollbar-thumb);
-    border-radius: 4px;
+    border-radius: var(--scrollbar-radius);
   }
   .flex-scroll-child::-webkit-scrollbar-thumb:hover {
     background: var(--scrollbar-thumb-hover);
@@ -1215,6 +1240,82 @@
 }
 
 @layer utilities {
+  /*
+   * Radius normalization for common Tailwind rounded utilities.
+   * This keeps component curvature consistent while allowing
+   * situational exceptions (rounded-full, custom classes).
+   */
+  .rounded-md {
+    border-radius: var(--radius-md);
+  }
+
+  .rounded-lg {
+    border-radius: var(--radius-lg);
+  }
+
+  .rounded-xl {
+    border-radius: var(--radius-panel);
+  }
+
+  .rounded-2xl {
+    border-radius: calc(var(--radius-panel) + 6px);
+  }
+
+  .border-border-soft {
+    border-color: var(--border-soft);
+  }
+
+  .border-border-strong {
+    border-color: var(--border-strong);
+  }
+
+  /*
+   * Normalize Tailwind shadow utilities to a shared elevation scale.
+   * Keep ring composition intact by preserving --tw-ring-* vars.
+   */
+  .shadow-none {
+    --tw-shadow: 0 0 #0000;
+    box-shadow:
+      var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow) !important;
+  }
+
+  .shadow-xs {
+    --tw-shadow: var(--shadow-elev-1);
+    box-shadow:
+      var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow) !important;
+  }
+
+  .shadow-sm {
+    --tw-shadow: var(--shadow-elev-2);
+    box-shadow:
+      var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow) !important;
+  }
+
+  .shadow,
+  .shadow-md {
+    --tw-shadow: var(--shadow-elev-3);
+    box-shadow:
+      var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow) !important;
+  }
+
+  .shadow-lg {
+    --tw-shadow: var(--shadow-elev-4);
+    box-shadow:
+      var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow) !important;
+  }
+
+  .shadow-xl {
+    --tw-shadow: var(--shadow-elev-5);
+    box-shadow:
+      var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow) !important;
+  }
+
+  .shadow-2xl {
+    --tw-shadow: var(--shadow-elev-6);
+    box-shadow:
+      var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow) !important;
+  }
+
   /* GPU acceleration utilities for smooth animations */
   .backface-hidden {
     backface-visibility: hidden;
@@ -1404,7 +1505,7 @@
   }
   .modern-scrollbar::-webkit-scrollbar-thumb {
     background: var(--scrollbar-thumb);
-    border-radius: 4px;
+    border-radius: var(--scrollbar-radius);
   }
   .modern-scrollbar::-webkit-scrollbar-thumb:hover {
     background: var(--scrollbar-thumb-hover);
@@ -1425,7 +1526,7 @@
   }
   .custom-scrollbar::-webkit-scrollbar-thumb {
     background: var(--scrollbar-thumb);
-    border-radius: 4px;
+    border-radius: var(--scrollbar-radius);
   }
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: var(--scrollbar-thumb-hover);
@@ -1695,7 +1796,7 @@
   }
   .panel-responsive-content::-webkit-scrollbar-thumb {
     background: var(--scrollbar-thumb);
-    border-radius: 4px;
+    border-radius: var(--scrollbar-radius);
   }
   .panel-responsive-content::-webkit-scrollbar-thumb:hover {
     background: var(--scrollbar-thumb-hover);

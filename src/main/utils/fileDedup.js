@@ -265,8 +265,79 @@ async function handleDuplicateMove({
   return { skipped: true, destination: duplicatePath, reason: 'duplicate' };
 }
 
+/**
+ * Check if a file has semantic (embedding-based) duplicates at a destination directory.
+ * Uses the vector DB to find files with similar content, complementing the checksum-based
+ * exact-match detection. Requires the OramaVectorService to be available and the source
+ * file to have been analyzed/embedded.
+ *
+ * @param {Object} params
+ * @param {string} params.sourceFileId - Semantic file ID (e.g., "file:/path/to/source")
+ * @param {string} params.destinationDir - Directory to check for similar files
+ * @param {number} [params.threshold=0.9] - Cosine similarity threshold (0..1). Default 0.9.
+ * @param {number} [params.topK=5] - Max similar files to return
+ * @param {Object} [params.vectorDbService] - OramaVectorService instance (resolved lazily if omitted)
+ * @param {Object} [params.logger] - Logger instance
+ * @returns {Promise<{hasDuplicates: boolean, matches: Array<{id: string, score: number, metadata: Object}>}>}
+ */
+async function findSemanticDuplicates({
+  sourceFileId,
+  destinationDir,
+  threshold = 0.9,
+  topK = 5,
+  vectorDbService,
+  logger
+}) {
+  const emptyResult = { hasDuplicates: false, matches: [] };
+
+  if (!sourceFileId || !destinationDir) return emptyResult;
+
+  // Resolve vector DB service lazily if not provided
+  let vdb = vectorDbService;
+  if (!vdb) {
+    try {
+      const { container, ServiceIds } = require('../services/ServiceContainer');
+      vdb =
+        typeof container.tryResolve === 'function'
+          ? container.tryResolve(ServiceIds.ORAMA_VECTOR)
+          : container.resolve(ServiceIds.ORAMA_VECTOR);
+    } catch {
+      if (logger?.debug) {
+        logger.debug('[DEDUP] Vector DB service unavailable for semantic duplicate check');
+      }
+      return emptyResult;
+    }
+  }
+
+  if (!vdb || typeof vdb.findSimilarInDirectory !== 'function') {
+    return emptyResult;
+  }
+
+  try {
+    const matches = await vdb.findSimilarInDirectory(sourceFileId, destinationDir, {
+      threshold,
+      topK
+    });
+
+    return {
+      hasDuplicates: matches.length > 0,
+      matches
+    };
+  } catch (error) {
+    if (logger?.debug) {
+      logger.debug('[DEDUP] Semantic duplicate check failed (non-fatal)', {
+        sourceFileId,
+        destinationDir,
+        error: error?.message
+      });
+    }
+    return emptyResult;
+  }
+}
+
 module.exports = {
   computeFileChecksum,
   findDuplicateForDestination,
-  handleDuplicateMove
+  handleDuplicateMove,
+  findSemanticDuplicates
 };

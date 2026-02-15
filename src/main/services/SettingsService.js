@@ -11,6 +11,7 @@ const { createSingletonHelpers } = require('../../shared/singletonFactory');
 const { LIMITS, DEBOUNCE, TIMEOUTS, RETRY } = require('../../shared/performanceConstants');
 const { delay } = require('../../shared/promiseUtils');
 const { SettingsBackupService } = require('./SettingsBackupService');
+const { IPC_EVENTS } = require('../../shared/constants');
 // FIX: Import safeSend for validated IPC event sending
 const { safeSend } = require('../ipc/ipcWrappers');
 
@@ -339,7 +340,7 @@ class SettingsService {
       // Retry backup creation with exponential backoff
       let backupResult = null;
       const maxBackupRetries = RETRY.MAX_ATTEMPTS_MEDIUM;
-      const initialBackupDelay = 100; // Start with 100ms
+      const initialBackupDelay = RETRY.SETTINGS_BACKUP.initialDelay;
 
       for (let attempt = 0; attempt < maxBackupRetries; attempt++) {
         try {
@@ -403,7 +404,7 @@ class SettingsService {
         // Bug #42: Retry logic for file lock handling with exponential backoff
         // FIX: Increased retry count and delay for Windows antivirus/indexing
         const maxSaveRetries = RETRY.MAX_ATTEMPTS_HIGH;
-        const baseSaveDelay = 200; // Was 100ms - Total window: 200+400+800+1600=3000ms
+        const baseSaveDelay = RETRY.SETTINGS_SAVE.initialDelay;
 
         for (let attempt = 0; attempt < maxSaveRetries; attempt++) {
           try {
@@ -799,7 +800,8 @@ class SettingsService {
 
         // Attempt to restart watcher with exponential backoff
         // Uses restart count for backoff factor (5s, 10s, 20s, 40s, ...)
-        const backoffDelay = 5000 * Math.pow(2, this._watcherRestartCount || 0);
+        const backoffDelay =
+          DEBOUNCE.WATCHER_RESTART_BASE * Math.pow(2, this._watcherRestartCount || 0);
         const jitteredDelay = backoffDelay * (0.9 + Math.random() * 0.2);
         this._restartTimer = setTimeout(() => {
           this._restartTimer = null;
@@ -949,7 +951,7 @@ class SettingsService {
         if (win && !win.isDestroyed() && win.webContents) {
           try {
             // FIX: Use safeSend for validated IPC event sending
-            safeSend(win.webContents, 'settings-changed-external', eventPayload);
+            safeSend(win.webContents, IPC_EVENTS.SETTINGS_CHANGED_EXTERNAL, eventPayload);
           } catch (error) {
             logger.warn(
               `[SettingsService] Failed to send settings-changed event: ${error.message}`

@@ -17,6 +17,7 @@ import { createLogger } from '../../shared/logger';
 import { sanitizeSettings } from '../../shared/settingsValidation';
 import { DEFAULT_AI_MODELS } from '../../shared/constants';
 import { DEFAULT_SETTINGS } from '../../shared/defaultSettings';
+import { DEBOUNCE } from '../../shared/performanceConstants';
 import { useNotification } from '../contexts/NotificationContext';
 import { getElectronAPI, eventsIpc, llamaIpc, settingsIpc } from '../services/ipc';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
@@ -276,7 +277,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     let mounted = true;
     setIsHydrating(true);
 
-    const HYDRATION_TIMEOUT_MS = 10000; // 10 second timeout
+    const HYDRATION_TIMEOUT_MS = DEBOUNCE.SETTINGS_HYDRATION;
 
     const loadSettingsIfMounted = async () => {
       if (mounted) {
@@ -544,29 +545,81 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
     try {
       setIsAddingModel(true);
+
+      // Clean up any stale progress subscription before creating a new one
+      if (progressUnsubRef.current) {
+        try {
+          progressUnsubRef.current();
+        } catch {
+          // Non-fatal
+        }
+      }
+
+      // Track which models we're waiting on so we know when all are done
+      const pendingModels = new Set(modelsToDownload);
+
+      // Subscribe to progress/completion/error events for ALL requested downloads
+      progressUnsubRef.current = eventsIpc.onOperationProgress((evt) => {
+        if (evt?.type === 'model-download' && pendingModels.has(evt.model)) {
+          setPullProgress({
+            modelName: evt.model,
+            percent: evt.progress?.percent || 0
+          });
+        } else if (evt?.type === 'model-download-complete' && pendingModels.has(evt.model)) {
+          pendingModels.delete(evt.model);
+          addNotification(`Model "${evt.model}" downloaded successfully`, 'success');
+          loadModels();
+          if (pendingModels.size === 0) {
+            setPullProgress(null);
+            setIsAddingModel(false);
+          }
+        } else if (evt?.type === 'model-download-error' && pendingModels.has(evt.model)) {
+          pendingModels.delete(evt.model);
+          addNotification(
+            `Failed to download "${evt.model}": ${evt.error || 'unknown error'}`,
+            'error'
+          );
+          if (pendingModels.size === 0) {
+            setPullProgress(null);
+            setIsAddingModel(false);
+          }
+        }
+      });
+
+      // Kick off all downloads (handler returns immediately now)
       const errors = [];
       for (const modelName of modelsToDownload) {
         const res = await llamaIpc.downloadModel(modelName);
         if (res?.alreadyInProgress) {
-          // Download started by background setup — not an error
+          pendingModels.delete(modelName);
           continue;
         }
-        if (!res?.success) {
-          errors.push(res?.error || `Failed to download ${modelName}`);
+        if (!res?.success && !res?.started) {
+          pendingModels.delete(modelName);
+          errors.push(res?.error || `Failed to start ${modelName}`);
         }
       }
+
       if (errors.length > 0) {
-        addNotification(`Some downloads failed: ${errors.join('; ')}`, 'warning');
-      } else {
-        addNotification('Recommended models downloaded', 'success');
+        addNotification(`Some downloads failed to start: ${errors.join('; ')}`, 'warning');
       }
-      await loadModels();
+
+      // Show immediate feedback
+      const startedCount = pendingModels.size;
+      if (startedCount > 0) {
+        addNotification(
+          `Downloading ${startedCount} model${startedCount > 1 ? 's' : ''}… Progress is shown above.`,
+          'info'
+        );
+      } else {
+        // All were already in progress or failed to start — reset loading state
+        setIsAddingModel(false);
+      }
     } catch (error) {
       addNotification(
         `Failed to download recommended models: ${error?.message || 'unknown error'}`,
         'error'
       );
-    } finally {
       setIsAddingModel(false);
     }
   }, [
@@ -744,6 +797,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                   <LlamaConfigSection
                     llamaHealth={llamaHealth}
                     isRefreshingModels={isRefreshingModels}
+                    isDownloading={isAddingModel}
                     downloadProgress={pullProgress}
                     modelList={modelList}
                     showAllModels={showAllModels}

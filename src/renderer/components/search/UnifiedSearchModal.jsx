@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import ReactFlow, { Background, Controls, MiniMap, Panel } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -57,23 +57,26 @@ import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { toggleSettings } from '../../store/slices/uiSlice';
 import { embeddingsIpc } from '../../services/ipc';
 import { NODE_TYPES, EDGE_TYPES } from './graphTypes';
-import SearchAutocomplete from './SearchAutocomplete';
+import SearchAutocomplete, { addToRecentSearches } from './SearchAutocomplete';
 import ClusterLegend from './ClusterLegend';
 import EmptySearchState from './EmptySearchState';
 import GraphTour from './GraphTour';
 import GraphErrorBoundary from './GraphErrorBoundary';
 import ChatPanel from './ChatPanel';
 import { mapErrorToNotification } from '../../utils/errorMapping';
+import { nextRequestId, isCurrentRequest, invalidateRequests } from '../../utils/requestGuard';
+import { List as VirtualizedList } from 'react-window';
+import { UI_VIRTUALIZATION } from '../../../shared/constants';
 
 const logger = createLogger('UnifiedSearchModal');
+const SEARCH_RESULTS_ROW_HEIGHT =
+  (UI_VIRTUALIZATION.SEARCH_RESULTS_ITEM_HEIGHT ?? 140) +
+  (UI_VIRTUALIZATION.SEARCH_RESULTS_ITEM_GAP ?? 8);
 // Maximum nodes allowed in graph to prevent memory exhaustion
 const MAX_GRAPH_NODES = 300;
 const GRAPH_LAYOUT_SPACING = 300; // Increased from 180 to reduce clutter
 const GRAPH_LAYER_SPACING = 400; // Increased from 280 to reduce clutter
 const ZOOM_LABEL_HIDE_THRESHOLD = 0.6;
-// Keep React Flow type maps stable across renders/mounts.
-const STABLE_NODE_TYPES = NODE_TYPES;
-const STABLE_EDGE_TYPES = EDGE_TYPES;
 const GRAPH_SIDEBAR_CARD = 'rounded-lg border border-system-gray-200 bg-white/90 p-3 shadow-sm';
 const GRAPH_SIDEBAR_SECTION_TITLE =
   'text-[11px] font-semibold text-system-gray-500 uppercase tracking-wider flex items-center gap-2';
@@ -180,6 +183,70 @@ const normalizeList = (value) => {
   return [];
 };
 
+const getConnectionReason = (edge) => {
+  const kind = edge?.data?.kind;
+  if (kind === 'query_match') {
+    const score = Math.round((edge?.data?.score || 0) * 100);
+    const terms = Array.isArray(edge?.data?.matchDetails?.matchedTerms)
+      ? edge.data.matchDetails.matchedTerms.filter(Boolean)
+      : [];
+    return {
+      type: 'query',
+      label: score > 0 ? `Query match ${score}%` : 'Query match',
+      detail:
+        terms.length > 0
+          ? `Matched terms: ${terms.slice(0, 3).join(', ')}`
+          : 'Matched search intent'
+    };
+  }
+  if (kind === 'knowledge') {
+    const concepts = Array.isArray(edge?.data?.concepts) ? edge.data.concepts.filter(Boolean) : [];
+    return {
+      type: 'knowledge',
+      label: 'Knowledge link',
+      detail:
+        concepts.length > 0
+          ? `Shared concepts: ${concepts.slice(0, 3).join(', ')}`
+          : 'Shared analysis metadata'
+    };
+  }
+  if (kind === 'cross_cluster') {
+    const bridgeCount = edge?.data?.bridgeCount || 0;
+    const terms = Array.isArray(edge?.data?.sharedTerms)
+      ? edge.data.sharedTerms.filter(Boolean)
+      : [];
+    return {
+      type: 'bridge',
+      label: `Cluster bridge ${Math.round((edge?.data?.similarity || 0) * 100)}%`,
+      detail:
+        terms.length > 0
+          ? `Shared terms: ${terms.slice(0, 3).join(', ')}`
+          : bridgeCount > 0
+            ? `${bridgeCount} bridge file${bridgeCount === 1 ? '' : 's'}`
+            : 'Related clusters'
+    };
+  }
+
+  const similarity = edge?.data?.similarity || 0;
+  const similarityPct = Math.round(similarity * 100);
+  const sharedTerms = Array.isArray(edge?.data?.sharedTerms)
+    ? edge.data.sharedTerms.filter(Boolean)
+    : [];
+  if (sharedTerms.length > 0) {
+    return {
+      type: 'similarity',
+      label: `Shared topics ${similarityPct}%`,
+      detail: `Terms: ${sharedTerms.slice(0, 3).join(', ')}`
+    };
+  }
+
+  return {
+    type: 'similarity',
+    label: similarityPct > 0 ? `Similar content ${similarityPct}%` : 'Related content',
+    detail: 'Similarity connection'
+  };
+};
+
 const getFileExtension = (nameOrPath) => {
   if (!nameOrPath || typeof nameOrPath !== 'string') return '';
   const parts = nameOrPath.split('.');
@@ -237,7 +304,7 @@ const buildRecommendationGraph = (fileNodes = []) => {
 // Sub-Components
 // ============================================================================
 
-function ResultRow({
+const ResultRow = memo(function ResultRow({
   result,
   isSelected,
   isBulkSelected,
@@ -283,11 +350,11 @@ function ResultRow({
       role="button"
       tabIndex={0}
       data-result-item
-      onClick={() => onSelect(result)}
+      onClick={() => onSelect(result, index)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          onSelect(result);
+          onSelect(result, index);
         }
       }}
       style={{ animationDelay }}
@@ -428,7 +495,7 @@ function ResultRow({
       )}
     </div>
   );
-}
+});
 
 ResultRow.propTypes = {
   result: PropTypes.object.isRequired,
@@ -445,7 +512,146 @@ ResultRow.propTypes = {
 };
 ResultRow.displayName = 'ResultRow';
 
-function StatsDisplay({ stats, isLoadingStats, onRefresh }) {
+/**
+ * Virtualized search results list - prevents UI blocking with large result sets.
+ * Uses react-window to render only visible rows.
+ */
+const VirtualizedSearchResultRow = memo(function VirtualizedSearchResultRow({
+  index,
+  style,
+  results = [],
+  selectedSearchId,
+  bulkSelectedIds = new Set(),
+  focusedResultIndex,
+  query = '',
+  onSelect,
+  onToggleBulk,
+  onOpen,
+  onReveal,
+  onCopyPath
+}) {
+  const result = results?.[index];
+  if (!result) return null;
+  return (
+    <div style={style} className="pb-2">
+      <ResultRow
+        result={result}
+        isSelected={result.id === selectedSearchId}
+        isBulkSelected={bulkSelectedIds?.has(result.id)}
+        isFocused={index === focusedResultIndex}
+        query={query}
+        index={index}
+        onSelect={onSelect}
+        onToggleBulk={onToggleBulk}
+        onOpen={onOpen}
+        onReveal={onReveal}
+        onCopyPath={onCopyPath}
+      />
+    </div>
+  );
+});
+
+VirtualizedSearchResultRow.propTypes = {
+  index: PropTypes.number.isRequired,
+  style: PropTypes.object.isRequired,
+  results: PropTypes.array.isRequired,
+  selectedSearchId: PropTypes.string,
+  bulkSelectedIds: PropTypes.instanceOf(Set),
+  focusedResultIndex: PropTypes.number.isRequired,
+  query: PropTypes.string.isRequired,
+  onSelect: PropTypes.func.isRequired,
+  onToggleBulk: PropTypes.func.isRequired,
+  onOpen: PropTypes.func.isRequired,
+  onReveal: PropTypes.func.isRequired,
+  onCopyPath: PropTypes.func.isRequired
+};
+
+function VirtualizedSearchResults({
+  results,
+  selectedSearchId,
+  bulkSelectedIds,
+  focusedResultIndex,
+  query,
+  onSelect,
+  onToggleBulk,
+  onOpen,
+  onReveal,
+  onCopyPath
+}) {
+  const containerRef = useRef(null);
+  const [height, setHeight] = useState(400);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        const h = entry.contentRect.height;
+        setHeight(Math.max(200, h || 400));
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const rowProps = useMemo(
+    () => ({
+      results,
+      selectedSearchId,
+      bulkSelectedIds,
+      focusedResultIndex,
+      query,
+      onSelect,
+      onToggleBulk,
+      onOpen,
+      onReveal,
+      onCopyPath
+    }),
+    [
+      results,
+      selectedSearchId,
+      bulkSelectedIds,
+      focusedResultIndex,
+      query,
+      onSelect,
+      onToggleBulk,
+      onOpen,
+      onReveal,
+      onCopyPath
+    ]
+  );
+
+  return (
+    <div ref={containerRef} className="flex-1 min-h-0 flex flex-col">
+      <VirtualizedList
+        rowCount={results.length}
+        rowHeight={SEARCH_RESULTS_ROW_HEIGHT}
+        rowComponent={VirtualizedSearchResultRow}
+        rowProps={rowProps}
+        overscanCount={UI_VIRTUALIZATION.OVERSCAN_COUNT}
+        defaultHeight={height}
+        style={{ height: Math.max(height, 200), width: '100%' }}
+        className="modern-scrollbar"
+      />
+    </div>
+  );
+}
+
+VirtualizedSearchResults.propTypes = {
+  results: PropTypes.array.isRequired,
+  selectedSearchId: PropTypes.string,
+  bulkSelectedIds: PropTypes.instanceOf(Set).isRequired,
+  focusedResultIndex: PropTypes.number.isRequired,
+  query: PropTypes.string.isRequired,
+  onSelect: PropTypes.func.isRequired,
+  onToggleBulk: PropTypes.func.isRequired,
+  onOpen: PropTypes.func.isRequired,
+  onReveal: PropTypes.func.isRequired,
+  onCopyPath: PropTypes.func.isRequired
+};
+
+function StatsDisplay({ stats, isLoadingStats, statsUnavailable, onRefresh }) {
   return (
     <div className="flex items-center gap-2">
       {stats ? (
@@ -464,6 +670,11 @@ function StatsDisplay({ stats, isLoadingStats, onRefresh }) {
         <Text as="span" variant="tiny" className="flex items-center gap-2 text-system-gray-400">
           <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-system-gray-300" />
           Loading index...
+        </Text>
+      ) : statsUnavailable ? (
+        <Text as="span" variant="tiny" className="flex items-center gap-2 text-system-gray-500">
+          <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-system-gray-300" />
+          Initializing...
         </Text>
       ) : (
         <Text as="span" variant="tiny" className="text-system-gray-400">
@@ -487,6 +698,7 @@ function StatsDisplay({ stats, isLoadingStats, onRefresh }) {
 StatsDisplay.propTypes = {
   stats: PropTypes.object,
   isLoadingStats: PropTypes.bool.isRequired,
+  statsUnavailable: PropTypes.bool,
   onRefresh: PropTypes.func.isRequired
 };
 StatsDisplay.displayName = 'StatsDisplay';
@@ -647,6 +859,12 @@ export default function UnifiedSearchModal({
   defaultTopK = 20,
   initialTab = 'search'
 }) {
+  // Memoize React Flow type maps to guarantee stable references per component
+  // instance. Module-level constants can break under HMR re-evaluation.
+  // See https://reactflow.dev/error#002
+  const stableNodeTypes = useMemo(() => NODE_TYPES, []);
+  const stableEdgeTypes = useMemo(() => EDGE_TYPES, []);
+
   const redactPaths = useAppSelector((state) => Boolean(state?.system?.redactPaths));
   // Tab state
   // Graph is currently feature-flagged off. If callers pass initialTab="graph",
@@ -684,6 +902,7 @@ export default function UnifiedSearchModal({
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [stats, setStats] = useState(null);
+  const [statsUnavailable, setStatsUnavailable] = useState(false);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [hasLoadedStats, setHasLoadedStats] = useState(false);
   const [embeddingConfig, setEmbeddingConfig] = useState(null);
@@ -925,7 +1144,6 @@ export default function UnifiedSearchModal({
     zoomBucketRef.current = zoomLevel < ZOOM_LABEL_HIDE_THRESHOLD;
   }, [zoomLevel]);
   const [hoveredClusterId, setHoveredClusterId] = useState(null);
-  const [hasHoveredCluster, setHasHoveredCluster] = useState(false);
 
   // Focus mode state - for local graph view
   const [focusNodeId, setFocusNodeId] = useState(null);
@@ -981,6 +1199,11 @@ export default function UnifiedSearchModal({
   const guideIntentLoadTimeoutRef = useRef(null);
   const statsRequestCounterRef = useRef(0);
   const freshMetadataRequestCounterRef = useRef(0);
+  const recommendationRequestCounterRef = useRef(0);
+  const graphSearchRequestCounterRef = useRef(0);
+  const graphDropRequestCounterRef = useRef(0);
+  const chatRequestCounterRef = useRef(0);
+  const chatInFlightRef = useRef(false);
   const resultListRef = useRef(null);
   const graphContainerRef = useRef(null);
   const wasOpenRef = useRef(false);
@@ -1047,10 +1270,13 @@ export default function UnifiedSearchModal({
   }, []);
 
   const hydrateRecommendationMap = useCallback(async () => {
+    const requestId = nextRequestId(recommendationRequestCounterRef);
     const files = buildSuggestionFiles(searchResults);
     const getBatchSuggestions = window?.electronAPI?.suggestions?.getBatchSuggestions;
     if (!files.length || typeof getBatchSuggestions !== 'function') {
-      if (isMountedRef.current) setRecommendationMap({});
+      if (isMountedRef.current && isCurrentRequest(recommendationRequestCounterRef, requestId)) {
+        setRecommendationMap({});
+      }
       return;
     }
 
@@ -1065,11 +1291,16 @@ export default function UnifiedSearchModal({
       });
     }
 
-    if (isMountedRef.current) setIsLoadingRecommendations(true);
+    if (isMountedRef.current && isCurrentRequest(recommendationRequestCounterRef, requestId)) {
+      setIsLoadingRecommendations(true);
+    }
     try {
       const response = await getBatchSuggestions(filesToProcess);
+      if (!isMountedRef.current || !isCurrentRequest(recommendationRequestCounterRef, requestId)) {
+        return;
+      }
       if (!response?.success || !Array.isArray(response.groups)) {
-        if (isMountedRef.current) setRecommendationMap({});
+        setRecommendationMap({});
         return;
       }
 
@@ -1084,12 +1315,16 @@ export default function UnifiedSearchModal({
         });
       });
 
-      if (isMountedRef.current) setRecommendationMap(nextMap);
+      setRecommendationMap(nextMap);
     } catch (recErr) {
       logger.debug('[Search] Recommendation lookup failed:', recErr?.message || recErr);
-      if (isMountedRef.current) setRecommendationMap({});
+      if (isMountedRef.current && isCurrentRequest(recommendationRequestCounterRef, requestId)) {
+        setRecommendationMap({});
+      }
     } finally {
-      if (isMountedRef.current) setIsLoadingRecommendations(false);
+      if (isMountedRef.current && isCurrentRequest(recommendationRequestCounterRef, requestId)) {
+        setIsLoadingRecommendations(false);
+      }
     }
   }, [buildSuggestionFiles, searchResults]);
 
@@ -1109,6 +1344,13 @@ export default function UnifiedSearchModal({
     async (text, overrideContextIds = null) => {
       const trimmed = typeof text === 'string' ? text.trim() : '';
       if (!trimmed) return;
+      if (chatInFlightRef.current) {
+        setChatWarning('Please wait for the current response to finish.');
+        return;
+      }
+
+      const requestId = nextRequestId(chatRequestCounterRef);
+      chatInFlightRef.current = true;
 
       setChatError('');
       setChatWarning('');
@@ -1155,6 +1397,7 @@ export default function UnifiedSearchModal({
           contextFileIds,
           responseMode
         });
+        if (!isCurrentRequest(chatRequestCounterRef, requestId)) return;
 
         if (!response || response.success !== true) {
           throw new Error(response?.error || 'Chat request failed');
@@ -1177,12 +1420,16 @@ export default function UnifiedSearchModal({
 
         setChatMessages((prev) => [...prev, assistantMessage]);
       } catch (chatErr) {
+        if (!isCurrentRequest(chatRequestCounterRef, requestId)) return;
         logger.warn('[KnowledgeOS] Chat query failed', { error: chatErr?.message || chatErr });
         const { message } = mapErrorToNotification({ error: chatErr?.message || chatErr });
         setChatError(message);
         setChatWarning('');
       } finally {
-        setIsChatting(false);
+        if (isCurrentRequest(chatRequestCounterRef, requestId)) {
+          setIsChatting(false);
+          chatInFlightRef.current = false;
+        }
       }
     },
     [
@@ -1207,6 +1454,8 @@ export default function UnifiedSearchModal({
   }, []);
 
   const handleChatReset = useCallback(async () => {
+    invalidateRequests(chatRequestCounterRef);
+    chatInFlightRef.current = false;
     setChatMessages([]);
     setChatError('');
     setChatWarning('');
@@ -1369,6 +1618,7 @@ export default function UnifiedSearchModal({
       setDebouncedQuery('');
       setError('');
       setStats(null);
+      setStatsUnavailable(false);
       setHasLoadedStats(false);
       setIsLoadingStats(false);
       setEmbeddingConfig(null);
@@ -1406,7 +1656,6 @@ export default function UnifiedSearchModal({
       setAutoLayout(true);
       setIsLayouting(false);
       setHoveredClusterId(null);
-      setHasHoveredCluster(false);
       setPerformanceNotice('');
       hasAutoDisabledEdgeLabels.current = false;
       hasAutoDisabledTooltips.current = false;
@@ -1972,13 +2221,22 @@ export default function UnifiedSearchModal({
           folders: typeof res.folders === 'number' ? res.folders : 0,
           initialized: Boolean(res.initialized)
         });
+        setStatsUnavailable(false);
       } else if (isMountedRef.current && statsRequestCounterRef.current === requestId) {
         setStats(null);
+        setStatsUnavailable(
+          Boolean(
+            res?.unavailable ||
+            res?.code === 'VECTOR_DB_UNAVAILABLE' ||
+            res?.code === 'VECTOR_DB_PENDING'
+          )
+        );
       }
     } catch (e) {
       logger.warn('Failed to load embedding stats', { error: e?.message });
       if (isMountedRef.current && statsRequestCounterRef.current === requestId) {
         setStats(null);
+        setStatsUnavailable(false);
         setEmbeddingConfig(null);
       }
     } finally {
@@ -2069,6 +2327,11 @@ export default function UnifiedSearchModal({
     });
   }, []);
 
+  const handleResultSelect = useCallback((result, index) => {
+    setSelectedSearchId(result?.id ?? null);
+    setFocusedResultIndex(index);
+  }, []);
+
   const clearBulkSelection = useCallback(() => {
     setBulkSelectedIds(new Set());
   }, []);
@@ -2099,7 +2362,7 @@ export default function UnifiedSearchModal({
         const fileName = safeBasename(sourcePath);
         try {
           await window.electronAPI?.files?.performOperation?.({
-            operation: 'move',
+            type: 'move',
             source: sourcePath,
             destination: joinPath(destFolder, fileName)
           });
@@ -2214,7 +2477,7 @@ export default function UnifiedSearchModal({
 
           const fileName = safeBasename(sourcePath);
           await window.electronAPI?.files?.performOperation?.({
-            operation: 'move',
+            type: 'move',
             source: sourcePath,
             destination: joinPath(destFolder, fileName)
           });
@@ -2438,7 +2701,16 @@ export default function UnifiedSearchModal({
     setGraphStatus('Focus cleared - showing all nodes');
   }, []);
 
-  const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
+  // Ref-based node lookup: always holds the latest nodes map but does NOT
+  // trigger downstream useMemo chains when only node positions change
+  // (layout adjustments). Consumers that only need label/kind read from the
+  // ref, keeping their dependency arrays small and stable.
+  const nodeByIdRef = useRef(new Map());
+  useMemo(() => {
+    const map = new Map(nodes.map((n) => [n.id, n]));
+    nodeByIdRef.current = map;
+    return map;
+  }, [nodes]);
   const adjacencyByNode = useMemo(() => {
     const map = new Map();
     edges.forEach((edge) => {
@@ -2475,7 +2747,7 @@ export default function UnifiedSearchModal({
           }
 
           // Also include cluster members if this is a cluster node
-          const node = nodeById.get(id);
+          const node = nodeByIdRef.current.get(id);
           if (node?.data?.memberIds) {
             node.data.memberIds.forEach((memberId) => {
               if (!visible.has(memberId)) {
@@ -2490,7 +2762,7 @@ export default function UnifiedSearchModal({
 
       return visible;
     },
-    [adjacencyByNode, nodeById]
+    [adjacencyByNode]
   );
 
   /**
@@ -2975,6 +3247,8 @@ export default function UnifiedSearchModal({
         setSearchResults(next);
         setSelectedSearchId(next[0]?.id || null);
         setBulkSelectedIds(new Set()); // Clear bulk selection on new results
+        // Add to recent searches when search completes (type-to-search flow)
+        if (q && q.trim().length >= 2) addToRecentSearches(q.trim());
         // Store query processing metadata for "Did you mean?" feedback
         setQueryMeta(response.queryMeta || null);
         // Store search mode metadata (fallback detection)
@@ -3216,6 +3490,9 @@ export default function UnifiedSearchModal({
       setIsDragOver(false);
 
       if (!e.dataTransfer) return;
+      const requestId = nextRequestId(graphDropRequestCounterRef);
+      const isStaleRequest = () =>
+        !isCurrentRequest(graphDropRequestCounterRef, requestId) || !isMountedRef.current;
 
       const { paths: droppedPaths } = extractDroppedFiles(e.dataTransfer);
       if (droppedPaths.length === 0) return;
@@ -3225,10 +3502,12 @@ export default function UnifiedSearchModal({
       );
 
       try {
+        const currentNodes = nodesRef.current || [];
         const addedNodes = [];
         const addedEdges = [];
 
         for (const filePath of droppedPaths) {
+          if (isStaleRequest()) return;
           if (!filePath) continue;
 
           // Search for this file by name to find it in the vector DB
@@ -3237,6 +3516,7 @@ export default function UnifiedSearchModal({
             topK: 20,
             mode: 'hybrid'
           });
+          if (isStaleRequest()) return;
 
           if (!searchResp?.success || !searchResp.results?.length) {
             logger.debug('[Graph] File not found in index:', fileName);
@@ -3254,20 +3534,21 @@ export default function UnifiedSearchModal({
           }
 
           // Calculate position for the new node
-          const existingNodeCount = nodes.length + addedNodes.length;
+          const existingNodeCount = currentNodes.length + addedNodes.length;
           const pos = defaultNodePosition(existingNodeCount);
 
           // Create node using upsertFileNode
           const node = upsertFileNode(matchingResult, pos);
           if (node) {
             // Check if node already exists
-            const existingNode = nodes.find((n) => n.id === node.id);
+            const existingNode = currentNodes.find((n) => n.id === node.id);
             if (!existingNode) {
               addedNodes.push(node);
             }
           }
         }
 
+        if (isStaleRequest()) return;
         if (addedNodes.length === 0) {
           setError('Dropped files not found in index. Try analyzing them first.');
           setGraphStatus('');
@@ -3278,14 +3559,16 @@ export default function UnifiedSearchModal({
         graphActions.setNodes((prev) => [...prev, ...addedNodes]);
 
         // If we have existing nodes, try to find similarity connections
-        if (nodes.length > 0 && addedNodes.length > 0) {
+        if (currentNodes.length > 0 && addedNodes.length > 0) {
           try {
-            const existingIds = nodes.map((n) => n.id);
+            const existingIds = currentNodes.map((n) => n.id);
             const newIds = addedNodes.map((n) => n.id);
 
             // Get similarity edges between new and existing nodes
             for (const newId of newIds) {
+              if (isStaleRequest()) return;
               const simResp = await window.electronAPI?.embeddings?.findSimilar?.(newId, 5);
+              if (isStaleRequest()) return;
               if (simResp?.success && simResp.results) {
                 for (const sim of simResp.results) {
                   if (existingIds.includes(sim.id) && sim.score > 0.5) {
@@ -3322,8 +3605,9 @@ export default function UnifiedSearchModal({
 
         // Apply layout if auto-layout is enabled
         if (autoLayout && addedNodes.length > 0) {
-          const allNodes = [...nodes, ...addedNodes];
-          const allEdges = [...edges, ...addedEdges];
+          const currentEdges = edgesRef.current || [];
+          const allNodes = [...currentNodes, ...addedNodes];
+          const allEdges = [...currentEdges, ...addedEdges];
           try {
             const { nodes: layoutedNodes, edges: layoutedEdges } = await debouncedElkLayout(
               allNodes,
@@ -3334,6 +3618,7 @@ export default function UnifiedSearchModal({
                 layerSpacing: GRAPH_LAYER_SPACING
               }
             );
+            if (isStaleRequest()) return;
             graphActions.setNodes(layoutedNodes);
             if (layoutedEdges && layoutedEdges.length > 0) {
               graphActions.setEdges(applyEdgeUiPrefs(layoutedEdges));
@@ -3347,12 +3632,13 @@ export default function UnifiedSearchModal({
           `Added ${addedNodes.length} file${addedNodes.length > 1 ? 's' : ''} to graph`
         );
       } catch (err) {
+        if (isStaleRequest()) return;
         logger.error('[Graph] File drop failed:', err);
         setError('Failed to add files to graph');
         setGraphStatus('');
       }
     },
-    [nodes, edges, graphActions, upsertFileNode, autoLayout, applyEdgeUiPrefs]
+    [graphActions, upsertFileNode, autoLayout, applyEdgeUiPrefs]
   );
 
   /**
@@ -3656,14 +3942,14 @@ export default function UnifiedSearchModal({
       }
 
       if (clustersResp.stale === true) {
+        // computeClusters now returns clusters + crossClusterEdges directly,
+        // with fast metadata-based labels. LLM refinement runs in the background.
         const computeResp = await window.electronAPI?.embeddings?.computeClusters?.('auto');
         if (!computeResp || computeResp.success !== true) {
           throw new Error(computeResp?.error || 'Failed to compute clusters');
         }
-        clustersResp = await window.electronAPI?.embeddings?.getClusters?.();
-        if (!clustersResp || clustersResp.success !== true) {
-          throw new Error(clustersResp?.error || 'Failed to get clusters');
-        }
+        // Use the response directly — no redundant second getClusters call needed.
+        clustersResp = computeResp;
       }
 
       const clusters = clustersResp.clusters || [];
@@ -3681,6 +3967,29 @@ export default function UnifiedSearchModal({
       lastCrossClusterEdgesRef.current = crossClusterEdges;
 
       renderClustersToGraph(clusters, crossClusterEdges);
+
+      // Background: After a short delay, fetch refreshed labels (LLM may have
+      // finished in the background by now) and silently update the graph.
+      setTimeout(async () => {
+        try {
+          if (!isMountedRef.current) return;
+          const refreshed = await window.electronAPI?.embeddings?.getClusters?.();
+          if (
+            refreshed?.success &&
+            Array.isArray(refreshed.clusters) &&
+            refreshed.clusters.length > 0
+          ) {
+            lastClustersRef.current = refreshed.clusters;
+            lastCrossClusterEdgesRef.current = refreshed.crossClusterEdges || crossClusterEdges;
+            renderClustersToGraph(
+              refreshed.clusters,
+              refreshed.crossClusterEdges || crossClusterEdges
+            );
+          }
+        } catch {
+          // Label refresh is best-effort; failures are non-critical.
+        }
+      }, 6000);
     } catch (e) {
       setError(getErrorMessage(e, 'Cluster loading'));
       setGraphStatus('');
@@ -3908,6 +4217,16 @@ export default function UnifiedSearchModal({
           return [...prev, ...newEdges, ...newOrganizeEdges];
         });
 
+        // Smooth viewport animation to show expanded members
+        setTimeout(() => {
+          const expandedNodeIds = [clusterId, ...memberIds];
+          reactFlowInstance.current?.fitView({
+            nodes: expandedNodeIds.map((id) => ({ id })),
+            padding: 0.25,
+            duration: 500
+          });
+        }, 100);
+
         setGraphStatus(
           `${layoutedMemberNodes.length} related files. Right-click cluster to organize them.`
         );
@@ -3936,6 +4255,9 @@ export default function UnifiedSearchModal({
 
       // Capture addMode at search start to prevent race condition if user toggles during async operation
       const shouldAddMode = addMode;
+      const requestId = nextRequestId(graphSearchRequestCounterRef);
+      const isStaleSearch = () =>
+        !isCurrentRequest(graphSearchRequestCounterRef, requestId) || !isMountedRef.current;
 
       setError('');
       setGraphStatus('Searching...');
@@ -3948,6 +4270,7 @@ export default function UnifiedSearchModal({
           mode: 'hybrid',
           rerank: false
         });
+        if (isStaleSearch()) return;
         if (!resp || resp.success !== true) {
           throw new Error(resp?.error || 'Search failed');
         }
@@ -4006,9 +4329,11 @@ export default function UnifiedSearchModal({
           if (nextNodes.length > MAX_GRAPH_NODES) {
             finalNodes = nextNodes.slice(0, MAX_GRAPH_NODES);
             nodeLimitReached = true;
-            setError(
-              `Graph limit (${MAX_GRAPH_NODES} nodes) exceeded. Showing first ${MAX_GRAPH_NODES} results.`
-            );
+            if (!isStaleSearch()) {
+              setError(
+                `Graph limit (${MAX_GRAPH_NODES} nodes) exceeded. Showing first ${MAX_GRAPH_NODES} results.`
+              );
+            }
           } else {
             finalNodes = nextNodes;
           }
@@ -4041,7 +4366,11 @@ export default function UnifiedSearchModal({
             // Don't add more nodes if limit reached
             finalNodes = nodesWithoutClusters;
             nodeLimitReached = true;
-            setError(`Graph limit (${MAX_GRAPH_NODES} nodes) reached. Clear graph to start fresh.`);
+            if (!isStaleSearch()) {
+              setError(
+                `Graph limit (${MAX_GRAPH_NODES} nodes) reached. Clear graph to start fresh.`
+              );
+            }
           } else {
             finalNodes = merged;
           }
@@ -4059,6 +4388,7 @@ export default function UnifiedSearchModal({
           (e) => finalNodeIds.has(e.source) && finalNodeIds.has(e.target)
         );
 
+        if (isStaleSearch()) return;
         // Now update state with computed values (only if there are changes)
         graphActions.setNodes((prev) => {
           // Skip update if nothing changed (add mode and limit reached)
@@ -4102,6 +4432,7 @@ export default function UnifiedSearchModal({
                 layerSpacing: GRAPH_LAYER_SPACING,
                 progressive: true
               });
+              if (isStaleSearch()) return;
               layoutedNodes = result.nodes;
               if (result.edges && result.edges.length > 0) {
                 graphActions.setEdges(applyEdgeUiPrefs(result.edges));
@@ -4118,11 +4449,13 @@ export default function UnifiedSearchModal({
                 layerSpacing: GRAPH_LAYER_SPACING,
                 debounceMs: 150
               });
+              if (isStaleSearch()) return;
               layoutedNodes = layoutResult.nodes;
               if (layoutResult.edges && layoutResult.edges.length > 0) {
                 graphActions.setEdges(applyEdgeUiPrefs(layoutResult.edges));
               }
             }
+            if (isStaleSearch()) return;
             graphActions.setNodes(layoutedNodes);
             if (finalNodes.length <= LARGE_GRAPH_THRESHOLD) {
               setGraphStatus(
@@ -4154,6 +4487,7 @@ export default function UnifiedSearchModal({
               expandedFileIds,
               { threshold: 0.75, maxEdgesPerNode: 1 }
             );
+            if (isStaleSearch()) return;
 
             if (simEdgesResp?.success && Array.isArray(simEdgesResp.edges)) {
               const similarityEdges = simEdgesResp.edges
@@ -4195,6 +4529,7 @@ export default function UnifiedSearchModal({
               expandedFileIds,
               { minWeight: 2, maxEdges: 200 }
             );
+            if (isStaleSearch()) return;
 
             if (relEdgesResp?.success && Array.isArray(relEdgesResp.edges)) {
               const relationshipEdges = relEdgesResp.edges.map((edge) => ({
@@ -4227,6 +4562,7 @@ export default function UnifiedSearchModal({
           }
         }
       } catch (e) {
+        if (isStaleSearch()) return;
         setGraphStatus('');
         setError(getErrorMessage(e, 'Graph search'));
       }
@@ -4710,14 +5046,12 @@ export default function UnifiedSearchModal({
     if (node.type !== 'clusterNode') return;
 
     setHoveredClusterId((prev) => (prev === node.id ? prev : node.id));
-    setHasHoveredCluster(true);
   }, []);
 
   const onNodeMouseLeave = useCallback((_, node) => {
     if (node.type !== 'clusterNode') return;
 
     setHoveredClusterId((prev) => (prev === node.id ? null : prev));
-    setHasHoveredCluster(false);
   }, []);
 
   const handleGraphMove = useCallback((_, viewport) => {
@@ -4800,7 +5134,7 @@ export default function UnifiedSearchModal({
           ...edge,
           style: {
             ...edge.style,
-            opacity: isBridge ? 0.9 : 0.05
+            opacity: isBridge ? 0.9 : 0.15
           },
           data: {
             ...edge.data,
@@ -4814,46 +5148,32 @@ export default function UnifiedSearchModal({
   }, [edges, rfNodes, showClusters, bridgeOverlayEnabled]);
 
   const rfEdges = useMemo(() => {
-    if (!hoveredClusterId && !hasHoveredCluster) return baseEdges;
+    // FIX: Use hoveredClusterId as single source of truth instead of dual
+    // hoveredClusterId + hasHoveredCluster which could desync and permanently
+    // hide cross-cluster edges.
+    if (!hoveredClusterId) return baseEdges;
     if (!showClusters || bridgeOverlayEnabled) return baseEdges;
 
-    // Hovered cluster highlighting: only when overlay is off
-    if (hoveredClusterId) {
-      const hoveredId = hoveredClusterId;
-      return baseEdges.map((edge) => {
-        if (edge.data?.kind !== 'cross_cluster') return edge;
-        const isConnected = edge.source === hoveredId || edge.target === hoveredId;
-        const targetOpacity = isConnected ? 0.8 : 0;
-        const currentOpacity = edge.style?.opacity ?? 1;
-        if (currentOpacity === targetOpacity) return edge;
-        return {
-          ...edge,
-          style: {
-            ...edge.style,
-            opacity: targetOpacity
-          },
-          className: isConnected
-            ? edge.className?.replace('opacity-0', 'opacity-100') || edge.className
-            : edge.className?.replace('opacity-100', 'opacity-0') || edge.className
-        };
-      });
-    }
-
-    // hasHoveredCluster is true but hoveredClusterId is null (mouse left cluster)
+    // Hovered cluster highlighting: dim non-connected edges, highlight connected
+    const hoveredId = hoveredClusterId;
     return baseEdges.map((edge) => {
       if (edge.data?.kind !== 'cross_cluster') return edge;
+      const isConnected = edge.source === hoveredId || edge.target === hoveredId;
+      const targetOpacity = isConnected ? 0.8 : 0.1;
       const currentOpacity = edge.style?.opacity ?? 1;
-      if (currentOpacity === 0) return edge;
+      if (currentOpacity === targetOpacity) return edge;
       return {
         ...edge,
         style: {
           ...edge.style,
-          opacity: 0
+          opacity: targetOpacity
         },
-        className: edge.className?.replace('opacity-100', 'opacity-0') || edge.className
+        className: isConnected
+          ? edge.className?.replace('opacity-0', 'opacity-100') || edge.className
+          : edge.className?.replace('opacity-100', 'opacity-0') || edge.className
       };
     });
-  }, [baseEdges, hoveredClusterId, hasHoveredCluster, showClusters, bridgeOverlayEnabled]);
+  }, [baseEdges, hoveredClusterId, showClusters, bridgeOverlayEnabled]);
 
   const rfFitViewOptions = useMemo(() => ({ padding: 0.2 }), []);
   const rfDefaultViewport = useMemo(() => ({ x: 0, y: 0, zoom: 1 }), []);
@@ -4913,6 +5233,61 @@ export default function UnifiedSearchModal({
   const selectedPath = freshMetadata?.path || selectedNode?.data?.path || '';
   const selectedLabel = freshMetadata?.name || selectedNode?.data?.label || selectedNode?.id || '';
   const selectedKind = selectedNode?.data?.kind || '';
+  const nodeLabelById = useMemo(() => {
+    const map = new Map();
+    nodes.forEach((n) => map.set(n.id, n?.data?.label || n?.id || 'Unknown'));
+    return map;
+  }, [nodes]);
+  const selectedNodeEdges = useMemo(() => {
+    if (!selectedNode?.id) return [];
+    return edges.filter((e) => e.source === selectedNode.id || e.target === selectedNode.id);
+  }, [edges, selectedNode?.id]);
+  const selectedNodeConnectionCount = selectedNodeEdges.length;
+  const selectedNodeNeighbors = useMemo(() => {
+    if (!selectedNode?.id || selectedNodeEdges.length === 0) return [];
+    // Use ref to avoid recomputing when only node positions change (layout).
+    // The ref is always kept in sync via the nodeById useMemo above.
+    const lookup = nodeByIdRef.current;
+    const neighborsMap = new Map();
+    selectedNodeEdges.forEach((edge) => {
+      const otherId = edge.source === selectedNode.id ? edge.target : edge.source;
+      if (!otherId) return;
+      const similarity = edge.data?.similarity;
+      const existing = neighborsMap.get(otherId);
+      if (existing) {
+        if (
+          typeof similarity === 'number' &&
+          (typeof existing.similarity !== 'number' || similarity > existing.similarity)
+        ) {
+          neighborsMap.set(otherId, { ...existing, similarity });
+        }
+        return;
+      }
+      const otherNode = lookup.get(otherId);
+      neighborsMap.set(otherId, {
+        id: otherId,
+        label: otherNode?.data?.label || otherNode?.id || 'Unknown',
+        kind: otherNode?.data?.kind || 'file',
+        similarity
+      });
+    });
+    return Array.from(neighborsMap.values());
+  }, [selectedNode?.id, selectedNodeEdges]);
+  const selectedNodeWhyConnections = useMemo(() => {
+    if (!selectedNode?.id || selectedNodeEdges.length === 0) return [];
+    return selectedNodeEdges
+      .map((edge) => {
+        const targetId = edge.source === selectedNode.id ? edge.target : edge.source;
+        return {
+          edgeId: edge.id,
+          targetId,
+          targetLabel: nodeLabelById.get(targetId) || targetId || 'Unknown',
+          similarity: edge?.data?.similarity || edge?.data?.score || 0,
+          ...getConnectionReason(edge)
+        };
+      })
+      .sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
+  }, [nodeLabelById, selectedNode?.id, selectedNodeEdges]);
 
   // Cluster-specific derived data
   const selectedClusterInfo = useMemo(() => {
@@ -4998,6 +5373,7 @@ export default function UnifiedSearchModal({
             <StatsDisplay
               stats={stats}
               isLoadingStats={isLoadingStats}
+              statsUnavailable={statsUnavailable}
               onRefresh={() => refreshStats(true)}
             />
           </div>
@@ -5197,26 +5573,38 @@ export default function UnifiedSearchModal({
                   />
                 ) : null}
 
-                {/* Flat list view */}
+                {/* Flat list view - virtualized when many results to avoid UI blocking */}
                 {viewMode === 'all' &&
-                  searchResults.map((r, index) => (
-                    <ResultRow
-                      key={r.id}
-                      result={r}
-                      isSelected={r.id === selectedSearchId}
-                      isBulkSelected={bulkSelectedIds.has(r.id)}
-                      isFocused={index === focusedResultIndex}
+                  (searchResults.length > UI_VIRTUALIZATION.THRESHOLD ? (
+                    <VirtualizedSearchResults
+                      results={searchResults}
+                      selectedSearchId={selectedSearchId}
+                      bulkSelectedIds={bulkSelectedIds}
+                      focusedResultIndex={focusedResultIndex}
                       query={debouncedQuery}
-                      index={index}
-                      onSelect={(res) => {
-                        setSelectedSearchId(res.id);
-                        setFocusedResultIndex(index);
-                      }}
+                      onSelect={handleResultSelect}
                       onToggleBulk={toggleBulkSelection}
                       onOpen={openFile}
                       onReveal={revealFile}
                       onCopyPath={copyPath}
                     />
+                  ) : (
+                    searchResults.map((r, index) => (
+                      <ResultRow
+                        key={r.id}
+                        result={r}
+                        isSelected={r.id === selectedSearchId}
+                        isBulkSelected={bulkSelectedIds.has(r.id)}
+                        isFocused={index === focusedResultIndex}
+                        query={debouncedQuery}
+                        index={index}
+                        onSelect={handleResultSelect}
+                        onToggleBulk={toggleBulkSelection}
+                        onOpen={openFile}
+                        onReveal={revealFile}
+                        onCopyPath={copyPath}
+                      />
+                    ))
                   ))}
 
                 {/* Grouped by type view */}
@@ -5251,10 +5639,7 @@ export default function UnifiedSearchModal({
                               isFocused={globalIndex === focusedResultIndex}
                               query={debouncedQuery}
                               index={globalIndex >= 0 ? globalIndex : 0}
-                              onSelect={(res) => {
-                                setSelectedSearchId(res.id);
-                                setFocusedResultIndex(globalIndex);
-                              }}
+                              onSelect={handleResultSelect}
                               onToggleBulk={toggleBulkSelection}
                               onOpen={openFile}
                               onReveal={revealFile}
@@ -5416,7 +5801,7 @@ export default function UnifiedSearchModal({
         {/* Chat Tab Content */}
         {activeTab === 'chat' && (
           <div className="flex-1 min-h-[60vh] surface-panel flex flex-col overflow-hidden">
-            {hasLoadedStats && (!stats || stats.files === 0) && (
+            {hasLoadedStats && !statsUnavailable && (!stats || stats.files === 0) && (
               <div className="mx-4 mt-4 rounded-lg border border-stratosort-warning/30 bg-stratosort-warning/10 px-3 py-2 flex items-center justify-between gap-3">
                 <Text as="span" variant="tiny" className="text-system-gray-700">
                   Embeddings are not ready yet. Build your embeddings in Settings to enable document
@@ -6622,8 +7007,8 @@ export default function UnifiedSearchModal({
                   <ReactFlow
                     nodes={rfNodes}
                     edges={rfEdges}
-                    nodeTypes={STABLE_NODE_TYPES}
-                    edgeTypes={STABLE_EDGE_TYPES}
+                    nodeTypes={stableNodeTypes}
+                    edgeTypes={stableEdgeTypes}
                     onNodesChange={onNodesChange}
                     onEdgesChange={graphActions.onEdgesChange}
                     className={`graph-flow bg-[var(--surface-muted)] ${zoomLevel < ZOOM_LABEL_HIDE_THRESHOLD ? 'graph-zoomed-out' : ''}`}
@@ -6759,6 +7144,51 @@ export default function UnifiedSearchModal({
                 <div className="p-4 flex-1 min-h-0 overflow-y-auto panel-scroll">
                   {selectedNode ? (
                     <>
+                      <div className={`${GRAPH_SIDEBAR_CARD} mb-4 bg-system-gray-50/80`}>
+                        <div className="flex items-center justify-between text-[11px]">
+                          <Text
+                            as="span"
+                            variant="tiny"
+                            className="font-semibold text-system-gray-700"
+                          >
+                            Selection overview
+                          </Text>
+                          <Text
+                            as="span"
+                            variant="tiny"
+                            className="text-system-gray-500 capitalize"
+                          >
+                            {selectedKind || 'node'}
+                          </Text>
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-center">
+                          <div className="rounded-md border border-system-gray-200 bg-white px-2 py-1.5">
+                            <Text
+                              as="div"
+                              variant="tiny"
+                              className="font-semibold text-system-gray-800"
+                            >
+                              {selectedNodeConnectionCount}
+                            </Text>
+                            <Text as="div" variant="tiny" className="text-system-gray-500">
+                              Links
+                            </Text>
+                          </div>
+                          <div className="rounded-md border border-system-gray-200 bg-white px-2 py-1.5">
+                            <Text
+                              as="div"
+                              variant="tiny"
+                              className="font-semibold text-system-gray-800"
+                            >
+                              {selectedNodeNeighbors.length}
+                            </Text>
+                            <Text as="div" variant="tiny" className="text-system-gray-500">
+                              Neighbors
+                            </Text>
+                          </div>
+                        </div>
+                      </div>
+
                       {isLoadingMetadata ? (
                         /* Skeleton loading state */
                         <div className="animate-pulse space-y-4">
@@ -6828,6 +7258,49 @@ export default function UnifiedSearchModal({
                                       {term}
                                     </span>
                                   ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {selectedNodeWhyConnections.length > 0 && (
+                            <div className="space-y-2">
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="font-semibold text-system-gray-500 uppercase tracking-wider"
+                              >
+                                Why connected
+                              </Text>
+                              <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                                {selectedNodeWhyConnections.slice(0, 6).map((reason) => (
+                                  <div
+                                    key={reason.edgeId}
+                                    className="rounded-lg border border-system-gray-200 bg-white px-2 py-1.5"
+                                  >
+                                    <Text
+                                      as="div"
+                                      variant="tiny"
+                                      className="font-medium text-system-gray-700 truncate"
+                                      title={reason.targetLabel}
+                                    >
+                                      {reason.targetLabel}
+                                    </Text>
+                                    <Text
+                                      as="div"
+                                      variant="tiny"
+                                      className="text-system-gray-500 mt-0.5"
+                                    >
+                                      {reason.label}
+                                    </Text>
+                                    <Text
+                                      as="div"
+                                      variant="tiny"
+                                      className="text-system-gray-400 truncate"
+                                    >
+                                      {reason.detail}
+                                    </Text>
+                                  </div>
+                                ))}
                               </div>
                             </div>
                           )}
@@ -7102,6 +7575,49 @@ export default function UnifiedSearchModal({
                             </div>
                           </div>
 
+                          {selectedNodeWhyConnections.length > 0 && (
+                            <div className="space-y-2">
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="font-semibold text-system-gray-500 uppercase tracking-wider"
+                              >
+                                Why connected
+                              </Text>
+                              <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                                {selectedNodeWhyConnections.slice(0, 6).map((reason) => (
+                                  <div
+                                    key={reason.edgeId}
+                                    className="rounded-lg border border-system-gray-200 bg-white px-2 py-1.5"
+                                  >
+                                    <Text
+                                      as="div"
+                                      variant="tiny"
+                                      className="font-medium text-system-gray-700 truncate"
+                                      title={reason.targetLabel}
+                                    >
+                                      {reason.targetLabel}
+                                    </Text>
+                                    <Text
+                                      as="div"
+                                      variant="tiny"
+                                      className="text-system-gray-500 mt-0.5"
+                                    >
+                                      {reason.label}
+                                    </Text>
+                                    <Text
+                                      as="div"
+                                      variant="tiny"
+                                      className="text-system-gray-400 truncate"
+                                    >
+                                      {reason.detail}
+                                    </Text>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
                           {/* Analysis Section (Subject & Summary) */}
                           {(() => {
                             const subject =
@@ -7147,6 +7663,7 @@ export default function UnifiedSearchModal({
                             const tags =
                               selectedDocumentDetails?.analysis?.tags || selectedNode.data?.tags;
                             if (!Array.isArray(tags) || tags.length === 0) return null;
+                            const visibleTags = tags.slice(0, 16);
                             return (
                               <div className="space-y-2">
                                 <Text
@@ -7156,17 +7673,23 @@ export default function UnifiedSearchModal({
                                 >
                                   Tags
                                 </Text>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {tags.map((tag) => (
+                                <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
+                                  {visibleTags.map((tag) => (
                                     <Text
                                       as="span"
                                       variant="tiny"
                                       key={tag}
-                                      className="px-2 py-0.5 rounded-full bg-system-gray-100 text-system-gray-600 border border-system-gray-200"
+                                      className="px-2 py-0.5 rounded-full bg-system-gray-100 text-system-gray-600 border border-system-gray-200 max-w-full truncate"
+                                      title={tag}
                                     >
                                       {tag}
                                     </Text>
                                   ))}
+                                  {tags.length > visibleTags.length && (
+                                    <Text as="span" variant="tiny" className="text-system-gray-400">
+                                      +{tags.length - visibleTags.length} more
+                                    </Text>
+                                  )}
                                 </div>
                               </div>
                             );
@@ -7284,103 +7807,52 @@ export default function UnifiedSearchModal({
                             >
                               <span>Connections</span>
                               <span className="text-system-gray-400 font-normal">
-                                {
-                                  edges.filter(
-                                    (e) =>
-                                      e.source === selectedNode.id || e.target === selectedNode.id
-                                  ).length
-                                }{' '}
-                                links
+                                {selectedNodeConnectionCount} links
                               </span>
                             </Text>
                             <div className="flex flex-col gap-1.5 mt-1">
-                              {(() => {
-                                const neighborsMap = new Map();
-                                edges
-                                  .filter(
-                                    (e) =>
-                                      e.source === selectedNode.id || e.target === selectedNode.id
-                                  )
-                                  .forEach((e) => {
-                                    const otherId =
-                                      e.source === selectedNode.id ? e.target : e.source;
-                                    if (!otherId) return;
-                                    const similarity = e.data?.similarity;
-                                    const existing = neighborsMap.get(otherId);
-                                    if (existing) {
-                                      if (
-                                        typeof similarity === 'number' &&
-                                        (typeof existing.similarity !== 'number' ||
-                                          similarity > existing.similarity)
-                                      ) {
-                                        neighborsMap.set(otherId, {
-                                          ...existing,
-                                          similarity
-                                        });
-                                      }
-                                      return;
-                                    }
-                                    const otherNode = nodes.find((n) => n.id === otherId);
-                                    neighborsMap.set(otherId, {
-                                      id: otherId,
-                                      label: otherNode?.data?.label || otherNode?.id || 'Unknown',
-                                      kind: otherNode?.data?.kind || 'file',
-                                      similarity
-                                    });
-                                  });
-                                const neighbors = Array.from(neighborsMap.values());
-
-                                if (neighbors.length === 0)
-                                  return (
-                                    <Text
-                                      as="div"
-                                      variant="tiny"
-                                      className="text-system-gray-400 italic"
-                                    >
-                                      No direct connections
-                                    </Text>
-                                  );
-
-                                return neighbors.slice(0, 10).map((n) => {
+                              {selectedNodeNeighbors.length === 0 ? (
+                                <Text
+                                  as="div"
+                                  variant="tiny"
+                                  className="text-system-gray-400 italic"
+                                >
+                                  No direct connections
+                                </Text>
+                              ) : (
+                                selectedNodeNeighbors.slice(0, 10).map((neighbor) => {
                                   const icon =
-                                    n.kind === 'query' ? (
+                                    neighbor.kind === 'query' ? (
                                       <SearchIcon className="h-3 w-3 text-system-gray-400" />
-                                    ) : n.kind === 'cluster' ? (
+                                    ) : neighbor.kind === 'cluster' ? (
                                       <Layers className="h-3 w-3 text-system-gray-400" />
                                     ) : (
                                       <FileText className="h-3 w-3 text-system-gray-400" />
                                     );
                                   return (
                                     <Button
-                                      key={n.id}
+                                      key={neighbor.id}
                                       variant="ghost"
                                       size="sm"
                                       leftIcon={icon}
-                                      onClick={() => graphActions.selectNode(n.id)}
+                                      onClick={() => graphActions.selectNode(neighbor.id)}
                                       className="w-full justify-between h-auto px-2 py-1.5 rounded-md text-left text-[11px] text-system-gray-700 hover:bg-system-gray-100"
                                     >
                                       <span className="flex-1 min-w-0 truncate group-hover:text-stratosort-blue">
-                                        {n.label}
+                                        {neighbor.label}
                                       </span>
-                                      {typeof n.similarity === 'number' ? (
+                                      {typeof neighbor.similarity === 'number' ? (
                                         <span className="text-[10px] text-system-gray-400">
-                                          {Math.round(n.similarity * 100)}%
+                                          {Math.round(neighbor.similarity * 100)}%
                                         </span>
                                       ) : null}
                                     </Button>
                                   );
-                                });
-                              })()}
-                              {edges.filter(
-                                (e) => e.source === selectedNode.id || e.target === selectedNode.id
-                              ).length > 10 && (
+                                })
+                              )}
+                              {selectedNodeConnectionCount > 10 && (
                                 <div className="text-[10px] text-system-gray-400 pl-6 mt-1">
-                                  +{' '}
-                                  {edges.filter(
-                                    (e) =>
-                                      e.source === selectedNode.id || e.target === selectedNode.id
-                                  ).length - 10}{' '}
-                                  more
+                                  +{selectedNodeConnectionCount - 10} more
                                 </div>
                               )}
                             </div>
@@ -7556,5 +8028,5 @@ UnifiedSearchModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
   defaultTopK: PropTypes.number,
-  initialTab: PropTypes.oneOf(['search', 'graph'])
+  initialTab: PropTypes.oneOf(['search', 'chat', 'graph'])
 };

@@ -51,7 +51,8 @@ function createTestService(overrides = {}) {
               path: '/docs/test.pdf',
               summary: 'A test document',
               type: 'document'
-            }
+            },
+            matchDetails: { hybrid: { vectorRawScore: 0.85 } }
           }
         ],
         meta: { mode: 'hybrid' }
@@ -397,7 +398,8 @@ describe('ChatService – extended coverage', () => {
             {
               id: 'file-1',
               score: 0.91,
-              metadata: { name: 'notes.pdf', path: '/docs/notes.pdf', summary: 'Summary text' }
+              metadata: { name: 'notes.pdf', path: '/docs/notes.pdf', summary: 'Summary text' },
+              matchDetails: { hybrid: { vectorRawScore: 0.88 } }
             }
           ],
           meta: { mode: 'hybrid' }

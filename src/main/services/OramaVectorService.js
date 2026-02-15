@@ -15,8 +15,9 @@ const { create, insert, search, remove, update, count, getByID } = require('@ora
 const { persist, restore: _restore } = require('@orama/plugin-data-persistence');
 const { createLogger } = require('../../shared/logger');
 const { createSingletonHelpers } = require('../../shared/singletonFactory');
-const { AI_DEFAULTS } = require('../../shared/constants');
+const { AI_DEFAULTS, IPC_CHANNELS } = require('../../shared/constants');
 const { ERROR_CODES } = require('../../shared/errorCodes');
+const { attachErrorCode } = require('../../shared/errorHandlingUtils');
 const { replaceFileWithRetry } = require('../../shared/atomicFile');
 const { compress, uncompress } = require('../../shared/lz4Codec');
 const { resolveEmbeddingDimension } = require('../../shared/embeddingDimensions');
@@ -24,23 +25,12 @@ const { getEmbeddingModel, loadLlamaConfig, getLlamaService } = require('../llam
 const { writeEmbeddingIndexMetadata } = require('./vectorDb/embeddingIndexMetadata');
 const { get: getConfig } = require('../../shared/config/index');
 const { SEARCH } = require('../../shared/performanceConstants');
+const { LRUCache } = require('../../shared/LRUCache');
 
 const logger = createLogger('OramaVectorService');
 
 const PERSIST_COMPRESSION_ENABLED =
   String(process.env.STRATOSORT_ORAMA_COMPRESS || 'true').toLowerCase() !== 'false';
-
-const attachErrorCode = (error, code) => {
-  if (error && typeof error === 'object') {
-    if (!error.code) {
-      error.code = code;
-    }
-    return error;
-  }
-  const wrapped = new Error(String(error || 'Unknown error'));
-  wrapped.code = code;
-  return wrapped;
-};
 
 const writeFileAtomic = async (filePath, data) => {
   const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
@@ -180,10 +170,13 @@ class OramaVectorService extends EventEmitter {
     // Always online (in-process)
     this.isOnline = true;
 
-    // Query cache (simple LRU)
-    this._queryCache = new Map();
-    this._queryCacheMaxSize = 200;
-    this._queryCacheTtlMs = 120000;
+    // Query cache (shared LRU implementation)
+    this._queryCache = new LRUCache({
+      maxSize: 200,
+      ttlMs: 120000,
+      lruStrategy: 'access',
+      name: 'OramaQueryCache'
+    });
 
     // Embedding sidecar store – Orama's restore() loses vector data (v3.1.x bug),
     // so we cache embeddings separately, keyed by collection name → Map<docId, number[]>.
@@ -265,11 +258,47 @@ class OramaVectorService extends EventEmitter {
   }
 
   _setVectorHealth(update) {
+    const prevHealthy = this._vectorHealth.primaryHealthy;
     this._vectorHealth = {
       ...this._vectorHealth,
       ...update
     };
     this.emit('vector-health', this._getVectorHealthSnapshot());
+
+    // Broadcast status to renderer on health transitions
+    if ('primaryHealthy' in update && update.primaryHealthy !== prevHealthy) {
+      if (update.primaryHealthy === true) {
+        this._broadcastStatus('online', 'healthy');
+      } else if (update.primaryHealthy === false) {
+        this._broadcastStatus('error', 'degraded');
+      }
+    }
+  }
+
+  /**
+   * Broadcast vectordb:status-changed to all renderer windows.
+   * Called on key health transitions so the UI can update without polling.
+   * @param {'online'|'offline'|'error'|'recovering'} status
+   * @param {string} [health] - Optional richer health descriptor
+   * @private
+   */
+  _broadcastStatus(status, health) {
+    try {
+      const { BrowserWindow } = require('electron');
+      const channel = IPC_CHANNELS.VECTOR_DB.STATUS_CHANGED;
+      const { safeSend } = require('../ipc/ipcWrappers');
+      const payload = { status, timestamp: Date.now() };
+      if (health) payload.health = health;
+
+      const windows = BrowserWindow.getAllWindows();
+      for (const win of windows) {
+        if (win && !win.isDestroyed() && win.webContents) {
+          safeSend(win.webContents, channel, payload);
+        }
+      }
+    } catch (error) {
+      logger.debug('[OramaVectorService] Failed to broadcast status:', error?.message);
+    }
   }
 
   async _getAllFileDocuments() {
@@ -534,6 +563,7 @@ class OramaVectorService extends EventEmitter {
         this._initialized = true;
         this.isOnline = true;
         this.emit('online', { reason: 'initialized' });
+        this._broadcastStatus('online', 'healthy');
 
         // Get counts for logging
         const counts = {};
@@ -1410,8 +1440,8 @@ class OramaVectorService extends EventEmitter {
       embedding: file.vector,
       hasVector: !(file.vector[0] === 0 && file.vector.every((v) => v === 0)),
       filePath: file.meta?.path || file.meta?.filePath || '',
-      fileName: file.meta?.fileName || path.basename(file.meta?.path || ''),
-      fileType: file.meta?.fileType || file.meta?.mimeType || '',
+      fileName: file.meta?.fileName || file.meta?.name || path.basename(file.meta?.path || ''),
+      fileType: file.meta?.fileType || file.meta?.type || file.meta?.mimeType || '',
       analyzedAt: file.meta?.analyzedAt || new Date().toISOString(),
       suggestedName: file.meta?.suggestedName || '',
       keywords: file.meta?.keywords || [],
@@ -1585,6 +1615,81 @@ class OramaVectorService extends EventEmitter {
   }
 
   /**
+   * Find files similar to a given file ID within a target directory.
+   * Useful for pre-move duplicate detection via embedding similarity.
+   *
+   * @param {string} fileId - The semantic file ID (e.g., "file:/path/to/file")
+   * @param {string} targetDirectory - Directory path to scope the search to
+   * @param {Object} [options] - Options
+   * @param {number} [options.threshold=0.9] - Minimum cosine similarity (0..1)
+   * @param {number} [options.topK=5] - Maximum results to return
+   * @returns {Promise<Array<{id: string, score: number, metadata: Object}>>}
+   */
+  async findSimilarInDirectory(fileId, targetDirectory, options = {}) {
+    const { threshold = 0.9, topK = 5 } = options;
+    await this.initialize();
+
+    if (!fileId || !targetDirectory) return [];
+
+    // Get the source file's embedding
+    const sourceEmbedding = this._getEmbeddingForFile(fileId);
+    if (!sourceEmbedding || !Array.isArray(sourceEmbedding) || sourceEmbedding.length === 0) {
+      return [];
+    }
+
+    try {
+      // Query the vector DB for similar files
+      const results = await this.querySimilarFiles(sourceEmbedding, topK * 3);
+
+      // Normalize directory path for consistent comparison
+      const normalizedDir = targetDirectory.replace(/\\/g, '/').replace(/\/+$/, '');
+
+      // Filter to files within the target directory and above threshold
+      return results
+        .filter((result) => {
+          if (result.id === fileId) return false; // Exclude self
+          const filePath = (result.metadata?.filePath || result.metadata?.path || '').replace(
+            /\\/g,
+            '/'
+          );
+          if (!filePath) return false;
+          // Check if file is within the target directory
+          return filePath.startsWith(normalizedDir + '/') && result.score >= threshold;
+        })
+        .slice(0, topK)
+        .map((result) => ({
+          id: result.id,
+          score: result.score,
+          metadata: result.metadata
+        }));
+    } catch (error) {
+      logger.warn('[OramaVectorService] findSimilarInDirectory failed:', {
+        fileId,
+        targetDirectory,
+        error: error.message
+      });
+      return [];
+    }
+  }
+
+  /**
+   * Get the stored embedding vector for a file ID.
+   * Checks sidecar store first (workaround for Orama vector loss), then falls back
+   * to the primary database.
+   * @private
+   * @param {string} fileId
+   * @returns {number[]|null}
+   */
+  _getEmbeddingForFile(fileId) {
+    // Check sidecar store first (preferred, avoids Orama v3.1.x vector loss bug)
+    const sidecarEmb = this._embeddingStore?.files?.get(fileId);
+    if (Array.isArray(sidecarEmb) && sidecarEmb.length > 0) {
+      return sidecarEmb;
+    }
+    return null;
+  }
+
+  /**
    * Delete a file embedding
    */
   async deleteFileEmbedding(fileId) {
@@ -1699,7 +1804,7 @@ class OramaVectorService extends EventEmitter {
         const { oldId, newId } = updateSpec || {};
         // Backward-compatible meta handling:
         // Some callers pass { newPath, newName } (legacy),
-        // others pass { newMeta: { path, name } } (FilePathCoordinator).
+        // others pass { newMeta: { path, name, ...rest } } (FilePathCoordinator / embeddingSync).
         const newPath =
           updateSpec?.newPath || updateSpec?.newMeta?.path || updateSpec?.newMeta?.filePath || null;
         const newName =
@@ -1711,11 +1816,18 @@ class OramaVectorService extends EventEmitter {
         const existing = await getByID(this._databases.files, oldId);
         if (!existing) continue;
 
+        // Build merged metadata: start with existing, apply all newMeta fields,
+        // then ensure filePath/fileName are correct. This propagates rich metadata
+        // (smartFolder, category, tags, summary, etc.) that callers like
+        // syncEmbeddingForMove provide, instead of silently dropping them.
+        const metaOverrides = this._buildMetaOverrides(updateSpec?.newMeta, newPath, newName);
+
         // If ID changed, delete old and insert new
         if (newId && newId !== oldId) {
           await remove(this._databases.files, oldId);
           await insert(this._databases.files, {
             ...existing,
+            ...metaOverrides,
             id: newId,
             filePath: newPath || existing.filePath,
             fileName: newName || existing.fileName
@@ -1730,9 +1842,10 @@ class OramaVectorService extends EventEmitter {
             embStore.delete(oldId);
           }
         } else {
-          // Just update the path
+          // Just update the path and metadata in-place
           await update(this._databases.files, oldId, {
             ...existing,
+            ...metaOverrides,
             filePath: newPath || existing.filePath,
             fileName: newName || existing.fileName
           });
@@ -1752,6 +1865,61 @@ class OramaVectorService extends EventEmitter {
 
     this._schedulePersist();
     return updated;
+  }
+
+  /**
+   * Build metadata overrides from newMeta, filtering out internal/id fields
+   * and only including non-null values that match the document schema.
+   * @private
+   * @param {Object|null} newMeta - Metadata from the caller
+   * @param {string|null} _newPath - Resolved new path (reserved for future use)
+   * @param {string|null} _newName - Resolved new name (reserved for future use)
+   * @returns {Object} Fields to merge into the document
+   */
+  _buildMetaOverrides(newMeta, _newPath, _newName) {
+    if (!newMeta || typeof newMeta !== 'object') {
+      return {};
+    }
+
+    // Allowlisted schema fields that callers may update.
+    // Excludes 'id', 'embedding', 'hasVector' to prevent accidental overwrites.
+    const ALLOWED_META_FIELDS = new Set([
+      'fileType',
+      'analyzedAt',
+      'suggestedName',
+      'keywords',
+      'tags',
+      'isOrphaned',
+      'orphanedAt',
+      'extractionMethod',
+      // Extended metadata from embeddingSync / analysis
+      'category',
+      'confidence',
+      'type',
+      'summary',
+      'date',
+      'entity',
+      'project',
+      'purpose',
+      'reasoning',
+      'documentType',
+      'keyEntities',
+      'extractedText',
+      'smartFolder',
+      'smartFolderPath',
+      'content_type',
+      'colors',
+      'has_text'
+    ]);
+
+    const overrides = {};
+    for (const [key, value] of Object.entries(newMeta)) {
+      if (!ALLOWED_META_FIELDS.has(key)) continue;
+      if (value === undefined) continue;
+      overrides[key] = value;
+    }
+
+    return overrides;
   }
 
   /**
@@ -2093,7 +2261,7 @@ class OramaVectorService extends EventEmitter {
 
     // Check cache
     const cacheKey = `folders:${fileId}:${topK}`;
-    const cached = this._getCachedQuery(cacheKey);
+    const cached = this._queryCache.get(cacheKey);
     if (cached) return cached;
 
     // Get file embedding — prefer sidecar (reliable) over getByID (may be zero-placeholder)
@@ -2109,7 +2277,7 @@ class OramaVectorService extends EventEmitter {
     }
 
     const results = await this.queryFoldersByEmbedding(embedding, topK);
-    this._setCachedQuery(cacheKey, results);
+    this._queryCache.set(cacheKey, results);
     return results;
   }
 
@@ -2777,7 +2945,7 @@ class OramaVectorService extends EventEmitter {
       vectorHealth: this._getVectorHealthSnapshot(),
       queryCache: {
         size: this._queryCache.size,
-        maxSize: this._queryCacheMaxSize
+        maxSize: this._queryCache.maxSize
       }
     };
   }
@@ -2925,48 +3093,22 @@ class OramaVectorService extends EventEmitter {
 
   // ==================== QUERY CACHE ====================
 
-  _getCachedQuery(key) {
-    const entry = this._queryCache.get(key);
-    if (!entry) return null;
-    if (Date.now() - entry.timestamp > this._queryCacheTtlMs) {
-      this._queryCache.delete(key);
-      return null;
-    }
-    // True LRU: re-insert to move to end of Map iteration order
-    this._queryCache.delete(key);
-    this._queryCache.set(key, entry);
-    return entry.data;
-  }
-
-  _setCachedQuery(key, data) {
-    // LRU eviction
-    if (this._queryCache.size >= this._queryCacheMaxSize) {
-      const firstKey = this._queryCache.keys().next().value;
-      this._queryCache.delete(firstKey);
-    }
-    this._queryCache.set(key, { data, timestamp: Date.now() });
-  }
-
+  /**
+   * Invalidate cache entries related to a specific file.
+   * Uses delimiter-aware matching to avoid substring collisions.
+   * Cache keys use the format "folders:{fileId}:{topK}".
+   */
   _invalidateCacheForFile(fileId) {
-    // FIX: Use delimiter-aware matching to avoid substring collisions.
-    // Cache keys use the format "folders:{fileId}:{topK}" so checking for
-    // the fileId bounded by delimiters or at key boundaries prevents
-    // "abc" from matching "abc123".
     const delimited = `:${fileId}:`;
     const suffix = `:${fileId}`;
-    for (const key of this._queryCache.keys()) {
-      if (key.includes(delimited) || key.endsWith(suffix) || key === fileId) {
-        this._queryCache.delete(key);
-      }
-    }
+    this._queryCache.invalidateWhere(
+      (key) => key.includes(delimited) || key.endsWith(suffix) || key === fileId
+    );
   }
 
+  /** Invalidate all folder-related cache entries. */
   _invalidateCacheForFolder() {
-    for (const key of this._queryCache.keys()) {
-      if (key.startsWith('folders:')) {
-        this._queryCache.delete(key);
-      }
-    }
+    this._queryCache.invalidateWhere((key) => key.startsWith('folders:'));
   }
 
   _clearQueryCache() {
@@ -2978,11 +3120,7 @@ class OramaVectorService extends EventEmitter {
   }
 
   getQueryCacheStats() {
-    return {
-      size: this._queryCache.size,
-      maxSize: this._queryCacheMaxSize,
-      ttlMs: this._queryCacheTtlMs
-    };
+    return this._queryCache.getStats();
   }
 
   // ==================== CLEANUP ====================
@@ -3027,6 +3165,7 @@ class OramaVectorService extends EventEmitter {
 
     this._isShuttingDown = true;
     this.isOnline = false;
+    this._broadcastStatus('offline');
 
     // Clear state
     this._queryCache.clear();

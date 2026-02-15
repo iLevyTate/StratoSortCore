@@ -303,10 +303,7 @@ export function useAnalysis(options = {}) {
   } = options;
 
   // Stabilize namingSettings reference: only produce a new object when contents change.
-  // This prevents downstream useCallback/useMemo deps from churning on every render
-  // when the parent passes a structurally-identical but referentially-new object.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const namingSettings = useMemo(() => rawNamingSettings, [JSON.stringify(rawNamingSettings)]);
+  const namingSettings = useMemo(() => rawNamingSettings, [rawNamingSettings]);
 
   const hasResumedRef = useRef(false);
   const analysisLockRef = useRef(false);
@@ -583,12 +580,12 @@ export function useAnalysis(options = {}) {
 
   useEffect(() => {
     // FIX: Prevent render loop by checking if settings actually changed
-    // Compare by value (JSON stringify) to detect actual changes
-    const currentSettingsKey = JSON.stringify(namingSettings);
-    if (lastAppliedNamingRef.current === currentSettingsKey) {
+    // Compare by primitive values to detect actual changes (avoids JSON.stringify on every run)
+    const key = `${namingSettings?.convention ?? ''}|${namingSettings?.separator ?? ''}|${namingSettings?.dateFormat ?? ''}|${namingSettings?.caseConvention ?? ''}`;
+    if (lastAppliedNamingRef.current === key) {
       return; // Settings haven't changed, skip update
     }
-    lastAppliedNamingRef.current = currentSettingsKey;
+    lastAppliedNamingRef.current = key;
 
     setAnalysisResults((prev) => {
       if (!prev || prev.length === 0) return prev;

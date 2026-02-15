@@ -18,6 +18,17 @@ const HOLISTIC_MIN_CHUNK_WEIGHT = 0.35;
 
 const MAX_SESSIONS = 50;
 
+// Minimum *raw* cosine similarity (from embeddings) for a source to be
+// included in the chat prompt.  The fused score after min-max normalization
+// is unreliable for quality gating because normalization stretches the best-
+// of-a-bad-bunch to 1.0.  Raw cosine similarity is an absolute quality signal:
+//   ≥ 0.55  strong semantic match
+//   0.35–0.55  moderate match
+//   < 0.25  effectively random for most embedding models
+// 0.25 is intentionally higher than the global MIN_SIMILARITY_SCORE (0.15)
+// because chat/RAG requires genuinely relevant context.
+const CHAT_MIN_SEMANTIC_SCORE = 0.25;
+
 const RESPONSE_MODES = {
   fast: {
     chunkTopK: 10,
@@ -87,17 +98,25 @@ class ChatService {
       const history = await this._getHistoryText(memory);
 
       const prompt = `
-You are StratoSort, a helpful document assistant.
+You are StratoSort, a friendly local AI assistant that helps users explore, search, and understand the files on their machine. Everything runs 100% on-device.
+
 The user said: "${cleanQuery}"
 Conversation history:
 ${history || '(none)'}
 
-Respond naturally and friendly. If they are greeting you, greet them back and offer to help find documents.
+Guidelines:
+- Be warm, concise, and conversational — like a helpful colleague, not a research paper.
+- If they greet you, greet them back naturally.
+- If they ask what you can do or how to use you, explain your capabilities in plain language:
+  you can search their indexed documents by meaning, answer questions about file contents,
+  find related files, summarize documents, and help organize their workspace.
+- Suggest 2-3 specific things they could try, phrased as natural questions.
+
 Return ONLY valid JSON:
 {
   "modelAnswer": [{ "text": "Your conversational response here." }],
   "documentAnswer": [],
-  "followUps": ["What projects are active?", "Find my tax returns", "Show me recent images"]
+  "followUps": ["A natural follow-up the user might ask"]
 }`;
 
       try {
@@ -198,21 +217,26 @@ Return ONLY valid JSON:
     if (!retrieval?.sources?.length) {
       parsed.documentAnswer = [];
     }
-    let assistantForMemory = this._formatForMemory(parsed);
+    let assistantForMemory = this._formatForMemory(parsed, retrieval.sources);
 
-    // FIX: Smart fallback if model returns nothing (improves UX)
+    // Smart fallback if model returns nothing (improves UX)
     if (parsed.documentAnswer.length === 0 && parsed.modelAnswer.length === 0) {
-      if (retrieval.sources.length === 0) {
+      const dropped = retrieval.meta?.droppedLowRelevance || 0;
+      if (retrieval.sources.length === 0 && dropped === 0) {
         parsed.modelAnswer.push({
-          text: "I couldn't find any documents matching your query. You might try:\n• Checking for typos\n• Using broader keywords\n• Asking about a topic present in your indexed files"
+          text: "I didn't find any documents matching your query. Try rephrasing with different keywords, or ask about a topic that's in your indexed files."
+        });
+      } else if (retrieval.sources.length === 0 && dropped > 0) {
+        parsed.modelAnswer.push({
+          text: `I found ${dropped} document${dropped > 1 ? 's' : ''} but none were relevant enough to your question. Try more specific keywords or a different angle.`
         });
       } else {
         parsed.modelAnswer.push({
-          text: `I found ${retrieval.sources.length} potentially relevant documents, but I couldn't find a specific answer to your question in them. You can check the sources list below to explore them directly.`
+          text: `I found ${retrieval.sources.length} related document${retrieval.sources.length > 1 ? 's' : ''} but couldn't extract a specific answer. You can explore the sources below directly.`
         });
       }
       // Re-format for memory since we added a fallback response
-      assistantForMemory = this._formatForMemory(parsed);
+      assistantForMemory = this._formatForMemory(parsed, retrieval.sources);
       await this._saveMemoryTurn(memory, cleanQuery, assistantForMemory);
     } else {
       await this._saveMemoryTurn(memory, cleanQuery, assistantForMemory);
@@ -295,7 +319,8 @@ Return ONLY valid JSON:
   }
 
   _isConversational(query) {
-    const conversational = new Set([
+    // Exact-match greetings / closers
+    const exactPhrases = new Set([
       'hello',
       'hi',
       'hey',
@@ -305,8 +330,31 @@ Return ONLY valid JSON:
       'good afternoon',
       'good evening',
       'who are you',
-      'what can you do'
+      'what can you do',
+      'what do you do',
+      'help',
+      'help me',
+      'yo',
+      'sup',
+      'howdy',
+      'bye',
+      'goodbye',
+      'see ya'
     ]);
+
+    // Pattern-match capability / meta questions (safe, bounded patterns)
+    const capabilityPatterns = [
+      /^what can you\b/,
+      /^what (?:do|does|will) you\b/,
+      /^how (?:can|do) you help\b/,
+      /^how does this work\b/,
+      /^what (?:are|is) you(?:r)?\b/,
+      /^(?:can|could) you help\b/,
+      /^tell me (?:about yourself|what you do)\b/,
+      /^what (?:kind|type) of\b.*\bhelp\b/,
+      /^how do i use\b/
+    ];
+
     // FIX: Truncate before regex to prevent ReDoS on very long untrusted input.
     // Chat queries shouldn't be conversational if they're over 100 chars.
     if (query.length > 100) return false;
@@ -314,7 +362,8 @@ Return ONLY valid JSON:
       .toLowerCase()
       .replace(/[^\w\s]/g, '')
       .trim();
-    return conversational.has(clean);
+    if (exactPhrases.has(clean)) return true;
+    return capabilityPatterns.some((rx) => rx.test(clean));
   }
 
   _isHolisticSynthesisQuery(query) {
@@ -475,6 +524,14 @@ Return ONLY valid JSON:
       meta.contextBoosted = true;
     }
 
+    // Enrich ALL results (including context-boosted files that bypass the search
+    // pipeline) with the full analysis metadata from the documentMap. This ensures
+    // the LLM prompt gets summary, purpose, entity, extractedText, etc. — not just
+    // the bare-bones fields stored in the vector DB.
+    if (this.searchService && typeof this.searchService.enrichResults === 'function') {
+      this.searchService.enrichResults(finalResults);
+    }
+
     const sources = finalResults.map((result, index) => {
       const fileId = result?.id;
       const metadata = result?.metadata || {};
@@ -503,6 +560,23 @@ Return ONLY valid JSON:
 
       const isImage = metadata.type === 'image';
 
+      // ── Raw semantic score ──
+      // The fused score (result.score) is min-max normalized and can inflate
+      // terrible matches to 1.0. The raw vector/chunk cosine similarity is
+      // the actual measure of semantic relevance. Expose it as semanticScore
+      // so the LLM prompt, relevance gate, and UI all use the real signal.
+      const hybrid = result?.matchDetails?.hybrid || {};
+      const rawSemantic =
+        typeof hybrid.vectorRawScore === 'number'
+          ? hybrid.vectorRawScore
+          : typeof hybrid.chunkRawScore === 'number'
+            ? hybrid.chunkRawScore
+            : null;
+      // If neither vector nor chunk search found this result (BM25-only),
+      // rawSemantic is null → semanticScore falls back to 0, signaling
+      // that there is no embedding-backed relevance.
+      const semanticScore = rawSemantic !== null ? rawSemantic : 0;
+
       return {
         id: `doc-${index + 1}`,
         fileId,
@@ -526,6 +600,8 @@ Return ONLY valid JSON:
         entities: metadata.keyEntities || [],
         dates: metadata.dates || [],
         score: result?.score || 0,
+        // Raw cosine similarity from embedding search (0-1, absolute quality)
+        semanticScore,
         confidence: metadata.confidence || 0,
         matchDetails: result?.matchDetails || {},
         // Image-specific fields
@@ -536,18 +612,40 @@ Return ONLY valid JSON:
       };
     });
 
+    // ── Relevance gate (semantic) ──
+    // Gate on raw cosine similarity instead of the fused score. The fused
+    // score is min-max normalized and can make garbage look like gold.
+    // Raw cosine similarity is an absolute quality signal: < 0.25 is
+    // effectively random for most embedding models.
+    const relevantSources = sources.filter((s) => s.semanticScore >= CHAT_MIN_SEMANTIC_SCORE);
+    const droppedCount = sources.length - relevantSources.length;
+    if (droppedCount > 0) {
+      logger.debug(
+        `[ChatService] Dropped ${droppedCount} low-relevance sources (semantic < ${CHAT_MIN_SEMANTIC_SCORE})`,
+        {
+          kept: relevantSources.length,
+          droppedScores: sources
+            .filter((s) => s.semanticScore < CHAT_MIN_SEMANTIC_SCORE)
+            .map((s) => ({ fused: s.score.toFixed(3), semantic: s.semanticScore.toFixed(3) }))
+            .slice(0, 3)
+        }
+      );
+    }
+
     const searchMeta = searchResults.meta || null;
     const fallbackReason = searchMeta?.fallbackReason;
     const isFallback = Boolean(searchMeta?.fallback || searchResults.mode === 'bm25-fallback');
 
     return {
-      sources,
+      sources: relevantSources,
       meta: {
         ...meta,
         mode: searchResults.mode || mode,
         queryMeta: searchResults.queryMeta || null,
         searchMeta,
-        resultCount: sources.length,
+        resultCount: relevantSources.length,
+        totalRetrieved: sources.length,
+        droppedLowRelevance: droppedCount,
         ...(isFallback
           ? {
               fallback: true,
@@ -598,13 +696,15 @@ Return ONLY valid JSON:
         if (!Array.isArray(vec) || vec.length === 0) continue;
         if (vec.length !== queryVector.length) continue;
 
+        const similarity = cosineSimilarity(queryVector, vec);
         scored.push({
           id: cleanIds[i],
-          score: cosineSimilarity(queryVector, vec),
+          score: similarity,
           metadata: doc
             ? {
                 path: doc.filePath,
                 filePath: doc.filePath,
+                name: doc.fileName,
                 fileName: doc.fileName,
                 fileType: doc.fileType,
                 analyzedAt: doc.analyzedAt,
@@ -613,7 +713,15 @@ Return ONLY valid JSON:
                 tags: doc.tags,
                 extractionMethod: doc.extractionMethod
               }
-            : {}
+            : {},
+          // Provide matchDetails so the source builder and relevance gate
+          // can read the raw cosine similarity as vectorRawScore. Without
+          // this, semanticScore falls back to 0 and the relevance gate
+          // silently drops every context-boosted file.
+          matchDetails: {
+            hybrid: { vectorRawScore: similarity },
+            sources: ['context']
+          }
         });
       }
 
@@ -642,10 +750,17 @@ Return ONLY valid JSON:
   }
 
   _buildPrompt({ query, history, sources, persona, intent = {} }) {
-    // Build comprehensive source context for richer conversations
+    // Build source context using the raw semantic score (actual cosine
+    // similarity) for all quality decisions. High-similarity sources get
+    // full extracted text; marginal sources get metadata only.
     const sourcesText = sources
       .map((s) => {
-        const lines = [`[${s.id}] ${s.name} ${s.isImage ? '(Image)' : '(Document)'}`];
+        // Use semantic (raw cosine) score — not the inflated fused score —
+        // so the LLM can accurately judge source quality.
+        const semPct = Math.round((s.semanticScore ?? s.score ?? 0) * 100);
+        const lines = [
+          `[${s.id}] ${s.name} ${s.isImage ? '(Image)' : '(Document)'}  (semantic relevance: ${semPct}%)`
+        ];
         if (s.path) lines.push(`Path: ${s.path}`);
         if (s.category) lines.push(`Category: ${s.category}`);
         if (s.documentType) lines.push(`Type: ${s.documentType}`);
@@ -653,7 +768,6 @@ Return ONLY valid JSON:
         if (s.entity) lines.push(`Entity: ${s.entity}`);
         if (s.project) lines.push(`Project: ${s.project}`);
         if (s.purpose) lines.push(`Purpose: ${s.purpose}`);
-        if (s.reasoning) lines.push(`Classification reason: ${s.reasoning}`);
         if (s.snippet) lines.push(`Summary: ${s.snippet}`);
         if (s.tags?.length > 0) lines.push(`Tags: ${s.tags.join(', ')}`);
         // Image-specific context
@@ -662,9 +776,14 @@ Return ONLY valid JSON:
           if (s.hasText) lines.push(`Contains text: Yes`);
           if (s.colors?.length > 0) lines.push(`Color palette: ${s.colors.slice(0, 5).join(', ')}`);
         }
-        // Include extracted text for deeper context if available
-        if (s.extractedText)
-          lines.push(`Content excerpt: ${s.extractedText.substring(0, 1000)}...`);
+        // Only include extracted text for sources with meaningful semantic
+        // similarity to avoid flooding the context window with irrelevant
+        // content. Use semanticScore (raw cosine) for the threshold.
+        const semScore = s.semanticScore ?? s.score ?? 0;
+        if (s.extractedText && semScore >= 0.4) {
+          const maxChars = semScore >= 0.6 ? 1200 : 600;
+          lines.push(`Content excerpt: ${s.extractedText.substring(0, maxChars)}`);
+        }
         return lines.join('\n');
       })
       .join('\n\n---\n\n');
@@ -691,11 +810,9 @@ Correction constraints:
       : '';
 
     return `
-You are StratoSort, an intelligent and helpful local document assistant.
-Your goal is to help the user understand their documents and find information quickly.
+You are StratoSort, a friendly local AI assistant that helps users explore and understand their documents. Everything runs 100% on-device.
 
-Persona guidance:
-${personaText}
+Style: ${personaText}
 
 Conversation history:
 ${history || '(none)'}
@@ -718,16 +835,15 @@ Return ONLY valid JSON with this shape:
 }
 
 Rules:
-1. Synthesize information from the provided documents to answer the user's question directly.
-2. Use 'documentAnswer' for any statements backed by the sources, and include the relevant citations.
-3. Use 'modelAnswer' for:
-   - General knowledge or explanations not found in the docs.
-   - Conversational transitions or friendly closing remarks.
-   - Responses to greetings or off-topic chitchat.
-4. Use document metadata (Project, Entity, Date, Type) to add useful context to your answer.
-5. Be concise but helpful. Avoid robotic repetition.
-6. If the documents don't answer the question, say so clearly in 'modelAnswer' and offer general advice if applicable.
-7. Generate 1-3 natural follow-up questions that help the user explore their data further.
+1. Answer the user's question directly and naturally — like a knowledgeable colleague, not a research report.
+2. Each source has a relevance percentage. Prioritize high-relevance sources; treat low-relevance ones (< 50%) as background context only.
+3. Use 'documentAnswer' for claims directly backed by sources, with citations. Use 'modelAnswer' for general knowledge, helpful context, or conversational responses.
+4. Write in flowing prose. NEVER start with "The provided documents do not..." or similar hedging.
+5. If no sources are provided, or they are clearly unrelated to the question, respond helpfully in 'modelAnswer': acknowledge you did not find matching documents and suggest what the user could try instead. Do NOT fabricate document-based claims.
+6. Weave document metadata (Project, Entity, Date, Type) into your answer naturally when it adds value.
+7. Be concise. One clear paragraph is better than multiple fragmented bullet sections.
+8. Generate 1-3 natural follow-up questions grounded in what you know about the user's documents. Avoid generic questions like "Can you provide more context?" — instead suggest specific things they might search for.
+9. If the query is casual or about your capabilities, respond warmly in 'modelAnswer' and leave 'documentAnswer' empty.
 ${synthesisRules}
 ${correctionRules}
 `.trim();
@@ -769,11 +885,23 @@ ${correctionRules}
     };
   }
 
-  _formatForMemory(parsed) {
+  _formatForMemory(parsed, sources = []) {
     const docs = parsed.documentAnswer?.map((d) => d.text).filter(Boolean) || [];
     const model = parsed.modelAnswer?.map((d) => d.text).filter(Boolean) || [];
     const combined = [...docs, ...model].join('\n');
-    return combined || 'No answer produced.';
+    if (!combined) return 'No answer produced.';
+
+    // Include source names so follow-up questions like "tell me more about
+    // the tax return" can be grounded. Without this, the flat history loses
+    // all context about which documents were referenced.
+    const sourceNames = (sources || [])
+      .filter((s) => s?.name)
+      .slice(0, 6)
+      .map((s) => s.name);
+    if (sourceNames.length > 0) {
+      return `${combined}\n[Referenced: ${sourceNames.join(', ')}]`;
+    }
+    return combined;
   }
 }
 

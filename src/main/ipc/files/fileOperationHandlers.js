@@ -8,7 +8,7 @@
 
 const path = require('path');
 const fs = require('fs').promises;
-const { ACTION_TYPES } = require('../../../shared/constants');
+const { ACTION_TYPES, IPC_EVENTS } = require('../../../shared/constants');
 // FIX: Added safeSend import for validated IPC event sending
 const { createHandler, safeHandle, safeSend, z } = require('../ipcWrappers');
 const { logger: baseLogger, createLogger } = require('../../../shared/logger');
@@ -36,9 +36,14 @@ const {
   getInstance: getLearningFeedbackService,
   FEEDBACK_SOURCES
 } = require('../../services/organization/learningFeedback');
-const { syncEmbeddingForMove } = require('./embeddingSync');
+const {
+  syncEmbeddingForMove,
+  removeEmbeddingsForPathBestEffort,
+  verifyEmbeddingAfterMove
+} = require('./embeddingSync');
 const { withTimeout } = require('../../../shared/promiseUtils');
 const { crossDeviceMove } = require('../../../shared/atomicFileOperations');
+const { handleDuplicateMove } = require('../../utils/fileDedup');
 
 // Alias for backward compatibility
 const operationSchema = schemas?.fileOperation || null;
@@ -138,13 +143,14 @@ function getAnalysisHistoryService() {
 
 async function syncEmbeddingsBestEffort({ sourcePath, destPath, log, context }) {
   const timeoutMs = 5000;
+  const operation = context === 'copy' ? 'copy' : 'move';
   const label = context ? `Embedding sync (${context})` : 'Embedding sync';
   try {
     await withTimeout(
       syncEmbeddingForMove({
         sourcePath,
         destPath,
-        operation: context === 'copy' ? 'copy' : 'move',
+        operation,
         log
       }),
       timeoutMs,
@@ -153,6 +159,28 @@ async function syncEmbeddingsBestEffort({ sourcePath, destPath, log, context }) 
   } catch (syncErr) {
     log.debug(`[FILE-OPS] ${label} failed (non-fatal):`, {
       error: syncErr.message
+    });
+  }
+
+  // Post-sync verification: ensure the embedding is correctly stored at the
+  // destination and no stale embedding lingers at the source.
+  try {
+    const verification = await withTimeout(
+      verifyEmbeddingAfterMove({ sourcePath, destPath, operation, log }),
+      3000,
+      'Post-move embedding verification'
+    );
+    if (!verification.valid && verification.issues.length > 0) {
+      log.warn(`[FILE-OPS] Embedding verification after ${context} found issues`, {
+        sourcePath: sourcePath ? path.basename(sourcePath) : null,
+        destPath: path.basename(destPath),
+        issues: verification.issues
+      });
+    }
+  } catch (verifyErr) {
+    // Non-fatal: verification is advisory
+    log.debug('[FILE-OPS] Post-move embedding verification timed out or failed', {
+      error: verifyErr?.message
     });
   }
 }
@@ -304,6 +332,33 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
             PathChangeReason.USER_MOVE
           );
 
+          // Check for identical content at destination before moving.
+          // Prevents creating duplicates when the same file already exists there.
+          const duplicateResult = await handleDuplicateMove({
+            sourcePath: moveValidation.source,
+            destinationPath: moveValidation.destination,
+            logger: log,
+            logPrefix: '[FILE-OPS]',
+            dedupContext: 'singleMove',
+            removeEmbeddings: removeEmbeddingsForPathBestEffort,
+            unlinkFn: fs.unlink
+          });
+          if (duplicateResult) {
+            traceMoveComplete(
+              moveValidation.source,
+              duplicateResult.destination,
+              'fileOperationHandlers',
+              true
+            );
+            return {
+              success: true,
+              message: `Duplicate detected - source removed, identical file already at ${duplicateResult.destination}`,
+              skipped: true,
+              reason: 'duplicate',
+              destination: duplicateResult.destination
+            };
+          }
+
           try {
             await fs.rename(moveValidation.source, moveValidation.destination);
           } catch (renameError) {
@@ -375,7 +430,7 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
             const mainWindow = getMainWindow();
             if (mainWindow && !mainWindow.isDestroyed()) {
               // FIX: Use safeSend for validated IPC event sending
-              safeSend(mainWindow.webContents, 'file-operation-complete', {
+              safeSend(mainWindow.webContents, IPC_EVENTS.FILE_OPERATION_COMPLETE, {
                 operation: 'move',
                 oldPath: moveValidation.source,
                 newPath: moveValidation.destination
@@ -593,7 +648,7 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
             const mainWindow = getMainWindow();
             if (mainWindow && !mainWindow.isDestroyed()) {
               // FIX: Use safeSend for validated IPC event sending
-              safeSend(mainWindow.webContents, 'file-operation-complete', {
+              safeSend(mainWindow.webContents, IPC_EVENTS.FILE_OPERATION_COMPLETE, {
                 operation: 'delete',
                 oldPath: deleteValidation.source
               });
@@ -1083,7 +1138,7 @@ function registerFileOperationHandlers(servicesOrParams) {
                     try {
                       const mainWindow = getMainWindow();
                       if (mainWindow && !mainWindow.isDestroyed()) {
-                        safeSend(mainWindow.webContents, 'file-operation-complete', {
+                        safeSend(mainWindow.webContents, IPC_EVENTS.FILE_OPERATION_COMPLETE, {
                           operation: 'move',
                           oldPath: validatedPath,
                           newPath: actualPath

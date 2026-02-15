@@ -1,7 +1,8 @@
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, { memo } from 'react';
 import PropTypes from 'prop-types';
-import { BaseEdge, getSmoothStepPath } from 'reactflow';
+import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from 'reactflow';
 import BaseEdgeTooltip from './BaseEdgeTooltip';
+import { useElkPath, useEdgeHover } from './useEdgeInteraction';
 
 /**
  * KnowledgeEdge
@@ -22,25 +23,8 @@ const KnowledgeEdge = memo(
     style,
     markerEnd
   }) => {
-    const [isHovered, setIsHovered] = useState(false);
-
-    const elkPath = useMemo(() => {
-      const sections = data?.elkSections;
-      if (!sections || sections.length === 0) return null;
-
-      return sections
-        .map((section) => {
-          let pathStr = `M ${section.startPoint.x},${section.startPoint.y}`;
-          if (section.bendPoints) {
-            section.bendPoints.forEach((bp) => {
-              pathStr += ` L ${bp.x},${bp.y}`;
-            });
-          }
-          pathStr += ` L ${section.endPoint.x},${section.endPoint.y}`;
-          return pathStr;
-        })
-        .join(' ');
-    }, [data?.elkSections]);
+    const { isHovered, handleMouseEnter, handleMouseLeave } = useEdgeHover();
+    const elkPath = useElkPath(data);
 
     const [smoothPath, labelX, labelY] = getSmoothStepPath({
       sourceX,
@@ -61,9 +45,6 @@ const KnowledgeEdge = memo(
     const targetLabel = data?.targetData?.label || '';
     const tooltipsEnabled = data?.showEdgeTooltips !== false;
 
-    const handleMouseEnter = useCallback(() => setIsHovered(true), []);
-    const handleMouseLeave = useCallback(() => setIsHovered(false), []);
-
     const edgeStyle = {
       stroke: '#22c55e',
       strokeWidth: isHovered ? 2.5 : 1.5,
@@ -75,6 +56,8 @@ const KnowledgeEdge = memo(
     };
 
     const conceptPreview = concepts.slice(0, 4);
+
+    const showCompactBadge = !tooltipsEnabled;
 
     return (
       <>
@@ -90,6 +73,24 @@ const KnowledgeEdge = memo(
           />
         )}
         <BaseEdge id={id} path={edgePath} style={edgeStyle} markerEnd={markerEnd} />
+        {showCompactBadge && (
+          <EdgeLabelRenderer>
+            <div
+              style={{
+                position: 'absolute',
+                transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+                fontSize: 10,
+                pointerEvents: 'none',
+                zIndex: 6
+              }}
+              className="nodrag nopan"
+            >
+              <span className="px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium whitespace-nowrap">
+                K:{weight}
+              </span>
+            </div>
+          </EdgeLabelRenderer>
+        )}
         {tooltipsEnabled && (
           <BaseEdgeTooltip
             isHovered={isHovered}

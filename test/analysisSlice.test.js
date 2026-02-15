@@ -20,7 +20,6 @@ import analysisReducer, {
   analysisFailure,
   stopAnalysis,
   setAnalysisResults,
-  setAnalysisStats,
   resetAnalysisState
 } from '../src/renderer/store/slices/analysisSlice';
 
@@ -33,8 +32,7 @@ describe('analysisSlice', () => {
       total: 0,
       lastActivity: 0
     },
-    results: [],
-    stats: null
+    results: []
   };
 
   describe('initial state', () => {
@@ -43,7 +41,6 @@ describe('analysisSlice', () => {
 
       expect(result.isAnalyzing).toBe(false);
       expect(result.results).toEqual([]);
-      expect(result.stats).toBeNull();
     });
   });
 
@@ -228,28 +225,13 @@ describe('analysisSlice', () => {
     });
   });
 
-  describe('setAnalysisStats', () => {
-    test('sets analysis stats', () => {
-      const stats = {
-        totalAnalyses: 100,
-        successRate: 0.95,
-        averageConfidence: 0.85
-      };
-
-      const result = analysisReducer(initialState, setAnalysisStats(stats));
-
-      expect(result.stats).toEqual(stats);
-    });
-  });
-
   describe('resetAnalysisState', () => {
     test('resets to initial state', () => {
       const modifiedState = {
         isAnalyzing: true,
         currentAnalysisFile: '/file.pdf',
         analysisProgress: { current: 5, total: 10, lastActivity: Date.now() },
-        results: [{ path: '/file.pdf' }],
-        stats: { total: 100 }
+        results: [{ path: '/file.pdf' }]
       };
 
       const result = analysisReducer(modifiedState, resetAnalysisState());
@@ -257,7 +239,6 @@ describe('analysisSlice', () => {
       expect(result.isAnalyzing).toBe(false);
       expect(result.currentAnalysisFile).toBe('');
       expect(result.results).toEqual([]);
-      expect(result.stats).toBeNull();
     });
   });
 });

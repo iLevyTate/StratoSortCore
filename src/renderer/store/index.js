@@ -281,28 +281,11 @@ const loadState = () => {
         analysisProgress: { current: 0, total: 0, lastActivity: 0 },
         currentAnalysisFile: '',
         // Serialize dates in analysis results too
-        results: serializeLoadedFiles(parsed.analysis?.results || []),
-        stats: parsed.analysis?.stats || null
-      },
-      // FIX CRIT-4: Add systemSlice defaults - this was completely missing from loadState
-      system: {
-        metrics: { cpu: 0, memory: 0, uptime: 0 },
-        health: {
-          // In-process services (Orama, node-llama-cpp) are always online after init.
-          // No IPC event updates these, so they must match systemSlice initialState.
-          vectorDb: 'online',
-          llama: 'online'
-        },
-        notifications: [], // Don't restore notifications - they're transient
-        unreadNotificationCount: 0,
-        version: '1.0.0',
-        documentsPath: parsed.system?.documentsPath || null,
-        documentsPathLoading: false,
-        documentsPathError: null,
-        redactPaths: null,
-        redactPathsLoading: false,
-        redactPathsError: null
+        results: serializeLoadedFiles(parsed.analysis?.results || [])
       }
+      // System slice is NOT restored from persistence. It uses its own initialState
+      // defaults (systemSlice.js) and re-fetches documentsPath/redactPaths via IPC
+      // thunks dispatched in index.js on every startup.
     };
   } catch {
     return undefined;

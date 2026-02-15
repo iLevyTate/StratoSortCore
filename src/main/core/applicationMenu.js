@@ -9,6 +9,7 @@
 
 const { Menu, shell, app } = require('electron');
 const { getQuitAccelerator, isMacOS } = require('../../shared/platformUtils');
+const { IPC_EVENTS } = require('../../shared/constants');
 // FIX: Import safeSend for validated IPC event sending
 const { safeSend } = require('../ipc/ipcWrappers');
 
@@ -29,7 +30,7 @@ function createApplicationMenu(getMainWindow) {
           click: () => {
             const mainWindow = getMainWindow();
             if (mainWindow && !mainWindow.isDestroyed()) {
-              safeSend(mainWindow.webContents, 'menu-action', 'select-files');
+              safeSend(mainWindow.webContents, IPC_EVENTS.MENU_ACTION, 'select-files');
             }
           }
         },
@@ -39,7 +40,7 @@ function createApplicationMenu(getMainWindow) {
           click: () => {
             const mainWindow = getMainWindow();
             if (mainWindow && !mainWindow.isDestroyed()) {
-              safeSend(mainWindow.webContents, 'menu-action', 'select-folder');
+              safeSend(mainWindow.webContents, IPC_EVENTS.MENU_ACTION, 'select-folder');
             }
           }
         }
@@ -57,7 +58,7 @@ function createApplicationMenu(getMainWindow) {
         click: () => {
           const mainWindow = getMainWindow();
           if (mainWindow && !mainWindow.isDestroyed()) {
-            safeSend(mainWindow.webContents, 'menu-action', 'open-settings');
+            safeSend(mainWindow.webContents, IPC_EVENTS.MENU_ACTION, 'open-settings');
           }
         }
       },
@@ -144,7 +145,7 @@ function createApplicationMenu(getMainWindow) {
       click: () => {
         const mainWindow = getMainWindow();
         if (mainWindow && !mainWindow.isDestroyed()) {
-          safeSend(mainWindow.webContents, 'menu-action', 'show-about');
+          safeSend(mainWindow.webContents, IPC_EVENTS.MENU_ACTION, 'show-about');
         }
       }
     });
@@ -162,7 +163,7 @@ function createApplicationMenu(getMainWindow) {
           click: () => {
             const mainWindow = getMainWindow();
             if (mainWindow && !mainWindow.isDestroyed()) {
-              safeSend(mainWindow.webContents, 'menu-action', 'show-about');
+              safeSend(mainWindow.webContents, IPC_EVENTS.MENU_ACTION, 'show-about');
             }
           }
         },
@@ -173,7 +174,7 @@ function createApplicationMenu(getMainWindow) {
           click: () => {
             const mainWindow = getMainWindow();
             if (mainWindow && !mainWindow.isDestroyed()) {
-              safeSend(mainWindow.webContents, 'menu-action', 'open-settings');
+              safeSend(mainWindow.webContents, IPC_EVENTS.MENU_ACTION, 'open-settings');
             }
           }
         },

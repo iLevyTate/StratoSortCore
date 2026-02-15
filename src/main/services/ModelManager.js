@@ -8,11 +8,7 @@ const { TIMEOUTS } = require('../../shared/performanceConstants');
 const { getInstance: getLlamaService } = require('./LlamaService');
 const { createSingletonHelpers } = require('../../shared/singletonFactory');
 const { ERROR_CODES } = require('../../shared/errorCodes');
-
-const attachErrorCode = (error, code) => {
-  error.code = code;
-  return error;
-};
+const { attachErrorCode } = require('../../shared/errorHandlingUtils');
 const {
   MODEL_CATEGORY_PREFIXES,
   FALLBACK_MODEL_PREFERENCES

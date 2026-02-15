@@ -1,6 +1,7 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo } from 'react';
 import PropTypes from 'prop-types';
 import { BaseEdge, getSmoothStepPath, EdgeLabelRenderer } from 'reactflow';
+import { useElkPath } from './useEdgeInteraction';
 
 /**
  * SmartStepEdge
@@ -22,25 +23,8 @@ const SmartStepEdge = ({
   label = null,
   data
 }) => {
-  // Get the edge path
   // Prefer ELK-routed path if available for collision avoidance
-  const elkPath = useMemo(() => {
-    const sections = data?.elkSections;
-    if (!sections || sections.length === 0) return null;
-
-    return sections
-      .map((section) => {
-        let pathStr = `M ${section.startPoint.x},${section.startPoint.y}`;
-        if (section.bendPoints) {
-          section.bendPoints.forEach((bp) => {
-            pathStr += ` L ${bp.x},${bp.y}`;
-          });
-        }
-        pathStr += ` L ${section.endPoint.x},${section.endPoint.y}`;
-        return pathStr;
-      })
-      .join(' ');
-  }, [data?.elkSections]);
+  const elkPath = useElkPath(data);
 
   const [smoothPath, smoothLabelX, smoothLabelY] = getSmoothStepPath({
     sourceX,

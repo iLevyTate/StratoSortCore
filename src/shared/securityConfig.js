@@ -327,22 +327,25 @@ const RATE_LIMITS = {
 };
 
 /**
- * IPC receive channels that are safe to expose to renderer
- * Includes vector DB status tracking (legacy + current)
+ * IPC receive channels that are safe to expose to renderer.
+ * Uses centralized IPC_EVENTS from constants.js plus the vectordb:status-changed
+ * channel from IPC_CHANNELS (which doubles as both an invoke and event channel).
  */
+const { IPC_CHANNELS, IPC_EVENTS } = require('./constants');
+
 const ALLOWED_RECEIVE_CHANNELS = [
-  'system-metrics',
-  'operation-progress',
-  'app:error',
-  'app:update',
-  'menu-action',
-  'open-semantic-search',
-  'settings-changed-external',
-  'file-operation-complete', // File move/delete notifications for search invalidation
-  'vectordb:status-changed', // Reserved: defined in constants but not yet sent from main
-  'notification', // Toast notifications from main process
-  'undo-redo:state-changed', // FIX: Undo/redo state change notifications
-  'batch-results-chunk' // FIX: Batch results streaming for progressive UI updates
+  IPC_EVENTS.SYSTEM_METRICS,
+  IPC_EVENTS.OPERATION_PROGRESS,
+  IPC_EVENTS.APP_ERROR,
+  IPC_EVENTS.APP_UPDATE,
+  IPC_EVENTS.MENU_ACTION,
+  IPC_EVENTS.OPEN_SEMANTIC_SEARCH,
+  IPC_EVENTS.SETTINGS_CHANGED_EXTERNAL,
+  IPC_EVENTS.FILE_OPERATION_COMPLETE,
+  IPC_CHANNELS.VECTOR_DB.STATUS_CHANGED,
+  IPC_EVENTS.NOTIFICATION,
+  IPC_EVENTS.UNDO_REDO_STATE_CHANGED,
+  IPC_EVENTS.BATCH_RESULTS_CHUNK
 ];
 
 /**

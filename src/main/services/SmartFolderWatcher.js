@@ -8,7 +8,12 @@
  * - Watches all configured smart folders
  * - Auto-analyzes new files added to smart folders
  * - Re-analyzes files when modified (based on mtime)
+ *   - Content updates (file edited & saved) only refresh details
+ *     (summary, keywords, embeddings) — naming and folder/category
+ *     assignment are preserved
  * - Debouncing to wait for file saves to complete
+ * - Startup reconciliation: detects files deleted while the watcher
+ *   was stopped and cleans up orphaned embeddings/history
  * - Opt-in via settings
  *
  * @module services/SmartFolderWatcher
@@ -151,6 +156,7 @@ class SmartFolderWatcher {
       filesReanalyzed: 0,
       errors: 0,
       queueDropped: 0,
+      orphansReconciled: 0,
       lastActivity: null
     };
   }
@@ -294,6 +300,12 @@ class SmartFolderWatcher {
 
       // Start queue processor
       this._startQueueProcessor();
+
+      // Run startup reconciliation in background — removes orphaned
+      // embeddings/history for files deleted while the watcher was stopped.
+      this._reconcileOrphanedEntries().catch((err) => {
+        logger.debug('[SMART-FOLDER-WATCHER] Startup reconciliation failed:', err.message);
+      });
 
       return true;
     } catch (error) {
@@ -1013,6 +1025,10 @@ class SmartFolderWatcher {
 
     const { filePath, eventType, applyNaming } = item;
     const isReanalyze = eventType === 'reanalyze';
+    // Content update: file was modified in-place (e.g. user edited & saved).
+    // Only update details (summary, keywords, embeddings) — preserve the
+    // existing name and smart-folder/category assignment.
+    const isContentUpdate = eventType === 'change';
 
     if (this.processingFiles.has(filePath)) {
       return;
@@ -1025,7 +1041,8 @@ class SmartFolderWatcher {
       const fileStats = await fs.stat(filePath);
 
       logger.info('[SMART-FOLDER-WATCHER] Analyzing file:', filePath, {
-        applyNaming: applyNaming !== false
+        applyNaming: applyNaming !== false,
+        isContentUpdate
       });
 
       // Get smart folders for categorization
@@ -1089,7 +1106,7 @@ class SmartFolderWatcher {
 
         // Apply user's naming convention to the suggested name (unless explicitly disabled)
         // Default behavior is to apply naming (backward compatibility)
-        const shouldApplyNaming = applyNaming !== false && !isEmbeddingRetry;
+        const shouldApplyNaming = applyNaming !== false && !isEmbeddingRetry && !isContentUpdate;
 
         if (shouldApplyNaming) {
           try {
@@ -1222,16 +1239,31 @@ class SmartFolderWatcher {
                 : derivedConfidence;
 
             const isImage = isImagePath(filePath);
+            // For content updates (file edited & saved in place), preserve the
+            // existing smart-folder assignment instead of using the LLM's
+            // re-categorization — the user intentionally placed the file here.
+            let resolvedCategory = analysis.category || analysis.folder || 'uncategorized';
+            let resolvedSmartFolderName = analysis.smartFolder || analysis.folder || null;
+
+            if (isContentUpdate) {
+              const learningService = getLearningFeedbackService();
+              const containingFolder = learningService?.findContainingSmartFolder?.(filePath);
+              if (containingFolder) {
+                resolvedCategory = containingFolder.name;
+                resolvedSmartFolderName = containingFolder.name;
+              }
+            }
+
             const historyPayload = {
               // The history utility uses suggestedName as the subject fallback.
               // Prefer any naming-convention output; otherwise keep the original basename.
               suggestedName: analysis.suggestedName || path.basename(filePath),
-              category: analysis.category || analysis.folder || 'uncategorized',
+              category: resolvedCategory,
               keywords,
               confidence: historyConfidence,
               summary: analysis.summary || analysis.description || '',
               extractedText: analysis.extractedText || null,
-              smartFolder: analysis.smartFolder || analysis.folder || null,
+              smartFolder: resolvedSmartFolderName,
               model: analysis.model || result.model || (isImage ? 'vision' : 'llm'),
               // Extended fields for document/image conversations
               // CRITICAL: Use field names that match AnalysisHistoryServiceCore expectations
@@ -1943,6 +1975,82 @@ class SmartFolderWatcher {
   }
 
   /**
+   * Reconcile orphaned entries on startup.
+   *
+   * When the watcher is stopped (e.g. app closed), files may be deleted or
+   * moved out of smart folders externally. On next startup, this sweep checks
+   * analysis history for files within watched smart folders that no longer
+   * exist on disk and cleans up their embeddings, chunks, and history.
+   *
+   * Runs in the background with yielding so it never blocks the main thread
+   * or delays normal watcher operation.
+   * @private
+   */
+  async _reconcileOrphanedEntries() {
+    // Let the system settle after startup before sweeping
+    await new Promise((r) => setTimeout(r, 5000));
+
+    if (this._isStopping || !this.isRunning) return;
+
+    const entries = this.analysisHistoryService?.analysisHistory?.entries;
+    if (!entries || typeof entries !== 'object') {
+      logger.debug('[SMART-FOLDER-WATCHER] Reconciliation skipped — no history entries available');
+      return;
+    }
+
+    // Snapshot the entries to avoid mutation during iteration
+    const allEntries = Object.values(entries);
+    let checked = 0;
+    let removed = 0;
+
+    for (const entry of allEntries) {
+      if (this._isStopping) break;
+
+      // Resolve the file's current path (actual if moved, otherwise original)
+      const filePath = entry?.organization?.actual || entry?.originalPath;
+      if (!filePath) continue;
+
+      // Only reconcile files within watched smart folders
+      if (!this._isInWatchedPath(filePath)) continue;
+
+      checked++;
+
+      try {
+        await fs.access(filePath);
+      } catch {
+        // File no longer exists — clean up embeddings, chunks, and history
+        try {
+          await this._finalizeDeletion(filePath);
+          removed++;
+          logger.debug('[SMART-FOLDER-WATCHER] Reconciled orphaned entry:', {
+            file: path.basename(filePath)
+          });
+        } catch (cleanupErr) {
+          logger.debug('[SMART-FOLDER-WATCHER] Reconciliation cleanup failed:', {
+            file: path.basename(filePath),
+            error: cleanupErr.message
+          });
+        }
+      }
+
+      // Yield every 50 files to avoid blocking the event loop
+      if (checked % 50 === 0) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+
+    if (removed > 0) {
+      this.stats.orphansReconciled += removed;
+      this.stats.lastActivity = new Date().toISOString();
+      logger.info('[SMART-FOLDER-WATCHER] Startup reconciliation complete', { checked, removed });
+    } else {
+      logger.debug('[SMART-FOLDER-WATCHER] Startup reconciliation — no orphans found', {
+        checked
+      });
+    }
+  }
+
+  /**
    * Handle watcher errors
    * @private
    */
@@ -2058,6 +2166,8 @@ class SmartFolderWatcher {
    * Queue a single file for reanalysis.
    * @param {string} filePath
    * @param {Object} [options]
+   * @param {boolean} [options.force] - Skip the watched-path check (for user-initiated reanalysis)
+   * @param {boolean} [options.applyNaming] - Apply naming conventions to the result
    * @returns {Promise<{queued: boolean, error?: string, errorCode?: string}>}
    */
   async reanalyzeFile(filePath, options = {}) {
@@ -2065,7 +2175,7 @@ class SmartFolderWatcher {
       return { queued: false, error: 'filePath is required', errorCode: 'MISSING_FILE_PATH' };
     }
 
-    if (!this._isInWatchedPath(filePath)) {
+    if (!options.force && !this._isInWatchedPath(filePath)) {
       return {
         queued: false,
         error: 'File is not inside a watched smart folder',

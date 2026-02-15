@@ -24,7 +24,11 @@ const { executeRollback } = require('./batchRollback');
 const { sendOperationProgress, sendChunkedResults } = require('./batchProgressReporter');
 const { getInstance: getFileOperationTracker } = require('../../../shared/fileOperationTracker');
 const { syncEmbeddingForMove, removeEmbeddingsForPathBestEffort } = require('./embeddingSync');
-const { computeFileChecksum, handleDuplicateMove } = require('../../utils/fileDedup');
+const {
+  computeFileChecksum,
+  handleDuplicateMove,
+  findSemanticDuplicates
+} = require('../../utils/fileDedup');
 
 const logger =
   typeof createLogger === 'function' ? createLogger('IPC:Files:BatchOrganize') : baseLogger;
@@ -444,19 +448,25 @@ async function handleBatchOrganize(params) {
               originalDestination: operation.operations[i].destination
             });
 
-            results.push({
+            const result = {
               success: true,
               source: op.source,
               destination: op.destination,
               operation: op.type || 'move'
-            });
+            };
+            // Surface semantic duplicate warning if detected during pre-move check
+            if (op._semanticDuplicate) {
+              result.semanticDuplicate = op._semanticDuplicate;
+            }
+            results.push(result);
             successCount++;
 
             log.debug('[FILE-OPS] Operation success', {
               batchId,
               index: i,
               source: op.source,
-              destination: op.destination
+              destination: op.destination,
+              semanticDuplicate: op._semanticDuplicate ? 'yes' : 'no'
             });
 
             // Send progress to renderer
@@ -664,6 +674,42 @@ async function performFileMove(op, log, checksumFn) {
   });
   if (duplicateResult) return duplicateResult;
 
+  // Semantic duplicate check: warn if a highly similar file already exists
+  // at the destination (catches near-duplicates that differ in binary content
+  // but are semantically identical, e.g., different PDF exports of the same doc).
+  try {
+    const { getSemanticFileId } = require('../../../shared/fileIdUtils');
+    const sourceFileId = getSemanticFileId(op.source);
+    const destDir = path.dirname(op.destination);
+    const semanticResult = await findSemanticDuplicates({
+      sourceFileId,
+      destinationDir: destDir,
+      threshold: 0.95, // High threshold for batch organize to avoid false positives
+      topK: 1,
+      logger: log
+    });
+    if (semanticResult.hasDuplicates) {
+      const match = semanticResult.matches[0];
+      log.info('[FILE-OPS] Semantic near-duplicate detected at destination', {
+        source: op.source,
+        similarFile: match.metadata?.filePath || match.id,
+        similarity: match.score.toFixed(3),
+        action: 'proceeding_with_move'
+      });
+      // Attach warning metadata to op for caller visibility.
+      // We proceed with the move but callers can surface the warning to the user.
+      op._semanticDuplicate = {
+        similarFile: match.metadata?.filePath || match.id,
+        similarity: match.score
+      };
+    }
+  } catch (semanticErr) {
+    // Non-fatal: semantic check is advisory, don't block the move
+    log.debug('[FILE-OPS] Semantic duplicate check failed (non-fatal)', {
+      error: semanticErr?.message
+    });
+  }
+
   let counter = 0;
   let uniqueDestination = op.destination;
   const ext = path.extname(op.destination);
@@ -868,27 +914,71 @@ async function recordUndoAndUpdateDatabase(
       });
     }
 
-    // Sync embeddings based on final smart folder destinations (background, best effort)
+    // Sync embeddings based on final smart folder destinations.
+    // Uses setImmediate to yield before heavy work, but awaits completion to
+    // ensure embeddings are consistent before the batch result is returned.
+    // Includes retry for individual failures to prevent transient errors from
+    // leaving embeddings in an inconsistent state.
     if (pathChanges.length > 0) {
-      setImmediate(() => {
-        const syncBatchSize = 2;
-        batchProcess(
+      await new Promise((resolve) => setImmediate(resolve)); // Yield to event loop
+      const syncBatchSize = 2;
+      const syncResults = { synced: 0, failed: 0, errors: [] };
+      try {
+        await batchProcess(
           pathChanges,
-          (change) =>
-            syncEmbeddingForMove({
-              sourcePath: change.oldPath,
-              destPath: change.newPath,
-              operation: 'move',
-              log
-            }),
+          async (change) => {
+            const MAX_SYNC_RETRIES = 2;
+            for (let attempt = 0; attempt <= MAX_SYNC_RETRIES; attempt++) {
+              try {
+                await syncEmbeddingForMove({
+                  sourcePath: change.oldPath,
+                  destPath: change.newPath,
+                  operation: 'move',
+                  log
+                });
+                syncResults.synced++;
+                return;
+              } catch (syncErr) {
+                if (attempt < MAX_SYNC_RETRIES) {
+                  log.debug('[FILE-OPS] Embedding sync retry', {
+                    attempt: attempt + 1,
+                    file: path.basename(change.newPath),
+                    error: syncErr.message
+                  });
+                  await delay(200 * (attempt + 1));
+                } else {
+                  syncResults.failed++;
+                  syncResults.errors.push({
+                    file: path.basename(change.newPath),
+                    error: syncErr.message
+                  });
+                }
+              }
+            }
+          },
           syncBatchSize
-        ).catch((syncErr) => {
-          log.debug('[FILE-OPS] Batch embedding sync failed (non-fatal):', {
-            error: syncErr.message,
-            batchId
-          });
+        );
+      } catch (batchSyncErr) {
+        log.warn('[FILE-OPS] Batch embedding sync had failures', {
+          batchId,
+          error: batchSyncErr.message,
+          ...syncResults
         });
-      });
+      }
+
+      if (syncResults.failed > 0) {
+        log.warn('[FILE-OPS] Some embedding syncs failed after retries', {
+          batchId,
+          synced: syncResults.synced,
+          failed: syncResults.failed,
+          errors: syncResults.errors.slice(0, 5) // Limit logged errors
+        });
+      } else if (syncResults.synced > 0) {
+        log.debug('[FILE-OPS] Batch embedding sync complete', {
+          batchId,
+          synced: syncResults.synced
+        });
+      }
     }
 
     // FIX P1-1: Await the rebuild with timeout to ensure search consistency
@@ -899,21 +989,22 @@ async function recordUndoAndUpdateDatabase(
         const searchService = getSearchServiceInstance?.();
         if (searchService?.invalidateAndRebuild) {
           // FIX: Await with timeout to ensure search consistency without blocking too long
-          const REBUILD_TIMEOUT_MS = 5000; // 5 second max wait
           const rebuildPromise = searchService.invalidateAndRebuild({
             immediate: true,
             reason: 'batch-organize'
           });
 
           // Wait for rebuild but with timeout to prevent blocking UI
-          await withTimeout(rebuildPromise, REBUILD_TIMEOUT_MS, 'BM25 rebuild after batch').catch(
-            (rebuildErr) => {
-              log.warn('[FILE-OPS] BM25 rebuild failed or timed out after batch', {
-                error: rebuildErr?.message,
-                batchId
-              });
-            }
-          );
+          await withTimeout(
+            rebuildPromise,
+            TIMEOUTS.SEARCH_INDEX_REBUILD,
+            'BM25 rebuild after batch'
+          ).catch((rebuildErr) => {
+            log.warn('[FILE-OPS] BM25 rebuild failed or timed out after batch', {
+              error: rebuildErr?.message,
+              batchId
+            });
+          });
         }
       } catch (invalidateErr) {
         log.warn('[FILE-OPS] Failed to trigger search index rebuild after batch', {

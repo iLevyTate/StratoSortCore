@@ -1,7 +1,8 @@
-import React, { memo, useState, useCallback, useMemo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { BaseEdge, getSmoothStepPath, EdgeLabelRenderer } from 'reactflow';
 import PropTypes from 'prop-types';
 import BaseEdgeTooltip from './BaseEdgeTooltip';
+import { useElkPath, useEdgeHover } from './useEdgeInteraction';
 
 /**
  * Custom edge component for similarity connections with hover tooltip
@@ -20,27 +21,8 @@ const SimilarityEdge = memo(
     style,
     markerEnd
   }) => {
-    const [isHovered, setIsHovered] = useState(false);
-
-    // Get the edge path
-    // Prefer ELK-routed path if available for collision avoidance
-    const elkPath = useMemo(() => {
-      const sections = data?.elkSections;
-      if (!sections || sections.length === 0) return null;
-
-      return sections
-        .map((section) => {
-          let pathStr = `M ${section.startPoint.x},${section.startPoint.y}`;
-          if (section.bendPoints) {
-            section.bendPoints.forEach((bp) => {
-              pathStr += ` L ${bp.x},${bp.y}`;
-            });
-          }
-          pathStr += ` L ${section.endPoint.x},${section.endPoint.y}`;
-          return pathStr;
-        })
-        .join(' ');
-    }, [data?.elkSections]);
+    const { isHovered, handleMouseEnter, handleMouseLeave } = useEdgeHover();
+    const elkPath = useElkPath(data);
 
     // Fallback to ReactFlow's path routing if ELK path is missing
     const [smoothPath, smoothLabelX, smoothLabelY] = getSmoothStepPath({
@@ -199,9 +181,6 @@ const SimilarityEdge = memo(
     // Default to true if not specified (legacy behavior)
     const showLabel = logicalShowLabel && (data?.showEdgeLabels ?? true);
 
-    const handleMouseEnter = useCallback(() => setIsHovered(true), []);
-    const handleMouseLeave = useCallback(() => setIsHovered(false), []);
-
     // Dynamic styling based on hover and relationship strength
     const baseWidth = 1 + relationshipStrength * 0.5;
     const edgeStyle = {
@@ -213,6 +192,18 @@ const SimilarityEdge = memo(
       filter: isHovered ? `drop-shadow(0 0 4px ${strokeColor})` : 'none',
       transition: 'all 0.2s ease'
     };
+
+    const compactLabelText =
+      primaryType === 'cross'
+        ? `Bridge ${similarityPercent}%`
+        : primaryType === 'tag'
+          ? `Tag ${similarityPercent}%`
+          : primaryType === 'category'
+            ? `${sourceCategory || 'Category'}`
+            : `${similarityPercent}%`;
+    const showCompactBadge =
+      !tooltipsEnabled &&
+      (isCrossCluster || commonTags.length > 0 || sameCategory || similarityPercent >= 65);
 
     return (
       <>
@@ -231,6 +222,26 @@ const SimilarityEdge = memo(
 
         {/* Visible edge */}
         <BaseEdge id={id} path={edgePath} style={edgeStyle} markerEnd={markerEnd} />
+
+        {/* Lightweight fallback badge for large graphs */}
+        {showCompactBadge && (
+          <EdgeLabelRenderer>
+            <div
+              style={{
+                position: 'absolute',
+                transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+                fontSize: 10,
+                pointerEvents: 'none',
+                zIndex: 6
+              }}
+              className="nodrag nopan"
+            >
+              <span className="px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-700 border border-slate-200 font-medium whitespace-nowrap">
+                {compactLabelText}
+              </span>
+            </div>
+          </EdgeLabelRenderer>
+        )}
 
         {/* Persistent Verbal Label (only for strong connections) */}
         {showLabel && (

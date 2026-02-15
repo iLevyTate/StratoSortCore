@@ -1770,7 +1770,8 @@ function registerEmbeddingsIpc(servicesOrParams) {
         }
 
         const result = await smartFolderWatcher.reanalyzeFile(validation.normalizedPath, {
-          applyNaming
+          applyNaming,
+          force: true // User-initiated reanalysis — allow files outside smart folders
         });
         if (!result?.queued) {
           return {
@@ -2540,11 +2541,32 @@ function registerEmbeddingsIpc(servicesOrParams) {
           const service = await getClusteringService();
           const result = await service.computeClusters(k);
 
-          // Optionally generate LLM labels for clusters
-          if (result.success && generateLabels && result.clusters.length > 0) {
-            await service.generateClusterLabels();
-            // Update result with labels
-            result.clusters = service.getClustersForGraph();
+          if (result.success && result.clusters.length > 0) {
+            // Phase 1: Generate fast metadata-based labels (no LLM) so
+            // the graph has meaningful labels immediately.
+            await service.generateClusterLabels({ skipLLM: true });
+
+            // Build the full response with clusters + cross-cluster edges
+            // so the frontend can render without an extra getClusters call.
+            const clusters = service.getClustersForGraph();
+            const crossClusterEdges = service.findCrossClusterEdges(
+              THRESHOLDS.SIMILARITY_EDGE_DEFAULT
+            );
+
+            // Phase 2: Fire LLM label refinement in the background (non-blocking).
+            // Labels will be available on the next getClusters call.
+            if (generateLabels) {
+              service.generateClusterLabels({ skipLLM: false }).catch((err) => {
+                logger.warn('[EMBEDDINGS] Background LLM label generation failed:', err.message);
+              });
+            }
+
+            return {
+              ...result,
+              clusters,
+              crossClusterEdges,
+              stale: false
+            };
           }
 
           return result;

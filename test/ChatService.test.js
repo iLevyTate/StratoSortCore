@@ -66,7 +66,8 @@ describe('ChatService', () => {
           {
             id: 'file-1',
             score: 0.9,
-            metadata: { name: 'Doc', path: 'C:\\doc.txt', summary: 'Snippet' }
+            metadata: { name: 'Doc', path: 'C:\\doc.txt', summary: 'Snippet' },
+            matchDetails: { hybrid: { vectorRawScore: 0.85 } }
           }
         ],
         meta: { mode: 'hybrid' }

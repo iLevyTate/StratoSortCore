@@ -35,6 +35,23 @@ jest.mock('../src/shared/constants', () => ({
     TEXT_ANALYSIS: 'qwen3:0.6b',
     IMAGE_ANALYSIS: 'gemma3:latest',
     EMBEDDING: 'embeddinggemma'
+  },
+  IPC_CHANNELS: {
+    VECTOR_DB: { STATUS_CHANGED: 'vectordb:status-changed' }
+  },
+  IPC_EVENTS: {
+    SYSTEM_METRICS: 'system-metrics',
+    OPERATION_PROGRESS: 'operation-progress',
+    APP_ERROR: 'app:error',
+    APP_UPDATE: 'app:update',
+    MENU_ACTION: 'menu-action',
+    OPEN_SEMANTIC_SEARCH: 'open-semantic-search',
+    SETTINGS_CHANGED_EXTERNAL: 'settings-changed-external',
+    FILE_OPERATION_COMPLETE: 'file-operation-complete',
+    NOTIFICATION: 'notification',
+    UNDO_REDO_STATE_CHANGED: 'undo-redo:state-changed',
+    BATCH_RESULTS_CHUNK: 'batch-results-chunk',
+    OPERATION_FAILED: 'operation-failed'
   }
 }));
 
