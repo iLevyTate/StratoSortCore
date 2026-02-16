@@ -432,6 +432,7 @@ class OramaVectorService extends EventEmitter {
       return this._vectorHealthPromise;
     }
 
+    const HEALTH_CHECK_TIMEOUT_MS = 30000;
     this._vectorHealthPromise = (async () => {
       const embStore = this._embeddingStore?.files;
       if (!(embStore instanceof Map) || embStore.size === 0) {
@@ -523,9 +524,32 @@ class OramaVectorService extends EventEmitter {
         });
         return this._getVectorHealthSnapshot();
       }
-    })().finally(() => {
-      this._vectorHealthPromise = null;
+    })();
+
+    // Wrap with timeout to prevent a hanging health check from blocking all subsequent checks
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('Vector health check timed out'));
+      }, HEALTH_CHECK_TIMEOUT_MS);
     });
+
+    this._vectorHealthPromise = Promise.race([this._vectorHealthPromise, timeoutPromise])
+      .catch((error) => {
+        logger.warn('[OramaVectorService] Health check timed out or failed', {
+          reason,
+          error: error?.message
+        });
+        this._setVectorHealth({
+          primaryHealthy: false,
+          lastValidatedAt: Date.now(),
+          lastValidationReason: `${reason}:timeout`,
+          lastValidationError: error?.message || 'Health check timed out'
+        });
+        return this._getVectorHealthSnapshot();
+      })
+      .finally(() => {
+        this._vectorHealthPromise = null;
+      });
 
     return this._vectorHealthPromise;
   }
@@ -2893,6 +2917,49 @@ class OramaVectorService extends EventEmitter {
           tags: doc.tags
         }
       }));
+  }
+
+  /**
+   * Get a document by ID
+   * @param {string} id
+   * @returns {Promise<Object|null>}
+   */
+  async getDocument(id) {
+    await this.initialize();
+    try {
+      const db = this._databases.files;
+      if (!db) return null;
+      return await getByID(db, id);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Update tags for a file document
+   * @param {string} id - Document ID
+   * @param {string[]} tags - New tags
+   * @returns {Promise<boolean>}
+   */
+  async updateDocumentTags(id, tags) {
+    await this.initialize();
+
+    try {
+      const db = this._databases.files;
+      if (!db) return false;
+
+      const doc = await getByID(db, id);
+      if (!doc) return false;
+
+      // Update document with new tags
+      await update(db, id, { ...doc, tags });
+
+      this._schedulePersist();
+      return true;
+    } catch (error) {
+      logger.error('[OramaVectorService] Failed to update document tags', { id, error });
+      return false;
+    }
   }
 
   // ==================== UTILITY ====================

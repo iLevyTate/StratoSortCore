@@ -12,6 +12,7 @@ const { registerFileSelectionHandlers } = require('./fileSelectionHandlers');
 const { registerFileOperationHandlers } = require('./fileOperationHandlers');
 const { registerFolderHandlers } = require('./folderHandlers');
 const { registerShellHandlers } = require('./shellHandlers');
+const { registerTaggingHandlers } = require('./taggingHandlers');
 
 // Re-export batch handler components for direct access if needed
 const {
@@ -45,6 +46,9 @@ function registerFilesIpc(servicesOrParams) {
 
   // Register shell handlers (OPEN_FILE, REVEAL_FILE)
   registerShellHandlers(container);
+
+  // Register tagging handlers (ADD_TAGS)
+  registerTaggingHandlers(container);
 }
 
 module.exports = registerFilesIpc;

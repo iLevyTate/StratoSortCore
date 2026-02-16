@@ -261,10 +261,13 @@ async function checkDependencies() {
 }
 
 // Run the script
-checkDependencies().then(() => {
-  if (require.main === module) {
-    main().catch(console.error);
-  }
-});
+if (require.main === module) {
+  checkDependencies()
+    .then(() => main())
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+}
 
 module.exports = { generatePngIcon, generateWindowsIco, generateMacIcns };

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { VIEWPORT } from '../../shared/performanceConstants';
 
 /**
@@ -15,16 +15,15 @@ export function useViewport() {
     is4K: window.innerWidth >= VIEWPORT.FOUR_K
   });
 
-  useEffect(() => {
-    let timeoutId = null;
+  const timeoutRef = useRef(null);
 
+  useEffect(() => {
     const handleResize = () => {
-      // Debounce resize events for better performance
-      if (timeoutId) {
-        clearTimeout(timeoutId);
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
       }
 
-      timeoutId = setTimeout(() => {
+      timeoutRef.current = setTimeout(() => {
         setViewport({
           width: window.innerWidth,
           height: window.innerHeight,
@@ -39,8 +38,8 @@ export function useViewport() {
     window.addEventListener('resize', handleResize);
 
     return () => {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
       }
       window.removeEventListener('resize', handleResize);
     };

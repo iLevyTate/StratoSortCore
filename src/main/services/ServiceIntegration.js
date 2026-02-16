@@ -34,7 +34,7 @@ function throwIfAborted(signal, phase) {
  */
 const SERVICE_INITIALIZATION_ORDER = {
   // Tier 0: Independent services (can init in parallel)
-  tier0: ['analysisHistory', 'undoRedo', 'processingState'],
+  tier0: ['analysisHistory', 'undoRedo', 'processingState', 'chatHistoryStore'],
   // Tier 1: Vector DB (in-process Orama - no external server needed)
   tier1: ['vectorDb'],
   // Tier 2: Services that depend on Vector DB
@@ -169,6 +169,7 @@ class ServiceIntegration {
       this.undoRedo = container.resolve(ServiceIds.UNDO_REDO);
       this.processingState = container.resolve(ServiceIds.PROCESSING_STATE);
       this.relationshipIndex = container.resolve(ServiceIds.RELATIONSHIP_INDEX);
+      this.chatHistoryStore = container.tryResolve(ServiceIds.CHAT_HISTORY_STORE);
 
       // Initialize vector service and folder matching
       this.vectorService = container.resolve(ServiceIds.ORAMA_VECTOR);
@@ -234,7 +235,8 @@ class ServiceIntegration {
       const tier0Results = await Promise.allSettled([
         this.analysisHistory.initialize(),
         this.undoRedo.initialize(),
-        this.processingState.initialize()
+        this.processingState.initialize(),
+        this.chatHistoryStore ? this.chatHistoryStore.initialize() : Promise.resolve()
       ]);
       throwIfAborted(signal, 'tier0 initialization');
 
@@ -421,6 +423,13 @@ class ServiceIntegration {
     if (!container.has(ServiceIds.PROCESSING_STATE)) {
       container.registerSingleton(ServiceIds.PROCESSING_STATE, () => {
         return new ProcessingStateService();
+      });
+    }
+
+    if (!container.has(ServiceIds.CHAT_HISTORY_STORE)) {
+      container.registerSingleton(ServiceIds.CHAT_HISTORY_STORE, () => {
+        const { ChatHistoryStore } = require('./ChatHistoryStore');
+        return new ChatHistoryStore();
       });
     }
 
@@ -639,7 +648,8 @@ class ServiceIntegration {
           analysisHistoryService: c.resolve(ServiceIds.ANALYSIS_HISTORY),
           parallelEmbeddingService: c.resolve(ServiceIds.PARALLEL_EMBEDDING),
           llamaService: c.tryResolve(ServiceIds.LLAMA_SERVICE),
-          relationshipIndexService: c.tryResolve(ServiceIds.RELATIONSHIP_INDEX)
+          relationshipIndexService: c.tryResolve(ServiceIds.RELATIONSHIP_INDEX),
+          chatHistoryStore: c.tryResolve(ServiceIds.CHAT_HISTORY_STORE)
         });
       });
     }
@@ -715,6 +725,7 @@ class ServiceIntegration {
       // Also clear SmartFolderWatcher reference to prevent memory leaks
       this.smartFolderWatcher = null;
       this.relationshipIndex = null;
+      this.chatHistoryStore = null;
       this.initialized = false;
 
       logger.info('[ServiceIntegration] All services shut down successfully');

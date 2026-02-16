@@ -37,7 +37,18 @@ jest.mock('../src/shared/constants', () => ({
     EMBEDDING: 'embeddinggemma'
   },
   IPC_CHANNELS: {
-    VECTOR_DB: { STATUS_CHANGED: 'vectordb:status-changed' }
+    VECTOR_DB: { STATUS_CHANGED: 'vectordb:status-changed' },
+    CHAT: {
+      QUERY: 'chat:query',
+      QUERY_STREAM: 'chat:query-stream',
+      STREAM_CHUNK: 'chat:stream-chunk',
+      STREAM_END: 'chat:stream-end',
+      RESET_SESSION: 'chat:reset-session',
+      LIST_CONVERSATIONS: 'chat:list-conversations',
+      GET_CONVERSATION: 'chat:get-conversation',
+      DELETE_CONVERSATION: 'chat:delete-conversation',
+      SEARCH_CONVERSATIONS: 'chat:search-conversations'
+    }
   },
   IPC_EVENTS: {
     SYSTEM_METRICS: 'system-metrics',

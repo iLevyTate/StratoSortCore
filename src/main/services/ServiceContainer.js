@@ -618,6 +618,7 @@ const ServiceIds = {
 
   // State services
   ANALYSIS_HISTORY: 'analysisHistory',
+  CHAT_HISTORY_STORE: 'chatHistoryStore',
   UNDO_REDO: 'undoRedo',
   PROCESSING_STATE: 'processingState',
 
@@ -665,6 +666,7 @@ const SHUTDOWN_ORDER = [
   // FIX L4: Add analysis cache (caching layer, before state services)
   ServiceIds.ANALYSIS_CACHE,
   // Third: State management services
+  ServiceIds.CHAT_HISTORY_STORE,
   ServiceIds.PROCESSING_STATE,
   ServiceIds.UNDO_REDO,
   ServiceIds.ANALYSIS_HISTORY,

@@ -80,7 +80,18 @@ async function replaceFileWithRetry(tempPath, filePath, options = {}) {
   // This is less "atomic" but avoids losing data when Windows denies rename.
   try {
     await fs.copyFile(tempPath, filePath);
+    // FIX BUG-017: Verify copy integrity
+    const crypto = require('crypto');
+    const srcBuf = await fs.readFile(tempPath);
+    const dstBuf = await fs.readFile(filePath);
+    const srcHash = crypto.createHash('md5').update(srcBuf).digest('hex');
+    const dstHash = crypto.createHash('md5').update(dstBuf).digest('hex');
+    if (srcHash !== dstHash) {
+      throw new Error(`Atomic write copy verification failed: hash mismatch for ${filePath}`);
+    }
   } catch (copyError) {
+    // Verification failures are the primary error
+    if (copyError?.message?.includes('verification')) throw copyError;
     // Prefer the original error for debugging, but attach copy failure details.
     if (lastError) lastError.copyFailure = copyError;
     throw lastError || copyError;

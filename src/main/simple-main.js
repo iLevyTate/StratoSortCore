@@ -157,12 +157,16 @@ eventListeners.push(() => {
 // Ensure OCR worker is terminated on shutdown
 eventListeners.push(() => {
   const { terminateJsWorker } = require('./utils/tesseractUtils');
-  terminateJsWorker().catch(() => {});
+  terminateJsWorker().catch((err) => {
+    logger.warn('[SHUTDOWN] Failed to terminate OCR worker:', err?.message);
+  });
 });
 // Ensure embedding worker pool is terminated on shutdown
 eventListeners.push(() => {
   const { destroyEmbeddingPool } = require('./utils/workerPools');
-  destroyEmbeddingPool().catch(() => {});
+  destroyEmbeddingPool().catch((err) => {
+    logger.warn('[SHUTDOWN] Failed to destroy embedding pool:', err?.message);
+  });
 });
 
 const trackedTimers = new Map();

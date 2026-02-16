@@ -64,6 +64,16 @@ class EmbeddingCache {
    * @private
    */
   _subscribeToInvalidationBus() {
+    // Guard against duplicate subscriptions if initialize() is called multiple times
+    if (this._unsubscribe) {
+      try {
+        this._unsubscribe();
+      } catch {
+        // Previous subscription may already be cleaned up
+      }
+      this._unsubscribe = null;
+    }
+
     try {
       const bus = getCacheInvalidationBus();
       this._unsubscribe = bus.subscribe('EmbeddingCache', {

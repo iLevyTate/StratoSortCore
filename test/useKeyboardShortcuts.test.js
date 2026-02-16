@@ -38,7 +38,8 @@ jest.mock('../src/renderer/store/hooks', () => ({
 
 jest.mock('../src/renderer/store/slices/uiSlice', () => ({
   toggleSettings: jest.fn(() => ({ type: 'ui/toggleSettings' })),
-  setPhase: jest.fn((phase) => ({ type: 'ui/setPhase', payload: phase }))
+  setPhase: jest.fn((phase) => ({ type: 'ui/setPhase', payload: phase })),
+  canTransitionTo: jest.fn(() => true)
 }));
 
 jest.mock('../src/renderer/contexts/NotificationContext', () => ({

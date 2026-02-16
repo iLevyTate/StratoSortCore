@@ -138,12 +138,19 @@ class ModelAccessCoordinator {
         return;
       }
       // Phase 2: lock acquired but still running.
-      // Do not force release here: the holder may still be mutating model state.
-      logger.warn('[Coordinator] Load lock held past timeout; waiting for holder to release', {
+      // Schedule a force-release safety net at 2x the timeout to prevent permanent deadlock
+      // if the holder crashes or hangs without releasing.
+      logger.warn('[Coordinator] Load lock held past timeout; scheduling force-release', {
         modelType,
         timeoutMs,
-        safetyMode: 'no-force-release'
+        forceReleaseMs: timeoutMs
       });
+      setTimeout(() => {
+        if (!released) {
+          logger.error('[Coordinator] Force-releasing stuck load lock', { modelType });
+          releaseLock('force-release-deadlock');
+        }
+      }, timeoutMs);
     }, timeoutMs);
 
     try {

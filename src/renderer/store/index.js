@@ -163,11 +163,14 @@ const loadState = () => {
     const STATE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
     const parsedTimestamp = Number(parsed.timestamp);
     const hasValidTimestamp = Number.isFinite(parsedTimestamp);
-    const stateAgeMs = hasValidTimestamp ? Date.now() - parsedTimestamp : Number.POSITIVE_INFINITY;
+    // Default missing timestamps to current time rather than POSITIVE_INFINITY.
+    // This gives migrated or legacy states one more session before TTL applies,
+    // and the next save will write a proper timestamp.
+    const stateAgeMs = hasValidTimestamp ? Date.now() - parsedTimestamp : 0;
 
     if (!hasValidTimestamp) {
       logger.warn(
-        '[Store] Persisted state missing/invalid timestamp; expiring session state defensively'
+        '[Store] Persisted state missing/invalid timestamp; treating as fresh for this session'
       );
     }
 

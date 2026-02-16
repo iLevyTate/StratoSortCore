@@ -1,6 +1,7 @@
 import React, { memo, useMemo } from 'react';
 import { BaseEdge, getSmoothStepPath, EdgeLabelRenderer } from 'reactflow';
 import PropTypes from 'prop-types';
+import { Zap } from 'lucide-react';
 import BaseEdgeTooltip from './BaseEdgeTooltip';
 import { useElkPath, useEdgeHover } from './useEdgeInteraction';
 
@@ -204,6 +205,7 @@ const SimilarityEdge = memo(
     const showCompactBadge =
       !tooltipsEnabled &&
       (isCrossCluster || commonTags.length > 0 || sameCategory || similarityPercent >= 65);
+    const isSurpriseEdge = data?.isSurprise === true;
 
     return (
       <>
@@ -238,6 +240,26 @@ const SimilarityEdge = memo(
             >
               <span className="px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-700 border border-slate-200 font-medium whitespace-nowrap">
                 {compactLabelText}
+              </span>
+            </div>
+          </EdgeLabelRenderer>
+        )}
+
+        {/* Surprise badge for high-similarity, distant-folder connections */}
+        {isSurpriseEdge && (
+          <EdgeLabelRenderer>
+            <div
+              style={{
+                position: 'absolute',
+                transform: `translate(-50%, -50%) translate(${labelX + 20}px,${labelY - 16}px)`,
+                pointerEvents: 'none',
+                zIndex: 11
+              }}
+              className="nodrag nopan"
+            >
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                <Zap className="h-2.5 w-2.5" />
+                Surprise
               </span>
             </div>
           </EdgeLabelRenderer>
@@ -417,7 +439,8 @@ SimilarityEdge.propTypes = {
       tags: PropTypes.arrayOf(PropTypes.string),
       category: PropTypes.string,
       subject: PropTypes.string
-    })
+    }),
+    isSurprise: PropTypes.bool
   }),
   style: PropTypes.object,
   markerEnd: PropTypes.oneOfType([PropTypes.string, PropTypes.object])

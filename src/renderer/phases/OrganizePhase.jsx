@@ -416,6 +416,11 @@ function OrganizePhase() {
             {unprocessedFiles.length > 0 && (
               <button
                 onClick={selectAllFiles}
+                aria-label={
+                  selectedFiles.size === unprocessedFiles.length
+                    ? 'Deselect all files'
+                    : 'Select all files'
+                }
                 className="text-sm text-stratosort-blue hover:text-stratosort-blue/80 font-medium transition-colors"
               >
                 {selectedFiles.size === unprocessedFiles.length ? 'Deselect All' : 'Select All'}
@@ -487,8 +492,11 @@ function OrganizePhase() {
                       moved to the same destination. Rename the files below to resolve:
                     </Text>
                     <ul className="mt-2 space-y-1 text-system-gray-700">
-                      {organizeConflicts.slice(0, 3).map((conflict, idx) => (
-                        <li key={idx} className="flex items-start gap-1">
+                      {organizeConflicts.slice(0, 3).map((conflict) => (
+                        <li
+                          key={conflict.destination || conflict.files?.[0]?.fileName}
+                          className="flex items-start gap-1"
+                        >
                           <span className="text-stratosort-warning">•</span>
                           <Text as="span" variant="tiny" className="truncate">
                             <strong>{conflict.files.map((f) => f.fileName).join(', ')}</strong>

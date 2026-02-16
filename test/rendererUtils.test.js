@@ -51,7 +51,8 @@ describe('renderer utils (score/format/drag)', () => {
     };
 
     const result = extractDroppedFiles(dataTransfer);
-    expect(result.paths).toEqual(['C:\\\\a.txt', 'b.txt', 'C:/c.txt']);
+    expect(result.paths).toEqual(['C:\\\\a.txt', 'C:/c.txt']);
+    expect(result.unresolvedNames).toEqual(['b.txt']);
     expect(result.fileList).toHaveLength(1);
     expect(result.itemFiles).toHaveLength(1);
   });

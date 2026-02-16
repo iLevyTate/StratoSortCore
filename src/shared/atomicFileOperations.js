@@ -963,6 +963,11 @@ class AtomicFileOperations {
       this._cleanupInterval = null;
     }
   }
+
+  /** FIX BUG-012: Alias for shutdown - clears cleanup interval */
+  dispose() {
+    this.shutdown();
+  }
 }
 
 // Export singleton instance

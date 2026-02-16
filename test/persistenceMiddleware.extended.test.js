@@ -6,7 +6,12 @@
  */
 
 jest.mock('../src/shared/constants', () => ({
-  PHASES: { WELCOME: 'welcome', DISCOVER: 'discover', ORGANIZE: 'organize' }
+  PHASES: { WELCOME: 'welcome', DISCOVER: 'discover', ORGANIZE: 'organize' },
+  DEFAULT_AI_MODELS: {
+    TEXT_ANALYSIS: 'qwen3:0.6b',
+    IMAGE_ANALYSIS: 'gemma3:latest',
+    EMBEDDING: 'embeddinggemma'
+  }
 }));
 
 jest.mock('../src/shared/logger', () => {

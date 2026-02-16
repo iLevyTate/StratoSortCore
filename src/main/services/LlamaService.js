@@ -1395,12 +1395,21 @@ class LlamaService extends EventEmitter {
         // CRITICAL FIX: Dispose the loaded model to prevent GPU memory leak.
         // Without this, the model stays resident in VRAM despite having no
         // usable context, and repeated retries can exhaust GPU memory.
+        let disposed = false;
         try {
-          await model?.dispose();
+          if (model && typeof model.dispose === 'function') {
+            await model.dispose();
+            disposed = true;
+          }
         } catch (disposeErr) {
-          logger.debug('[LlamaService] Failed to dispose model after context failure', {
+          logger.warn('[LlamaService] Failed to dispose model after context failure', {
             type,
             error: disposeErr?.message
+          });
+        }
+        if (!disposed && model) {
+          logger.error('[LlamaService] Model disposal failed — potential GPU memory leak', {
+            type
           });
         }
         throw lastError || new Error('Failed to create context');
@@ -1858,6 +1867,187 @@ class LlamaService extends EventEmitter {
     }
 
     return { embeddings: results };
+  }
+
+  /**
+   * Generate text response with streaming support.
+   *
+   * @param {Object} options
+   * @param {string} options.prompt
+   * @param {string} [options.systemPrompt]
+   * @param {number} [options.maxTokens]
+   * @param {number} [options.temperature]
+   * @param {AbortSignal} [options.signal]
+   * @param {Function} [options.onToken] - Callback for each token: (text) => void
+   */
+  async generateTextStreaming(options) {
+    const { prompt, systemPrompt, maxTokens = 2048, temperature = 0.7, signal, onToken } = options;
+    const requestedMaxTokens = Number.isFinite(Number(maxTokens))
+      ? Math.max(1, Math.floor(Number(maxTokens)))
+      : 2048;
+    const effectiveContextSize = this._getEffectiveContextSize('text');
+    const RESPONSE_TOKEN_RESERVE = 1024;
+    const contextBoundMaxTokens = Math.max(
+      128,
+      Math.floor(Math.max(256, effectiveContextSize - RESPONSE_TOKEN_RESERVE) * 0.5)
+    );
+    const safeMaxTokens = Math.min(requestedMaxTokens, contextBoundMaxTokens);
+    if (safeMaxTokens !== requestedMaxTokens) {
+      logger.warn('[LlamaService] Clamped maxTokens to fit context budget', {
+        requestedMaxTokens,
+        clampedMaxTokens: safeMaxTokens,
+        effectiveContextSize
+      });
+    }
+    const operationId = this._generateOperationId('text-stream');
+    await this._awaitModelReady('text');
+
+    return this._coordinator.withModel(
+      'text',
+      async () => {
+        this._modelMemoryManager?.acquireRef('text');
+        try {
+          return await withLlamaResilience(
+            async (retryOptions) => {
+              // Handle CPU fallback from LlamaResilience when GPU errors occur
+              if (retryOptions?.forceCPU && this._gpuBackend !== 'cpu') {
+                await this._reloadModelCPU('text', { operationId });
+              }
+
+              const startTime = Date.now();
+              let session;
+              let abortHandler;
+
+              const runOnce = async () => {
+                if (signal?.aborted) {
+                  const abortError = new Error('Operation aborted');
+                  abortError.name = 'AbortError';
+                  throw abortError;
+                }
+
+                const context = await this._ensureModelLoaded('text');
+
+                // node-llama-cpp reclaims disposed sequence IDs asynchronously
+                // (via withLock). After a previous session.dispose(), the slot
+                // may not be immediately available. Yield briefly to let any
+                // pending reclaim complete before allocating a new sequence.
+                if (typeof context.sequencesLeft === 'number' && context.sequencesLeft === 0) {
+                  for (let _wait = 0; _wait < 50; _wait++) {
+                    await delay(10);
+                    if (context.sequencesLeft > 0) break;
+                  }
+                }
+
+                const { LlamaChatSession } = await loadNodeLlamaModule();
+                session = new LlamaChatSession({
+                  contextSequence: context.getSequence(),
+                  systemPrompt: systemPrompt || 'You are a helpful assistant.',
+                  autoDisposeSequence: true
+                });
+
+                if (signal) {
+                  abortHandler = () => {
+                    try {
+                      session?.dispose();
+                    } catch (disposeError) {
+                      logger.warn('[LlamaService] Session dispose on abort failed', {
+                        error: disposeError?.message
+                      });
+                    }
+                  };
+                  signal.addEventListener('abort', abortHandler, { once: true });
+                }
+
+                const promptOptions = {
+                  maxTokens: safeMaxTokens,
+                  temperature,
+                  onTextChunk: (chunk) => {
+                    if (typeof onToken === 'function') {
+                      try {
+                        onToken(chunk);
+                      } catch (e) {
+                        logger.warn('[LlamaService] onToken callback failed', { error: e.message });
+                      }
+                    }
+                  }
+                };
+                if (signal) promptOptions.signal = signal;
+                return await session.prompt(prompt, promptOptions);
+              };
+
+              try {
+                let response;
+                try {
+                  response = await runOnce();
+                } catch (error) {
+                  if (isSequenceExhaustedError(error)) {
+                    // FIX: Dispose the first session before recovery to prevent leak.
+                    if (session) {
+                      try {
+                        session.dispose();
+                      } catch {
+                        /* model is being unloaded; dispose may throw */
+                      }
+                      session = null;
+                    }
+                    await this._recoverFromSequenceExhaustion('text', error);
+                    response = await runOnce();
+                  } else {
+                    throw error;
+                  }
+                }
+
+                const durationMs = Date.now() - startTime;
+                const responseChars = response?.length || 0;
+                const approxTokens = Math.round(responseChars / 4);
+                this._metrics.recordTextGeneration(durationMs, approxTokens, true);
+
+                logger.info('[LlamaService] Text streaming complete', {
+                  model: this._selectedModels?.text,
+                  promptChars: prompt?.length || 0,
+                  responseChars,
+                  approxTokens,
+                  durationMs,
+                  maxTokens: safeMaxTokens,
+                  requestedMaxTokens,
+                  temperature,
+                  gpu: this._gpuBackend !== 'cpu'
+                });
+
+                return { response };
+              } catch (error) {
+                this._metrics.recordTextGeneration(Date.now() - startTime, 0, false);
+                if (isOutOfMemoryError(error)) {
+                  throw attachErrorCode(error, ERROR_CODES.LLAMA_OOM);
+                }
+                throw attachErrorCode(error, ERROR_CODES.LLAMA_INFERENCE_FAILED);
+              } finally {
+                if (signal && abortHandler) {
+                  try {
+                    signal.removeEventListener('abort', abortHandler);
+                  } catch {
+                    /* ignore */
+                  }
+                }
+                if (session) {
+                  try {
+                    session.dispose();
+                  } catch (disposeError) {
+                    logger.warn('[LlamaService] Session dispose failed', {
+                      error: disposeError?.message
+                    });
+                  }
+                }
+              }
+            },
+            { modelType: 'text' }
+          );
+        } finally {
+          this._modelMemoryManager?.releaseRef('text');
+        }
+      },
+      { operationId }
+    );
   }
 
   /**

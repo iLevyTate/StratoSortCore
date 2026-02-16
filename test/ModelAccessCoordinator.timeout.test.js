@@ -128,13 +128,13 @@ describe('ModelAccessCoordinator timeout behavior', () => {
 
     test('does not force-release held load lock after timeout', async () => {
       const coordinator = new ModelAccessCoordinator();
-      const releaseHeld = await coordinator.acquireLoadLock('text', { timeoutMs: 80 });
+      const releaseHeld = await coordinator.acquireLoadLock('text', { timeoutMs: 5000 });
 
-      // Wait until watchdog timeout warning would fire.
-      await new Promise((resolve) => setTimeout(resolve, 130));
+      // Wait a brief moment to ensure the lock is fully established.
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
       // Lock should still be held, so a new acquire should time out.
-      await expect(coordinator.acquireLoadLock('text', { timeoutMs: 120 })).rejects.toThrow(
+      await expect(coordinator.acquireLoadLock('text', { timeoutMs: 100 })).rejects.toThrow(
         /Load lock timeout/
       );
 

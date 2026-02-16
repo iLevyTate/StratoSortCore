@@ -2800,6 +2800,63 @@ function registerEmbeddingsIpc(servicesOrParams) {
   );
 
   /**
+   * Find files by paths
+   * Resolves file paths to vector DB IDs and metadata
+   */
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.EMBEDDINGS.FIND_FILES_BY_PATHS,
+    createHandler({
+      logger,
+      context,
+      schema: schemaObjectOptional,
+      handler: async (event, { paths } = {}) => {
+        try {
+          if (!Array.isArray(paths) || paths.length === 0) {
+            return { success: true, results: [] };
+          }
+
+          await getOramaService().initialize();
+          const results = [];
+
+          // Import utility to generate IDs
+          const { getFileEmbeddingId } = require('../utils/fileIdUtils');
+          const { SUPPORTED_IMAGE_EXTENSIONS } = require('../../shared/constants');
+
+          // Process paths in parallel
+          await Promise.all(
+            paths.map(async (p) => {
+              try {
+                const ext = path.extname(p).toLowerCase();
+                const isImage = SUPPORTED_IMAGE_EXTENSIONS.includes(ext);
+                const type = isImage ? 'image' : 'file';
+                const id = getFileEmbeddingId(p, type);
+
+                const doc = await getOramaService().getFile(id);
+                if (doc) {
+                  results.push({
+                    path: doc.filePath,
+                    id: id,
+                    name: doc.fileName,
+                    type: type
+                  });
+                }
+              } catch {
+                // Ignore
+              }
+            })
+          );
+
+          return { success: true, results };
+        } catch (e) {
+          logger.error('[EMBEDDINGS] Find files by paths failed:', e);
+          return { success: false, error: e.message };
+        }
+      }
+    })
+  );
+
+  /**
    * Get fresh file metadata from vector DB
    * Used to get current file paths after files have been moved/organized
    */

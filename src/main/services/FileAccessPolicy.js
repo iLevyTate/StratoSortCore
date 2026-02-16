@@ -1,4 +1,5 @@
 const path = require('path');
+const fs = require('fs');
 const { createLogger } = require('../../shared/logger');
 const logger = createLogger('FileAccessPolicy');
 
@@ -80,16 +81,23 @@ class FileAccessPolicy {
     try {
       if (!filePath) return false;
 
-      const basename = path.basename(filePath);
+      // Resolve symlinks to prevent bypassing dangerous-path checks via symlink.
+      // Falls back to path.normalize() if the file doesn't exist yet (e.g., destination paths).
+      let resolvedPath;
+      try {
+        resolvedPath = fs.realpathSync(filePath);
+      } catch {
+        resolvedPath = path.normalize(filePath);
+      }
+
+      const basename = path.basename(resolvedPath);
 
       // Check hidden files (unix style)
       if (basename.startsWith('.') && basename !== '.') return false;
 
       // Check unsafe path segments - test each directory component individually
       // to avoid false positives from substring matching on full paths
-      // FIX: Normalize path first to resolve .. traversals, then split on
-      // both / and \ to handle forward slashes on Windows
-      const segments = path.normalize(filePath).split(/[/\\]/);
+      const segments = resolvedPath.split(/[/\\]/);
       for (const segment of segments) {
         if (this.unsafeSegmentNames.has(segment)) {
           return false;

@@ -16,7 +16,8 @@ import {
   ExternalLink,
   Pencil,
   Search,
-  Sparkles
+  Sparkles,
+  Tag
 } from 'lucide-react';
 import { IconButton } from '../ui';
 
@@ -49,7 +50,8 @@ const ClusterNode = memo(({ data, selected }) => {
     onExpand,
     onOpenAllFiles,
     onSearchWithinCluster,
-    onRenameCluster
+    onRenameCluster,
+    onTagCluster
   } = data || {};
 
   const handleExpandClick = useCallback(
@@ -190,6 +192,17 @@ const ClusterNode = memo(({ data, selected }) => {
               icon={<Download className="w-4 h-4 text-green-600" />}
             ></IconButton>
           )}
+          {onTagCluster && (
+            <IconButton
+              onClick={() => handleMenuAction(onTagCluster)}
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning/10"
+              title="Tag Files"
+              aria-label="Tag Files"
+              icon={<Tag className="w-4 h-4 text-purple-600" />}
+            ></IconButton>
+          )}
           {onRenameCluster && (
             <IconButton
               onClick={handleStartEditLabel}
@@ -322,7 +335,8 @@ ClusterNode.propTypes = {
     onExpand: PropTypes.func,
     onOpenAllFiles: PropTypes.func,
     onSearchWithinCluster: PropTypes.func,
-    onRenameCluster: PropTypes.func
+    onRenameCluster: PropTypes.func,
+    onTagCluster: PropTypes.func
   }),
   selected: PropTypes.bool
 };

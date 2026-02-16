@@ -160,7 +160,22 @@ function createIpcSanitizer({ log }) {
           (typeof process !== 'undefined' && process.platform === 'win32');
         const invalidCharsPattern = isWin ? /[<>"|?*]/g : /[<>"]/g;
         let sanitized = stripped.replace(invalidCharsPattern, '');
-        const parts = sanitized.split(/[\\/]+/).filter((segment) => segment.length > 0);
+
+        // Decode percent-encoded sequences before traversal check to catch
+        // encoded variants like %2e%2e, %2E%2E, or double-encoded forms
+        let decoded = sanitized;
+        try {
+          let prev;
+          do {
+            prev = decoded;
+            decoded = decodeURIComponent(decoded);
+          } while (decoded !== prev);
+        } catch {
+          // If decoding fails, use the original sanitized value
+          decoded = sanitized;
+        }
+
+        const parts = decoded.split(/[\\/]+/).filter((segment) => segment.length > 0);
         const hasTraversal = parts.some((segment) => segment === '..');
         if (hasTraversal) {
           log.warn('[SecureIPC] Blocked path traversal attempt in file path:', {

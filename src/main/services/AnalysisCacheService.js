@@ -116,7 +116,18 @@ class AnalysisCacheService {
   _invalidateForPath(filePath) {
     if (!filePath) return;
 
-    const invalidated = this._cache.invalidateWhere((key) => key.includes(filePath));
+    // Cache keys embed file paths as substrings (e.g., "version|model|...|/path/to/file.txt|size|mtime").
+    // Use includes() to match any key containing the path, but verify the match ends at a
+    // non-alphanumeric boundary to prevent /docs/foo from matching /docs/foobar.
+    const normalizedPath = filePath.replace(/[\\/]+$/, '');
+    const invalidated = this._cache.invalidateWhere((key) => {
+      const idx = key.indexOf(normalizedPath);
+      if (idx === -1) return false;
+      const afterIdx = idx + normalizedPath.length;
+      if (afterIdx >= key.length) return true;
+      const charAfter = key[afterIdx];
+      return charAfter === '|' || charAfter === '/' || charAfter === '\\' || charAfter === '-';
+    });
 
     if (invalidated > 0) {
       logger.debug(`[${this.name}] Invalidated ${invalidated} entries for path change`);

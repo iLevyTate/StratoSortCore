@@ -1,12 +1,10 @@
 import { PHASES } from '../../../shared/constants';
+import { DEFAULT_SETTINGS } from '../../../shared/defaultSettings';
 import { logger } from '../../../shared/logger';
 import { addNotification } from '../slices/systemSlice';
 import { CURRENT_STATE_VERSION } from '../migrations';
 
-// Must match DEFAULT_SETTINGS.saveDebounceMs in shared/defaultSettings.js
-// Not imported directly to avoid pulling heavy transitive deps (AI model constants)
-// into the renderer persistence path. Keep in sync manually.
-const SAVE_DEBOUNCE_MS = 1000;
+const SAVE_DEBOUNCE_MS = DEFAULT_SETTINGS.saveDebounceMs || 1000;
 // FIX #24: Add max wait time to prevent infinite debounce delay
 const MAX_DEBOUNCE_WAIT_MS = 5000;
 const MAX_LOCALSTORAGE_BYTES = 4 * 1024 * 1024;

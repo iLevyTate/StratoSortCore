@@ -36,6 +36,10 @@ class PerformanceMetrics {
 
     // Sample memory every 30 seconds
     this._memoryInterval = setInterval(() => this._sampleMemory(), 30000);
+
+    // Safety net: clear interval on process exit to prevent orphaned timers
+    this._exitHandler = () => this.destroy();
+    process.once('exit', this._exitHandler);
   }
 
   /**
@@ -45,6 +49,10 @@ class PerformanceMetrics {
     if (this._memoryInterval) {
       clearInterval(this._memoryInterval);
       this._memoryInterval = null;
+    }
+    if (this._exitHandler) {
+      process.removeListener('exit', this._exitHandler);
+      this._exitHandler = null;
     }
   }
 

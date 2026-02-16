@@ -15,6 +15,9 @@ const { ConfigValidationError } = require('./configValidation');
 // Singleton instance
 const configManager = new ConfigurationManager();
 
+// NOTE: Synchronous load at require() time is intentional for startup config.
+// All config values must be available before service initialization.
+// If startup time becomes an issue, consider lazy-loading on first .get() call.
 // Load configuration on module import
 // FIX: Wrap in try-catch so a corrupted config file doesn't crash every module that imports config
 try {
