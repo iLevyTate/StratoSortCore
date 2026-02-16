@@ -23,6 +23,26 @@ const SettingsService = require('../../services/SettingsService');
 const logger = createLogger('IPC:Files:Selection');
 const schemaVoid = z ? z.void() : null;
 const schemaFilePath = z ? z.string().min(1) : null;
+
+/**
+ * Normalize incoming path values from renderer/settings/dialog payloads.
+ * Trims accidental whitespace and surrounding quotes while preserving valid paths.
+ * @param {string} value
+ * @returns {string}
+ */
+function normalizeInputPath(value) {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  // Strip one matching pair of surrounding quotes
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
 /**
  * Get the last browsed path from settings, falling back to documents folder
  * @returns {Promise<string|undefined>} The default path for file dialogs
@@ -31,11 +51,12 @@ async function getDefaultBrowsePath() {
   try {
     const settingsService = SettingsService.getInstance();
     const settings = await settingsService.load();
-    if (settings.lastBrowsedPath) {
+    const lastBrowsedPath = normalizeInputPath(settings.lastBrowsedPath);
+    if (lastBrowsedPath) {
       // Verify the path still exists
       try {
-        await fs.access(settings.lastBrowsedPath);
-        return settings.lastBrowsedPath;
+        await fs.access(lastBrowsedPath);
+        return lastBrowsedPath;
       } catch {
         // Path no longer exists, fall through to default
       }
@@ -53,12 +74,13 @@ async function getDefaultBrowsePath() {
  */
 async function saveLastBrowsedPath(browsedPath) {
   try {
-    if (!browsedPath) return;
+    const normalizedInputPath = normalizeInputPath(browsedPath);
+    if (!normalizedInputPath) return;
 
     // Get the directory of the selected path
-    const dirPath = (await fs.stat(browsedPath)).isDirectory()
-      ? browsedPath
-      : path.dirname(browsedPath);
+    const dirPath = (await fs.stat(normalizedInputPath)).isDirectory()
+      ? normalizedInputPath
+      : path.dirname(normalizedInputPath);
 
     const settingsService = SettingsService.getInstance();
     const settings = await settingsService.load();
@@ -169,7 +191,7 @@ function registerFileSelectionHandlers(servicesOrParams) {
             return { success: false, path: null };
           }
 
-          const selectedPath = result.filePaths[0];
+          const selectedPath = normalizeInputPath(result.filePaths[0]);
 
           // Save the selected path for future dialogs
           await saveLastBrowsedPath(selectedPath);
@@ -215,11 +237,12 @@ function registerFileSelectionHandlers(servicesOrParams) {
       handler: async (_event, filePath) => {
         log.debug('[FILE-SELECTION] Get file stats handler called for:', filePath);
         try {
-          if (!filePath || typeof filePath !== 'string') {
+          const normalizedInputPath = normalizeInputPath(filePath);
+          if (!normalizedInputPath) {
             return { success: false, error: 'Invalid file path', stats: null };
           }
           // SECURITY: Validate path before filesystem access
-          const validation = await validateFileOperationPath(filePath);
+          const validation = await validateFileOperationPath(normalizedInputPath);
           if (!validation.valid) {
             return { success: false, error: 'Invalid file path', stats: null };
           }
@@ -236,6 +259,10 @@ function registerFileSelectionHandlers(servicesOrParams) {
             }
           };
         } catch (error) {
+          if (error?.code === 'ENOENT') {
+            log.debug('[FILE-SELECTION] File no longer exists while getting stats', { filePath });
+            return { success: false, error: 'File not found', stats: null };
+          }
           log.error('[FILE-SELECTION] Error getting file stats:', error);
           return { success: false, error: error.message, stats: null };
         }
@@ -336,7 +363,11 @@ function registerFileSelectionHandlers(servicesOrParams) {
 
           const allFiles = [];
 
-          for (const selectedPath of result.filePaths) {
+          for (const rawSelectedPath of result.filePaths) {
+            const selectedPath = normalizeInputPath(rawSelectedPath);
+            if (!selectedPath) {
+              continue;
+            }
             const ext = path.extname(selectedPath).toLowerCase();
             if (!ext) {
               log.warn('[FILE-SELECTION] Skipping path without extension', selectedPath);

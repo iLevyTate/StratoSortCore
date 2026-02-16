@@ -720,9 +720,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
             };
           }
 
-          // SAFE: resetFolders() only deletes/recreates the collection, not the DB directory
-          await getOramaService().resetFolders();
-
           // Track successes and failures
           const results = { success: 0, failed: 0, errors: [] };
 
@@ -763,11 +760,49 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
           const validPayloads = folderPayloads.filter((p) => p !== null);
 
-          // Only upsert if we have valid payloads
-          let upsertedCount = 0;
-          if (validPayloads.length > 0) {
-            const folderResult = await getOramaService().batchUpsertFolders(validPayloads);
-            upsertedCount = folderResult?.count ?? folderResult ?? 0;
+          // Do not mutate the existing folder index when every embedding generation fails.
+          if (validPayloads.length === 0) {
+            return {
+              success: false,
+              folders: 0,
+              total: smartFolders.length,
+              succeeded: 0,
+              failed: results.failed,
+              errors: results.errors.slice(0, 5),
+              model: modelCheck.model,
+              errorCode: 'REBUILD_FAILED_NO_VALID_FOLDERS',
+              message: `All ${results.failed} folder embeddings failed. Existing folder index left unchanged.`
+            };
+          }
+
+          const oramaService = getOramaService();
+          const previousFolders =
+            typeof oramaService.getAllFolders === 'function'
+              ? await oramaService.getAllFolders()
+              : [];
+          const desiredFolderIds = new Set(
+            validPayloads.map((payload) => payload.id).filter(Boolean)
+          );
+          const staleFolderIds = previousFolders
+            .map((entry) => entry?.id)
+            .filter((id) => typeof id === 'string' && id.length > 0 && !desiredFolderIds.has(id));
+
+          // Upsert first, then delete stale IDs. This avoids wipe-first data loss on generation failures.
+          const folderResult = await oramaService.batchUpsertFolders(validPayloads);
+          const upsertedCount = folderResult?.count ?? folderResult ?? 0;
+
+          if (staleFolderIds.length > 0) {
+            if (typeof oramaService.batchDeleteFolders === 'function') {
+              await oramaService.batchDeleteFolders(staleFolderIds);
+            } else if (typeof oramaService.deleteFolderEmbedding === 'function') {
+              for (const folderId of staleFolderIds) {
+                await oramaService.deleteFolderEmbedding(folderId);
+              }
+            } else {
+              logger.debug(
+                '[EMBEDDINGS] Folder rebuild could not remove stale folder IDs; delete API unavailable'
+              );
+            }
           }
 
           // Record which model/dimensions were used for the index (for UI mismatch warnings)

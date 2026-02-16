@@ -116,10 +116,20 @@ async function runPreflightChecks({ reportProgress, errors }) {
       const service = getLlamaService();
       const cfg = await service.getConfig();
       const models = await service.listModels();
-      const available = new Set(models.map((m) => m.name));
-      const required = [cfg.textModel, cfg.visionModel, cfg.embeddingModel].filter(Boolean);
-      const missing = required.filter((m) => !available.has(m));
-      return { required, missing, availableCount: models.length, config: cfg };
+      const available = new Set(
+        models.map((m) => m?.name || m?.filename || '').filter((name) => Boolean(name))
+      );
+      const required = [cfg.textModel, cfg.embeddingModel].filter(Boolean);
+      const missingRequired = required.filter((m) => !available.has(m));
+      const visionModel = cfg.visionModel || null;
+      const visionMissing = Boolean(visionModel) && !available.has(visionModel);
+      return {
+        required,
+        missingRequired,
+        visionModel,
+        visionMissing,
+        availableCount: models.length
+      };
     })(),
     (async () => {
       logger.debug('[PREFLIGHT] Starting disk space check...');
@@ -179,16 +189,37 @@ async function runPreflightChecks({ reportProgress, errors }) {
   }
 
   if (modelsResult.status === 'fulfilled') {
-    const { required, missing, availableCount } = modelsResult.value || {};
+    const { required, missingRequired, visionModel, visionMissing, availableCount } =
+      modelsResult.value || {};
+    const hasRequiredMissing = Array.isArray(missingRequired) && missingRequired.length > 0;
+    const hasVisionWarning = Boolean(visionModel) && visionMissing === true;
+    const missing = [
+      ...(Array.isArray(missingRequired) ? missingRequired : []),
+      ...(hasVisionWarning ? [visionModel] : [])
+    ];
     checks.push({
       name: 'Models',
-      status: Array.isArray(missing) && missing.length === 0 ? 'ok' : 'warn',
-      details: { required, missing, availableCount }
+      status: hasRequiredMissing || hasVisionWarning ? 'warn' : 'ok',
+      details: {
+        required,
+        missing,
+        missingRequired,
+        availableCount,
+        visionModel,
+        visionMissing
+      }
     });
-    if (Array.isArray(missing) && missing.length > 0) {
+    if (hasRequiredMissing) {
       errors.push({
         check: 'models',
-        error: `Missing models: ${missing.join(', ')}`,
+        error: `Missing required models: ${missingRequired.join(', ')}`,
+        critical: false
+      });
+    }
+    if (hasVisionWarning) {
+      errors.push({
+        check: 'models',
+        error: `Vision model not available: ${visionModel}`,
         critical: false
       });
     }

@@ -47,6 +47,7 @@ function OrganizePhase() {
   const { executeAction } = useUndoRedo();
   const [viewingFileDetails, setViewingFileDetails] = React.useState(null);
   const redactPaths = useAppSelector((state) => Boolean(state?.system?.redactPaths));
+  const currentPhase = useAppSelector((state) => state.ui.currentPhase);
   const detailHeaderPath = useMemo(() => {
     const rawPath = viewingFileDetails?.path || viewingFileDetails?.analysis?.path || '';
     const displayPath = rawPath
@@ -173,6 +174,7 @@ function OrganizePhase() {
       unmarkFilesAsProcessed,
       actions,
       phaseData,
+      currentPhase,
       addNotification,
       executeAction,
       dispatch,

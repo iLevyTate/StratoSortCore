@@ -18,17 +18,9 @@ function canTransitionTo(fromPhase, toPhase) {
     return false;
   }
 
-  const fromIndex = (PHASE_ORDER || VALID_PHASES).indexOf(fromPhase);
-  const toIndex = (PHASE_ORDER || VALID_PHASES).indexOf(toPhase);
-
-  // Allow navigation if:
-  // 1. Backward or current phase (always allowed)
-  // 2. Next sequential phase (linear progression)
-  if (toIndex <= fromIndex + 1) return true;
+  if (fromPhase === toPhase) return true;
 
   const allowedTransitions = PHASE_TRANSITIONS[fromPhase];
-  // Handle explicit transitions (legacy/graph support)
-  // Check if allowedTransitions is array or string
   if (Array.isArray(allowedTransitions)) {
     return allowedTransitions.includes(toPhase);
   }
@@ -63,7 +55,7 @@ const NAVIGATION_RULES = {
     switch (state.currentPhase) {
       case PHASES?.SETUP ?? 'setup':
         // Setup requires at least one smart folder (context provides this)
-        return context.hasSmartFolders !== false;
+        return context.hasSmartFolders === true;
       case PHASES?.DISCOVER ?? 'discover':
         // Discover requires files to be analyzed (or total failure acknowledged)
         return context.hasAnalyzedFiles || context.totalAnalysisFailure;
@@ -154,7 +146,7 @@ const uiSlice = createSlice({
         return;
       }
 
-      // Validate that the transition is allowed (unless it's the same phase)
+      // Validate that the transition is allowed by the central transition graph.
       if (state.currentPhase !== newPhase && !canTransitionTo(state.currentPhase, newPhase)) {
         const warning = `Invalid phase transition: ${state.currentPhase} -> ${newPhase}`;
         logger.warn(`[uiSlice] ${warning}`, {
@@ -162,9 +154,8 @@ const uiSlice = createSlice({
           to: newPhase,
           allowedTransitions: PHASE_TRANSITIONS[state.currentPhase] || []
         });
-        // Still allow the transition but track the warning for debugging
-        // This allows flexibility while tracking potential issues
         state.navigationError = warning;
+        return;
       }
 
       // Track previous phase for back navigation

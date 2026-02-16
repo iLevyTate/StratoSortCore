@@ -140,6 +140,7 @@ const IPC_CHANNELS = {
     GET_METRICS: 'system:get-metrics',
     GET_APPLICATION_STATISTICS: 'system:get-app-stats',
     APPLY_UPDATE: 'system:apply-update',
+    CHECK_FOR_UPDATES: 'system:check-for-updates',
     GET_CONFIG: 'system:get-config',
     GET_CONFIG_VALUE: 'system:get-config-value',
     RENDERER_ERROR_REPORT: 'renderer-error-report',
@@ -865,7 +866,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         log.error('File analysis security check failed:', error);
         return Promise.reject(error);
       }
-    }
+    },
+    addTags: (fileIds, tags) => secureIPC.safeInvoke(IPC_CHANNELS.FILES.ADD_TAGS, fileIds, tags)
   },
 
   // Smart Folders
@@ -1052,6 +1054,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getApplicationStatistics: () =>
       secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_APPLICATION_STATISTICS),
     applyUpdate: () => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.APPLY_UPDATE),
+    checkForUpdates: () => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.CHECK_FOR_UPDATES),
     getConfig: () => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_CONFIG),
     getConfigValue: (path) => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_CONFIG_VALUE, path),
     getRecommendedConcurrency: () =>

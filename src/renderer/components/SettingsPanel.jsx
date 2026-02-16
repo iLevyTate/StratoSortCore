@@ -869,7 +869,11 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 persistKey="settings-app"
               >
                 <Stack gap="spacious">
-                  <ApplicationSection settings={settings} setSettings={applySettingsUpdate} />
+                  <ApplicationSection
+                    settings={settings}
+                    setSettings={applySettingsUpdate}
+                    addNotification={addNotification}
+                  />
                   <NotificationSettingsSection
                     settings={settings}
                     setSettings={applySettingsUpdate}

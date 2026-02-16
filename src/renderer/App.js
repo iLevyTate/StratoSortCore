@@ -30,7 +30,7 @@ function AppContent() {
 
   // Determine content container classes based on phase
   const contentClassName = useMemo(() => {
-    const baseClasses = 'flex-1 w-full mx-auto';
+    const baseClasses = 'flex flex-col min-h-0 flex-1 w-full mx-auto';
 
     switch (currentPhase) {
       case PHASES?.WELCOME:

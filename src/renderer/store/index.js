@@ -6,7 +6,7 @@ import systemReducer from './slices/systemSlice';
 import ipcMiddleware, { markStoreReady } from './middleware/ipcMiddleware';
 import persistenceMiddleware from './middleware/persistenceMiddleware';
 import { migrateState } from './migrations';
-import { PHASES } from '../../shared/constants';
+import { PHASES, PHASE_ORDER } from '../../shared/constants';
 import { logger } from '../../shared/logger';
 
 // Helper to serialize file objects loaded from localStorage
@@ -54,7 +54,10 @@ const validateLoadedState = (state) => {
   if (!state || typeof state !== 'object') return null;
 
   if (state.ui) {
-    if (typeof state.ui.currentPhase !== 'string') {
+    if (
+      typeof state.ui.currentPhase !== 'string' ||
+      !(PHASE_ORDER || []).includes(state.ui.currentPhase)
+    ) {
       state.ui.currentPhase = PHASES?.WELCOME ?? 'welcome';
     }
   }

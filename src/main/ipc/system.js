@@ -173,6 +173,27 @@ function registerSystemIpc(servicesOrParams) {
     })
   );
 
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.SYSTEM.CHECK_FOR_UPDATES,
+    createHandler({
+      logger,
+      context,
+      handler: async () => {
+        try {
+          const { checkForUpdates } = require('../core/autoUpdater');
+          const result = await checkForUpdates();
+          return result?.success === false
+            ? createErrorResponse(new Error(result.error || 'Failed to check for updates'))
+            : { success: true };
+        } catch (error) {
+          logger.error('Failed to check for updates:', error);
+          return createErrorResponse(error);
+        }
+      }
+    })
+  );
+
   // Configuration inspection handler for debugging and support
   // FIX: Use IPC_CHANNELS constant instead of string literal
   safeHandle(

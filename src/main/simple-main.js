@@ -627,15 +627,29 @@ app.whenReady().then(async () => {
 
     try {
       // Coordinated startup with single timeout
+      const coordinatedStartupController = new AbortController();
+      const { signal: coordinatedStartupSignal } = coordinatedStartupController;
+      const abortCoordinatedStartup = (reason) => {
+        if (!coordinatedStartupSignal.aborted) {
+          coordinatedStartupController.abort(reason);
+        }
+      };
+
       const coordinatedStartup = async () => {
         // Phase 1: Initialize AI services and vector storage
         logger.info('[STARTUP] Phase 1: Starting AI services...');
-        const servicesResult = await startupManager.startup();
+        const servicesResult = await startupManager.startup({ signal: coordinatedStartupSignal });
+        if (coordinatedStartupSignal.aborted) {
+          throw new Error('Coordinated startup aborted before service integration');
+        }
 
         // Phase 2: Initialize DI container and internal services
         // FIX: Pass startup result to skip redundant vector DB readiness check (saves 2-4s)
         logger.info('[STARTUP] Phase 2: Initializing service integration...');
-        await serviceIntegration.initialize({ startupResult: servicesResult });
+        await serviceIntegration.initialize({
+          startupResult: servicesResult,
+          signal: coordinatedStartupSignal
+        });
 
         return servicesResult;
       };
@@ -647,6 +661,8 @@ app.whenReady().then(async () => {
       const timeoutPromise = new Promise((_, reject) => {
         timeoutId = setTimeout(() => {
           timedOut = true;
+          abortCoordinatedStartup('Coordinated startup timeout');
+          startupManager.abortStartup('Coordinated startup timeout');
           reject(
             new Error(
               `Coordinated startup timeout after ${COORDINATED_STARTUP_TIMEOUT / 1000} seconds`

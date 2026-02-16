@@ -185,7 +185,7 @@ describe('Semantic IPC (Management)', () => {
     expect(result).toEqual(expect.objectContaining({ count: 100 }));
   });
 
-  test('REBUILD_FOLDERS acquires lock and calls folderMatcher.rebuildIndex', async () => {
+  test('REBUILD_FOLDERS acquires lock and upserts folder embeddings', async () => {
     const handlerCall = safeHandle.mock.calls.find(
       (call) => call[1] === IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS
     );
@@ -203,9 +203,8 @@ describe('Semantic IPC (Management)', () => {
     mockFolderMatcher.embedText.mockResolvedValue({ vector: [], model: 'test' });
     mockFolderMatcher.generateFolderId.mockReturnValue('folder-1');
 
-    // resetFolders needs to be mocked on vectorDb
+    // batch upsert needs to be mocked on vectorDb
     const mockVectorDb = OramaVectorService.getInstance();
-    mockVectorDb.resetFolders.mockResolvedValue();
     mockVectorDb.batchUpsertFolders.mockResolvedValue(1);
 
     // Mock getCustomFolders to return some folders
@@ -213,15 +212,8 @@ describe('Semantic IPC (Management)', () => {
 
     const result = await handler({}, {});
 
-    // REBUILD_FOLDERS does NOT call rebuildIndex on folderMatcher directly anymore?
-    // Let's check semantic.js code.
-    // It calls `await vectorDbService.resetFolders()`
-    // Then `await folderMatcher.embedText(...)`
-    // Then `await vectorDbService.batchUpsertFolders(...)`
-    // It does NOT call `folderMatcher.rebuildIndex`.
-
-    expect(mockVectorDb.resetFolders).toHaveBeenCalled();
     expect(mockFolderMatcher.embedText).toHaveBeenCalled();
+    expect(mockVectorDb.batchUpsertFolders).toHaveBeenCalled();
     expect(result).toEqual(expect.objectContaining({ success: true }));
   });
 
@@ -237,11 +229,15 @@ describe('Semantic IPC (Management)', () => {
     const mockVectorDb = OramaVectorService.getInstance();
 
     // Simulate a slow rebuild
-    mockVectorDb.resetFolders.mockImplementation(async () => {
+    mockVectorDb.batchUpsertFolders.mockImplementation(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
+      return 1;
     });
 
     mockFoldersService.getCustomFolders.mockReturnValue([{ name: 'Docs' }]);
+    const mockFolderMatcher = FolderMatchingService.getInstance();
+    mockFolderMatcher.embedText.mockResolvedValue({ vector: [0.1, 0.2], model: 'test' });
+    mockFolderMatcher.generateFolderId.mockReturnValue('folder-1');
 
     // Start first rebuild
     const p1 = handler({}, {});
@@ -257,6 +253,6 @@ describe('Semantic IPC (Management)', () => {
         error: expect.stringContaining('in progress')
       })
     );
-    expect(mockVectorDb.resetFolders).toHaveBeenCalledTimes(1);
+    expect(mockVectorDb.batchUpsertFolders).toHaveBeenCalledTimes(1);
   });
 });

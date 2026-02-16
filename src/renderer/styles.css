@@ -213,6 +213,8 @@
   html {
     @apply min-h-screen scroll-smooth;
     background-color: var(--surface-muted);
+    height: 100%;
+    overflow: hidden;
   }
 
   body {
@@ -222,6 +224,13 @@
     line-height: 1.55;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  #root {
+    height: 100%;
+    overflow: hidden;
   }
 
   h1,

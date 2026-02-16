@@ -226,8 +226,10 @@ function cleanupAutoUpdater() {
 async function checkForUpdates() {
   try {
     await autoUpdater.checkForUpdatesAndNotify();
+    return { success: true };
   } catch (error) {
     logger.error('[UPDATER] Manual update check failed:', error);
+    return { success: false, error: error?.message || 'Failed to check for updates' };
   }
 }
 

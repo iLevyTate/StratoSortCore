@@ -910,6 +910,62 @@ class AnalysisHistoryServiceCore {
   }
 
   /**
+   * Update tags for an entry identified by path.
+   *
+   * @param {string} filePath
+   * @param {string[]} tags
+   * @returns {Promise<{updated: number, notFound: number}>}
+   */
+  async updateTags(filePath, tags) {
+    await this.initialize();
+    this._assertWritable('updateTags');
+
+    const target = typeof filePath === 'string' ? filePath : '';
+    if (!target) return { updated: 0, notFound: 1 };
+
+    if (!Array.isArray(tags)) return { updated: 0, notFound: 0, error: 'Tags must be an array' };
+
+    const releaseLock = await this._acquireWriteLock('updateTags');
+    try {
+      const entries = this.analysisHistory?.entries || {};
+      let updated = 0;
+      const now = new Date().toISOString();
+
+      for (const entry of Object.values(entries)) {
+        const original = entry?.originalPath;
+        const actual = entry?.organization?.actual;
+        if (original !== target && actual !== target) continue;
+
+        // Clone for index removal
+        const oldEntry = JSON.parse(JSON.stringify(entry));
+        removeFromIndexes(this.analysisIndex, oldEntry);
+
+        if (!entry.analysis) entry.analysis = {};
+        entry.analysis.tags = tags;
+        entry.updatedAt = now;
+
+        // Update index with new tags
+        updateIndexes(this.analysisIndex, entry);
+
+        updated++;
+        break; // One path maps to one primary entry
+      }
+
+      if (updated > 0) {
+        this.analysisHistory.updatedAt = now;
+        await Promise.all([this.saveHistory(), this.saveIndex()]);
+        clearCachesHelper(this._cache, this);
+      }
+
+      return { updated, notFound: updated > 0 ? 0 : 1 };
+    } finally {
+      if (typeof releaseLock === 'function') {
+        releaseLock();
+      }
+    }
+  }
+
+  /**
    * Update embedding preference/state for an entry identified by path.
    *
    * This is the persistence layer for staged embedding workflows.

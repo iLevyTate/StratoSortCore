@@ -215,6 +215,81 @@ describe('Custom Folders', () => {
       expect(folders.some((folder) => folder.name === 'Projects')).toBe(true);
     });
 
+    test('does not recover legacy default-only folders', async () => {
+      const currentFolders = [
+        {
+          id: 'default-uncategorized',
+          name: 'Uncategorized',
+          path: '/test/uncategorized',
+          isDefault: true
+        }
+      ];
+      const legacyDefaultOnly = [
+        {
+          id: 'default-work-legacy',
+          name: 'Work',
+          path: '/legacy/work',
+          isDefault: true
+        },
+        {
+          id: 'default-financial-legacy',
+          name: 'Financial',
+          path: '/legacy/financial',
+          isDefault: true
+        }
+      ];
+
+      mockFs.readFile.mockImplementation((filePath) => {
+        const normalizedPath = String(filePath).replace(/\\/g, '/');
+        if (normalizedPath.endsWith('/userData/custom-folders.json')) {
+          return Promise.resolve(JSON.stringify(currentFolders));
+        }
+        if (normalizedPath.endsWith('/StratoSort/custom-folders.json')) {
+          return Promise.resolve(JSON.stringify(legacyDefaultOnly));
+        }
+        return Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+      });
+
+      const folders = await customFolders.loadCustomFolders();
+
+      expect(folders).toHaveLength(1);
+      expect(folders[0].name).toBe('Uncategorized');
+      expect(folders.some((folder) => folder.name === 'Work')).toBe(false);
+    });
+
+    test('prunes persisted legacy default-only bundle to Uncategorized', async () => {
+      const persistedLegacyDefaults = [
+        {
+          id: 'default-uncategorized',
+          name: 'Uncategorized',
+          path: '/legacy/uncategorized',
+          isDefault: true
+        },
+        {
+          id: 'default-work-legacy',
+          name: 'Work',
+          path: '/legacy/work',
+          isDefault: true
+        },
+        {
+          id: 'default-financial-legacy',
+          name: 'Financial',
+          path: '/legacy/financial',
+          isDefault: true
+        }
+      ];
+
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(persistedLegacyDefaults));
+
+      const folders = await customFolders.loadCustomFolders();
+
+      expect(folders).toHaveLength(1);
+      expect(folders[0].name).toBe('Uncategorized');
+      expect(folders[0].path).toBe('/legacy/uncategorized');
+      expect(mockFs.writeFile).toHaveBeenCalled();
+      expect(folders.some((folder) => folder.name === 'Work')).toBe(false);
+    });
+
     test('handles invalid JSON gracefully', async () => {
       mockFs.readFile.mockResolvedValueOnce('not valid json');
 

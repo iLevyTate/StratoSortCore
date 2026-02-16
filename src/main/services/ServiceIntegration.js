@@ -12,6 +12,18 @@ const { getCanonicalFileId } = require('../../shared/pathSanitization');
 const { createLogger } = require('../../shared/logger');
 
 const logger = createLogger('ServiceIntegration');
+
+function throwIfAborted(signal, phase) {
+  if (signal?.aborted) {
+    const reason =
+      signal.reason instanceof Error
+        ? signal.reason.message
+        : typeof signal.reason === 'string'
+          ? signal.reason
+          : 'Aborted';
+    throw new Error(`[ServiceIntegration] Aborted during ${phase}: ${reason}`);
+  }
+}
 /**
  * FIX: Explicit service initialization order with dependencies
  * This makes the initialization sequence clear and documentable.
@@ -132,6 +144,8 @@ class ServiceIntegration {
    * @private
    */
   async _doInitialize(options = {}) {
+    const { signal } = options;
+    throwIfAborted(signal, 'initialization setup');
     logger.info('[ServiceIntegration] Starting initialization...');
 
     // FIX L3: Clear stale init status from any previous initialization attempts
@@ -148,6 +162,7 @@ class ServiceIntegration {
     try {
       // Register core services with the container
       this._registerCoreServices();
+      throwIfAborted(signal, 'service registration');
 
       // Initialize core services
       this.analysisHistory = container.resolve(ServiceIds.ANALYSIS_HISTORY);
@@ -175,6 +190,7 @@ class ServiceIntegration {
 
       // Initialize auto-organize service
       this.autoOrganizeService = container.resolve(ServiceIds.AUTO_ORGANIZE);
+      throwIfAborted(signal, 'service resolution');
 
       // Vector DB availability check
       // OramaVectorService is in-process, so it's always available (no external server)
@@ -214,11 +230,13 @@ class ServiceIntegration {
 
       // FIX: Tiered initialization with explicit dependency ordering
       // Tier 0: Initialize independent services in parallel
+      throwIfAborted(signal, 'tier0 initialization');
       const tier0Results = await Promise.allSettled([
         this.analysisHistory.initialize(),
         this.undoRedo.initialize(),
         this.processingState.initialize()
       ]);
+      throwIfAborted(signal, 'tier0 initialization');
 
       // Process Tier 0 results
       SERVICE_INITIALIZATION_ORDER.tier0.forEach((name, index) => {
@@ -240,9 +258,11 @@ class ServiceIntegration {
       // Tier 1: Initialize Vector DB (OramaVectorService is in-process, always available)
       if (isVectorDbReady && this.vectorService) {
         try {
+          throwIfAborted(signal, 'vectorDb initialization');
           if (!skipVectorInit) {
             await this.vectorService.initialize();
           }
+          throwIfAborted(signal, 'vectorDb initialization');
           initStatus.initialized.push('vectorDb');
 
           // Wire up cascade orphan marking when analysis entries are removed
@@ -303,7 +323,9 @@ class ServiceIntegration {
       // FolderMatchingService depends on vector DB for vector operations
       if (this.folderMatchingService && isVectorDbReady) {
         try {
+          throwIfAborted(signal, 'folderMatching initialization');
           await this.folderMatchingService.initialize();
+          throwIfAborted(signal, 'folderMatching initialization');
           initStatus.initialized.push('folderMatching');
         } catch (error) {
           const errorMsg = error?.message || String(error);

@@ -17,6 +17,13 @@ function normalizeConfigValueResponse(result) {
 }
 
 export const systemIpc = {
+  async checkForUpdates() {
+    const result = await requireElectronAPI().system.checkForUpdates();
+    if (result && typeof result === 'object' && result.success === false) {
+      throw new Error(result.error || 'Failed to check for updates');
+    }
+    return result;
+  },
   async getConfigValue(path) {
     const result = await requireElectronAPI().system.getConfigValue(path);
     return normalizeConfigValueResponse(result);

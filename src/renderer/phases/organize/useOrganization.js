@@ -447,6 +447,7 @@ export function useOrganization({
   unmarkFilesAsProcessed = () => {},
   actions = { setPhaseData: () => {}, advancePhase: () => {} },
   phaseData = {},
+  currentPhase = PHASES?.ORGANIZE ?? 'organize',
   addNotification = () => {},
   executeAction = () => {},
   dispatch = null,
@@ -468,6 +469,10 @@ export function useOrganization({
     chunkedResultsRef,
     resetChunkedResults
   } = useProgressTracking();
+  const currentPhaseRef = useRef(currentPhase);
+  useEffect(() => {
+    currentPhaseRef.current = currentPhase;
+  }, [currentPhase]);
 
   // FIX H-3: Use ref to track latest organizedFiles to avoid stale closure in async callbacks
   // Sync ref in useEffect instead of during render to prevent race conditions
@@ -975,7 +980,14 @@ export function useOrganization({
         });
 
         if (successCount > 0) {
-          // FIX: Add null check for PHASES to prevent crash if undefined
+          // Only auto-advance when user is still on Organize phase.
+          // This prevents surprising navigation if they moved elsewhere while the batch completed.
+          if (currentPhaseRef.current !== (PHASES?.ORGANIZE ?? 'organize')) {
+            logger.info('[ORGANIZE] Skipping auto-advance: phase changed during operation', {
+              currentPhase: currentPhaseRef.current
+            });
+            return;
+          }
           actions.advancePhase(PHASES?.COMPLETE ?? 'complete');
         } else {
           logger.warn('[ORGANIZE] No successful operations - phase will not advance');

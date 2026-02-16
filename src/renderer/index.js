@@ -332,6 +332,12 @@ function initializeApp() {
   isAppInitialized = true;
 
   try {
+    // Renderer bootstrap is alive; stop the polyfill timeout to avoid false
+    // "startup timed out" logs on slower machines while React mounts.
+    if (typeof window.__STRATOSORT_CANCEL_SPLASH_TIMEOUT === 'function') {
+      window.__STRATOSORT_CANCEL_SPLASH_TIMEOUT();
+    }
+
     updateSplashStatus('Loading dependencies...');
 
     // Debug logging in development mode

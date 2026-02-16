@@ -1,10 +1,10 @@
 import { useEffect, useCallback, useMemo, useRef } from 'react';
 import { createLogger } from '../../shared/logger';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
-import { toggleSettings, setPhase } from '../store/slices/uiSlice';
+import { toggleSettings, setPhase, canTransitionTo } from '../store/slices/uiSlice';
 import { useNotification } from '../contexts/NotificationContext';
 import { useUndoRedo } from '../components/UndoRedoSystem';
-import { PHASES, PHASE_TRANSITIONS, PHASE_METADATA } from '../../shared/constants';
+import { PHASES, PHASE_METADATA, PHASE_ORDER } from '../../shared/constants';
 import { TIMEOUTS } from '../../shared/performanceConstants';
 
 const logger = createLogger('useKeyboardShortcuts');
@@ -121,13 +121,11 @@ export function useKeyboardShortcuts() {
         const phase = currentPhaseRef.current;
         if (event.key === 'ArrowLeft') {
           event.preventDefault();
-          // FIX: Add null check to prevent crash if PHASES is undefined
-          const phases = PHASES ? Object.values(PHASES) : [];
+          const phases = PHASE_ORDER || (PHASES ? Object.values(PHASES) : []);
           const currentIndex = phases.indexOf(phase);
           if (currentIndex > 0) {
             const previousPhase = phases[currentIndex - 1];
-            const allowedTransitions = PHASE_TRANSITIONS[phase] || [];
-            if (allowedTransitions.includes(previousPhase)) {
+            if (canTransitionTo(phase, previousPhase)) {
               actions.advancePhase(previousPhase);
               addNotification(
                 `Navigated to ${PHASE_METADATA[previousPhase]?.title || previousPhase}`,
@@ -140,13 +138,11 @@ export function useKeyboardShortcuts() {
 
         if (event.key === 'ArrowRight') {
           event.preventDefault();
-          // FIX: Add null check to prevent crash if PHASES is undefined
-          const phases = PHASES ? Object.values(PHASES) : [];
+          const phases = PHASE_ORDER || (PHASES ? Object.values(PHASES) : []);
           const currentIndex = phases.indexOf(phase);
           if (currentIndex < phases.length - 1) {
             const nextPhase = phases[currentIndex + 1];
-            const allowedTransitions = PHASE_TRANSITIONS[phase] || [];
-            if (allowedTransitions.includes(nextPhase)) {
+            if (canTransitionTo(phase, nextPhase)) {
               actions.advancePhase(nextPhase);
               addNotification(
                 `Navigated to ${PHASE_METADATA[nextPhase]?.title || nextPhase}`,

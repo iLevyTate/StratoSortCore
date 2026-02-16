@@ -6,11 +6,11 @@ if (typeof globalThis === 'undefined') {
   window.globalThis = window;
 }
 
-// Splash safety timeout: if the React app doesn't remove the splash within 8 seconds,
+// Splash safety timeout: if the React app doesn't remove the splash within 15 seconds,
 // replace it with a diagnostic message so the user isn't stuck on "Initializing..." forever.
 // This fires even if renderer/index.js completely fails to load or execute.
 (function splashSafetyNet() {
-  var TIMEOUT_MS = 8000;
+  var TIMEOUT_MS = 15000;
   var timerId = setTimeout(function () {
     var splash = document.getElementById('initial-loading');
     if (!splash) return; // splash already removed, app loaded fine

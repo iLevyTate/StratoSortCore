@@ -19,6 +19,7 @@ import StatusBadge from '../ui/StatusBadge';
 import { Heading, Text, Caption } from '../ui/Typography';
 import { formatDisplayPath } from '../../utils/pathDisplay';
 import { selectRedactPaths } from '../../store/selectors';
+import { filesIpc } from '../../services/ipc';
 
 const SmartFolderItem = memo(function SmartFolderItem({
   folder,
@@ -51,6 +52,20 @@ const SmartFolderItem = memo(function SmartFolderItem({
   const shouldAnimateEntrance = !hasMounted;
   const cardAnimationClass = shouldAnimateEntrance ? 'animate-slide-in-right' : '';
   const cardAnimationDelay = shouldAnimateEntrance ? `${index * 0.05}s` : undefined;
+
+  const handleBrowsePath = async () => {
+    try {
+      const result = await filesIpc.selectDirectory();
+      if (result?.success && result.path) {
+        setEditingFolder((prev) => ({
+          ...(prev || folder),
+          path: result.path
+        }));
+      }
+    } catch {
+      addNotification?.('Failed to browse folder', 'error');
+    }
+  };
 
   // Compact view
   if (compact && !isExpanded && !isEditing) {
@@ -121,22 +136,28 @@ const SmartFolderItem = memo(function SmartFolderItem({
               if (e.key === 'Escape') onCancelEdit();
             }}
           />
-          <Input
-            type={redactPaths ? 'password' : 'text'}
-            value={editingFolder.path || ''}
-            onChange={(e) =>
-              setEditingFolder((prev) => ({
-                ...(prev || folder),
-                path: e.target.value
-              }))
-            }
-            className="flex-1"
-            placeholder="Folder path"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') onSaveEdit();
-              if (e.key === 'Escape') onCancelEdit();
-            }}
-          />
+          <div className="flex flex-1 gap-2">
+            <Input
+              type={redactPaths ? 'password' : 'text'}
+              value={editingFolder.path || ''}
+              onChange={(e) =>
+                setEditingFolder((prev) => ({
+                  ...(prev || folder),
+                  path: e.target.value
+                }))
+              }
+              className="flex-1"
+              placeholder="Folder path"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSaveEdit();
+                if (e.key === 'Escape') onCancelEdit();
+              }}
+            />
+            <Button type="button" variant="secondary" size="sm" onClick={handleBrowsePath}>
+              <FolderOpen className="w-4 h-4" />
+              Browse
+            </Button>
+          </div>
         </div>
 
         <div className="relative">

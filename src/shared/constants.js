@@ -21,7 +21,8 @@ const IPC_CHANNELS = {
     COPY_FILE: 'files:copy',
     OPEN_FOLDER: 'files:open-folder',
     DELETE_FOLDER: 'files:delete-folder',
-    CLEANUP_ANALYSIS: 'files:cleanup-analysis'
+    CLEANUP_ANALYSIS: 'files:cleanup-analysis',
+    ADD_TAGS: 'files:add-tags'
   },
   SMART_FOLDERS: {
     GET: 'smart-folders:get',
@@ -115,6 +116,7 @@ const IPC_CHANNELS = {
     GET_METRICS: 'system:get-metrics',
     GET_APPLICATION_STATISTICS: 'system:get-app-stats',
     APPLY_UPDATE: 'system:apply-update',
+    CHECK_FOR_UPDATES: 'system:check-for-updates',
     GET_CONFIG: 'system:get-config',
     GET_CONFIG_VALUE: 'system:get-config-value',
     RENDERER_ERROR_REPORT: 'renderer-error-report',
@@ -412,7 +414,7 @@ const PHASE_TRANSITIONS = {
   [PHASES.SETUP]: [PHASES.WELCOME, PHASES.DISCOVER],
   [PHASES.DISCOVER]: [PHASES.WELCOME, PHASES.SETUP, PHASES.ORGANIZE],
   [PHASES.ORGANIZE]: [PHASES.WELCOME, PHASES.DISCOVER, PHASES.COMPLETE],
-  [PHASES.COMPLETE]: [PHASES.WELCOME, PHASES.DISCOVER]
+  [PHASES.COMPLETE]: [PHASES.WELCOME, PHASES.DISCOVER, PHASES.ORGANIZE]
 };
 
 const PHASE_ORDER = [

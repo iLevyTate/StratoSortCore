@@ -28,6 +28,108 @@ const { ERROR_CODES } = require('../../shared/errorHandlingUtils');
 const { isUNCPath } = require('../../shared/crossPlatformUtils');
 
 /**
+ * Compare filesystem paths with platform-aware case sensitivity.
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+function areEquivalentPaths(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const normA = path.resolve(a);
+  const normB = path.resolve(b);
+  if (process.platform === 'win32') {
+    return normA.toLowerCase() === normB.toLowerCase();
+  }
+  return normA === normB;
+}
+
+function getFolderEmbeddingId(folder, folderMatcher) {
+  if (!folder || typeof folder !== 'object') return null;
+  if (typeof folder.id === 'string' && folder.id.trim()) return folder.id;
+  if (typeof folderMatcher?.generateFolderId === 'function') {
+    try {
+      const generated = folderMatcher.generateFolderId(folder);
+      return typeof generated === 'string' && generated.trim() ? generated : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Keep vector DB folder embeddings in sync with smart folder configuration.
+ * This is intentionally non-fatal: folder config writes must not fail because
+ * background embedding sync could not complete.
+ */
+async function syncSmartFolderEmbeddings({
+  previousFolders = [],
+  nextFolders = [],
+  logger,
+  reason = 'unknown'
+}) {
+  try {
+    const folderMatcher = FolderMatchingService.getInstance();
+    if (!folderMatcher) return;
+
+    if (typeof folderMatcher.initialize === 'function') {
+      await folderMatcher.initialize().catch((err) => {
+        logger.warn('[SMART-FOLDERS] Embedding sync init warning:', err.message);
+      });
+    }
+
+    const validNextFolders = (Array.isArray(nextFolders) ? nextFolders : []).filter(
+      (folder) => folder && typeof folder.name === 'string' && folder.name.trim()
+    );
+
+    let upsertCount = 0;
+    if (typeof folderMatcher.batchUpsertFolders === 'function' && validNextFolders.length > 0) {
+      const upsertResult = await folderMatcher.batchUpsertFolders(validNextFolders);
+      upsertCount = Number(upsertResult?.count) || 0;
+    }
+
+    const previousIds = new Set(
+      (Array.isArray(previousFolders) ? previousFolders : [])
+        .map((folder) => getFolderEmbeddingId(folder, folderMatcher))
+        .filter(Boolean)
+    );
+    const nextIds = new Set(
+      (Array.isArray(nextFolders) ? nextFolders : [])
+        .map((folder) => getFolderEmbeddingId(folder, folderMatcher))
+        .filter(Boolean)
+    );
+    const deletedIds = [...previousIds].filter((id) => !nextIds.has(id));
+
+    let deletedCount = 0;
+    if (deletedIds.length > 0) {
+      const vectorDbService = folderMatcher.vectorDbService;
+      if (typeof vectorDbService?.batchDeleteFolders === 'function') {
+        const deleteResult = await vectorDbService.batchDeleteFolders(deletedIds);
+        deletedCount = Number(deleteResult?.count) || 0;
+      } else if (typeof vectorDbService?.deleteFolderEmbedding === 'function') {
+        for (const id of deletedIds) {
+          const deleteResult = await vectorDbService.deleteFolderEmbedding(id);
+          if (deleteResult?.success) deletedCount++;
+        }
+      } else {
+        logger.debug(
+          '[SMART-FOLDERS] Embedding sync: vector DB delete API unavailable, skipping deletes'
+        );
+      }
+    }
+
+    logger.info('[SMART-FOLDERS] Embedding sync complete', {
+      reason,
+      folders: validNextFolders.length,
+      upserted: upsertCount,
+      deleted: deletedCount
+    });
+  } catch (error) {
+    logger.warn('[SMART-FOLDERS] Embedding sync skipped due to error:', error.message);
+  }
+}
+
+/**
  * CRITICAL SECURITY FIX: Sanitize and validate folder paths to prevent path traversal attacks
  * @param {string} inputPath - User-provided path to validate
  * @returns {string} - Sanitized, validated path
@@ -461,6 +563,12 @@ Rules:
           try {
             setCustomFolders(folders);
             await saveCustomFolders(folders);
+            await syncSmartFolderEmbeddings({
+              previousFolders: originalFolders,
+              nextFolders: folders,
+              logger,
+              reason: 'save'
+            });
             logger.info('[SMART-FOLDERS] Saved Smart Folders:', folders.length);
             return { success: true, folders: getCustomFolders() };
           } catch (saveError) {
@@ -563,6 +671,12 @@ Rules:
           try {
             setCustomFolders(folders);
             await saveCustomFolders(folders);
+            await syncSmartFolderEmbeddings({
+              previousFolders: originalFolders,
+              nextFolders: folders,
+              logger,
+              reason: 'update-custom'
+            });
             logger.info('[SMART-FOLDERS] Updated Custom Folders:', folders.length);
             return { success: true, folders: getCustomFolders() };
           } catch (saveError) {
@@ -675,19 +789,65 @@ Rules:
             }
           }
           const originalFolder = { ...customFolders[folderIndex] };
-          if (updatedFolder.path && updatedFolder.path !== originalFolder.path) {
+          const originalFolders = customFolders.map((folder) => ({ ...folder }));
+          if (updatedFolder.path && !areEquivalentPaths(updatedFolder.path, originalFolder.path)) {
             try {
               const oldPath = originalFolder.path;
               const newPath = updatedFolder.path;
-              const oldStats = await fs.stat(oldPath);
-              if (!oldStats.isDirectory())
+              let oldExists = false;
+              let oldIsDirectory = false;
+              let newExists = false;
+              let newIsDirectory = false;
+
+              try {
+                const oldStats = await fs.stat(oldPath);
+                oldExists = true;
+                oldIsDirectory = oldStats.isDirectory();
+              } catch (oldErr) {
+                if (oldErr?.code !== 'ENOENT') throw oldErr;
+              }
+
+              try {
+                const newStats = await fs.stat(newPath);
+                newExists = true;
+                newIsDirectory = newStats.isDirectory();
+              } catch (newErr) {
+                if (newErr?.code !== 'ENOENT') throw newErr;
+              }
+
+              if (newExists && !newIsDirectory) {
+                return {
+                  success: false,
+                  error: 'Target path exists but is not a directory',
+                  errorCode: ERROR_CODES.INVALID_PATH
+                };
+              }
+
+              if (oldExists && !oldIsDirectory) {
                 return {
                   success: false,
                   error: 'Original path is not a directory',
                   errorCode: ERROR_CODES.ORIGINAL_NOT_DIRECTORY
                 };
-              await fs.rename(oldPath, newPath);
-              logger.info(`[SMART-FOLDERS] Renamed directory "${oldPath}" -> "${newPath}"`);
+              }
+
+              if (oldExists && oldIsDirectory && !newExists) {
+                await fs.rename(oldPath, newPath);
+                logger.info(`[SMART-FOLDERS] Renamed directory "${oldPath}" -> "${newPath}"`);
+              } else if (!newExists) {
+                // Source folder was removed externally; create destination so folder remains valid.
+                await fs.mkdir(newPath, { recursive: true });
+                logger.info(
+                  '[SMART-FOLDERS] Source directory missing during edit, created destination directory instead:',
+                  { oldPath, newPath }
+                );
+              } else {
+                // Destination already exists and is a directory; treat as a repoint.
+                logger.info(
+                  '[SMART-FOLDERS] Destination directory already exists, updating smart folder path without rename:',
+                  { oldPath, newPath }
+                );
+              }
             } catch (renameErr) {
               logger.error('[SMART-FOLDERS] Directory rename failed:', renameErr.message);
               return {
@@ -706,6 +866,12 @@ Rules:
             };
             setCustomFolders(customFolders);
             await saveCustomFolders(customFolders);
+            await syncSmartFolderEmbeddings({
+              previousFolders: originalFolders,
+              nextFolders: customFolders,
+              logger,
+              reason: 'edit'
+            });
             logger.info('[SMART-FOLDERS] Edited Smart Folder:', folderId);
             return {
               success: true,
@@ -769,6 +935,12 @@ Rules:
             const updated = customFolders.filter((f) => f.id !== folderId);
             setCustomFolders(updated);
             await saveCustomFolders(updated);
+            await syncSmartFolderEmbeddings({
+              previousFolders: originalFolders,
+              nextFolders: updated,
+              logger,
+              reason: 'delete'
+            });
             logger.info('[SMART-FOLDERS] Deleted Smart Folder:', folderId);
             // Note: We intentionally do NOT delete the physical directory.
             // The UI promises "This will not delete the physical directory or its files."
@@ -1111,6 +1283,12 @@ Now generate a description for "${folderName}":`;
             customFolders.push(newFolder);
             setCustomFolders(customFolders);
             await saveCustomFolders(customFolders);
+            await syncSmartFolderEmbeddings({
+              previousFolders: originalFolders,
+              nextFolders: customFolders,
+              logger,
+              reason: 'add'
+            });
             logger.info(
               '[SMART-FOLDERS] Added folder:',
               newFolder.id,
@@ -1281,9 +1459,16 @@ Now generate a description for "${folderName}":`;
       handler: async () => {
         try {
           logger.info('[SMART-FOLDERS] Resetting to default smart folders');
+          const originalFolders = [...getCustomFolders()];
           const { resetToDefaultFolders } = require('../core/customFolders');
           const defaultFolders = await resetToDefaultFolders();
           setCustomFolders(defaultFolders);
+          await syncSmartFolderEmbeddings({
+            previousFolders: originalFolders,
+            nextFolders: defaultFolders,
+            logger,
+            reason: 'reset-to-defaults'
+          });
           logger.info('[SMART-FOLDERS] Reset complete, created', defaultFolders.length, 'folders');
           return {
             success: true,

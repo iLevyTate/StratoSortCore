@@ -7,6 +7,23 @@ const { getLegacyUserDataPaths } = require('./userDataMigration');
 
 const logger = createLogger('CustomFolders');
 const CUSTOM_FOLDERS_FILENAME = 'custom-folders.json';
+const LEGACY_DEFAULT_FOLDER_NAMES = new Set([
+  'uncategorized',
+  'documents',
+  'images',
+  'videos',
+  'music',
+  'spreadsheets',
+  'presentations',
+  'archives',
+  // Legacy default bundle names from older builds.
+  '3d print',
+  'financial',
+  'research',
+  'work',
+  'logos',
+  'code'
+]);
 
 // Serialize concurrent save operations to prevent race conditions
 let _saveQueue = Promise.resolve();
@@ -98,9 +115,39 @@ function hasCustomFolders(folders, defaultNameSet) {
   return (Array.isArray(folders) ? folders : []).some((folder) => {
     const nameKey = normalizeName(folder?.name);
     if (!nameKey) return false;
+    if (folder?.isDefault === false) return true;
+    if (folder?.isDefault === true) return false;
     if (defaultNameSet.has(nameKey)) return false;
     return true;
   });
+}
+
+function shouldPruneLegacyDefaultBundle(folders, currentDefaultNameSet) {
+  const safeFolders = Array.isArray(folders) ? folders : [];
+  if (safeFolders.length === 0) return false;
+
+  const allEntriesMarkedDefault = safeFolders.every((folder) => folder?.isDefault === true);
+  if (!allEntriesMarkedDefault) return false;
+
+  const hasLegacyOnlyDefaultName = safeFolders.some((folder) => {
+    const nameKey = normalizeName(folder?.name);
+    return (
+      nameKey && LEGACY_DEFAULT_FOLDER_NAMES.has(nameKey) && !currentDefaultNameSet.has(nameKey)
+    );
+  });
+
+  return hasLegacyOnlyDefaultName;
+}
+
+async function pruneToUncategorizedOnly(folders) {
+  const safeFolders = Array.isArray(folders) ? folders : [];
+  const uncategorizedOnly = safeFolders.filter(
+    (folder) => normalizeName(folder?.name) === 'uncategorized'
+  );
+  const prunedInput = uncategorizedOnly.length > 0 ? [uncategorizedOnly[0]] : [];
+  const ensured = await ensureUncategorizedFolder(prunedInput);
+  await saveCustomFolders(ensured);
+  return ensured;
 }
 
 function mergeFolders(currentFolders, legacyFolders) {
@@ -280,9 +327,17 @@ async function loadCustomFolders() {
     const normalized = normalizeFolderPaths(parsed);
     const documentsDir = app.getPath('documents');
     const baseDir = path.join(documentsDir, 'StratoSort');
-    const defaultNameSet = new Set(
+    const currentDefaultNameSet = new Set(
       getDefaultSmartFolders(baseDir).map((folder) => normalizeName(folder.name))
     );
+    const defaultNameSet = new Set([...currentDefaultNameSet, ...LEGACY_DEFAULT_FOLDER_NAMES]);
+
+    if (shouldPruneLegacyDefaultBundle(normalized, currentDefaultNameSet)) {
+      logger.warn(
+        '[STARTUP] Detected legacy default-only smart-folder bundle; pruning to fallback'
+      );
+      return await pruneToUncategorizedOnly(normalized);
+    }
 
     const recovered = await recoverLegacyCustomFolders(normalized, defaultNameSet);
 
@@ -291,13 +346,20 @@ async function loadCustomFolders() {
   } catch {
     const documentsDir = app.getPath('documents');
     const baseDir = path.join(documentsDir, 'StratoSort');
-    const defaultNameSet = new Set(
+    const currentDefaultNameSet = new Set(
       getDefaultSmartFolders(baseDir).map((folder) => normalizeName(folder.name))
     );
+    const defaultNameSet = new Set([...currentDefaultNameSet, ...LEGACY_DEFAULT_FOLDER_NAMES]);
 
     const backupRestore = await restoreFromBackup();
     if (backupRestore?.success && Array.isArray(backupRestore.folders)) {
       const normalizedBackup = normalizeFolderPaths(backupRestore.folders);
+      if (shouldPruneLegacyDefaultBundle(normalizedBackup, currentDefaultNameSet)) {
+        logger.warn(
+          '[STARTUP] Detected legacy default-only smart-folder backup; pruning to fallback'
+        );
+        return await pruneToUncategorizedOnly(normalizedBackup);
+      }
       const recoveredFromBackup = await recoverLegacyCustomFolders(
         normalizedBackup,
         defaultNameSet

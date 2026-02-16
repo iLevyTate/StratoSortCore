@@ -12,10 +12,10 @@ import {
   X,
   ShieldCheck
 } from 'lucide-react';
-import { PHASES, PHASE_TRANSITIONS, PHASE_METADATA, PHASE_ORDER } from '../../shared/constants';
+import { PHASES, PHASE_METADATA, PHASE_ORDER } from '../../shared/constants';
 import { createLogger } from '../../shared/logger';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
-import { setPhase, toggleSettings } from '../store/slices/uiSlice';
+import { setPhase, toggleSettings, canTransitionTo } from '../store/slices/uiSlice';
 import { updateHealth } from '../store/slices/systemSlice';
 import { useFloatingSearch } from '../contexts/FloatingSearchContext';
 import UpdateIndicator from './UpdateIndicator';
@@ -582,22 +582,7 @@ function NavigationBar() {
     (newPhase) => {
       if (!newPhase || typeof newPhase !== 'string') return;
 
-      const order = PHASE_ORDER || ['welcome', 'setup', 'discover', 'organize', 'complete'];
-      const currentIndex = order.indexOf(currentPhase);
-      const newPhaseIndex = order.indexOf(newPhase);
-
-      // Allow navigation if:
-      // 1. It's the current phase (no-op but allowed)
-      // 2. It's a previous phase (backward navigation)
-      // 3. It's the immediate next phase (forward progress)
-      // 4. Or if it's explicitly in the allowed transitions list (legacy/graph support)
-
-      const allowedTransitions = PHASE_TRANSITIONS[currentPhase];
-      const isExplicitlyAllowed = allowedTransitions && allowedTransitions.includes(newPhase);
-      const isSequential = newPhaseIndex === currentIndex + 1;
-      const isBackward = newPhaseIndex < currentIndex;
-
-      if (newPhase === currentPhase || isBackward || isSequential || isExplicitlyAllowed) {
+      if (newPhase === currentPhase || canTransitionTo(currentPhase, newPhase)) {
         actions.advancePhase(newPhase);
       }
     },
@@ -649,27 +634,10 @@ function NavigationBar() {
           >
             {(PHASE_ORDER || ['welcome', 'setup', 'discover', 'organize', 'complete']).map(
               (phase) => {
-                const order = PHASE_ORDER || [
-                  'welcome',
-                  'setup',
-                  'discover',
-                  'organize',
-                  'complete'
-                ];
-                const currentIndex = order.indexOf(currentPhase);
-                const phaseIndex = order.indexOf(phase);
                 const isActive = phase === currentPhase;
 
-                // Calculate navigation permissions
-                const allowedTransitions = PHASE_TRANSITIONS[currentPhase];
-                const isExplicitlyAllowed =
-                  allowedTransitions && allowedTransitions.includes(phase);
-                const isBackward = phaseIndex < currentIndex;
-                const isSequential = phaseIndex === currentIndex + 1;
-
                 const canNavigate =
-                  (isActive || isBackward || isSequential || isExplicitlyAllowed) &&
-                  !isBlockedByOperation;
+                  (isActive || canTransitionTo(currentPhase, phase)) && !isBlockedByOperation;
 
                 return (
                   <NavTab
