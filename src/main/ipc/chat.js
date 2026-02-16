@@ -98,17 +98,39 @@ function registerChatIpc(servicesOrParams) {
         fallbackResponse: { success: false, error: 'Chat service unavailable' },
         handler: async (event, payload, service) => {
           const sender = event.sender;
-          await service.queryStreaming({
-            ...payload,
-            onEvent: (data) => {
-              if (!sender.isDestroyed()) {
-                sender.send(IPC_CHANNELS.CHAT.STREAM_CHUNK, data);
+
+          // Return immediately — streaming data flows through STREAM_CHUNK/STREAM_END
+          // events, not through the invoke return value.  Awaiting the full streaming
+          // operation here would block the invoke promise for 30-60s+, racing against
+          // the preload's IPC timeout and causing spurious timeout errors.
+          service
+            .queryStreaming({
+              ...payload,
+              onEvent: (data) => {
+                if (!sender.isDestroyed()) {
+                  sender.send(IPC_CHANNELS.CHAT.STREAM_CHUNK, data);
+                }
               }
-            }
-          });
-          if (!sender.isDestroyed()) {
-            sender.send(IPC_CHANNELS.CHAT.STREAM_END);
-          }
+            })
+            .then(() => {
+              if (!sender.isDestroyed()) {
+                sender.send(IPC_CHANNELS.CHAT.STREAM_END);
+              }
+            })
+            .catch((err) => {
+              logger.error('[Chat] Streaming background error', {
+                error: err?.message || String(err)
+              });
+              if (!sender.isDestroyed()) {
+                sender.send(IPC_CHANNELS.CHAT.STREAM_CHUNK, {
+                  type: 'error',
+                  error: err?.message || 'Streaming failed'
+                });
+                sender.send(IPC_CHANNELS.CHAT.STREAM_END);
+              }
+            });
+
+          return { success: true };
         }
       },
       [IPC_CHANNELS.CHAT.CANCEL_STREAM]: {
@@ -132,6 +154,7 @@ function registerChatIpc(servicesOrParams) {
         }
       },
       [IPC_CHANNELS.CHAT.LIST_CONVERSATIONS]: {
+        schema: schemas.chatListConversations,
         serviceName: 'chat',
         getService: getChatServiceSafe,
         fallbackResponse: { success: false, error: 'Chat service unavailable' },
@@ -144,6 +167,7 @@ function registerChatIpc(servicesOrParams) {
         }
       },
       [IPC_CHANNELS.CHAT.GET_CONVERSATION]: {
+        schema: schemas.chatConversationId,
         serviceName: 'chat',
         getService: getChatServiceSafe,
         fallbackResponse: { success: false, error: 'Chat service unavailable' },
@@ -154,6 +178,7 @@ function registerChatIpc(servicesOrParams) {
         }
       },
       [IPC_CHANNELS.CHAT.DELETE_CONVERSATION]: {
+        schema: schemas.chatConversationId,
         serviceName: 'chat',
         getService: getChatServiceSafe,
         fallbackResponse: { success: false, error: 'Chat service unavailable' },
@@ -164,6 +189,7 @@ function registerChatIpc(servicesOrParams) {
         }
       },
       [IPC_CHANNELS.CHAT.SEARCH_CONVERSATIONS]: {
+        schema: schemas.chatSearchConversations,
         serviceName: 'chat',
         getService: getChatServiceSafe,
         fallbackResponse: { success: false, error: 'Chat service unavailable' },
@@ -173,6 +199,7 @@ function registerChatIpc(servicesOrParams) {
         }
       },
       [IPC_CHANNELS.CHAT.EXPORT_CONVERSATION]: {
+        schema: schemas.chatConversationId,
         serviceName: 'chat',
         getService: getChatServiceSafe,
         fallbackResponse: { success: false, error: 'Chat service unavailable' },

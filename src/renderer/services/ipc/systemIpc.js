@@ -16,10 +16,14 @@ function normalizeConfigValueResponse(result) {
   return result;
 }
 
+function isCanceled(result) {
+  return result?.canceled === true || result?.cancelled === true;
+}
+
 export const systemIpc = {
   async checkForUpdates() {
     const result = await requireElectronAPI().system.checkForUpdates();
-    if (result && typeof result === 'object' && result.success === false) {
+    if (result && typeof result === 'object' && result.success === false && !isCanceled(result)) {
       throw new Error(result.error || 'Failed to check for updates');
     }
     return result;
@@ -30,7 +34,7 @@ export const systemIpc = {
   },
   async exportLogs() {
     const result = await requireElectronAPI().system.exportLogs();
-    if (result && typeof result === 'object' && result.success === false) {
+    if (result && typeof result === 'object' && result.success === false && !isCanceled(result)) {
       throw new Error(result.error || 'Failed to export logs');
     }
     return result;

@@ -16,8 +16,8 @@ function ChatPersonaSection({ settings, setSettings }) {
     >
       <SettingRow
         layout="col"
-        label="Persona preset"
-        description="Applies globally to chat responses"
+        label="Persona Preset"
+        description="Applies globally to chat responses."
       >
         <Select
           value={currentValue}
@@ -35,7 +35,7 @@ function ChatPersonaSection({ settings, setSettings }) {
             </option>
           ))}
         </Select>
-        <Text variant="tiny" className="text-system-gray-500 mt-2">
+        <Text variant="tiny" className="text-system-gray-500 mt-1">
           {CHAT_PERSONAS.find((persona) => persona.id === currentValue)?.description || ''}
         </Text>
       </SettingRow>

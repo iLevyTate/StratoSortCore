@@ -1,9 +1,9 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import Switch from '../ui/Switch';
+import AlertBox from '../ui/AlertBox';
 import SettingRow from './SettingRow';
 import SettingsCard from './SettingsCard';
-import { Text } from '../ui/Typography';
 
 function BackgroundModeSection({ settings, setSettings }) {
   return (
@@ -27,12 +27,10 @@ function BackgroundModeSection({ settings, setSettings }) {
       </SettingRow>
 
       {settings.backgroundMode && !settings.autoOrganize && (
-        <div className="rounded-xl border border-stratosort-warning/20 bg-stratosort-warning/5 p-4">
-          <Text variant="tiny" className="text-stratosort-warning">
-            Enable &quot;Auto-organize Downloads&quot; above to process files while running in
-            background.
-          </Text>
-        </div>
+        <AlertBox variant="warning">
+          Enable &quot;Auto-organize Downloads&quot; above to process files while running in
+          background.
+        </AlertBox>
       )}
     </SettingsCard>
   );

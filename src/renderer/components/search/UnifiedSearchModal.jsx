@@ -87,8 +87,7 @@ const GRAPH_LAYER_SPACING = 400; // Increased from 280 to reduce clutter
 const ZOOM_LABEL_HIDE_THRESHOLD = 0.6;
 const GRAPH_SIDEBAR_CARD = 'rounded-lg border border-system-gray-200 bg-white/90 p-3 shadow-sm';
 const GRAPH_SIDEBAR_SECTION_TITLE =
-  'text-[11px] font-semibold text-system-gray-500 uppercase tracking-wider flex items-center gap-2';
-const GRAPH_SIDEBAR_HELP_TEXT = 'text-[11px] text-system-gray-500';
+  'text-xs font-semibold text-system-gray-500 uppercase tracking-wider flex items-center gap-2';
 const WHY_CONNECTIONS_DISPLAY_LIMIT = 6;
 
 /**
@@ -849,6 +848,48 @@ TabButton.propTypes = {
 };
 TabButton.displayName = 'TabButton';
 
+/**
+ * Lightweight collapsible section header for the graph sidebar.
+ * Provides consistent toggle UI with chevron, icon, title, and optional badge.
+ */
+function SidebarSection({ icon: Icon, title, isOpen, onToggle, badge, children }) {
+  return (
+    <section className="space-y-0">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center justify-between gap-2 py-2 px-1 rounded-md hover:bg-system-gray-50 transition-colors group"
+        aria-expanded={isOpen}
+      >
+        <span className={GRAPH_SIDEBAR_SECTION_TITLE}>
+          {Icon && <Icon className="w-3.5 h-3.5" aria-hidden="true" />}
+          <span>{title}</span>
+          {badge != null && (
+            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-system-gray-100 text-system-gray-500 text-[10px] font-medium not-italic">
+              {badge}
+            </span>
+          )}
+        </span>
+        <ChevronDown
+          className={`w-3.5 h-3.5 text-system-gray-400 transition-transform duration-200 ${isOpen ? '' : '-rotate-90'}`}
+          aria-hidden="true"
+        />
+      </button>
+      {isOpen && <div className="pt-2 space-y-3">{children}</div>}
+    </section>
+  );
+}
+
+SidebarSection.propTypes = {
+  icon: PropTypes.elementType,
+  title: PropTypes.string.isRequired,
+  isOpen: PropTypes.bool.isRequired,
+  onToggle: PropTypes.func.isRequired,
+  badge: PropTypes.node,
+  children: PropTypes.node
+};
+SidebarSection.displayName = 'SidebarSection';
+
 // SearchExplainer and SearchProcessCard removed - users don't need to understand how search works
 
 // ============================================================================
@@ -1028,7 +1069,6 @@ export default function UnifiedSearchModal({
   // Guide assistant state
   const [showGuidePanel, setShowGuidePanel] = useState(false);
   const [guideInput, setGuideInput] = useState('');
-  const [showInsightsPanel, setShowInsightsPanel] = useState(true);
   const [duplicateSummary, setDuplicateSummary] = useState({
     groupCount: 0,
     totalDuplicates: 0,
@@ -1221,8 +1261,18 @@ export default function UnifiedSearchModal({
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   // UI State for progressive disclosure
-  const [showAdvancedControls, setShowAdvancedControls] = useState(false);
   const [isGraphMaximized, setIsGraphMaximized] = useState(false);
+  // Left sidebar collapsible sections - default collapsed to keep graph visible
+  const [sidebarSections, setSidebarSections] = useState({
+    insights: false,
+    addToGraph: true,
+    explore: false,
+    actions: false,
+    advanced: false
+  });
+  const toggleSidebarSection = useCallback((key) => {
+    setSidebarSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
   const [isDragOver, setIsDragOver] = useState(false);
 
   // Refs
@@ -1983,6 +2033,13 @@ export default function UnifiedSearchModal({
       graphActions.selectNode(null);
       setAddMode(true);
       setIsGraphMaximized(false);
+      setSidebarSections({
+        insights: false,
+        addToGraph: true,
+        explore: false,
+        actions: false,
+        advanced: false
+      });
       if (graphFitViewTimeoutRef.current) {
         clearTimeout(graphFitViewTimeoutRef.current);
         graphFitViewTimeoutRef.current = null;
@@ -4557,7 +4614,6 @@ export default function UnifiedSearchModal({
   // Auto-load clusters when opening graph tab (if files are indexed)
   useEffect(() => {
     if (!isOpen || activeTab !== 'graph') return;
-    setShowInsightsPanel(true);
     if (hasAutoLoadedClusters.current) return;
     if (nodes.length > 0) return; // Already have nodes
     if (!stats?.files || stats.files === 0) return; // No indexed files
@@ -6535,9 +6591,13 @@ export default function UnifiedSearchModal({
                         selectedSearchResult?.matchDetails?.bestSnippet ||
                         selectedSearchResult?.document) && (
                         <div className="flex-1 overflow-y-auto">
-                          <div className="text-[10px] uppercase text-system-gray-400 font-semibold mb-1 tracking-wider">
+                          <Text
+                            as="div"
+                            variant="tiny"
+                            className="uppercase text-system-gray-400 font-semibold mb-1 tracking-wider"
+                          >
                             Content Preview
-                          </div>
+                          </Text>
                           <Text
                             variant="tiny"
                             className="text-system-gray-600 whitespace-pre-wrap leading-relaxed"
@@ -6600,14 +6660,14 @@ export default function UnifiedSearchModal({
         {/* Chat Tab Content */}
         {activeTab === 'chat' && (
           <div className="flex-1 min-h-[60vh] surface-panel flex flex-col overflow-hidden">
-            <div className="flex h-full">
+            <div className="flex flex-1 min-h-0">
               <ConversationSidebar
                 currentConversationId={currentConversationId}
                 onSelectConversation={handleSelectConversation}
                 onNewConversation={handleNewConversation}
                 className="w-64 shrink-0"
               />
-              <div className="flex-1 flex flex-col min-w-0 border-l border-system-gray-200">
+              <div className="flex-1 flex flex-col min-w-0 min-h-0 border-l border-system-gray-200">
                 {hasLoadedStats && !statsUnavailable && (!stats || stats.files === 0) && (
                   <div className="mx-4 mt-4 rounded-lg border border-stratosort-warning/30 bg-stratosort-warning/10 px-3 py-2 flex items-center justify-between gap-3">
                     <Text as="span" variant="tiny" className="text-system-gray-700">
@@ -6657,10 +6717,10 @@ export default function UnifiedSearchModal({
         {/* Graph Tab Content */}
         {GRAPH_FEATURE_FLAGS.SHOW_GRAPH && activeTab === 'graph' && (
           <div
-            className={`grid gap-3 flex-1 min-h-[60vh] transition-all duration-300 ${
+            className={`grid gap-3 flex-1 transition-all duration-300 ${
               isGraphMaximized
-                ? 'grid-cols-1'
-                : 'grid-cols-1 lg:grid-cols-[minmax(280px,320px)_minmax(0,1fr)_minmax(280px,340px)]'
+                ? 'grid-cols-1 min-h-[70vh]'
+                : 'grid-cols-1 lg:grid-cols-[minmax(260px,300px)_minmax(0,1fr)_minmax(260px,320px)] lg:h-[calc(80vh-4rem)]'
             }`}
           >
             {/* Left: Controls */}
@@ -6670,7 +6730,7 @@ export default function UnifiedSearchModal({
                 role="complementary"
                 aria-label="Graph Controls"
               >
-                <div className="p-4 border-b border-system-gray-100 bg-system-gray-50/50 space-y-2">
+                <div className="px-4 py-3 border-b border-system-gray-100 bg-system-gray-50/50">
                   <div className="flex items-center justify-between gap-2">
                     <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
                       <Network className="w-3.5 h-3.5 text-stratosort-blue" aria-hidden="true" />
@@ -6682,14 +6742,11 @@ export default function UnifiedSearchModal({
                       </Button>
                     )}
                   </div>
-                  <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_HELP_TEXT}>
-                    Search, cluster, and organize your graph.
-                  </Text>
                 </div>
 
-                <div className="p-4 flex-1 min-h-0 overflow-y-auto panel-scroll flex flex-col gap-5">
+                <div className="p-3 flex-1 min-h-0 overflow-y-auto panel-scroll flex flex-col gap-3">
                   <div className={`${GRAPH_SIDEBAR_CARD} bg-system-gray-50/80`}>
-                    <div className="flex items-center justify-between gap-2 text-[11px]">
+                    <div className="flex items-center justify-between gap-2 text-xs">
                       <Text as="span" variant="tiny" className="font-semibold text-system-gray-700">
                         Current graph
                       </Text>
@@ -6744,185 +6801,172 @@ export default function UnifiedSearchModal({
                   </div>
 
                   {/* Insight Hero */}
-                  <section className="space-y-2">
-                    <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Insights</span>
-                    </Text>
+                  <SidebarSection
+                    icon={Sparkles}
+                    title="Insights"
+                    isOpen={sidebarSections.insights}
+                    onToggle={() => toggleSidebarSection('insights')}
+                  >
                     <div className={GRAPH_SIDEBAR_CARD}>
-                      <div className="flex items-center justify-between gap-2">
-                        <Text
-                          as="span"
-                          variant="tiny"
-                          className="font-semibold text-system-gray-700"
-                        >
-                          Insight Summary
-                        </Text>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setShowInsightsPanel((prev) => !prev)}
-                          className="h-7 px-2 py-0 text-xs text-system-gray-500"
-                        >
-                          {showInsightsPanel ? 'Hide' : 'Show'}
-                        </Button>
-                      </div>
+                      <Text
+                        as="div"
+                        variant="tiny"
+                        className="font-semibold text-system-gray-700 mb-2"
+                      >
+                        Insight Summary
+                      </Text>
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleInsightStatClick('clusters')}
+                            className="rounded-md border border-system-gray-200 bg-white px-2 py-2 text-left hover:bg-system-gray-50"
+                          >
+                            <Text
+                              as="div"
+                              variant="tiny"
+                              className="font-semibold text-system-gray-800"
+                            >
+                              {insightSummary.topicClusters}
+                            </Text>
+                            <Text as="div" variant="tiny" className="text-system-gray-500">
+                              topic clusters
+                            </Text>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleInsightStatClick('bridges')}
+                            className="rounded-md border border-system-gray-200 bg-white px-2 py-2 text-left hover:bg-system-gray-50"
+                          >
+                            <Text
+                              as="div"
+                              variant="tiny"
+                              className="font-semibold text-system-gray-800"
+                            >
+                              {insightSummary.bridgeDocuments}
+                            </Text>
+                            <Text as="div" variant="tiny" className="text-system-gray-500">
+                              bridge documents
+                            </Text>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleInsightStatClick('duplicates')}
+                            className="rounded-md border border-system-gray-200 bg-white px-2 py-2 text-left hover:bg-system-gray-50"
+                          >
+                            <Text
+                              as="div"
+                              variant="tiny"
+                              className="font-semibold text-system-gray-800"
+                            >
+                              {duplicateSummary.loading ? '...' : insightSummary.nearDuplicates}
+                            </Text>
+                            <Text as="div" variant="tiny" className="text-system-gray-500">
+                              near-duplicates
+                            </Text>
+                            {duplicateSummary.groupCount > 0 && (
+                              <Text as="div" variant="tiny" className="text-system-gray-400">
+                                {duplicateSummary.groupCount} group
+                                {duplicateSummary.groupCount === 1 ? '' : 's'}
+                              </Text>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleInsightStatClick('scattered')}
+                            className="rounded-md border border-system-gray-200 bg-white px-2 py-2 text-left hover:bg-system-gray-50"
+                          >
+                            <Text
+                              as="div"
+                              variant="tiny"
+                              className="font-semibold text-system-gray-800"
+                            >
+                              {insightSummary.scatteredFiles}
+                            </Text>
+                            <Text as="div" variant="tiny" className="text-system-gray-500">
+                              scattered files
+                            </Text>
+                          </button>
+                        </div>
 
-                      {showInsightsPanel && (
-                        <div className="mt-2 space-y-3 pt-2 border-t border-system-gray-100">
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleInsightStatClick('clusters')}
-                              className="rounded-md border border-system-gray-200 bg-white px-2 py-2 text-left hover:bg-system-gray-50"
+                        {dailyDiscoveries.length > 0 && (
+                          <div className="space-y-1.5">
+                            <Text
+                              as="div"
+                              variant="tiny"
+                              className="font-semibold text-system-gray-500 uppercase tracking-wider"
                             >
-                              <Text
-                                as="div"
-                                variant="tiny"
-                                className="font-semibold text-system-gray-800"
+                              Daily discovery
+                            </Text>
+                            {dailyDiscoveries.map((discovery) => (
+                              <button
+                                key={discovery.id}
+                                type="button"
+                                onClick={() => focusNode(discovery.targetId)}
+                                className="w-full text-left rounded-lg border border-system-gray-200 bg-white hover:bg-system-gray-50 px-2 py-2"
                               >
-                                {insightSummary.topicClusters}
-                              </Text>
-                              <Text as="div" variant="tiny" className="text-system-gray-500">
-                                topic clusters
-                              </Text>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleInsightStatClick('bridges')}
-                              className="rounded-md border border-system-gray-200 bg-white px-2 py-2 text-left hover:bg-system-gray-50"
-                            >
-                              <Text
-                                as="div"
-                                variant="tiny"
-                                className="font-semibold text-system-gray-800"
-                              >
-                                {insightSummary.bridgeDocuments}
-                              </Text>
-                              <Text as="div" variant="tiny" className="text-system-gray-500">
-                                bridge documents
-                              </Text>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleInsightStatClick('duplicates')}
-                              className="rounded-md border border-system-gray-200 bg-white px-2 py-2 text-left hover:bg-system-gray-50"
-                            >
-                              <Text
-                                as="div"
-                                variant="tiny"
-                                className="font-semibold text-system-gray-800"
-                              >
-                                {duplicateSummary.loading ? '...' : insightSummary.nearDuplicates}
-                              </Text>
-                              <Text as="div" variant="tiny" className="text-system-gray-500">
-                                near-duplicates
-                              </Text>
-                              {duplicateSummary.groupCount > 0 && (
-                                <Text as="div" variant="tiny" className="text-system-gray-400">
-                                  {duplicateSummary.groupCount} group
-                                  {duplicateSummary.groupCount === 1 ? '' : 's'}
+                                <Text as="div" variant="tiny" className="text-system-gray-700">
+                                  <span className="font-medium">{discovery.sourceLabel}</span>
+                                  <span className="mx-1 text-system-gray-400">↔</span>
+                                  <span className="font-medium">{discovery.targetLabel}</span>
                                 </Text>
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleInsightStatClick('scattered')}
-                              className="rounded-md border border-system-gray-200 bg-white px-2 py-2 text-left hover:bg-system-gray-50"
-                            >
-                              <Text
-                                as="div"
-                                variant="tiny"
-                                className="font-semibold text-system-gray-800"
-                              >
-                                {insightSummary.scatteredFiles}
-                              </Text>
-                              <Text as="div" variant="tiny" className="text-system-gray-500">
-                                scattered files
-                              </Text>
-                            </button>
-                          </div>
-
-                          {dailyDiscoveries.length > 0 && (
-                            <div className="space-y-1.5">
-                              <Text
-                                as="div"
-                                variant="tiny"
-                                className="font-semibold text-system-gray-500 uppercase tracking-wider"
-                              >
-                                Daily discovery
-                              </Text>
-                              {dailyDiscoveries.map((discovery) => (
-                                <button
-                                  key={discovery.id}
-                                  type="button"
-                                  onClick={() => focusNode(discovery.targetId)}
-                                  className="w-full text-left rounded-lg border border-system-gray-200 bg-white hover:bg-system-gray-50 px-2 py-2"
+                                <Text
+                                  as="div"
+                                  variant="tiny"
+                                  className="text-system-gray-500 mt-0.5"
                                 >
-                                  <Text as="div" variant="tiny" className="text-system-gray-700">
-                                    <span className="font-medium">{discovery.sourceLabel}</span>
-                                    <span className="mx-1 text-system-gray-400">↔</span>
-                                    <span className="font-medium">{discovery.targetLabel}</span>
-                                  </Text>
-                                  <Text
-                                    as="div"
-                                    variant="tiny"
-                                    className="text-system-gray-500 mt-0.5"
-                                  >
-                                    Unexpected connection ({Math.round(discovery.similarity * 100)}%
-                                    related)
-                                  </Text>
+                                  Unexpected connection ({Math.round(discovery.similarity * 100)}%
+                                  related)
+                                </Text>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="rounded-lg border border-system-gray-200 bg-system-gray-50 p-2.5 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Text
+                              as="span"
+                              variant="tiny"
+                              className="font-semibold text-system-gray-700"
+                            >
+                              Organizational Health
+                            </Text>
+                            <span className="text-xs font-semibold text-stratosort-blue">
+                              {organizationalHealth.grade} ({organizationalHealth.score})
+                            </span>
+                          </div>
+                          <div className="space-y-1">
+                            {organizationalHealth.findings
+                              .filter((finding) => finding.active)
+                              .map((finding) => (
+                                <button
+                                  key={finding.key}
+                                  type="button"
+                                  onClick={() => handleOrgFindingClick(finding.key)}
+                                  className="w-full text-left text-xs text-system-gray-700 rounded border border-system-gray-200 bg-white px-2 py-1.5 hover:bg-system-gray-50"
+                                >
+                                  {finding.label}
                                 </button>
                               ))}
-                            </div>
-                          )}
-
-                          <div className="rounded-lg border border-system-gray-200 bg-system-gray-50 p-2.5 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <Text
-                                as="span"
-                                variant="tiny"
-                                className="font-semibold text-system-gray-700"
-                              >
-                                Organizational Health
+                            {organizationalHealth.findings.every((finding) => !finding.active) && (
+                              <Text as="div" variant="tiny" className="text-system-gray-500">
+                                No major organization issues detected.
                               </Text>
-                              <span className="text-xs font-semibold text-stratosort-blue">
-                                {organizationalHealth.grade} ({organizationalHealth.score})
-                              </span>
-                            </div>
-                            <div className="space-y-1">
-                              {organizationalHealth.findings
-                                .filter((finding) => finding.active)
-                                .map((finding) => (
-                                  <button
-                                    key={finding.key}
-                                    type="button"
-                                    onClick={() => handleOrgFindingClick(finding.key)}
-                                    className="w-full text-left text-xs text-system-gray-700 rounded border border-system-gray-200 bg-white px-2 py-1.5 hover:bg-system-gray-50"
-                                  >
-                                    {finding.label}
-                                  </button>
-                                ))}
-                              {organizationalHealth.findings.every(
-                                (finding) => !finding.active
-                              ) && (
-                                <Text as="div" variant="tiny" className="text-system-gray-500">
-                                  No major organization issues detected.
-                                </Text>
-                              )}
-                            </div>
+                            )}
                           </div>
                         </div>
-                      )}
+                      </div>
                     </div>
-                  </section>
+                  </SidebarSection>
 
                   {/* Add to Graph */}
-                  <section className="space-y-2">
-                    <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
-                      <SearchIcon className="w-3.5 h-3.5" />
-                      Add to Graph
-                    </Text>
+                  <SidebarSection
+                    icon={SearchIcon}
+                    title="Add to Graph"
+                    isOpen={sidebarSections.addToGraph}
+                    onToggle={() => toggleSidebarSection('addToGraph')}
+                  >
                     <div className={`${GRAPH_SIDEBAR_CARD} space-y-3`}>
                       <SearchAutocomplete
                         value={query}
@@ -6956,15 +7000,15 @@ export default function UnifiedSearchModal({
                         </Button>
                       </div>
                     </div>
-                  </section>
+                  </SidebarSection>
 
                   {/* Explore */}
-                  <section className="space-y-3">
-                    <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
-                      <Network className="w-3.5 h-3.5" />
-                      <span>Explore</span>
-                    </Text>
-
+                  <SidebarSection
+                    icon={Network}
+                    title="Explore"
+                    isOpen={sidebarSections.explore}
+                    onToggle={() => toggleSidebarSection('explore')}
+                  >
                     <div className={`${GRAPH_SIDEBAR_CARD} space-y-3`}>
                       <div>
                         <Text
@@ -7203,7 +7247,7 @@ export default function UnifiedSearchModal({
                                           return (
                                             <div
                                               key={filePath || file?.id || label}
-                                              className="flex items-center justify-between gap-2 text-[11px] text-system-gray-700 bg-white border border-system-gray-100 rounded px-2 py-1"
+                                              className="flex items-center justify-between gap-2 text-xs text-system-gray-700 bg-white border border-system-gray-100 rounded px-2 py-1"
                                               onClick={(e) => e.stopPropagation()}
                                               role="presentation"
                                             >
@@ -7454,14 +7498,15 @@ export default function UnifiedSearchModal({
                         </div>
                       )}
                     </div>
-                  </section>
+                  </SidebarSection>
 
                   {/* Actions */}
-                  <section className="space-y-3">
-                    <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
-                      <List className="w-3.5 h-3.5" />
-                      <span>Actions</span>
-                    </Text>
+                  <SidebarSection
+                    icon={List}
+                    title="Actions"
+                    isOpen={sidebarSections.actions}
+                    onToggle={() => toggleSidebarSection('actions')}
+                  >
                     <div className={`${GRAPH_SIDEBAR_CARD} space-y-3`}>
                       <div className="space-y-2.5">
                         <Button
@@ -7595,135 +7640,116 @@ export default function UnifiedSearchModal({
                         </Button>
                       </div>
                     </div>
-                  </section>
+                  </SidebarSection>
 
                   {/* Advanced Options */}
-                  <section className="space-y-2">
-                    <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
-                      <CheckSquare className="w-3.5 h-3.5" />
-                      <span>Advanced</span>
-                    </Text>
-                    <div className={`${GRAPH_SIDEBAR_CARD} !p-2`}>
+                  <SidebarSection
+                    icon={CheckSquare}
+                    title="Advanced"
+                    isOpen={sidebarSections.advanced}
+                    onToggle={() => toggleSidebarSection('advanced')}
+                  >
+                    <div className={`${GRAPH_SIDEBAR_CARD} space-y-4`}>
+                      {/* Filter */}
+                      <div>
+                        <Text
+                          as="label"
+                          variant="tiny"
+                          className="font-medium text-system-gray-600 mb-1.5 block"
+                        >
+                          Filter Visibility
+                        </Text>
+                        <Input
+                          value={withinQuery}
+                          onChange={(e) => setWithinQuery(e.target.value)}
+                          placeholder="Filter nodes..."
+                          className="h-8 text-sm bg-white"
+                        />
+                      </div>
+
+                      {/* Expansion Settings */}
+                      <div>
+                        <Text
+                          as="label"
+                          variant="tiny"
+                          className="font-medium text-system-gray-600 mb-1.5 block"
+                        >
+                          Connection Depth
+                        </Text>
+                        <Select
+                          value={hopCount}
+                          onChange={(e) => setHopCount(Number(e.target.value))}
+                          className="text-sm bg-white"
+                        >
+                          <option value={1}>1 level (Direct)</option>
+                          <option value={2}>2 levels</option>
+                          <option value={3}>3 levels (Deep)</option>
+                        </Select>
+                      </div>
+
+                      {/* Behavior Options */}
+                      <div className="space-y-2 pt-1">
+                        <Text
+                          as="label"
+                          variant="tiny"
+                          className="text-system-gray-600 flex items-center gap-2 select-none cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={autoLayout}
+                            onChange={(e) => setAutoLayout(e.target.checked)}
+                            className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
+                          />
+                          Auto-layout on changes
+                        </Text>
+
+                        <Text
+                          as="label"
+                          variant="tiny"
+                          className="text-system-gray-600 flex items-center gap-2 select-none cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={showEdgeLabels}
+                            onChange={(e) => setShowEdgeLabels(e.target.checked)}
+                            className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
+                          />
+                          Show connection labels
+                        </Text>
+                      </div>
+
+                      {/* Save/Load Controls */}
+                      <div className="pt-2 mt-2 border-t border-system-gray-100 flex gap-2">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleSaveGraph}
+                          className="flex-1 justify-center h-8 text-xs"
+                        >
+                          Save State
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleLoadGraph}
+                          className="flex-1 justify-center h-8 text-xs"
+                        >
+                          Load State
+                        </Button>
+                      </div>
+
                       <Button
-                        onClick={() => setShowAdvancedControls(!showAdvancedControls)}
-                        variant="ghost"
+                        variant="secondary"
                         size="sm"
-                        rightIcon={
-                          showAdvancedControls ? (
-                            <ChevronDown className="w-3.5 h-3.5" />
-                          ) : (
-                            <ChevronRight className="w-3.5 h-3.5" />
-                          )
-                        }
-                        className="w-full justify-between text-xs font-semibold text-system-gray-600 hover:text-system-gray-800 px-2 py-2"
+                        onClick={handleFindDuplicates}
+                        disabled={isFindingDuplicates}
+                        className="w-full justify-center h-8 text-xs"
                       >
-                        Advanced Options
+                        <Copy className="h-3.5 w-3.5" />
+                        <span>Find Duplicates</span>
                       </Button>
-
-                      {showAdvancedControls && (
-                        <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200 pt-3 border-t border-system-gray-100">
-                          {/* Filter */}
-                          <div>
-                            <Text
-                              as="label"
-                              variant="tiny"
-                              className="font-medium text-system-gray-600 mb-1.5 block"
-                            >
-                              Filter Visibility
-                            </Text>
-                            <Input
-                              value={withinQuery}
-                              onChange={(e) => setWithinQuery(e.target.value)}
-                              placeholder="Filter nodes..."
-                              className="h-8 text-sm bg-white"
-                            />
-                          </div>
-
-                          {/* Expansion Settings */}
-                          <div>
-                            <Text
-                              as="label"
-                              variant="tiny"
-                              className="font-medium text-system-gray-600 mb-1.5 block"
-                            >
-                              Connection Depth
-                            </Text>
-                            <Select
-                              value={hopCount}
-                              onChange={(e) => setHopCount(Number(e.target.value))}
-                              className="text-sm bg-white"
-                            >
-                              <option value={1}>1 level (Direct)</option>
-                              <option value={2}>2 levels</option>
-                              <option value={3}>3 levels (Deep)</option>
-                            </Select>
-                          </div>
-
-                          {/* Behavior Options */}
-                          <div className="space-y-2 pt-1">
-                            <Text
-                              as="label"
-                              variant="tiny"
-                              className="text-system-gray-600 flex items-center gap-2 select-none cursor-pointer"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={autoLayout}
-                                onChange={(e) => setAutoLayout(e.target.checked)}
-                                className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
-                              />
-                              Auto-layout on changes
-                            </Text>
-
-                            <Text
-                              as="label"
-                              variant="tiny"
-                              className="text-system-gray-600 flex items-center gap-2 select-none cursor-pointer"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={showEdgeLabels}
-                                onChange={(e) => setShowEdgeLabels(e.target.checked)}
-                                className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
-                              />
-                              Show connection labels
-                            </Text>
-                          </div>
-
-                          {/* Save/Load Controls */}
-                          <div className="pt-2 mt-2 border-t border-system-gray-100 flex gap-2">
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={handleSaveGraph}
-                              className="flex-1 justify-center h-8 text-xs"
-                            >
-                              Save State
-                            </Button>
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={handleLoadGraph}
-                              className="flex-1 justify-center h-8 text-xs"
-                            >
-                              Load State
-                            </Button>
-                          </div>
-
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={handleFindDuplicates}
-                            disabled={isFindingDuplicates}
-                            className="w-full justify-center h-8 text-xs"
-                          >
-                            <Copy className="h-3.5 w-3.5" />
-                            <span>Find Duplicates</span>
-                          </Button>
-                        </div>
-                      )}
                     </div>
-                  </section>
+                  </SidebarSection>
 
                   {/* Status Footer */}
                   <Text
@@ -7740,7 +7766,7 @@ export default function UnifiedSearchModal({
 
             {/* Center: Graph */}
             <div
-              className={`surface-panel p-0 overflow-hidden min-h-[50vh] rounded-xl border relative transition-all duration-300 ${
+              className={`surface-panel p-0 overflow-hidden min-h-[40vh] lg:min-h-0 rounded-xl border relative transition-all duration-300 ${
                 isGraphMaximized ? 'shadow-lg ring-1 ring-system-gray-200' : ''
               } ${
                 isDragOver
@@ -8099,7 +8125,7 @@ export default function UnifiedSearchModal({
                 role="complementary"
                 aria-label="Node Details"
               >
-                <div className="p-4 border-b border-system-gray-100 bg-system-gray-50/50 space-y-2">
+                <div className="px-4 py-3 border-b border-system-gray-100 bg-system-gray-50/50">
                   <div className="flex items-center justify-between gap-2">
                     <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
                       <Sparkles className="h-3.5 w-3.5 text-stratosort-blue" aria-hidden="true" />
@@ -8115,18 +8141,13 @@ export default function UnifiedSearchModal({
                       </Button>
                     ) : null}
                   </div>
-                  <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_HELP_TEXT}>
-                    {selectedNode
-                      ? 'Inspect connections and take action on the selected node.'
-                      : 'Understand node types and filter what is shown.'}
-                  </Text>
                 </div>
 
-                <div className="p-4 flex-1 min-h-0 overflow-y-auto panel-scroll">
+                <div className="p-3 flex-1 min-h-0 overflow-y-auto panel-scroll">
                   {selectedNode ? (
                     <>
                       <div className={`${GRAPH_SIDEBAR_CARD} mb-4 bg-system-gray-50/80`}>
-                        <div className="flex items-center justify-between text-[11px]">
+                        <div className="flex items-center justify-between text-xs">
                           <Text
                             as="span"
                             variant="tiny"
@@ -8232,7 +8253,7 @@ export default function UnifiedSearchModal({
                                 ).map((term) => (
                                   <span
                                     key={term}
-                                    className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-[11px]"
+                                    className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs"
                                   >
                                     {term}
                                   </span>
@@ -8817,7 +8838,7 @@ export default function UnifiedSearchModal({
                                       size="sm"
                                       leftIcon={icon}
                                       onClick={() => graphActions.selectNode(neighbor.id)}
-                                      className="w-full justify-between h-auto px-2 py-1.5 rounded-md text-left text-[11px] text-system-gray-700 hover:bg-system-gray-100"
+                                      className="w-full justify-between h-auto px-2 py-1.5 rounded-md text-left text-xs text-system-gray-700 hover:bg-system-gray-100"
                                     >
                                       <span className="flex-1 min-w-0 truncate group-hover:text-stratosort-blue">
                                         {neighbor.label}
@@ -8832,18 +8853,22 @@ export default function UnifiedSearchModal({
                                 })
                               )}
                               {selectedNodeConnectionCount > 10 && (
-                                <div className="text-[10px] text-system-gray-400 pl-6 mt-1">
+                                <Text
+                                  as="div"
+                                  variant="tiny"
+                                  className="text-system-gray-400 pl-6 mt-1"
+                                >
                                   +{selectedNodeConnectionCount - 10} more
-                                </div>
+                                </Text>
                               )}
                             </div>
                           </div>
 
                           {/* Actions Section */}
                           <div className="space-y-2 pt-2 border-t border-system-gray-100">
-                            <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2">
+                            <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
                               Actions
-                            </div>
+                            </Text>
                             <div className="grid grid-cols-2 gap-2">
                               <Button
                                 variant="primary"
@@ -8902,9 +8927,13 @@ export default function UnifiedSearchModal({
                           </div>
 
                           {selectedKind === 'file' && (
-                            <div className="text-[10px] text-system-gray-300 font-mono mt-4 truncate">
+                            <Text
+                              as="div"
+                              variant="tiny"
+                              className="text-system-gray-300 font-mono mt-4 truncate"
+                            >
                               ID: {selectedNode.id}
-                            </div>
+                            </Text>
                           )}
                         </div>
                       )}
@@ -8925,7 +8954,7 @@ export default function UnifiedSearchModal({
                             <Text as="div" variant="tiny" className="text-system-gray-500">
                               Click a node in the graph to inspect details and actions.
                             </Text>
-                            <div className="flex items-center justify-between text-[11px] text-system-gray-500">
+                            <div className="flex items-center justify-between text-xs text-system-gray-500">
                               <span>{nodes.length} nodes</span>
                               <span>{edges.length} links</span>
                               <span>{activeSidebarFilterCount} filters</span>

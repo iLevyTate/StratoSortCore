@@ -127,38 +127,47 @@ module.exports = (env, argv) => {
       filename: '[name].js',
       clean: false
     },
-    // Keep preload bundled for sandbox=true while preserving Electron preload semantics.
-    target: 'electron-preload',
+    // Sandboxed preload: only require('electron') is available at runtime.
+    // Using 'web' target ensures webpack bundles Node builtins via polyfills
+    // instead of externalizing them — Electron's sandbox loader crashes on any
+    // external require('os'|'fs'|'path') before try/catch can run.
+    target: 'web',
     resolve: {
       ...common.resolve,
       alias: {
         ...common.resolve?.alias,
+        // Map both bare and node:-prefixed specifiers to browser polyfills
+        os: require.resolve('os-browserify/browser'),
         'node:os': require.resolve('os-browserify/browser'),
+        path: require.resolve('path-browserify'),
         'node:path': require.resolve('path-browserify'),
+        process: require.resolve('process/browser'),
         'node:process': require.resolve('process/browser')
       },
       fallback: {
         ...common.resolve?.fallback,
         path: require.resolve('path-browserify'),
-        fs: false, // Ensure fs is disabled
+        fs: false,
         os: require.resolve('os-browserify/browser'),
-        process: require.resolve('process/browser')
+        process: require.resolve('process/browser'),
+        stream: false,
+        util: false,
+        buffer: require.resolve('buffer'),
+        crypto: false
       }
     },
     externals: {
-      electron: 'commonjs electron',
-      // Preload doesn't have access to these native modules anyway
-      sharp: 'commonjs sharp'
+      // Only electron is available via require() in sandbox preload
+      electron: 'commonjs electron'
     },
     plugins: [
       new webpack.DefinePlugin({
         'process.env.NODE_ENV': JSON.stringify(isProduction ? 'production' : 'development')
       }),
       new webpack.ProvidePlugin({
-        process: 'process/browser'
+        process: require.resolve('process/browser'),
+        Buffer: ['buffer', 'Buffer']
       }),
-      // FIX: Ignore Node.js specific modules in preload build to suppress warnings
-      // correlationId.js handles missing modules gracefully
       new webpack.IgnorePlugin({
         resourceRegExp: /^(async_hooks|crypto)$/
       })

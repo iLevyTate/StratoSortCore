@@ -116,7 +116,7 @@ const SidePanel = memo(function SidePanel({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-system-gray-100">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-system-gray-100">
           <div className="min-w-0">
             <Heading as="h3" variant="h5" id={titleId} className="text-system-gray-900">
               {title}
@@ -132,13 +132,13 @@ const SidePanel = memo(function SidePanel({
             variant="ghost"
             size="sm"
             aria-label="Close panel"
-            className="text-system-gray-400 hover:text-system-gray-600 -mr-1"
+            className="text-system-gray-400 hover:text-system-gray-600 -mr-2"
             icon={<X className="w-5 h-5" />}
           />
         </div>
-        <div className="p-5 overflow-y-auto custom-scrollbar flex-1 min-h-0">{children}</div>
+        <div className="p-6 overflow-y-auto custom-scrollbar flex-1 min-h-0">{children}</div>
         {footer && (
-          <div className="px-5 py-4 bg-system-gray-50 border-t border-system-gray-100 flex justify-end gap-cozy">
+          <div className="px-6 py-4 bg-system-gray-50 border-t border-system-gray-100 flex justify-end gap-cozy">
             {footer}
           </div>
         )}

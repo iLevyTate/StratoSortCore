@@ -100,6 +100,15 @@ These are tracked gaps that the project slash commands help address:
   `electron-crashReporter` fallback writes to `crash-dumps/` when `SENTRY_DSN` is not set.
 - ~~Test coverage unknown~~ - 50% global thresholds (branches/functions/lines/statements) enforced
   in `test/jest.config.js`; 346 suites / 5,500+ tests passing.
+- ~~Coverage not enforced in CI~~ - CI now runs `npm run test:coverage` (enforces thresholds).
+  Cross-platform matrix (Windows, macOS, Linux). Coverage artifacts uploaded.
+- ~~Single-platform CI~~ - CI runs on `windows-latest`, `ubuntu-latest`, and `macos-latest`.
+- ~~No IPC handler coverage check~~ - `npm run verify:ipc-handlers` statically verifies 100% of
+  `IPC_CHANNELS` have registered handlers. Also runs in CI (`ipc-contract-check` job).
+- ~~No IPC payload schema validation~~ - Zod schemas added to all input-accepting handlers (chat
+  history, system log, config path, organize, suggestions, analysis history).
+- ~~No transaction journaling~~ - `atomicFileOperations.js` now writes journal files before
+  executing operations. `recoverFromJournals()` at startup rolls back incomplete transactions.
 
 ## Cursor Rules & Commands
 

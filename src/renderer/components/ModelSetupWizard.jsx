@@ -10,8 +10,10 @@ import {
   AlertTriangle,
   RefreshCw
 } from 'lucide-react';
+import AlertBox from './ui/AlertBox';
 import Button from './ui/Button';
 import Card from './ui/Card';
+import SelectionCard from './ui/SelectionCard';
 import { Text, Heading } from './ui/Typography';
 import { formatBytes, formatDuration } from '../utils/format';
 import { AI_DEFAULTS, INSTALL_MODEL_PROFILES } from '../../shared/constants';
@@ -360,9 +362,13 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
   if (step === 'checking') {
     return (
       <Card className="max-w-2xl mx-auto p-8 text-center">
-        <Loader2 className="w-12 h-12 mx-auto mb-4 animate-spin text-blue-500" />
-        <Heading level={2}>Checking System...</Heading>
-        <Text className="text-gray-600 mt-2">Detecting GPU and memory configuration</Text>
+        <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-blue/10 mb-4">
+          <Loader2 className="w-7 h-7 text-stratosort-blue animate-spin" />
+        </div>
+        <Heading as="h2" variant="h2">
+          Checking System...
+        </Heading>
+        <Text className="text-system-gray-600 mt-2">Detecting GPU and memory configuration</Text>
       </Card>
     );
   }
@@ -371,32 +377,33 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     return (
       <Card className="max-w-2xl mx-auto p-8">
         <div className="text-center mb-6">
-          <Cpu className="w-12 h-12 mx-auto mb-4 text-blue-500" />
-          <Heading level={2}>AI Model Setup</Heading>
-          <Text className="text-gray-600 mt-2">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-blue/10 mb-4">
+            <Cpu className="w-7 h-7 text-stratosort-blue" />
+          </div>
+          <Heading as="h2" variant="h2">
+            AI Model Setup
+          </Heading>
+          <Text className="text-system-gray-600 mt-2">
             StratoSort runs AI locally on your device. Download the core models once, then use them
             offline.
           </Text>
         </div>
 
         {initError && (
-          <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-4 flex gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5" />
+          <AlertBox variant="warning" className="mb-6">
             <div className="space-y-1">
-              <Text className="font-medium text-amber-700">Setup not ready</Text>
-              <Text variant="small" className="text-amber-700/90">
-                {initError}
-              </Text>
+              <p className="font-medium">Setup not ready</p>
+              <p>{initError}</p>
             </div>
-          </div>
+          </AlertBox>
         )}
 
         {/* System Info */}
-        <div className="bg-gray-50 rounded-lg p-4 mb-6">
+        <div className="bg-system-gray-50 rounded-lg p-4 mb-6">
           <Text variant="small" className="font-medium mb-2">
             Your System
           </Text>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-system-gray-700">
             <div>GPU: {systemInfo?.gpuBackend || 'CPU only'}</div>
             <div>Models path: {systemInfo?.modelsPath || 'Default app storage'}</div>
           </div>
@@ -407,56 +414,46 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
             Install Profile
           </Text>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => {
+            <SelectionCard
+              selected={selectedProfile === 'base'}
+              onSelect={() => {
                 setSelectedProfile('base');
                 setRecommendations(PROFILE_MODELS.base);
                 setSelectedModels(PROFILE_MODELS.base);
               }}
-              className={`text-left border rounded-lg p-4 transition ${
-                selectedProfile === 'base'
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
               disabled={!hasApi || isRefreshing}
             >
               <Text className="font-medium">
                 {INSTALL_MODEL_PROFILES?.BASE_SMALL?.label || 'Base (Small & Fast)'}
               </Text>
-              <Text variant="small" className="text-gray-600 mt-1">
+              <Text variant="small" className="mt-1">
                 {INSTALL_MODEL_PROFILES?.BASE_SMALL?.description ||
                   'Runs on most machines with faster startup and smaller downloads.'}
               </Text>
-              <Text variant="tiny" className="text-gray-500 mt-2">
+              <Text variant="tiny" className="mt-2">
                 Approx. download: {formatBytes(getProfileSize('base'))}
               </Text>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
+            </SelectionCard>
+            <SelectionCard
+              selected={selectedProfile === 'quality'}
+              onSelect={() => {
                 setSelectedProfile('quality');
                 setRecommendations(PROFILE_MODELS.quality);
                 setSelectedModels(PROFILE_MODELS.quality);
               }}
-              className={`text-left border rounded-lg p-4 transition ${
-                selectedProfile === 'quality'
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
               disabled={!hasApi || isRefreshing}
             >
               <Text className="font-medium">
                 {INSTALL_MODEL_PROFILES?.BETTER_QUALITY?.label || 'Better Quality (Larger)'}
               </Text>
-              <Text variant="small" className="text-gray-600 mt-1">
+              <Text variant="small" className="mt-1">
                 {INSTALL_MODEL_PROFILES?.BETTER_QUALITY?.description ||
                   'Higher quality output with larger models and larger downloads.'}
               </Text>
-              <Text variant="tiny" className="text-gray-500 mt-2">
+              <Text variant="tiny" className="mt-2">
                 Approx. download: {formatBytes(getProfileSize('quality'))}
               </Text>
-            </button>
+            </SelectionCard>
           </div>
         </div>
 
@@ -506,25 +503,23 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
         </div>
 
         {/* Download Summary */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+        <div className="bg-stratosort-blue/5 border border-stratosort-blue/20 rounded-lg p-4 mb-6">
           <div className="flex items-center justify-between">
             <div>
               <Text className="font-medium">Total Download</Text>
-              <Text variant="small" className="text-gray-600">
-                {formatBytes(totalDownloadSize)}
-              </Text>
-              <Text variant="tiny" className="text-gray-500">
+              <Text variant="small">{formatBytes(totalDownloadSize)}</Text>
+              <Text variant="tiny">
                 One-time download. You can keep using the app while this runs.
               </Text>
             </div>
-            <HardDrive className="w-6 h-6 text-blue-500" />
+            <HardDrive className="w-6 h-6 text-stratosort-blue" />
           </div>
         </div>
 
         {requiredModelsMissing.length > 0 && (
-          <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
+          <AlertBox variant="warning" className="mb-6">
             Required models are missing. Download them to enable AI features.
-          </div>
+          </AlertBox>
         )}
 
         <div className="flex flex-col sm:flex-row gap-3">
@@ -534,11 +529,11 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
             className="flex-1"
             disabled={!selectedModels.embedding || !selectedModels.text || !hasApi || isRefreshing}
           >
-            <Download className="w-4 h-4 mr-2" />
+            <Download className="w-4 h-4" />
             Download Models
           </Button>
           <Button onClick={checkSystem} variant="secondary" disabled={isRefreshing}>
-            <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
           <Button onClick={onSkip} variant="secondary" className="sm:min-w-[140px]">
@@ -564,9 +559,13 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     return (
       <Card className="max-w-2xl mx-auto p-8">
         <div className="text-center mb-6">
-          <Download className="w-12 h-12 mx-auto mb-4 text-blue-500" />
-          <Heading level={2}>Downloading Models</Heading>
-          <Text className="text-gray-600 mt-2">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-blue/10 mb-4">
+            <Download className="w-7 h-7 text-stratosort-blue" />
+          </div>
+          <Heading as="h2" variant="h2">
+            Downloading Models
+          </Heading>
+          <Text className="text-system-gray-600 mt-2">
             This may take a while depending on your connection speed
           </Text>
         </div>
@@ -576,20 +575,20 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
             const progress = downloadState[filename] || { percent: 0 };
             const status = progress.status || 'downloading';
             return (
-              <div key={filename} className="border rounded-lg p-4">
+              <div key={filename} className="border border-border-soft rounded-lg p-4">
                 <div className="flex items-center justify-between mb-2">
                   <Text className="font-medium">{getModel(filename)?.displayName || filename}</Text>
-                  <Text variant="small" className="text-gray-600">
+                  <Text variant="small">
                     {status === 'failed' ? 'Failed' : `${progress.percent || 0}%`}
                   </Text>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                <div className="w-full bg-system-gray-200 rounded-full h-2 mb-2">
                   <div
-                    className="bg-blue-500 h-2 rounded-full transition-all"
+                    className="bg-stratosort-blue h-2 rounded-full transition-all"
                     style={{ width: `${progress.percent || 0}%` }}
                   />
                 </div>
-                <div className="flex justify-between text-xs text-gray-500">
+                <div className="flex justify-between text-xs text-system-gray-500">
                   <span>{formatBytes(progress.downloadedBytes || 0)}</span>
                   <span>
                     {progress.speedBps
@@ -605,7 +604,7 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
                   </span>
                 </div>
                 {progress.error && (
-                  <Text variant="tiny" className="text-red-600 mt-2">
+                  <Text variant="tiny" className="text-stratosort-danger mt-2">
                     {progress.error}
                   </Text>
                 )}
@@ -640,9 +639,13 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
 
   return (
     <Card className="max-w-2xl mx-auto p-8 text-center">
-      <CheckCircle className="w-12 h-12 mx-auto mb-4 text-green-500" />
-      <Heading level={2}>Setup Complete!</Heading>
-      <Text className="text-gray-600 mt-2 mb-6">
+      <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-success/10 mb-4">
+        <CheckCircle className="w-7 h-7 text-stratosort-success" />
+      </div>
+      <Heading as="h2" variant="h2">
+        Setup Complete!
+      </Heading>
+      <Text className="text-system-gray-600 mt-2 mb-6">
         StratoSort is ready to organize your files with AI
       </Text>
       <Button onClick={onComplete} variant="primary">
@@ -676,25 +679,29 @@ function ModelSelector({
   const isInstalled = status === 'ready' || status === 'complete';
   const statusLabel = isInstalled ? 'Installed' : status === 'failed' ? 'Failed' : 'Not installed';
   const statusClass = isInstalled
-    ? 'bg-green-100 text-green-700'
+    ? 'bg-stratosort-success/10 text-stratosort-success'
     : status === 'failed'
-      ? 'bg-red-100 text-red-700'
-      : 'bg-gray-100 text-gray-700';
+      ? 'bg-stratosort-danger/10 text-stratosort-danger'
+      : 'bg-system-gray-100 text-system-gray-700';
 
   return (
-    <div className="border rounded-lg p-4">
+    <div className="border border-border-soft rounded-lg p-4">
       <div className="flex items-center justify-between mb-2">
         <div>
           <Text className="font-medium">{label}</Text>
-          <Text variant="small" className="text-gray-600">
-            {description}
-          </Text>
+          <Text variant="small">{description}</Text>
         </div>
         <div className="flex items-center gap-2">
           {required && (
-            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">Required</span>
+            <span className="text-xs bg-stratosort-blue/10 text-stratosort-blue px-2 py-1 rounded">
+              Required
+            </span>
           )}
-          {optional && <span className="text-xs bg-gray-100 px-2 py-1 rounded">Optional</span>}
+          {optional && (
+            <span className="text-xs bg-system-gray-100 text-system-gray-600 px-2 py-1 rounded">
+              Optional
+            </span>
+          )}
           <span className={`text-xs px-2 py-1 rounded ${statusClass}`}>{statusLabel}</span>
         </div>
       </div>
@@ -703,8 +710,8 @@ function ModelSelector({
         className={`flex items-center p-3 rounded border cursor-pointer transition
           ${
             selected === filename
-              ? 'border-blue-500 bg-blue-50'
-              : 'border-gray-200 hover:border-gray-300'
+              ? 'border-stratosort-blue bg-stratosort-blue/5'
+              : 'border-system-gray-200 hover:border-system-gray-300'
           }`}
       >
         <input
@@ -719,15 +726,13 @@ function ModelSelector({
             <Text variant="small" className="font-medium">
               {displayName}
             </Text>
-            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
+            <span className="text-xs bg-stratosort-success/10 text-stratosort-success px-2 py-0.5 rounded">
               Recommended
             </span>
           </div>
-          <Text variant="tiny" className="text-gray-500">
-            {formatBytes(getModelSize(filename))}
-          </Text>
+          <Text variant="tiny">{formatBytes(getModelSize(filename))}</Text>
           {error && (
-            <Text variant="tiny" className="text-red-600 mt-1">
+            <Text variant="tiny" className="text-stratosort-danger mt-1">
               {error}
             </Text>
           )}

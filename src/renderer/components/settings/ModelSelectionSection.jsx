@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { AlertTriangle, Database, Info, FileText } from 'lucide-react';
 import Select from '../ui/Select';
+import AlertBox from '../ui/AlertBox';
 import StatusBadge from '../ui/StatusBadge';
 import SettingRow from './SettingRow';
 import SettingsCard from './SettingsCard';
@@ -261,22 +262,16 @@ function ModelSelectionSection({
                 ))}
               </Select>
 
-              <div className="flex items-start gap-2 p-2 bg-stratosort-blue/5 rounded-md border border-stratosort-blue/10">
-                <Info className="w-4 h-4 text-stratosort-blue/70 mt-0.5 flex-shrink-0" />
-                <Text variant="tiny" className="text-system-gray-600 leading-tight">
-                  Different models use different vector dimensions. Changing the model requires
-                  rebuilding your embeddings database.
-                </Text>
-              </div>
+              <AlertBox variant="info">
+                Different models use different vector dimensions. Changing the model requires
+                rebuilding your embeddings database.
+              </AlertBox>
 
               {embeddingModelChanged && (
-                <div className="p-3 bg-stratosort-warning/10 border border-stratosort-warning/20 rounded-lg flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-stratosort-warning flex-shrink-0 mt-0.5" />
-                  <Text variant="tiny" className="text-stratosort-warning">
-                    <span className="font-medium">Model changed.</span> Rebuild embeddings in AI
-                    Configuration to apply.
-                  </Text>
-                </div>
+                <AlertBox variant="warning">
+                  <span className="font-medium">Model changed.</span> Rebuild embeddings in AI
+                  Configuration to apply.
+                </AlertBox>
               )}
             </div>
           ) : (
@@ -302,19 +297,16 @@ function ModelSelectionSection({
         size="sm"
       >
         <div className="space-y-4">
-          <div className="flex items-start gap-3 p-3 bg-stratosort-warning/10 border border-stratosort-warning/20 rounded-lg">
-            <AlertTriangle className="w-5 h-5 text-stratosort-warning mt-0.5 flex-shrink-0" />
+          <AlertBox variant="warning">
             <div>
-              <Text variant="small" className="font-medium text-stratosort-warning mb-1">
-                This will invalidate existing embeddings.
-              </Text>
-              <Text variant="small" className="text-stratosort-warning">
+              <p className="font-medium mb-1">This will invalidate existing embeddings.</p>
+              <p>
                 Switching from <strong>{settings.embeddingModel}</strong> to{' '}
                 <strong>{pendingModel}</strong> changes the vector dimensions. You will need to
                 rebuild the vector database to search existing files.
-              </Text>
+              </p>
             </div>
-          </div>
+          </AlertBox>
 
           {stats &&
             (stats.files > 0 || stats.fileChunks > 0 || stats.analysisHistory?.totalFiles > 0) && (
@@ -336,7 +328,7 @@ function ModelSelectionSection({
               size="sm"
               className="w-full justify-center"
             >
-              {isRebuilding ? 'Starting Rebuild...' : 'Change & Rebuild Now'}
+              {isRebuilding ? 'Starting Rebuild\u2026' : 'Change & Rebuild Now'}
             </Button>
 
             <Button

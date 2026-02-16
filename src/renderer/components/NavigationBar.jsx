@@ -9,8 +9,7 @@ import {
   Loader2,
   Minus,
   Square,
-  X,
-  ShieldCheck
+  X
 } from 'lucide-react';
 import { PHASES, PHASE_METADATA, PHASE_ORDER } from '../../shared/constants';
 import { createLogger } from '../../shared/logger';
@@ -33,10 +32,10 @@ const HomeIcon = memo(function HomeIcon({ className = '' }) {
 });
 HomeIcon.propTypes = { className: PropTypes.string };
 
-const CogIcon = memo(function CogIcon({ className = '' }) {
+const SettingsIcon = memo(function SettingsIcon({ className = '' }) {
   return <Settings className={className} aria-hidden="true" />;
 });
-CogIcon.propTypes = { className: PropTypes.string };
+SettingsIcon.propTypes = { className: PropTypes.string };
 
 const SearchIcon = memo(function SearchIcon({ className = '' }) {
   return <Search className={className} aria-hidden="true" />;
@@ -53,11 +52,6 @@ const CheckCircleIcon = memo(function CheckCircleIcon({ className = '' }) {
 });
 CheckCircleIcon.propTypes = { className: PropTypes.string };
 
-const SettingsIcon = memo(function SettingsIcon({ className = '' }) {
-  return <Settings className={className} aria-hidden="true" />;
-});
-SettingsIcon.propTypes = { className: PropTypes.string };
-
 const SpinnerIcon = memo(function SpinnerIcon({ className = '' }) {
   return <Loader2 className={`animate-spin ${className}`} aria-hidden="true" />;
 });
@@ -67,14 +61,14 @@ SpinnerIcon.propTypes = { className: PropTypes.string };
 const PHASE_ICONS = PHASES
   ? {
       [PHASES.WELCOME]: HomeIcon,
-      [PHASES.SETUP]: CogIcon,
+      [PHASES.SETUP]: SettingsIcon,
       [PHASES.DISCOVER]: SearchIcon,
       [PHASES.ORGANIZE]: FolderIcon,
       [PHASES.COMPLETE]: CheckCircleIcon
     }
   : {
       welcome: HomeIcon,
-      setup: CogIcon,
+      setup: SettingsIcon,
       discover: SearchIcon,
       organize: FolderIcon,
       complete: CheckCircleIcon
@@ -125,23 +119,6 @@ ConnectionIndicator.propTypes = {
 };
 
 /**
- * Local privacy badge - communicates air-gapped / 100% on-device positioning
- */
-const LocalPrivacyBadge = memo(function LocalPrivacyBadge() {
-  return (
-    <div
-      className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-wide uppercase border border-stratosort-success/40 bg-stratosort-success/10 text-stratosort-success select-none shadow-sm"
-      title="Your data never leaves this device. All AI runs on your machine."
-      role="status"
-      aria-label="100% Local - Your data never leaves this device"
-    >
-      <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2.5} aria-hidden="true" />
-      <span>100% Local</span>
-    </div>
-  );
-});
-
-/**
  * Brand logo and name
  */
 const Brand = memo(function Brand({ status }) {
@@ -152,20 +129,19 @@ const Brand = memo(function Brand({ status }) {
           S
         </div>
         {/* Connection indicator overlaid on logo */}
-        <div className="absolute -bottom-0.5 -right-0.5 p-0.5 bg-white rounded-full shadow-sm">
+        <div className="absolute -bottom-0.5 -right-0.5 p-0.5 bg-white/90 rounded-full shadow-sm">
           <ConnectionIndicator status={status} />
         </div>
       </div>
       <div className="hidden sm:flex sm:items-center sm:gap-3 leading-tight">
         <div>
-          <Text as="p" variant="small" className="font-semibold text-system-gray-900">
+          <Text as="span" variant="small" className="block font-semibold text-system-gray-900">
             StratoSort
           </Text>
-          <Text as="p" variant="tiny" className="text-system-gray-500">
+          <Text as="span" variant="tiny" className="block">
             Cognitive file flow
           </Text>
         </div>
-        <LocalPrivacyBadge />
       </div>
     </div>
   );
@@ -191,8 +167,12 @@ const NavTab = memo(function NavTab({
 
   // Stable click handler - avoids inline arrow in parent's render loop
   const handleClick = useCallback(() => {
+    // DEBUG: temporary diagnostic - remove after fix verified
+    console.log(
+      `[NAV-DEBUG] tab clicked: ${phase} canNavigate=${canNavigate} isActive=${isActive}`
+    );
     if (canNavigate) onPhaseChange(phase);
-  }, [canNavigate, onPhaseChange, phase]);
+  }, [canNavigate, onPhaseChange, phase, isActive]);
 
   const handleMouseEnter = useCallback(() => onHover(phase), [onHover, phase]);
   const handleMouseLeave = useCallback(() => onHover(null), [onHover]);
@@ -253,19 +233,14 @@ const NavTab = memo(function NavTab({
       ) : (
         IconComponent && (
           <IconComponent
-            className={`phase-nav-icon flex-shrink-0 transition-colors duration-200
-              ${isActive || isHovered ? 'text-stratosort-blue' : 'text-current opacity-70'}
-            `}
+            className={`phase-nav-icon flex-shrink-0 ${isActive || isHovered ? 'text-stratosort-blue' : 'text-current opacity-70'}`}
           />
         )
       )}
       {/* FIX: Always show label, with clear size/line-height for visibility */}
       <span className="phase-nav-label">{label}</span>
 
-      {/* Active indicator */}
-      {isActive && !showSpinner && (
-        <span className="absolute -bottom-px left-1/2 h-0.5 w-6 -translate-x-1/2 rounded-full bg-stratosort-blue" />
-      )}
+      {/* Active state is conveyed via phase-nav-tab-active (bg, border, text color) */}
     </button>
   );
 });
@@ -294,7 +269,11 @@ const NavActions = memo(function NavActions({ onSettingsClick }) {
         variant="secondary"
         size="sm"
         leftIcon={<SearchIcon className="h-4 w-4" />}
-        className={`shadow-sm ${isWidgetOpen ? 'bg-stratosort-blue/10 border-stratosort-blue/30 text-stratosort-blue hover:bg-stratosort-blue/15' : ''}`}
+        className={
+          isWidgetOpen
+            ? 'bg-stratosort-blue/10 border-stratosort-blue/30 text-stratosort-blue hover:bg-stratosort-blue/15'
+            : ''
+        }
         aria-label={isWidgetOpen ? 'Close Search Widget' : 'Open Search Widget (Ctrl+K)'}
         title={isWidgetOpen ? 'Close Search Widget' : 'Search files (Ctrl+K)'}
       >
@@ -397,13 +376,13 @@ const WindowControls = memo(function WindowControls() {
 
   return (
     <div
-      className="flex items-center overflow-hidden rounded-xl border border-white/50 bg-white/75 shadow-sm backdrop-blur-sm"
+      className="flex items-center overflow-hidden rounded-full border border-white/50 bg-white/75 shadow-sm backdrop-blur-sm"
       style={{ WebkitAppRegion: 'no-drag' }}
     >
       <button
         type="button"
         onClick={handleMinimize}
-        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue/70"
+        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 transition-all [transition-duration:var(--duration-normal)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2"
         aria-label="Minimize window"
         title="Minimize"
       >
@@ -412,14 +391,13 @@ const WindowControls = memo(function WindowControls() {
       <button
         type="button"
         onClick={handleToggleMaximize}
-        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue/70"
+        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 transition-all [transition-duration:var(--duration-normal)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2"
         aria-label={isMaximized ? 'Restore window' : 'Maximize window'}
         title={isMaximized ? 'Restore' : 'Maximize'}
       >
         {isMaximized ? (
           <svg
-            width="10"
-            height="10"
+            className="h-3.5 w-3.5"
             viewBox="0 0 10 10"
             fill="none"
             stroke="currentColor"
@@ -434,7 +412,7 @@ const WindowControls = memo(function WindowControls() {
       <button
         type="button"
         onClick={handleClose}
-        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-white hover:bg-stratosort-danger transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue/70"
+        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-white hover:bg-stratosort-danger transition-all [transition-duration:var(--duration-normal)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2"
         aria-label="Close window"
         title="Close"
       >
@@ -599,10 +577,18 @@ function NavigationBar() {
   // Only show a nav spinner for loading states other than analysis to avoid duplicate indicators
   const navSpinnerActive = isOrganizing || isLoading;
 
+  // DEBUG: temporary diagnostic - remove after fix verified
+  useEffect(() => {
+    console.log(
+      `[NAV-DEBUG] blocked=${isBlockedByOperation} organizing=${isOrganizing} analyzing=${isAnalyzing} loading=${isLoading} phase=${currentPhase}`
+    );
+  }, [isOrganizing, isAnalyzing, isLoading, isBlockedByOperation, currentPhase]);
+
   return (
     <header
       className={`
-        fixed inset-x-0 top-0 z-[100]
+        fixed inset-x-0 top-0 z-header
+        border-b border-border-soft/60
         backdrop-blur-xl backdrop-saturate-150
         transition-all duration-300 ease-out
         ${isScrolled ? 'bg-white/95 shadow-md' : 'bg-white/85 shadow-sm'}
@@ -610,23 +596,22 @@ function NavigationBar() {
       style={{
         WebkitAppRegion: 'drag',
         isolation: 'isolate',
-        borderBottom: '1px solid rgba(226, 232, 240, 0.6)',
         willChange: 'auto'
       }}
     >
-      <div className="relative flex h-[var(--app-nav-height)] items-center px-4 lg:px-6">
+      <div className="grid grid-cols-[auto_1fr_auto] h-[var(--app-nav-height)] items-center px-4 lg:px-6">
         {/* Left: Brand */}
         <div
-          className={`flex-shrink-0 z-20 ${isMac ? 'ml-[78px] lg:ml-[84px]' : ''}`}
+          className={`flex-shrink-0 ${isMac ? 'ml-[78px] lg:ml-[84px]' : ''}`}
           style={{ WebkitAppRegion: 'no-drag' }}
         >
           <Brand status={connectionStatus} />
         </div>
 
-        {/* Center: Phase Navigation - Absolute center relative to viewport width */}
-        {/* pointer-events-none on wrapper so it doesn't block Brand/Actions; */}
-        {/* the inner <nav> restores pointer-events via .phase-nav CSS class. */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        {/* Center: Phase Navigation */}
+        {/* Grid 1fr column centers the nav; no pointer-events-none needed. */}
+        {/* Empty space in this cell inherits header drag; nav itself is no-drag. */}
+        <div className="flex items-center justify-center min-w-0 px-2">
           <nav
             className="phase-nav max-w-[64vw] xl:max-w-[44rem]"
             style={{ WebkitAppRegion: 'no-drag' }}
@@ -657,10 +642,7 @@ function NavigationBar() {
         </div>
 
         {/* Right: Actions + Window Controls */}
-        <div
-          className="ml-auto flex items-center gap-2 z-20"
-          style={{ WebkitAppRegion: 'no-drag' }}
-        >
+        <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
           <NavActions onSettingsClick={handleSettingsClick} />
           <WindowControls />
         </div>

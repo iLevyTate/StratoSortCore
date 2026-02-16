@@ -1,5 +1,4 @@
 const { contextBridge, ipcRenderer } = require('electron');
-const { Logger, LOG_LEVELS } = require('../shared/logger');
 const { IpcRateLimiter } = require('./ipcRateLimiter');
 const { createIpcSanitizer } = require('./ipcSanitizer');
 const { createIpcValidator } = require('./ipcValidator');
@@ -217,29 +216,49 @@ const IPC_CHANNELS = {
 };
 // === END GENERATED IPC_CHANNELS ===
 
-const preloadLogger = new Logger();
-preloadLogger.setContext('Preload');
-preloadLogger.setLevel(
-  process?.env?.NODE_ENV === 'development' ? LOG_LEVELS.DEBUG : LOG_LEVELS.INFO
-);
+const isPreloadDevMode = process?.env?.NODE_ENV === 'development';
+const PRELOAD_LOG_LEVEL = isPreloadDevMode ? 'debug' : 'info';
+
+const shouldLogPreloadLevel = (level) => {
+  const levels = { debug: 10, info: 20, warn: 30, error: 40 };
+  return levels[level] >= levels[PRELOAD_LOG_LEVEL];
+};
+
+const serializePreloadLogData = (value) => {
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: value.message,
+      stack: value.stack
+    };
+  }
+  return value;
+};
+
+const writePreloadLog = (level, message, data) => {
+  if (!shouldLogPreloadLevel(level)) return;
+  const payload = serializePreloadLogData(data);
+  const prefix = '[Preload]';
+  if (level === 'error') {
+    console.error(prefix, message, payload ?? '');
+    return;
+  }
+  if (level === 'warn') {
+    console.warn(prefix, message, payload ?? '');
+    return;
+  }
+  if (level === 'debug') {
+    console.debug(prefix, message, payload ?? '');
+    return;
+  }
+  console.info(prefix, message, payload ?? '');
+};
 
 const log = {
-  debug: (message, data) => preloadLogger.debug(message, data),
-  info: (message, data) => preloadLogger.info(message, data),
-  warn: (message, data) => preloadLogger.warn(message, data),
-  error: (message, error) => {
-    let errorPayload = error;
-    if (error instanceof Error) {
-      errorPayload = {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      };
-    } else if (typeof error === 'string') {
-      errorPayload = { detail: error };
-    }
-    preloadLogger.error(message, errorPayload);
-  }
+  debug: (message, data) => writePreloadLog('debug', message, data),
+  info: (message, data) => writePreloadLog('info', message, data),
+  warn: (message, data) => writePreloadLog('warn', message, data),
+  error: (message, error) => writePreloadLog('error', message, error)
 };
 
 const buildEmbeddingSearchPayload = (query, options = {}) => {
@@ -372,6 +391,11 @@ class SecureIPCManager {
       channel === IPC_CHANNELS.EMBEDDINGS.REANALYZE_ALL
     ) {
       timeout = TIMEOUTS.AI_ANALYSIS_BATCH || 300000;
+    }
+    // Chat streaming involves retrieval (search + BM25 rebuild + re-ranking)
+    // plus LLM inference, which routinely exceeds the 30s default timeout
+    if (channel === IPC_CHANNELS.CHAT.QUERY_STREAM) {
+      timeout = TIMEOUTS.AI_ANALYSIS_LONG || 180000;
     }
     return timeout;
   }
@@ -714,7 +738,8 @@ try {
     directoryScanTimeoutMs: TIMEOUTS.DIRECTORY_SCAN || 60000,
     scanStructureInvokeTimeoutMs: secureIPC._getInvokeTimeout(
       IPC_CHANNELS.SMART_FOLDERS.SCAN_STRUCTURE
-    )
+    ),
+    chatQueryStreamTimeoutMs: secureIPC._getInvokeTimeout(IPC_CHANNELS.CHAT.QUERY_STREAM)
   });
 } catch {
   // Non-fatal (logging only)

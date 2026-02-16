@@ -4,7 +4,7 @@ import Modal from '../ui/Modal';
 import NamingSettings from './NamingSettings';
 import { Button } from '../ui';
 import { Text } from '../ui/Typography';
-import { Inline, Stack } from '../layout';
+import { Stack } from '../layout';
 
 const NamingSettingsModal = memo(function NamingSettingsModal({
   isOpen,
@@ -26,11 +26,9 @@ const NamingSettingsModal = memo(function NamingSettingsModal({
       size="lg"
       closeOnOverlayClick
       footer={
-        <Inline className="justify-end" gap="compact" wrap={false}>
-          <Button onClick={onClose} variant="primary" size="sm">
-            Done
-          </Button>
-        </Inline>
+        <Button onClick={onClose} variant="primary" size="sm">
+          Done
+        </Button>
       }
     >
       <Stack gap="default">

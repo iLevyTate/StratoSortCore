@@ -2,10 +2,11 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import { Monitor, Smartphone, MessageSquare, AlertTriangle } from 'lucide-react';
 import Switch from '../ui/Switch';
+import SelectionCard from '../ui/SelectionCard';
 import SettingRow from './SettingRow';
 import SettingsCard from './SettingsCard';
 import SettingsGroup from './SettingsGroup';
-import { Text, Heading } from '../ui/Typography';
+import { Caption, Text } from '../ui/Typography';
 
 /**
  * NotificationSettingsSection - Settings section for notification preferences
@@ -46,11 +47,11 @@ function NotificationSettingsSection({ settings, setSettings }) {
             description="Choose where notifications should appear."
           >
             <div className="grid gap-4">
-              <label
-                className={`
-                flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors
-                ${notificationMode === 'both' ? 'bg-stratosort-blue/5 border-stratosort-blue' : 'bg-white border-border-soft hover:border-stratosort-blue/50'}
-              `}
+              <SelectionCard
+                as="label"
+                selected={notificationMode === 'both'}
+                onSelect={() => updateSetting('notificationMode', 'both')}
+                className="flex items-center gap-3 p-3"
               >
                 <input
                   type="radio"
@@ -71,13 +72,13 @@ function NotificationSettingsSection({ settings, setSettings }) {
                     App and system tray (Recommended)
                   </Text>
                 </div>
-              </label>
+              </SelectionCard>
 
-              <label
-                className={`
-                flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors
-                ${notificationMode === 'ui' ? 'bg-stratosort-blue/5 border-stratosort-blue' : 'bg-white border-border-soft hover:border-stratosort-blue/50'}
-              `}
+              <SelectionCard
+                as="label"
+                selected={notificationMode === 'ui'}
+                onSelect={() => updateSetting('notificationMode', 'ui')}
+                className="flex items-center gap-3 p-3"
               >
                 <input
                   type="radio"
@@ -95,13 +96,13 @@ function NotificationSettingsSection({ settings, setSettings }) {
                     App only (in-window toasts)
                   </Text>
                 </div>
-              </label>
+              </SelectionCard>
 
-              <label
-                className={`
-                flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors
-                ${notificationMode === 'tray' ? 'bg-stratosort-blue/5 border-stratosort-blue' : 'bg-white border-border-soft hover:border-stratosort-blue/50'}
-              `}
+              <SelectionCard
+                as="label"
+                selected={notificationMode === 'tray'}
+                onSelect={() => updateSetting('notificationMode', 'tray')}
+                className="flex items-center gap-3 p-3"
               >
                 <input
                   type="radio"
@@ -119,14 +120,12 @@ function NotificationSettingsSection({ settings, setSettings }) {
                     System tray only
                   </Text>
                 </div>
-              </label>
+              </SelectionCard>
             </div>
           </SettingRow>
 
           <div className="pt-4 border-t border-border-soft">
-            <Heading as="h4" variant="h6" className="mb-4">
-              Notification Events
-            </Heading>
+            <Caption className="block mb-4">Notification events</Caption>
             <div className="space-y-4">
               <SettingRow
                 label={

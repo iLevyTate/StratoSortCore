@@ -95,11 +95,12 @@ export default function TriageModal({
       size="lg"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={isMoving}>
+          <Button variant="secondary" size="sm" onClick={onClose} disabled={isMoving}>
             Cancel
           </Button>
           <Button
             variant="primary"
+            size="sm"
             onClick={handleMove}
             disabled={isMoving || !destinationPath || selectedCount === 0}
             isLoading={isMoving}

@@ -247,6 +247,7 @@ function registerOrganizeIpc(servicesOrParams) {
     createHandler({
       logger,
       context,
+      schema: schemas.processNew,
       serviceName: 'autoOrganizeService',
       getService: getOrganizeService,
       fallbackResponse: {
@@ -353,6 +354,7 @@ function registerOrganizeIpc(servicesOrParams) {
     createHandler({
       logger,
       context,
+      schema: schemas.clusterBatch,
       serviceName: 'autoOrganizeService',
       getService: getOrganizeService,
       fallbackResponse: {
@@ -433,6 +435,7 @@ function registerOrganizeIpc(servicesOrParams) {
     createHandler({
       logger,
       context,
+      schema: schemas.identifyOutliers,
       serviceName: 'autoOrganizeService',
       getService: getOrganizeService,
       fallbackResponse: {
@@ -506,6 +509,7 @@ function registerOrganizeIpc(servicesOrParams) {
     createHandler({
       logger,
       context,
+      schema: schemas.clusterSuggestions,
       serviceName: 'autoOrganizeService',
       getService: getOrganizeService,
       fallbackResponse: {

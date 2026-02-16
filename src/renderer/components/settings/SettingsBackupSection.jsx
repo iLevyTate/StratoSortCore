@@ -234,30 +234,27 @@ function SettingsBackupSection({ addNotification }) {
           variant="secondary"
           disabled={isCreating || !canCreateBackup}
           size="sm"
-          className="flex items-center gap-1.5"
+          leftIcon={<Clock className="w-4 h-4" />}
         >
-          <Clock className="w-4 h-4" />
-          {isCreating ? 'Creating...' : 'Create Backup'}
+          {isCreating ? 'Creating\u2026' : 'Create Backup'}
         </Button>
         <Button
           onClick={handleExport}
           variant="secondary"
           disabled={isExporting || !canExportSettings}
           size="sm"
-          className="flex items-center gap-1.5"
+          leftIcon={<Download className="w-4 h-4" />}
         >
-          <Download className="w-4 h-4" />
-          {isExporting ? 'Exporting...' : 'Export to File'}
+          {isExporting ? 'Exporting\u2026' : 'Export to File'}
         </Button>
         <Button
           onClick={handleImport}
           variant="secondary"
           disabled={isImporting || !canImportSettings}
           size="sm"
-          className="flex items-center gap-1.5"
+          leftIcon={<Upload className="w-4 h-4" />}
         >
-          <Upload className="w-4 h-4" />
-          {isImporting ? 'Importing...' : 'Import from File'}
+          {isImporting ? 'Importing\u2026' : 'Import from File'}
         </Button>
       </div>
 
@@ -271,7 +268,7 @@ function SettingsBackupSection({ addNotification }) {
             {backups.map((backup) => (
               <div
                 key={backup.path || backup.name}
-                className="flex items-center justify-between gap-2 p-2 rounded-lg border border-border-soft bg-white"
+                className="flex items-center justify-between gap-2 p-2 rounded-lg border border-border-soft bg-surface-primary"
               >
                 <div className="min-w-0 flex-1">
                   <Text variant="small" className="font-medium text-system-gray-700 truncate">

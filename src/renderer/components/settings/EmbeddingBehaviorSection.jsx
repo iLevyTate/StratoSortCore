@@ -1,6 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import Select from '../ui/Select';
+import Switch from '../ui/Switch';
 import SettingRow from './SettingRow';
 import SettingsCard from './SettingsCard';
 
@@ -17,7 +18,7 @@ function EmbeddingBehaviorSection({ settings, setSettings }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <SettingRow
           layout="col"
-          label="Embedding scope"
+          label="Embedding Scope"
           description="Which analyzed files should be embedded and made searchable."
         >
           <Select
@@ -32,7 +33,7 @@ function EmbeddingBehaviorSection({ settings, setSettings }) {
 
         <SettingRow
           layout="col"
-          label="Embedding timing"
+          label="Embedding Timing"
           description="Choose whether to embed during analysis or only after files are organized."
         >
           <Select
@@ -48,7 +49,7 @@ function EmbeddingBehaviorSection({ settings, setSettings }) {
 
         <SettingRow
           layout="col"
-          label="Default embedding policy"
+          label="Default Embedding Policy"
           description="Applies to new items. You can override per file."
         >
           <Select
@@ -64,6 +65,16 @@ function EmbeddingBehaviorSection({ settings, setSettings }) {
           </Select>
         </SettingRow>
       </div>
+
+      <SettingRow
+        label="Auto-generate Chunk Embeddings"
+        description="Create fine-grained chunk embeddings during file analysis for deeper chat and document retrieval."
+      >
+        <Switch
+          checked={settings?.autoChunkOnAnalysis !== false}
+          onChange={(checked) => setSettings((prev) => ({ ...prev, autoChunkOnAnalysis: checked }))}
+        />
+      </SettingRow>
     </SettingsCard>
   );
 }

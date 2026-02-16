@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { useSelector } from 'react-redux';
 import { Send, RefreshCw, FileText, AlertTriangle, RotateCcw, Square } from 'lucide-react';
-import { Button, Textarea, Switch, StateMessage, Select } from '../ui';
+import { AlertBox, Button, Textarea, Switch, StateMessage, Select } from '../ui';
 import { Text } from '../ui/Typography';
 import { formatDisplayPath } from '../../utils/pathDisplay';
 import { selectRedactPaths } from '../../store/selectors';
@@ -45,14 +45,7 @@ function ThinkingDots() {
 
 function ChatWarningBanner({ message }) {
   if (!message) return null;
-  return (
-    <div className="glass-panel border border-stratosort-warning/30 bg-stratosort-warning/5 px-3 py-2 rounded-lg flex items-center gap-compact text-system-gray-600">
-      <AlertTriangle className="w-4 h-4 text-stratosort-warning shrink-0" />
-      <Text as="span" variant="tiny" className="text-system-gray-600">
-        {message}
-      </Text>
-    </div>
-  );
+  return <AlertBox variant="warning">{message}</AlertBox>;
 }
 
 function ChatModeToggle({ value, onChange }) {
@@ -349,7 +342,19 @@ export default function ChatPanel({
   onChatPersonaChange = () => {}
 }) {
   const [input, setInput] = useState('');
+  const threadRef = useRef(null);
   const showSearchStatus = useSearchContext && (isSearching || isLoadingStats);
+
+  // Auto-scroll to bottom when messages change or during streaming,
+  // but only if the user is already near the bottom (within 120px).
+  useEffect(() => {
+    const el = threadRef.current;
+    if (!el) return;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (isNearBottom) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages, isSending, statusMessage]);
 
   const latestSources = useMemo(() => {
     const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
@@ -374,7 +379,7 @@ export default function ChatPanel({
   };
 
   return (
-    <div className="flex h-full flex-col chat-panel">
+    <div className="flex flex-1 min-h-0 flex-col chat-panel">
       <div className="flex items-center justify-between gap-cozy border-b border-system-gray-200 px-4 py-3">
         <Text as="div" variant="small" className="font-semibold text-system-gray-800">
           Conversational Chat
@@ -435,7 +440,10 @@ export default function ChatPanel({
         </div>
       ) : null}
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-default chat-thread">
+      <div
+        ref={threadRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 chat-thread"
+      >
         {messages.length === 0 ? (
           <Text variant="small" className="text-system-gray-500">
             Ask me anything about your documents — search by meaning, summarize, or explore

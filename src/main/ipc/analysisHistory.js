@@ -175,6 +175,7 @@ function registerAnalysisHistoryIpc(servicesOrParams) {
     createHandler({
       logger,
       context,
+      schema: schemas?.embeddingPolicy,
       serviceName: 'analysisHistory',
       getService: getHistoryService,
       fallbackResponse: { success: false, error: 'Service unavailable' },
@@ -253,6 +254,7 @@ function registerAnalysisHistoryIpc(servicesOrParams) {
     createHandler({
       logger,
       context,
+      schema: schemas?.analysisExportFormat,
       serviceName: 'analysisHistory',
       getService: getHistoryService,
       fallbackResponse: { success: false, error: 'Service unavailable' },

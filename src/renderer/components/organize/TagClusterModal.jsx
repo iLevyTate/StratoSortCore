@@ -70,11 +70,12 @@ export default function TagClusterModal({
       size="sm"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={isApplying}>
+          <Button variant="secondary" size="sm" onClick={onClose} disabled={isApplying}>
             Cancel
           </Button>
           <Button
             variant="primary"
+            size="sm"
             onClick={handleApply}
             disabled={isApplying || tags.length === 0}
             isLoading={isApplying}

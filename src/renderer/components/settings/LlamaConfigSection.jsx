@@ -38,7 +38,7 @@ function LlamaConfigSection({
       return {
         variant: 'info',
         icon: <Cpu className="w-4 h-4" />,
-        label: 'Initializing AI...'
+        label: 'Initializing AI\u2026'
       };
     }
     const isHealthy = llamaHealth.status === 'healthy' || llamaHealth.initialized;
@@ -85,7 +85,7 @@ function LlamaConfigSection({
 
   return (
     <SettingsCard
-      title="Local AI Engine"
+      title="Local AI engine"
       description="StratoSort uses on-device AI for complete privacy. No data leaves your computer."
       headerAction={
         <div className="flex flex-wrap items-center gap-2">
@@ -150,9 +150,9 @@ function LlamaConfigSection({
             )
           }
           size="sm"
-          className="min-w-[9rem] justify-center"
+          className="w-full sm:w-auto min-w-[9rem] justify-center"
         >
-          {isRefreshingModels ? 'Refreshing…' : 'Refresh Models'}
+          {isRefreshingModels ? 'Refreshing\u2026' : 'Refresh Models'}
         </Button>
         <Button
           onClick={() => setShowAllModels((v) => !v)}
@@ -160,7 +160,7 @@ function LlamaConfigSection({
           type="button"
           title="Toggle model list"
           size="sm"
-          className="min-w-[9rem] justify-center"
+          className="w-full sm:w-auto min-w-[9rem] justify-center"
         >
           {showAllModels ? 'Hide Models' : 'View All Models'}
         </Button>
@@ -180,7 +180,7 @@ function LlamaConfigSection({
             <span className="truncate">
               {llamaHealth?.initialized
                 ? 'AI engine ready. All processing happens locally.'
-                : 'Initializing local AI engine...'}
+                : 'Initializing local AI engine\u2026'}
             </span>
           )}
         </Text>
@@ -212,7 +212,7 @@ function LlamaConfigSection({
               {modelList.map((model) => (
                 <li
                   key={model.name || model.filename}
-                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-border-soft bg-white shadow-sm"
+                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-border-soft bg-surface-primary shadow-sm"
                 >
                   <div className="flex-1 min-w-0">
                     <Text variant="small" className="font-mono truncate block">

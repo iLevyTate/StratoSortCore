@@ -489,7 +489,6 @@
   .phase-nav-icon {
     width: var(--nav-icon-size);
     height: var(--nav-icon-size);
-    opacity: 0.82;
   }
 
   .phase-nav-label {
@@ -575,14 +574,14 @@
   }
 
   .btn-base {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
     gap: var(--button-icon-gap);
   }
 
   .btn-primary {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
     gap: var(--button-icon-gap);
@@ -599,7 +598,7 @@
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
     gap: var(--button-icon-gap);
@@ -607,7 +606,7 @@
   }
 
   .btn-ghost {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
     gap: var(--button-icon-gap);
@@ -615,7 +614,7 @@
   }
 
   .btn-outline {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
     gap: var(--button-icon-gap);
@@ -623,7 +622,7 @@
   }
 
   .btn-subtle {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
     gap: var(--button-icon-gap);
@@ -631,7 +630,7 @@
   }
 
   .btn-success {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
     gap: var(--button-icon-gap);
@@ -639,7 +638,7 @@
   }
 
   .btn-danger {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
     gap: var(--button-icon-gap);
@@ -647,7 +646,7 @@
   }
 
   .btn-warning {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-warning/60 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-warning focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
     gap: var(--button-icon-gap);
@@ -655,7 +654,7 @@
   }
 
   .btn-info {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/60 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
     gap: var(--button-icon-gap);

@@ -774,6 +774,129 @@ if (!z) {
     smartFolders: z.array(smartFolderSchema).min(1)
   });
 
+  // ===== Chat History Schemas =====
+
+  /**
+   * Chat conversation list parameters
+   */
+  const chatListConversationsSchema = z.object({
+    limit: z.number().int().min(1).max(200).optional(),
+    offset: z.number().int().min(0).optional()
+  });
+
+  /**
+   * Chat conversation ID parameter
+   */
+  const chatConversationIdSchema = z.object({
+    id: z.string().min(1, 'Conversation ID is required').max(256)
+  });
+
+  /**
+   * Chat conversation search parameter
+   */
+  const chatSearchConversationsSchema = z.object({
+    query: z.string().min(1, 'Search query is required').max(500)
+  });
+
+  // ===== System Schemas =====
+
+  /**
+   * System log input validation
+   */
+  const systemLogSchema = z.object({
+    level: z.enum(['debug', 'info', 'warn', 'error']),
+    message: z.string().min(1).max(8192),
+    data: z.record(z.unknown()).optional()
+  });
+
+  /**
+   * Config path validation (dot-separated, alphanumeric + underscores)
+   */
+  const configPathSchema = z
+    .string()
+    .min(1, 'Config path is required')
+    .max(120)
+    .regex(/^[A-Za-z0-9_.-]+$/, 'Config path contains invalid characters');
+
+  // ===== Undo/Redo Schemas =====
+
+  /**
+   * History limit parameter
+   */
+  const historyLimitSchema = z.number().int().min(1).max(500).optional();
+
+  // ===== Organization Extended Schemas =====
+
+  /**
+   * Process new file input
+   */
+  const processNewSchema = z.object({
+    filePath: z.string().min(1),
+    options: z.object({}).passthrough().optional()
+  });
+
+  /**
+   * Cluster batch input
+   */
+  const clusterBatchSchema = z.object({
+    files: z.array(analysisFileSchema).min(1),
+    smartFolders: z.array(smartFolderSchema).optional()
+  });
+
+  /**
+   * Identify outliers input
+   */
+  const identifyOutliersSchema = z.object({
+    files: z.array(analysisFileSchema).min(1)
+  });
+
+  /**
+   * Cluster suggestions input
+   */
+  const clusterSuggestionsSchema = z.object({
+    file: analysisFileSchema,
+    smartFolders: z.array(smartFolderSchema).optional()
+  });
+
+  // ===== Suggestion Extended Schemas =====
+
+  /**
+   * Folder structure analysis input
+   */
+  const analyzeFolderStructureSchema = z.object({
+    files: z.array(analysisFileSchema).min(1)
+  });
+
+  /**
+   * Suggest new folder input
+   */
+  const suggestNewFolderSchema = z.object({
+    file: analysisFileSchema
+  });
+
+  // ===== Analysis History Extended Schemas =====
+
+  /**
+   * Analysis history search input
+   */
+  const analysisHistorySearchSchema = z.tuple([
+    z.string().min(1, 'Search query is required').max(500),
+    z.object({}).passthrough().optional()
+  ]);
+
+  /**
+   * Embedding policy input
+   */
+  const embeddingPolicySchema = z.object({
+    filePath: z.string().min(1),
+    policy: z.enum(['embed', 'skip', 'web_only'])
+  });
+
+  /**
+   * Analysis history export format
+   */
+  const analysisExportFormatSchema = z.enum(['json', 'csv']).optional().default('json');
+
   // ===== Backup Schemas =====
 
   /**
@@ -840,6 +963,31 @@ if (!z) {
     chatQuery: chatQuerySchema,
     chatReset: chatResetSchema,
     chatCancel: chatCancelSchema,
+    chatListConversations: chatListConversationsSchema,
+    chatConversationId: chatConversationIdSchema,
+    chatSearchConversations: chatSearchConversationsSchema,
+
+    // System
+    systemLog: systemLogSchema,
+    configPath: configPathSchema,
+
+    // Undo/Redo
+    historyLimit: historyLimitSchema,
+
+    // Organization (extended)
+    processNew: processNewSchema,
+    clusterBatch: clusterBatchSchema,
+    identifyOutliers: identifyOutliersSchema,
+    clusterSuggestions: clusterSuggestionsSchema,
+
+    // Suggestions (extended)
+    analyzeFolderStructure: analyzeFolderStructureSchema,
+    suggestNewFolder: suggestNewFolderSchema,
+
+    // Analysis History (extended)
+    analysisHistorySearch: analysisHistorySearchSchema,
+    embeddingPolicy: embeddingPolicySchema,
+    analysisExportFormat: analysisExportFormatSchema,
 
     // Backup
     backupPath: backupPathSchema

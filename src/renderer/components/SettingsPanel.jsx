@@ -686,7 +686,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       >
         {showUnavailable ? (
           <>
-            <div className="settings-modal-header px-6 py-4 border-b border-border-soft/70 bg-white flex-shrink-0 rounded-t-2xl">
+            <div className="settings-modal-header px-6 py-4 border-b border-border-soft/70 bg-surface-primary flex-shrink-0 rounded-t-2xl">
               <div className="flex items-start sm:items-center justify-between gap-4">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -730,7 +730,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           </>
         ) : (
           <>
-            <div className="settings-modal-header px-6 py-4 border-b border-border-soft/70 bg-white flex-shrink-0 rounded-t-2xl">
+            <div className="settings-modal-header px-6 py-4 border-b border-border-soft/70 bg-surface-primary flex-shrink-0 rounded-t-2xl">
               <div className="flex items-start sm:items-center justify-between gap-4">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -774,11 +774,11 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
             <div className="p-6 flex flex-col gap-6 flex-1 min-h-0 overflow-y-auto modern-scrollbar relative">
               {isHydrating && (
-                <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-10 rounded-b-2xl">
+                <div className="absolute inset-0 bg-surface-primary/80 flex items-center justify-center z-10 rounded-b-2xl">
                   <div className="text-center">
                     <div className="animate-spin w-10 h-10 border-3 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-3" />
                     <Text variant="small" className="text-system-gray-600">
-                      Loading settings...
+                      Loading settings\u2026
                     </Text>
                   </div>
                 </div>
@@ -893,14 +893,14 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 persistKey="settings-history"
               >
                 <SettingsCard
-                  title="Analysis History"
+                  title="Analysis history"
                   description="View and manage your file analysis history, including past results and statistics."
                 >
                   <Button
                     onClick={() => setShowAnalysisHistory(true)}
                     variant="secondary"
                     size="sm"
-                    className="w-fit"
+                    className="w-full sm:w-auto"
                   >
                     View Analysis History
                   </Button>
@@ -937,14 +937,14 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 disabled={isSaving}
                 leftIcon={<Save className="w-4 h-4" />}
               >
-                {isSaving ? 'Saving...' : 'Save Settings'}
+                {isSaving ? 'Saving\u2026' : 'Save Settings'}
               </Button>
             </div>
           </>
         )}
       </div>
       {!showUnavailable && showAnalysisHistory && (
-        <Suspense fallback={<ModalLoadingOverlay message="Loading History..." />}>
+        <Suspense fallback={<ModalLoadingOverlay message="Loading History\u2026" />}>
           <AnalysisHistoryModal
             onClose={() => setShowAnalysisHistory(false)}
             analysisStats={analysisStats}

@@ -86,6 +86,12 @@ try {
 }
 
 const logger = createLogger('AtomicFileOperations');
+
+/**
+ * Transaction journal directory name (alongside backup directory)
+ */
+const JOURNAL_DIR_NAME = 'stratosort-journals';
+
 /**
  * Transaction-based file operation manager
  */
@@ -93,6 +99,7 @@ class AtomicFileOperations {
   constructor() {
     this.activeTransactions = new Map();
     this.backupDirectory = null;
+    this.journalDirectory = null;
     this.operationTimeout = 30000; // 30 seconds
     const cleanupIntervalMs = TIMEOUTS.ATOMIC_TRANSACTION_CLEANUP_MS || 10 * 60 * 1000;
     this._cleanupInterval = setInterval(() => {
@@ -106,6 +113,211 @@ class AtomicFileOperations {
     if (typeof this._cleanupInterval.unref === 'function') {
       this._cleanupInterval.unref();
     }
+  }
+
+  // ===== Transaction Journaling =====
+
+  /**
+   * Initialize the journal directory for crash-recovery support.
+   * Journals are written to a persistent temp directory so they survive process crashes.
+   */
+  async initializeJournalDirectory() {
+    if (this.journalDirectory) return this.journalDirectory;
+
+    const tempDir = require('os').tmpdir();
+    this.journalDirectory = path.join(tempDir, JOURNAL_DIR_NAME);
+
+    try {
+      await fs.mkdir(this.journalDirectory, { recursive: true });
+      return this.journalDirectory;
+    } catch (error) {
+      logger.error('[ATOMIC-OPS] Failed to initialize journal directory:', {
+        path: this.journalDirectory,
+        error: error.message
+      });
+      // Journal is best-effort; don't block operations if it fails
+      this.journalDirectory = null;
+      return null;
+    }
+  }
+
+  /**
+   * Write or update a transaction journal entry to disk.
+   * The journal captures enough state to rollback on crash recovery.
+   */
+  async writeJournal(transactionId) {
+    if (!this.journalDirectory) {
+      await this.initializeJournalDirectory();
+    }
+    if (!this.journalDirectory) return; // Journal unavailable, skip silently
+
+    const transaction = this.activeTransactions.get(transactionId);
+    if (!transaction) return;
+
+    const journalPath = path.join(this.journalDirectory, `${transactionId}.journal`);
+    const journalData = {
+      id: transaction.id,
+      status: transaction.status,
+      startTime: transaction.startTime,
+      pid: process.pid,
+      backups: transaction.backups,
+      createdDestinations: transaction.createdDestinations,
+      operationCount: transaction.operations.length,
+      updatedAt: Date.now()
+    };
+
+    try {
+      await fs.writeFile(journalPath, JSON.stringify(journalData, null, 2), 'utf8');
+    } catch (error) {
+      logger.debug('[ATOMIC-OPS] Failed to write journal (non-fatal):', {
+        transactionId,
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Remove a transaction journal after successful commit or cleanup.
+   */
+  async removeJournal(transactionId) {
+    if (!this.journalDirectory) return;
+
+    const journalPath = path.join(this.journalDirectory, `${transactionId}.journal`);
+    try {
+      await fs.unlink(journalPath);
+    } catch {
+      // Journal already removed or never written
+    }
+  }
+
+  /**
+   * Recover incomplete transactions from journal files left by a previous crash.
+   * Call this once at application startup to clean up partial operations.
+   *
+   * Recovery strategy:
+   * - Transactions in 'active' or 'rolling_back' state are rolled back (restore backups, remove destinations)
+   * - Transactions in 'committed' state just need journal cleanup
+   * - Journals older than maxAgeMs are cleaned up regardless of state
+   *
+   * @param {number} [maxAgeMs=86400000] Maximum age of journals to process (default: 24 hours)
+   * @returns {Promise<{recovered: number, cleaned: number, errors: number}>}
+   */
+  async recoverFromJournals(maxAgeMs = 86400000) {
+    await this.initializeJournalDirectory();
+    if (!this.journalDirectory) {
+      return { recovered: 0, cleaned: 0, errors: 0 };
+    }
+
+    let files;
+    try {
+      files = await fs.readdir(this.journalDirectory);
+    } catch {
+      return { recovered: 0, cleaned: 0, errors: 0 };
+    }
+
+    const journalFiles = files.filter((f) => f.endsWith('.journal'));
+    if (journalFiles.length === 0) {
+      return { recovered: 0, cleaned: 0, errors: 0 };
+    }
+
+    logger.info('[ATOMIC-OPS] Found incomplete transaction journals:', {
+      count: journalFiles.length
+    });
+
+    const now = Date.now();
+    let recovered = 0;
+    let cleaned = 0;
+    let errors = 0;
+
+    for (const file of journalFiles) {
+      const journalPath = path.join(this.journalDirectory, file);
+
+      try {
+        const content = await fs.readFile(journalPath, 'utf8');
+        const journal = JSON.parse(content);
+
+        // Skip journals that are too old
+        if (journal.startTime && now - journal.startTime > maxAgeMs) {
+          await fs.unlink(journalPath).catch(() => {});
+          cleaned++;
+          continue;
+        }
+
+        // Already committed -- just clean up the journal
+        if (journal.status === 'committed' || journal.status === 'rolled_back') {
+          await fs.unlink(journalPath).catch(() => {});
+          cleaned++;
+          continue;
+        }
+
+        // Active or rolling_back -- needs recovery (rollback)
+        logger.warn('[ATOMIC-OPS] Recovering incomplete transaction:', {
+          id: journal.id,
+          status: journal.status,
+          backupCount: journal.backups?.length || 0,
+          destinationCount: journal.createdDestinations?.length || 0
+        });
+
+        // Restore files from backups
+        if (Array.isArray(journal.backups)) {
+          for (let i = journal.backups.length - 1; i >= 0; i--) {
+            const { source, backup } = journal.backups[i];
+            try {
+              if (await this.fileExists(backup)) {
+                await fs.mkdir(path.dirname(source), { recursive: true }).catch(() => {});
+                await fs.copyFile(backup, source);
+                logger.info('[ATOMIC-OPS] Recovery: restored file', { source, backup });
+              }
+            } catch (restoreError) {
+              logger.error('[ATOMIC-OPS] Recovery: failed to restore file', {
+                source,
+                backup,
+                error: restoreError.message
+              });
+            }
+          }
+        }
+
+        // Remove destinations created by incomplete operations
+        if (Array.isArray(journal.createdDestinations)) {
+          for (let i = journal.createdDestinations.length - 1; i >= 0; i--) {
+            const dest = journal.createdDestinations[i];
+            try {
+              if (await this.fileExists(dest)) {
+                await fs.unlink(dest);
+                logger.info('[ATOMIC-OPS] Recovery: removed partial destination', { dest });
+              }
+            } catch (deleteError) {
+              logger.debug('[ATOMIC-OPS] Recovery: failed to remove destination', {
+                dest,
+                error: deleteError.message
+              });
+            }
+          }
+        }
+
+        // Clean up journal and backup files
+        if (Array.isArray(journal.backups)) {
+          for (const { backup } of journal.backups) {
+            await fs.unlink(backup).catch(() => {});
+          }
+        }
+        await fs.unlink(journalPath).catch(() => {});
+
+        recovered++;
+      } catch (parseError) {
+        logger.error('[ATOMIC-OPS] Failed to process journal file:', {
+          file,
+          error: parseError.message
+        });
+        // Remove corrupt journal
+        await fs.unlink(journalPath).catch(() => {});
+        errors++;
+      }
+    }
+
+    logger.info('[ATOMIC-OPS] Journal recovery complete:', { recovered, cleaned, errors });
+    return { recovered, cleaned, errors };
   }
 
   /**
@@ -210,6 +422,9 @@ class AtomicFileOperations {
     }
 
     this.activeTransactions.set(transactionId, transaction);
+
+    // Write initial journal entry for crash recovery
+    await this.writeJournal(transactionId);
 
     return transactionId;
   }
@@ -700,6 +915,8 @@ class AtomicFileOperations {
               success: true,
               result
             });
+            // Update journal after each successful operation for crash recovery
+            await this.writeJournal(transactionId);
           } catch (error) {
             failedOperation = operation;
             throw error;
@@ -711,7 +928,9 @@ class AtomicFileOperations {
       clearTimeout(timeoutId);
 
       transaction.status = 'committed';
-      // Transaction committed successfully
+
+      // Remove journal -- transaction completed successfully
+      await this.removeJournal(transactionId);
 
       // Clean up old backups after successful commit (optional)
       const cleanupTimer = setTimeout(
@@ -734,6 +953,8 @@ class AtomicFileOperations {
         });
         transaction.status = 'rollback_failed';
       }
+      // Remove journal after rollback (success or failure)
+      await this.removeJournal(transactionId);
       return {
         success: false,
         results,
@@ -760,8 +981,9 @@ class AtomicFileOperations {
       backupCount: transaction.backups.length
     });
 
-    // Rolling back transaction
+    // Rolling back transaction -- persist status for crash recovery
     transaction.status = 'rolling_back';
+    await this.writeJournal(transactionId);
 
     const rollbackErrors = [];
     let restoredCount = 0;
@@ -904,6 +1126,9 @@ class AtomicFileOperations {
         // Ignore cleanup errors
       }
     }
+
+    // Remove journal if it still exists
+    await this.removeJournal(transactionId);
 
     // Remove from active transactions
     this.activeTransactions.delete(transactionId);
@@ -1129,5 +1354,13 @@ module.exports = {
    */
   async safeWriteFile(filePath, data) {
     return atomicFileOps.atomicCreate(filePath, data);
+  },
+
+  /**
+   * Recover incomplete transactions from journals left by a previous crash.
+   * Call once at application startup.
+   */
+  async recoverFromJournals(maxAgeMs) {
+    return atomicFileOps.recoverFromJournals(maxAgeMs);
   }
 };

@@ -5,7 +5,7 @@ import { Sparkles, FolderOpen } from 'lucide-react';
 import { Button, Input, Textarea } from '../ui';
 import { Text } from '../ui/Typography';
 import Modal from '../ui/Modal';
-import { Inline, Stack } from '../layout';
+import { Stack } from '../layout';
 import { createLogger } from '../../../shared/logger';
 import { filesIpc, smartFoldersIpc } from '../../services/ipc';
 import { selectRedactPaths } from '../../store/selectors';
@@ -222,7 +222,7 @@ function AddSmartFolderModal({
       title="Add Smart Folder"
       size="md"
       footer={
-        <Inline className="justify-end" gap="compact" wrap={false}>
+        <>
           <Button
             type="button"
             onClick={handleClose}
@@ -240,7 +240,7 @@ function AddSmartFolderModal({
           >
             {isAdding ? 'Adding...' : 'Add Folder'}
           </Button>
-        </Inline>
+        </>
       }
     >
       <Stack gap="relaxed">

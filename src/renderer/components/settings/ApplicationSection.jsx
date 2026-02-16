@@ -52,7 +52,9 @@ function ApplicationSection({ settings, setSettings, addNotification }) {
     try {
       const result = await systemIpc.exportLogs();
       if (result?.success) {
-        // Success notification handled by caller if needed, or we can add one here
+        addNotification?.(`Logs exported to ${result.filePath || 'file'}`, 'success');
+      } else if (result?.canceled || result?.cancelled) {
+        // User canceled the save dialog — no notification needed
       } else if (result?.error) {
         logger.error('[Settings] Failed to export logs', { error: result.error });
         addNotification?.(result.error || 'Failed to export logs', 'error');
@@ -75,7 +77,7 @@ function ApplicationSection({ settings, setSettings, addNotification }) {
     setIsCheckingUpdates(true);
     try {
       await systemIpc.checkForUpdates();
-      addNotification?.('Checking for updates...', 'info');
+      addNotification?.('Checking for updates\u2026', 'info');
     } catch (error) {
       logger.error('[Settings] Failed to check for updates', { error });
       addNotification?.('Failed to check for updates', 'error');

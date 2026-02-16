@@ -13,6 +13,11 @@ jest.mock('../../src/renderer/contexts/NotificationContext', () => ({
   useNotification: jest.fn(() => ({ addNotification: jest.fn() }))
 }));
 
+jest.mock('../../src/renderer/store/slices/uiSlice', () => ({
+  toggleSettings: jest.fn(() => ({ type: 'ui/toggleSettings' })),
+  setPhase: jest.fn((phase) => ({ type: 'ui/setPhase', payload: phase }))
+}));
+
 jest.mock('../../src/renderer/components/ui', () => ({
   Button: ({ children, ...props }) => <button {...props}>{children}</button>,
   Card: ({ children }) => <div data-testid="card">{children}</div>
@@ -20,7 +25,8 @@ jest.mock('../../src/renderer/components/ui', () => ({
 
 jest.mock('../../src/renderer/components/ui/Typography', () => ({
   Heading: ({ children }) => <h1>{children}</h1>,
-  Text: ({ children }) => <span>{children}</span>
+  Text: ({ children }) => <span>{children}</span>,
+  Caption: ({ children }) => <small>{children}</small>
 }));
 
 jest.mock('../../src/renderer/components/ui/Modal', () => ({

@@ -476,6 +476,7 @@ function registerSuggestionsIpc(servicesOrParams) {
     createHandler({
       logger,
       context,
+      schema: schemas.analyzeFolderStructure,
       serviceName: 'suggestionService',
       getService: getSuggestionService,
       fallbackResponse: {
@@ -517,6 +518,7 @@ function registerSuggestionsIpc(servicesOrParams) {
     createHandler({
       logger,
       context,
+      schema: schemas.suggestNewFolder,
       serviceName: 'suggestionService',
       getService: getSuggestionService,
       fallbackResponse: {

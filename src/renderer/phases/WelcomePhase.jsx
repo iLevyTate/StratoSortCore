@@ -5,7 +5,7 @@ import { useAppDispatch } from '../store/hooks';
 import { toggleSettings, setPhase } from '../store/slices/uiSlice';
 import { useNotification } from '../contexts/NotificationContext';
 import { Button, Card } from '../components/ui';
-import { Heading, Text } from '../components/ui/Typography';
+import { Heading, Text, Caption } from '../components/ui/Typography';
 import Modal from '../components/ui/Modal';
 import { Stack } from '../components/layout';
 import ModelSetupWizard from '../components/ModelSetupWizard';
@@ -220,15 +220,10 @@ function WelcomePhase() {
   return (
     <div className="flex flex-col flex-1 min-h-0 justify-center py-12">
       {/* Main content wrapper - centers vertically and limits max width */}
-      <div className="flex flex-col gap-10 max-w-3xl mx-auto w-full px-6">
+      <div className="flex flex-col gap-relaxed lg:gap-spacious max-w-3xl mx-auto w-full px-6">
         {/* Header - compact and centered */}
         <header className="text-center space-y-6">
-          <Text
-            variant="tiny"
-            className="uppercase tracking-[0.25em] font-medium text-system-gray-500"
-          >
-            Intelligent file orchestration
-          </Text>
+          <Caption className="text-system-gray-500">Intelligent file orchestration</Caption>
           <Heading as="h1" variant="display" id="welcome-heading" className="leading-tight">
             <Rocket
               className="inline-block animate-float text-stratosort-blue w-10 h-10 md:w-12 md:h-12 mr-4 align-middle"
@@ -236,7 +231,7 @@ function WelcomePhase() {
             />
             Welcome to <span className="text-gradient">StratoSort</span>
           </Heading>
-          <Text variant="lead" className="max-w-xl mx-auto text-system-gray-600">
+          <Text variant="lead" className="max-w-xl mx-auto">
             Let our local AI co-pilot study your workspace, understand every file, and deliver calm,
             glassy organization in minutes.
           </Text>
@@ -244,46 +239,38 @@ function WelcomePhase() {
 
         {/* Primary Actions Card */}
         <Card variant="hero" role="navigation" aria-label="Primary actions">
-          <div className="flex flex-col">
+          <Stack gap="default">
             {/* Primary Action - Organize */}
-            <div className="flex flex-col gap-3 items-center pb-8 border-b border-border-soft">
+            <div className="flex flex-col gap-3 items-center pb-6 border-b border-border-soft">
               <Button
                 onClick={() => actions.advancePhase(PHASES?.DISCOVER ?? 'discover')}
                 variant="primary"
                 size="lg"
-                className="w-full max-w-md justify-center shadow-lg hover:shadow-xl transition-all hover:-translate-y-0.5"
+                className="w-full max-w-md justify-center"
                 aria-describedby="organize-help"
               >
-                <FolderOpen className="w-6 h-6 mr-3" />
-                <span className="font-semibold text-lg">Organize files now</span>
+                <FolderOpen className="w-5 h-5" />
+                Organize files now
               </Button>
-              <Text
-                variant="small"
-                className="text-center text-system-gray-500 font-medium"
-                id="organize-help"
-              >
+              <Text variant="small" className="text-center" id="organize-help">
                 Start scanning with smart defaults
               </Text>
             </div>
 
             {/* Secondary Actions Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Tertiary Action - AI / Model settings */}
               <div className="flex flex-col gap-2">
                 <Button
                   onClick={() => dispatch(toggleSettings())}
                   variant="secondary"
-                  className="w-full justify-center h-full py-4 bg-white/50 hover:bg-white/80"
+                  className="w-full justify-center h-full py-4"
                   aria-describedby="ai-setup-help"
                 >
-                  <Sparkles className="w-4 h-4 mr-2 text-stratosort-purple" />
-                  <span>AI &amp; model settings</span>
+                  <Sparkles className="w-4 h-4 text-stratosort-purple" />
+                  AI &amp; model settings
                 </Button>
-                <Text
-                  variant="tiny"
-                  className="text-center text-system-gray-400"
-                  id="ai-setup-help"
-                >
+                <Text variant="tiny" className="text-center" id="ai-setup-help">
                   Configure models and preferences
                 </Text>
               </div>
@@ -293,28 +280,25 @@ function WelcomePhase() {
                 <Button
                   onClick={() => actions.advancePhase(PHASES?.SETUP ?? 'setup')}
                   variant="secondary"
-                  className="w-full justify-center h-full py-4 bg-white/50 hover:bg-white/80"
+                  className="w-full justify-center h-full py-4"
                   aria-describedby="setup-help"
                 >
-                  <Settings className="w-4 h-4 mr-2 text-system-gray-600" />
-                  <span>Configure smart folders</span>
+                  <Settings className="w-4 h-4" />
+                  Configure smart folders
                 </Button>
-                <Text variant="tiny" className="text-center text-system-gray-400" id="setup-help">
+                <Text variant="tiny" className="text-center" id="setup-help">
                   Set up destinations first
                 </Text>
               </div>
             </div>
-          </div>
+          </Stack>
         </Card>
 
         {/* How it works link */}
         <div className="text-center">
-          <button
-            onClick={() => setShowFlowsModal(true)}
-            className="text-sm text-system-gray-500 hover:text-stratosort-blue transition-colors hover:underline underline-offset-4"
-          >
+          <Button onClick={() => setShowFlowsModal(true)} variant="ghost" size="sm">
             How does StratoSort work?
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -354,16 +338,8 @@ function WelcomePhase() {
                   <item.icon className="w-5 h-5 text-stratosort-blue" />
                 </div>
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Text
-                      as="span"
-                      variant="tiny"
-                      className="font-medium text-system-gray-400 uppercase tracking-wider"
-                    >
-                      Step {idx + 1}
-                    </Text>
-                  </div>
-                  <Heading as="h4" variant="h6" className="mb-1">
+                  <Caption className="block text-system-gray-400 mb-1">Step {idx + 1}</Caption>
+                  <Heading as="h3" variant="h6" className="mb-1">
                     {item.title}
                   </Heading>
                   <Text variant="small">{item.copy}</Text>

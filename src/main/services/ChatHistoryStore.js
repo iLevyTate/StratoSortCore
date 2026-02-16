@@ -304,6 +304,20 @@ class ChatHistoryStore {
     if (!this._initialized) throw new Error('ChatHistoryStore not initialized');
   }
 
+  /**
+   * Update the title of an existing conversation.
+   * Used to replace the default "New Chat" title with a more descriptive one
+   * derived from the first query/response exchange.
+   * @param {string} conversationId
+   * @param {string} title
+   */
+  updateTitle(conversationId, title) {
+    this._checkInit();
+    this._db
+      .prepare("UPDATE conversations SET title = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(title, conversationId);
+  }
+
   exportAsMarkdown(conversationId) {
     this._checkInit();
     const conv = this.getConversation(conversationId);

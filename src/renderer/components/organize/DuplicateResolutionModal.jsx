@@ -144,11 +144,12 @@ export default function DuplicateResolutionModal({
             Potential savings:{' '}
             <span className="font-medium text-system-gray-900">{formatBytes(totalSavings)}</span>
           </div>
-          <Button variant="ghost" onClick={onClose} disabled={isResolving}>
+          <Button variant="secondary" size="sm" onClick={onClose} disabled={isResolving}>
             Cancel
           </Button>
           <Button
-            variant="destructive"
+            variant="danger"
+            size="sm"
             onClick={handleResolve}
             disabled={isResolving || normalizedGroups.length === 0}
             isLoading={isResolving}

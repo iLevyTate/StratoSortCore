@@ -93,7 +93,8 @@
     "dist:mac": "npm run build && npm run setup:vision-runtime && npm run setup:vision-runtime:check && electron-builder --mac --publish never --config electron-builder.json",
     "dist:linux": "npm run build && npm run setup:vision-runtime && npm run setup:vision-runtime:check && electron-builder --linux --publish never --config electron-builder.json",
     "dist:all": "npm run build && npm run setup:vision-runtime && npm run setup:vision-runtime:check && electron-builder --mac --win --linux --publish never --config electron-builder.json",
-    "ci": "npm run format:check && npm run lint && npm test && npm run build",
+    "ci": "npm run format:check && npm run lint && npm run test:coverage && npm run build",
+    "verify:ipc-handlers": "node scripts/verify-ipc-handlers.js",
     "upgrade": "npx npm-check-updates -u && npm install"
   },
   "browserslist": [],

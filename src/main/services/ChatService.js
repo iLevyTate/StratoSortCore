@@ -147,33 +147,29 @@ class ChatService {
       const memory = await this._getSessionMemory(sessionId);
       const history = await this._getHistoryText(memory);
 
-      const prompt = `
-You are StratoSort, a friendly local AI assistant that helps users explore, search, and understand the files on their machine. Everything runs 100% on-device.
+      const prompt = `You are StratoSort, a friendly local AI assistant. You help users search, explore, and understand the files on their machine. Everything runs on-device — no data leaves their computer.
 
-The user said: "${cleanQuery}"
-Conversation history:
-${history || '(none)'}
+${history ? `Conversation so far:\n${history}\n` : ''}User: "${cleanQuery}"
 
-Guidelines:
-- Be warm, concise, and conversational — like a helpful colleague, not a research paper.
-- If they greet you, greet them back naturally.
-- If they ask what you can do or how to use you, explain your capabilities in plain language:
-  you can search their indexed documents by meaning, answer questions about file contents,
-  find related files, summarize documents, and help organize their workspace.
-- Suggest 2-3 specific things they could try, phrased as natural questions.
+Respond warmly and naturally. If they greet you or check if you are working, greet them back and briefly mention what you can do. Suggest 2-3 things they could try as follow-up questions.
 
-Return ONLY valid JSON:
-{
-  "modelAnswer": [{ "text": "Your conversational response here." }],
-  "documentAnswer": [],
-  "followUps": ["A natural follow-up the user might ask"]
-}`;
+Example output:
+{"modelAnswer":[{"text":"Hey there! I'm up and running. I can search your documents by meaning, answer questions about your files, find related documents, and help organize your workspace. What would you like to explore?"}],"documentAnswer":[],"followUps":["Summarize my most recent documents","What topics do my files cover?","Find files related to taxes"]}
+
+Now respond as JSON:`;
 
       try {
         const result = await this.llamaService.analyzeText(prompt, { format: 'json' });
         if (result?.success) {
           const parsed = this._parseResponse(result.response, []);
-          await this._saveMemoryTurn(memory, cleanQuery, this._formatForMemory(parsed));
+          await this._saveMemoryTurn(memory, cleanQuery, {
+            text: this._formatForMemory(parsed),
+            documentAnswer: parsed.documentAnswer || [],
+            modelAnswer: parsed.modelAnswer || [],
+            sources: [],
+            followUps: parsed.followUps || [],
+            meta: { retrievalSkipped: true }
+          });
           return { success: true, response: parsed, sources: [], meta: { retrievalSkipped: true } };
         }
       } catch (err) {
@@ -220,7 +216,8 @@ Return ONLY valid JSON:
         documentAnswer: [],
         modelAnswer: abstention.modelAnswer,
         sources: [],
-        followUps: []
+        followUps: [],
+        meta: { ...retrieval.meta, strictScopeAbstention: true }
       });
       return {
         success: true,
@@ -249,12 +246,22 @@ Return ONLY valid JSON:
     if (!retrieval?.sources?.length) {
       parsed.documentAnswer = [];
     }
+    const queryMeta = {
+      ...retrieval.meta,
+      responseMode: forcedResponseMode,
+      holisticIntent,
+      correctionIntent,
+      comparisonIntent,
+      gapAnalysisIntent,
+      contradictions
+    };
     let assistantForMemory = {
       text: this._formatForMemory(parsed, retrieval.sources),
       documentAnswer: parsed.documentAnswer,
       modelAnswer: parsed.modelAnswer,
       sources: retrieval.sources,
-      followUps: parsed.followUps || []
+      followUps: parsed.followUps || [],
+      meta: queryMeta
     };
 
     // Smart fallback if model returns nothing (improves UX)
@@ -279,7 +286,8 @@ Return ONLY valid JSON:
         documentAnswer: parsed.documentAnswer,
         modelAnswer: parsed.modelAnswer,
         sources: retrieval.sources,
-        followUps: parsed.followUps || []
+        followUps: parsed.followUps || [],
+        meta: queryMeta
       };
       await this._saveMemoryTurn(memory, cleanQuery, assistantForMemory);
     } else {
@@ -345,31 +353,19 @@ Return ONLY valid JSON:
         memory._documentScope = documentScopeItems || [];
         const history = await this._getHistoryText(memory);
 
-        const prompt = `
-You are StratoSort, a friendly local AI assistant that helps users explore, search, and understand the files on their machine. Everything runs 100% on-device.
+        const prompt = `You are StratoSort, a friendly local AI assistant. You help users search, explore, and understand the files on their machine. Everything runs on-device — no data leaves their computer.
 
-The user said: "${cleanQuery}"
-Conversation history:
-${history || '(none)'}
+${history ? `Conversation so far:\n${history}\n` : ''}User: "${cleanQuery}"
 
-Guidelines:
-- Be warm, concise, and conversational — like a helpful colleague, not a research paper.
-- If they greet you, greet them back naturally.
-- If they ask what you can do or how to use you, explain your capabilities in plain language:
-  you can search their indexed documents by meaning, answer questions about file contents,
-  find related files, summarize documents, and help organize their workspace.
-- Suggest 2-3 specific things they could try, phrased as natural questions.
+Respond warmly and naturally. If they greet you or check if you are working, greet them back and briefly mention what you can do. Suggest 2-3 things they could try as follow-up questions.
 
-Return ONLY valid JSON:
-{
-  "modelAnswer": [{ "text": "Your conversational response here." }],
-  "documentAnswer": [],
-  "followUps": ["A natural follow-up the user might ask"]
-}`;
+Example output:
+{"modelAnswer":[{"text":"Hey there! I'm up and running. I can search your documents by meaning, answer questions about your files, find related documents, and help organize your workspace. What would you like to explore?"}],"documentAnswer":[],"followUps":["Summarize my most recent documents","What topics do my files cover?","Find files related to taxes"]}
+
+Now respond as JSON:`;
 
         let fullResponse = '';
         try {
-          // FIX BUG-002: Buffer tokens server-side — don't stream raw JSON to user
           let tokenCount = 0;
           await this.llamaService.generateTextStreaming({
             prompt,
@@ -384,7 +380,14 @@ Return ONLY valid JSON:
           });
 
           const parsed = this._parseResponse(fullResponse, []);
-          await this._saveMemoryTurn(memory, cleanQuery, this._formatForMemory(parsed));
+          await this._saveMemoryTurn(memory, cleanQuery, {
+            text: this._formatForMemory(parsed),
+            documentAnswer: parsed.documentAnswer || [],
+            modelAnswer: parsed.modelAnswer || [],
+            sources: [],
+            followUps: parsed.followUps || [],
+            meta: { retrievalSkipped: true }
+          });
 
           // Emit final parsed prose as a single chunk, then structured done
           const proseText = [
@@ -459,6 +462,15 @@ Return ONLY valid JSON:
           modelAnswer: [{ text: abstentionText }],
           followUps: []
         };
+        // Persist the abstention so it survives conversation reload
+        await this._saveMemoryTurn(memory, cleanQuery, {
+          text: abstentionText,
+          documentAnswer: [],
+          modelAnswer: abstention.modelAnswer,
+          sources: [],
+          followUps: [],
+          meta: { ...retrieval.meta, strictScopeAbstention: true }
+        });
         if (onEvent) {
           onEvent({ type: 'chunk', text: abstentionText });
           onEvent({
@@ -823,6 +835,7 @@ Return ONLY valid JSON:
       try {
         // Ensure conversation exists, passing sessionId so the store uses it
         let conv = this.chatHistoryStore.getConversation(memory.sessionId);
+        const isFirstTurn = !conv;
         if (!conv) {
           this.chatHistoryStore.createConversation(
             (typeof input === 'string' ? input.slice(0, 50) : '') || 'New Conversation',
@@ -851,6 +864,21 @@ Return ONLY valid JSON:
           assistantMessage.meta = output.meta || {};
         }
         this.chatHistoryStore.addMessage(memory.sessionId, assistantMessage);
+
+        // FIX FAULT-008: Improve conversation title after first successful exchange.
+        // Also fixes legacy conversations stuck with "New Chat" title.
+        if (this.chatHistoryStore.updateTitle) {
+          const currentTitle = isFirstTurn ? null : conv?.title || '';
+          const needsTitleUpdate =
+            isFirstTurn || currentTitle === 'New Chat' || currentTitle === 'New Conversation';
+
+          if (needsTitleUpdate && typeof input === 'string' && input.trim()) {
+            const betterTitle =
+              input.trim().length > 60 ? input.trim().slice(0, 57) + '...' : input.trim();
+            this.chatHistoryStore.updateTitle(memory.sessionId, betterTitle);
+          }
+        }
+
         return;
       } catch (error) {
         logger.warn('[ChatService] Failed to persist turn:', error.message);
@@ -868,7 +896,16 @@ Return ONLY valid JSON:
   }
 
   _isConversational(query) {
-    // Exact-match greetings / closers
+    // FIX: Truncate before regex to prevent ReDoS on very long untrusted input.
+    // Chat queries shouldn't be conversational if they're over 100 chars.
+    if (query.length > 100) return false;
+    const clean = query
+      .toLowerCase()
+      .replace(/[^\w\s]/g, '')
+      .trim();
+    if (!clean) return false;
+
+    // Exact-match greetings / closers / status checks
     const exactPhrases = new Set([
       'hello',
       'hi',
@@ -888,8 +925,14 @@ Return ONLY valid JSON:
       'howdy',
       'bye',
       'goodbye',
-      'see ya'
+      'see ya',
+      'test',
+      'testing',
+      'you there',
+      'anyone there',
+      'is anyone there'
     ]);
+    if (exactPhrases.has(clean)) return true;
 
     // Pattern-match capability / meta questions (safe, bounded patterns)
     const capabilityPatterns = [
@@ -903,16 +946,19 @@ Return ONLY valid JSON:
       /^what (?:kind|type) of\b.*\bhelp\b/,
       /^how do i use\b/
     ];
+    if (capabilityPatterns.some((rx) => rx.test(clean))) return true;
 
-    // FIX: Truncate before regex to prevent ReDoS on very long untrusted input.
-    // Chat queries shouldn't be conversational if they're over 100 chars.
-    if (query.length > 100) return false;
-    const clean = query
-      .toLowerCase()
-      .replace(/[^\w\s]/g, '')
-      .trim();
-    if (exactPhrases.has(clean)) return true;
-    return capabilityPatterns.some((rx) => rx.test(clean));
+    // Status-check patterns: "are you up and running", "are you there", etc.
+    // These are meta queries about the assistant, not document queries.
+    if (
+      /^are you\s+(?:up|there|alive|working|online|ready|awake|listening|ok|okay|running)\b/.test(
+        clean
+      )
+    )
+      return true;
+    if (/^(?:you|u)\s+(?:there|up|alive|working|ready|awake)\b/.test(clean)) return true;
+
+    return false;
   }
 
   _isComparisonQuery(query) {

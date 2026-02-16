@@ -4,8 +4,14 @@
  * Handles system metrics, application statistics, updates, and configuration.
  */
 const { IpcServiceContext, createFromLegacyParams } = require('./IpcServiceContext');
-const { createHandler, createErrorResponse, safeHandle } = require('./ipcWrappers');
+const {
+  createHandler,
+  createErrorResponse,
+  canceledResponse,
+  safeHandle
+} = require('./ipcWrappers');
 const { dump: dumpConfig, validate: validateConfig } = require('../../shared/config/index');
+const { schemas } = require('./validationSchemas');
 
 const MAX_LOG_MESSAGE_CHARS = 8192;
 const MAX_LOG_CONTEXT_CHARS = 120;
@@ -233,6 +239,7 @@ function registerSystemIpc(servicesOrParams) {
     createHandler({
       logger,
       context,
+      schema: schemas.configPath,
       handler: async (_event, configPath) => {
         try {
           const pathError = validateConfigPathInput(configPath);
@@ -285,6 +292,7 @@ function registerSystemIpc(servicesOrParams) {
     createHandler({
       logger,
       context,
+      schema: schemas.systemLog,
       handler: async (_event, payload) => {
         try {
           if (!payload || typeof payload !== 'object') return { success: false };
@@ -355,7 +363,7 @@ function registerSystemIpc(servicesOrParams) {
           });
 
           if (!filePath) {
-            return { success: false, cancelled: true };
+            return canceledResponse();
           }
 
           zip.writeZip(filePath);
