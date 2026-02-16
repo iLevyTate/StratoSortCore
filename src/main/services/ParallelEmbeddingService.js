@@ -43,6 +43,9 @@ const SEMAPHORE_CONFIG = {
   MAX_QUEUE_SIZE: 100, // Maximum queued requests before rejecting
   QUEUE_TIMEOUT_MS: TIMEOUTS.AI_ANALYSIS_LONG // 180 second timeout to survive blocking operations
 };
+const MIN_CONCURRENCY = 1;
+const MIN_ADAPTIVE_CONCURRENCY = 2;
+const MAX_CONCURRENCY = 10;
 
 /**
  * ParallelEmbeddingService
@@ -64,8 +67,11 @@ class ParallelEmbeddingService {
     // Configurable concurrency limit - increased hard cap for powerful GPUs
     this.concurrencyLimit = Math.min(
       options.concurrencyLimit || this._calculateOptimalConcurrency(),
-      10 // Hard cap increased from 5 to 10
+      MAX_CONCURRENCY // Hard cap increased from 5 to 10
     );
+    // Upper bound sourced from system capability recommendations.
+    // Adaptive logic must never scale above this once known.
+    this.maxRecommendedConcurrency = MAX_CONCURRENCY;
 
     // Semaphore state
     this.activeRequests = 0;
@@ -103,7 +109,7 @@ class ParallelEmbeddingService {
       if (llamaService && typeof llamaService.on === 'function') {
         // FIX: Store handler reference so we can remove it in shutdown()
         this._llamaInitHandler = () => {
-          const newLimit = Math.min(this._calculateOptimalConcurrency(), 10);
+          const newLimit = Math.min(this._calculateOptimalConcurrency(), MAX_CONCURRENCY);
           if (newLimit !== this.concurrencyLimit) {
             this.setConcurrencyLimit(newLimit);
             logger.info('[ParallelEmbeddingService] Concurrency updated after LlamaService init', {
@@ -125,7 +131,14 @@ class ParallelEmbeddingService {
       const { getRecommendedConcurrency } = require('./PerformanceService');
       const recs = await getRecommendedConcurrency();
       if (!recs?.maxConcurrent) return;
-      const capped = Math.max(1, Math.min(this.concurrencyLimit, recs.maxConcurrent, 10));
+      this.maxRecommendedConcurrency = Math.max(
+        MIN_CONCURRENCY,
+        Math.min(recs.maxConcurrent, MAX_CONCURRENCY)
+      );
+      const capped = Math.max(
+        MIN_CONCURRENCY,
+        Math.min(this.concurrencyLimit, this.maxRecommendedConcurrency, MAX_CONCURRENCY)
+      );
       if (capped !== this.concurrencyLimit) {
         this.setConcurrencyLimit(capped);
         logger.info('[ParallelEmbeddingService] Concurrency capped by system recommendation', {
@@ -190,7 +203,7 @@ class ParallelEmbeddingService {
     }
 
     // Cap at reasonable maximum
-    return Math.min(concurrency, 10);
+    return Math.min(concurrency, MAX_CONCURRENCY);
   }
 
   /**
@@ -805,7 +818,11 @@ class ParallelEmbeddingService {
    * @param {number} limit - New concurrency limit (1-10)
    */
   setConcurrencyLimit(limit) {
-    const newLimit = Math.max(1, Math.min(limit, 10));
+    const recommendedCap =
+      Number.isFinite(this.maxRecommendedConcurrency) && this.maxRecommendedConcurrency > 0
+        ? this.maxRecommendedConcurrency
+        : MAX_CONCURRENCY;
+    const newLimit = Math.max(MIN_CONCURRENCY, Math.min(limit, recommendedCap, MAX_CONCURRENCY));
 
     if (newLimit !== this.concurrencyLimit) {
       logger.info('[ParallelEmbeddingService] Concurrency limit changed', {
@@ -962,9 +979,9 @@ class ParallelEmbeddingService {
 
     const errorRate = failedRequests / totalProcessed;
 
-    if (errorRate > 0.2 && this.concurrencyLimit > 2) {
+    if (errorRate > 0.2 && this.concurrencyLimit > MIN_ADAPTIVE_CONCURRENCY) {
       // High error rate - reduce concurrency
-      const newLimit = Math.max(2, Math.floor(this.concurrencyLimit * 0.7));
+      const newLimit = Math.max(MIN_ADAPTIVE_CONCURRENCY, Math.floor(this.concurrencyLimit * 0.7));
       if (newLimit !== this.concurrencyLimit) {
         logger.info('[ParallelEmbeddingService] Reducing concurrency due to high error rate', {
           errorRate: `${(errorRate * 100).toFixed(1)}%`,
@@ -973,14 +990,22 @@ class ParallelEmbeddingService {
         });
         this.concurrencyLimit = newLimit;
       }
-    } else if (errorRate < 0.05 && this.concurrencyLimit < 10 && totalProcessed > 50) {
+    } else if (
+      errorRate < 0.05 &&
+      this.concurrencyLimit < this.maxRecommendedConcurrency &&
+      totalProcessed > 50
+    ) {
       // Low error rate - can increase concurrency
-      const newLimit = Math.min(10, Math.ceil(this.concurrencyLimit * 1.2));
+      const newLimit = Math.min(
+        this.maxRecommendedConcurrency,
+        Math.ceil(this.concurrencyLimit * 1.2)
+      );
       if (newLimit !== this.concurrencyLimit) {
         logger.debug('[ParallelEmbeddingService] Increasing concurrency due to low error rate', {
           errorRate: `${(errorRate * 100).toFixed(1)}%`,
           previousLimit: this.concurrencyLimit,
-          newLimit
+          newLimit,
+          recommendationCap: this.maxRecommendedConcurrency
         });
         this.concurrencyLimit = newLimit;
       }

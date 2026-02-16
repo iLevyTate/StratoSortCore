@@ -127,6 +127,7 @@ module.exports = (env, argv) => {
       filename: '[name].js',
       clean: false
     },
+    // Keep preload bundled for sandbox=true while preserving Electron preload semantics.
     target: 'electron-preload',
     resolve: {
       ...common.resolve,

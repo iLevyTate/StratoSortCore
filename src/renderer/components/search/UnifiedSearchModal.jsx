@@ -89,6 +89,7 @@ const GRAPH_SIDEBAR_CARD = 'rounded-lg border border-system-gray-200 bg-white/90
 const GRAPH_SIDEBAR_SECTION_TITLE =
   'text-[11px] font-semibold text-system-gray-500 uppercase tracking-wider flex items-center gap-2';
 const GRAPH_SIDEBAR_HELP_TEXT = 'text-[11px] text-system-gray-500';
+const WHY_CONNECTIONS_DISPLAY_LIMIT = 6;
 
 /**
  * Format error messages to be more user-friendly and actionable
@@ -1188,7 +1189,6 @@ export default function UnifiedSearchModal({
 
   // Related clusters UI state (accordion + file list expansion)
   const [expandedRelatedClusters, setExpandedRelatedClusters] = useState(() => ({}));
-  const [showAllBridgeFilesByBridge, setShowAllBridgeFilesByBridge] = useState(() => ({}));
   const [isRelatedClustersOpen, setIsRelatedClustersOpen] = useState(true);
 
   // Highlight sync state - for syncing highlights between search list and graph
@@ -5925,6 +5925,14 @@ export default function UnifiedSearchModal({
       })
       .sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
   }, [nodeLabelById, selectedNode?.id, selectedNodeEdges]);
+  const displayedSelectedNodeWhyConnections = useMemo(
+    () => selectedNodeWhyConnections.slice(0, WHY_CONNECTIONS_DISPLAY_LIMIT),
+    [selectedNodeWhyConnections]
+  );
+  const hiddenSelectedNodeConnectionsCount = Math.max(
+    0,
+    selectedNodeWhyConnections.length - displayedSelectedNodeWhyConnections.length
+  );
   const selectedNodeHeroConnectionText = useMemo(() => {
     if (selectedKind !== 'file') return '';
     const top = selectedNodeWhyConnections[0];
@@ -6114,7 +6122,6 @@ export default function UnifiedSearchModal({
   useEffect(() => {
     // Clear per-bridge expansion state whenever the selected node changes
     setExpandedRelatedClusters({});
-    setShowAllBridgeFilesByBridge({});
 
     const count = selectedClusterInfo?.bridges?.length || 0;
     // Progressive disclosure: auto-collapse when there are many related clusters
@@ -6886,7 +6893,6 @@ export default function UnifiedSearchModal({
                             <div className="space-y-1">
                               {organizationalHealth.findings
                                 .filter((finding) => finding.active)
-                                .slice(0, 3)
                                 .map((finding) => (
                                   <button
                                     key={finding.key}
@@ -7168,7 +7174,7 @@ export default function UnifiedSearchModal({
                                     </div>
                                     {c.sharedTerms.length > 0 && (
                                       <div className="mt-1 flex flex-wrap gap-1">
-                                        {c.sharedTerms.slice(0, 3).map((t) => (
+                                        {c.sharedTerms.map((t) => (
                                           <span
                                             key={`${c.id}-${t}`}
                                             className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded text-[10px]"
@@ -7187,7 +7193,7 @@ export default function UnifiedSearchModal({
                                     )}
                                     {Array.isArray(c.bridgeFiles) && c.bridgeFiles.length > 0 && (
                                       <div className="mt-2 space-y-1">
-                                        {c.bridgeFiles.slice(0, 3).map((file) => {
+                                        {c.bridgeFiles.map((file) => {
                                           const filePath = file?.path || null;
                                           const label =
                                             file?.name ||
@@ -7233,15 +7239,6 @@ export default function UnifiedSearchModal({
                                             </div>
                                           );
                                         })}
-                                        {c.bridgeFiles.length > 3 && (
-                                          <Text
-                                            as="div"
-                                            variant="tiny"
-                                            className="text-system-gray-500"
-                                          >
-                                            +{c.bridgeFiles.length - 3} more
-                                          </Text>
-                                        )}
                                       </div>
                                     )}
                                   </div>
@@ -8232,16 +8229,14 @@ export default function UnifiedSearchModal({
                                   selectedNode.data?.topTerms ||
                                   selectedNode.data?.commonTags ||
                                   []
-                                )
-                                  .slice(0, 8)
-                                  .map((term) => (
-                                    <span
-                                      key={term}
-                                      className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-[11px]"
-                                    >
-                                      {term}
-                                    </span>
-                                  ))}
+                                ).map((term) => (
+                                  <span
+                                    key={term}
+                                    className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-[11px]"
+                                  >
+                                    {term}
+                                  </span>
+                                ))}
                               </div>
                             </div>
                           )}
@@ -8268,7 +8263,7 @@ export default function UnifiedSearchModal({
                                 Why connected
                               </Text>
                               <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                                {selectedNodeWhyConnections.slice(0, 6).map((reason) => (
+                                {displayedSelectedNodeWhyConnections.map((reason) => (
                                   <div
                                     key={reason.edgeId}
                                     className="rounded-lg border border-system-gray-200 bg-white px-2 py-1.5"
@@ -8297,6 +8292,11 @@ export default function UnifiedSearchModal({
                                     </Text>
                                   </div>
                                 ))}
+                                {hiddenSelectedNodeConnectionsCount > 0 ? (
+                                  <Text as="div" variant="tiny" className="text-system-gray-500">
+                                    +{hiddenSelectedNodeConnectionsCount} more connections
+                                  </Text>
+                                ) : null}
                               </div>
                             </div>
                           )}
@@ -8348,12 +8348,7 @@ export default function UnifiedSearchModal({
                                     const bridgeFiles = Array.isArray(bridge?.bridgeFiles)
                                       ? bridge.bridgeFiles
                                       : [];
-                                    const showAllFiles = Boolean(
-                                      showAllBridgeFilesByBridge?.[bridgeKey]
-                                    );
-                                    const visibleFiles = showAllFiles
-                                      ? bridgeFiles
-                                      : bridgeFiles.slice(0, 3);
+                                    const visibleFiles = bridgeFiles;
 
                                     return (
                                       <div
@@ -8420,16 +8415,14 @@ export default function UnifiedSearchModal({
                                           variant="tiny"
                                           className="text-system-gray-600 mt-2 flex flex-wrap gap-1"
                                         >
-                                          {(bridge.sharedTerms || [])
-                                            .slice(0, isExpanded ? 8 : 3)
-                                            .map((t) => (
-                                              <span
-                                                key={t}
-                                                className="px-1.5 py-0.5 bg-white border border-system-gray-200 rounded text-[10px]"
-                                              >
-                                                {t}
-                                              </span>
-                                            ))}
+                                          {(bridge.sharedTerms || []).map((t) => (
+                                            <span
+                                              key={t}
+                                              className="px-1.5 py-0.5 bg-white border border-system-gray-200 rounded text-[10px]"
+                                            >
+                                              {t}
+                                            </span>
+                                          ))}
                                           {bridge.bridgeCount > 0 && (
                                             <span className="px-1.5 py-0.5 bg-white border border-system-gray-200 rounded text-[10px]">
                                               {bridge.bridgeCount} bridge file
@@ -8472,31 +8465,6 @@ export default function UnifiedSearchModal({
                                                 )}
                                               </div>
                                             ))}
-
-                                            {bridgeFiles.length > 3 && (
-                                              <div className="flex items-center justify-between pt-1">
-                                                <div className="text-[11px] text-system-gray-500">
-                                                  {showAllFiles
-                                                    ? `Showing ${bridgeFiles.length} files`
-                                                    : `+${bridgeFiles.length - 3} more`}
-                                                </div>
-                                                <Button
-                                                  variant="ghost"
-                                                  size="xs"
-                                                  className="text-system-gray-600 hover:text-system-gray-800"
-                                                  onClick={() =>
-                                                    setShowAllBridgeFilesByBridge((prev) => ({
-                                                      ...(prev || {}),
-                                                      [bridgeKey]: !prev?.[bridgeKey]
-                                                    }))
-                                                  }
-                                                >
-                                                  <span>
-                                                    {showAllFiles ? 'Show less' : 'Show all'}
-                                                  </span>
-                                                </Button>
-                                              </div>
-                                            )}
                                           </div>
                                         )}
                                       </div>
@@ -8593,7 +8561,7 @@ export default function UnifiedSearchModal({
                                 Why connected
                               </Text>
                               <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                                {selectedNodeWhyConnections.slice(0, 6).map((reason) => (
+                                {displayedSelectedNodeWhyConnections.map((reason) => (
                                   <div
                                     key={reason.edgeId}
                                     className="rounded-lg border border-system-gray-200 bg-white px-2 py-1.5"
@@ -8622,6 +8590,11 @@ export default function UnifiedSearchModal({
                                     </Text>
                                   </div>
                                 ))}
+                                {hiddenSelectedNodeConnectionsCount > 0 ? (
+                                  <Text as="div" variant="tiny" className="text-system-gray-500">
+                                    +{hiddenSelectedNodeConnectionsCount} more connections
+                                  </Text>
+                                ) : null}
                               </div>
                             </div>
                           )}

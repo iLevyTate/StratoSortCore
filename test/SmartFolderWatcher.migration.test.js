@@ -477,6 +477,24 @@ describe('SmartFolderWatcher - Migration Tests', () => {
       // Should NOT call analyzeDocumentFile since cached analysis is reused
       expect(mockDeps.analyzeDocumentFile).not.toHaveBeenCalled();
     });
+
+    test('embedding-only retry does not increment analysis stats', async () => {
+      const fs = require('fs').promises;
+      fs.stat.mockResolvedValue({ birthtime: new Date(), mtime: new Date() });
+
+      const embedSpy = jest.spyOn(watcher, '_embedAnalyzedFile').mockResolvedValue();
+
+      await watcher._analyzeFile({
+        filePath: '/watched/docs/embed-retry.pdf',
+        eventType: 'add',
+        cachedAnalysis: { category: 'Finance', keywords: ['tax'], confidence: 90 }
+      });
+
+      expect(embedSpy).toHaveBeenCalledTimes(1);
+      expect(watcher.stats.filesAnalyzed).toBe(0);
+      expect(watcher.stats.filesReanalyzed).toBe(0);
+      expect(mockDeps.analyzeDocumentFile).not.toHaveBeenCalled();
+    });
   });
 
   describe('forceReanalyzeAll', () => {

@@ -125,10 +125,10 @@ function SourceList({ sources, onOpenSource }) {
   };
 
   return (
-    <div className="mt-3 rounded-lg border border-system-gray-200 bg-white">
+    <div className="mt-3 rounded-lg border border-system-gray-200 bg-white shadow-sm">
       <div className="divide-y divide-system-gray-100">
-        {sources.map((source) => {
-          const tags = normalizeList(source.tags).slice(0, 5);
+        {sources.map((source, index) => {
+          const tags = normalizeList(source.tags);
           // Prefer semanticScore (raw cosine similarity) over the inflated
           // fused score. semanticScore reflects actual embedding relevance.
           const rawSemantic =
@@ -140,7 +140,12 @@ function SourceList({ sources, onOpenSource }) {
           const context = buildContext(source);
 
           return (
-            <div key={source.id} className="flex items-start gap-compact px-3 py-2.5 text-sm">
+            <div
+              key={
+                source.id || source.path || source.fileId || `${source.name || 'source'}-${index}`
+              }
+              className="flex items-start gap-compact px-3 py-2.5 text-sm"
+            >
               {/* Semantic relevance indicator (raw cosine similarity) */}
               <div className="flex flex-col items-center gap-0.5 pt-0.5 flex-shrink-0 w-8">
                 <div
@@ -165,7 +170,11 @@ function SourceList({ sources, onOpenSource }) {
                   </Text>
                 ) : null}
                 {source.snippet ? (
-                  <Text as="div" variant="tiny" className="mt-1 text-system-gray-600 line-clamp-2">
+                  <Text
+                    as="div"
+                    variant="tiny"
+                    className="mt-1 text-system-gray-600 whitespace-pre-wrap break-words"
+                  >
                     {source.snippet}
                   </Text>
                 ) : null}
@@ -358,6 +367,12 @@ export default function ChatPanel({
     }
   };
 
+  const handleQuickSend = async (text) => {
+    const trimmed = typeof text === 'string' ? text.trim() : '';
+    if (!trimmed || isSending) return;
+    await onSend(trimmed);
+  };
+
   return (
     <div className="flex h-full flex-col chat-panel">
       <div className="flex items-center justify-between gap-cozy border-b border-system-gray-200 px-4 py-3">
@@ -546,17 +561,22 @@ export default function ChatPanel({
                           </Text>
                           {idx === messages.length - 1 && (
                             <Button
-                              onClick={() => {
-                                // Find last user message
-                                const lastUserMsg = [...messages]
-                                  .reverse()
-                                  .find((m) => m.role === 'user');
-                                if (lastUserMsg?.text) {
-                                  if (typeof onRegenerate === 'function') {
-                                    onRegenerate(lastUserMsg.text);
-                                  } else {
-                                    onSend(lastUserMsg.text);
+                              onClick={async () => {
+                                if (isSending) return;
+                                try {
+                                  // Find last user message
+                                  const lastUserMsg = [...messages]
+                                    .reverse()
+                                    .find((m) => m.role === 'user');
+                                  if (lastUserMsg?.text) {
+                                    if (typeof onRegenerate === 'function') {
+                                      await onRegenerate(lastUserMsg.text);
+                                    } else {
+                                      await handleQuickSend(lastUserMsg.text);
+                                    }
                                   }
+                                } catch {
+                                  // Parent state handles surfaced errors.
                                 }
                               }}
                               variant="ghost"
@@ -564,6 +584,7 @@ export default function ChatPanel({
                               leftIcon={<RotateCcw className="w-3 h-3" />}
                               className="text-stratosort-blue hover:text-stratosort-blue-dark text-xs lowercase px-2 py-1"
                               title="Regenerate response"
+                              disabled={isSending}
                             >
                               regenerate
                             </Button>
@@ -575,7 +596,12 @@ export default function ChatPanel({
                               key={followUp}
                               variant="secondary"
                               size="sm"
-                              onClick={() => onSend(followUp)}
+                              onClick={() => {
+                                handleQuickSend(followUp).catch(() => {
+                                  // Keep UI stable; errors surface through parent state.
+                                });
+                              }}
+                              disabled={isSending}
                             >
                               {followUp}
                             </Button>

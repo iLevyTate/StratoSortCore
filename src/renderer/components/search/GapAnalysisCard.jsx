@@ -3,6 +3,8 @@ import PropTypes from 'prop-types';
 import { Search, CheckCircle, AlertCircle, HelpCircle } from 'lucide-react';
 import { Text } from '../ui/Typography';
 
+const COVERAGE_CHIP_LIMIT = 10;
+
 /**
  * Analyze source coverage to find well-covered, thin-covered, and gap topics.
  * Groups sources by their tags/categories to determine coverage depth.
@@ -12,24 +14,43 @@ function analyzeCoverage(sources) {
     return { wellCovered: [], thinCovered: [], gaps: [] };
   }
 
-  // Build a topic -> source count map
+  const normalizeTopic = (value) => {
+    if (typeof value !== 'string') return '';
+    return value.trim().toLowerCase();
+  };
+  const extractTags = (value) => {
+    if (Array.isArray(value)) {
+      return value.map(normalizeTopic).filter(Boolean);
+    }
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.split(',').map(normalizeTopic).filter(Boolean);
+    }
+    return [];
+  };
+
+  // Build a topic -> unique source map
   const topicSources = new Map();
 
   for (const source of sources) {
+    if (!source || typeof source !== 'object') continue;
+
     const topics = new Set();
-    if (source.category) topics.add(source.category.toLowerCase());
-    if (source.documentType) topics.add(source.documentType.toLowerCase());
-    if (source.entity) topics.add(source.entity.toLowerCase());
-    if (Array.isArray(source.tags)) {
-      source.tags.forEach((t) => topics.add(t.toLowerCase()));
-    }
+    const category = normalizeTopic(source.category);
+    const documentType = normalizeTopic(source.documentType);
+    const entity = normalizeTopic(source.entity);
+    if (category) topics.add(category);
+    if (documentType) topics.add(documentType);
+    if (entity) topics.add(entity);
+    extractTags(source.tags).forEach((tag) => topics.add(tag));
+    const sourceId = String(source.id || source.path || source.name || '').trim();
+    if (!sourceId) continue;
 
     for (const topic of topics) {
       if (!topicSources.has(topic)) {
-        topicSources.set(topic, []);
+        topicSources.set(topic, new Map());
       }
-      topicSources.get(topic).push({
-        id: source.id,
+      topicSources.get(topic).set(sourceId, {
+        id: sourceId,
         name: source.name
       });
     }
@@ -38,7 +59,8 @@ function analyzeCoverage(sources) {
   const wellCovered = [];
   const thinCovered = [];
 
-  for (const [topic, srcs] of topicSources) {
+  for (const [topic, sourceMap] of topicSources) {
+    const srcs = [...sourceMap.values()];
     if (srcs.length >= 3) {
       wellCovered.push({ topic, sources: srcs, count: srcs.length });
     } else if (srcs.length === 1) {
@@ -51,14 +73,16 @@ function analyzeCoverage(sources) {
   thinCovered.sort((a, b) => a.topic.localeCompare(b.topic));
 
   return {
-    wellCovered: wellCovered.slice(0, 10),
-    thinCovered: thinCovered.slice(0, 10),
+    wellCovered,
+    thinCovered,
     gaps: [] // Gaps require knowledge of what the user expects; the LLM handles this via prompt
   };
 }
 
 function CoverageSection({ icon: Icon, title, items, colorClass, onSend }) {
   if (!items || items.length === 0) return null;
+  const visibleItems = items.slice(0, COVERAGE_CHIP_LIMIT);
+  const hiddenCount = Math.max(0, items.length - visibleItems.length);
 
   return (
     <div>
@@ -72,7 +96,7 @@ function CoverageSection({ icon: Icon, title, items, colorClass, onSend }) {
         </Text>
       </div>
       <div className="flex flex-wrap gap-1.5">
-        {items.map((item, i) => (
+        {visibleItems.map((item, i) => (
           <button
             key={`${item.topic}-${i}`}
             className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium bg-white border border-system-gray-200 rounded-md hover:bg-system-gray-50 hover:border-system-gray-300 transition-colors cursor-pointer"
@@ -84,6 +108,11 @@ function CoverageSection({ icon: Icon, title, items, colorClass, onSend }) {
             <span className="text-system-gray-400">{item.count}</span>
           </button>
         ))}
+        {hiddenCount > 0 ? (
+          <Text as="span" variant="tiny" className="text-system-gray-500">
+            +{hiddenCount} more
+          </Text>
+        ) : null}
       </div>
     </div>
   );
@@ -116,7 +145,7 @@ export default function GapAnalysisCard({ sources, onSend }) {
         </Text>
       </div>
 
-      <div className="rounded-lg border border-system-gray-200 bg-white p-3 space-y-3">
+      <div className="rounded-lg border border-system-gray-200 bg-white p-3 shadow-sm space-y-3">
         <CoverageSection
           icon={CheckCircle}
           title="Well Covered"

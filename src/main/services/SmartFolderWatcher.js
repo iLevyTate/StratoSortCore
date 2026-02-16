@@ -1082,7 +1082,12 @@ class SmartFolderWatcher {
         // notification, learning feedback) since they already ran on the original pass.
         // Only re-attempt the embedding.
         if (isEmbeddingRetry) {
-          this._embedAnalyzedFile(filePath, result).catch((embedErr) => {
+          try {
+            // Embedding retry should only retry embedding and then stop.
+            // Do not run analysis side effects or stats updates.
+            await this._embedAnalyzedFile(filePath, result);
+            logger.debug('[SMART-FOLDER-WATCHER] Embedding retry succeeded', { filePath });
+          } catch (embedErr) {
             logger.warn('[SMART-FOLDER-WATCHER] Embedding retry failed again', {
               filePath,
               error: embedErr.message
@@ -1100,8 +1105,8 @@ class SmartFolderWatcher {
                 retryCount
               });
             }
-          });
-          // Skip to stats update and return
+          }
+          return;
         }
 
         // Apply user's naming convention to the suggested name (unless explicitly disabled)
@@ -1824,7 +1829,24 @@ class SmartFolderWatcher {
     }
 
     const entry = await this.analysisHistoryService.getAnalysisByPath(filePath);
-    if (!entry || !Number.isFinite(entry.fileSize) || !Number.isFinite(entry.lastModified)) {
+
+    // Parse persisted metadata strictly to avoid false-positive move matches from malformed values.
+    const parsedSize = Number(entry?.fileSize);
+    const parseLastModified = (value) => {
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+      if (typeof value !== 'string') return null;
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+
+      const numeric = Number(trimmed);
+      if (Number.isFinite(numeric)) return numeric;
+
+      const parsedDate = Date.parse(trimmed);
+      return Number.isFinite(parsedDate) ? parsedDate : null;
+    };
+    const parsedLastModified = parseLastModified(entry?.lastModified);
+
+    if (!entry || !Number.isFinite(parsedSize) || !Number.isFinite(parsedLastModified)) {
       return false;
     }
 
@@ -1836,8 +1858,8 @@ class SmartFolderWatcher {
 
     const candidate = {
       oldPath: filePath,
-      size: entry.fileSize,
-      mtimeMs: entry.lastModified,
+      size: parsedSize,
+      mtimeMs: parsedLastModified,
       ext: path.extname(filePath).toLowerCase(),
       baseName: path.basename(filePath),
       createdAt: Date.now(),

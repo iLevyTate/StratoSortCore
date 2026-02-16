@@ -5,9 +5,14 @@ import { Button } from '../ui';
 import { Text } from '../ui/Typography';
 
 function ContradictionPair({ contradiction, onOpenSource, sources }) {
-  const { docA, docB, sharedTopics, reason } = contradiction;
-  const sourceA = (sources || []).find((s) => s.id === docA.id);
-  const sourceB = (sources || []).find((s) => s.id === docB.id);
+  const { docA, docB, sharedTopics, reason } = contradiction || {};
+  const safeDocA = docA && typeof docA === 'object' ? docA : {};
+  const safeDocB = docB && typeof docB === 'object' ? docB : {};
+  const safeSharedTopics = Array.isArray(sharedTopics)
+    ? sharedTopics.map((topic) => (typeof topic === 'string' ? topic.trim() : '')).filter(Boolean)
+    : [];
+  const sourceA = safeDocA.id ? (sources || []).find((s) => s.id === safeDocA.id) : null;
+  const sourceB = safeDocB.id ? (sources || []).find((s) => s.id === safeDocB.id) : null;
 
   const reasonLabel =
     reason === 'different_dates'
@@ -15,14 +20,14 @@ function ContradictionPair({ contradiction, onOpenSource, sources }) {
       : 'Different entities, shared topic';
 
   return (
-    <div className="border border-stratosort-warning/30 rounded-lg p-3 bg-stratosort-warning/5">
+    <div className="border border-stratosort-warning/30 rounded-lg p-3 bg-stratosort-warning/5 shadow-sm">
       <div className="flex items-center gap-2 mb-2">
         <AlertTriangle className="w-3.5 h-3.5 text-stratosort-warning shrink-0" />
         <Text as="span" variant="tiny" className="font-semibold text-stratosort-warning">
           {reasonLabel}
         </Text>
         <div className="flex gap-1 ml-auto">
-          {sharedTopics.slice(0, 3).map((topic) => (
+          {safeSharedTopics.map((topic) => (
             <span
               key={topic}
               className="inline-block px-1.5 py-0.5 text-[10px] font-medium bg-stratosort-warning/10 text-stratosort-warning rounded"
@@ -37,16 +42,20 @@ function ContradictionPair({ contradiction, onOpenSource, sources }) {
         <div className="rounded-md bg-white border border-system-gray-200 p-2">
           <div className="flex items-center justify-between mb-1">
             <Text as="span" variant="tiny" className="font-semibold text-system-gray-700 truncate">
-              {docA.name}
+              {safeDocA.name || 'Unknown source'}
             </Text>
-            {docA.date && (
+            {safeDocA.date && (
               <Text as="span" variant="tiny" className="text-system-gray-400 shrink-0 ml-1">
-                {docA.date}
+                {safeDocA.date}
               </Text>
             )}
           </div>
-          <Text as="p" variant="tiny" className="text-system-gray-600 line-clamp-3">
-            {docA.snippet || 'No preview available'}
+          <Text
+            as="p"
+            variant="tiny"
+            className="text-system-gray-600 whitespace-pre-wrap break-words"
+          >
+            {safeDocA.snippet || 'No preview available'}
           </Text>
           {sourceA?.path && (
             <Button
@@ -63,16 +72,20 @@ function ContradictionPair({ contradiction, onOpenSource, sources }) {
         <div className="rounded-md bg-white border border-system-gray-200 p-2">
           <div className="flex items-center justify-between mb-1">
             <Text as="span" variant="tiny" className="font-semibold text-system-gray-700 truncate">
-              {docB.name}
+              {safeDocB.name || 'Unknown source'}
             </Text>
-            {docB.date && (
+            {safeDocB.date && (
               <Text as="span" variant="tiny" className="text-system-gray-400 shrink-0 ml-1">
-                {docB.date}
+                {safeDocB.date}
               </Text>
             )}
           </div>
-          <Text as="p" variant="tiny" className="text-system-gray-600 line-clamp-3">
-            {docB.snippet || 'No preview available'}
+          <Text
+            as="p"
+            variant="tiny"
+            className="text-system-gray-600 whitespace-pre-wrap break-words"
+          >
+            {safeDocB.snippet || 'No preview available'}
           </Text>
           {sourceB?.path && (
             <Button
@@ -119,7 +132,7 @@ export default function ContradictionCard({ contradictions, sources, onOpenSourc
       <div className="space-y-2">
         {contradictions.map((c, i) => (
           <ContradictionPair
-            key={`contradiction-${i}`}
+            key={`contradiction-${c?.docA?.id || 'a'}-${c?.docB?.id || 'b'}-${i}`}
             contradiction={c}
             sources={sources}
             onOpenSource={onOpenSource}

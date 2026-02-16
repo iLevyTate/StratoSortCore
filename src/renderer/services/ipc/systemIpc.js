@@ -27,5 +27,12 @@ export const systemIpc = {
   async getConfigValue(path) {
     const result = await requireElectronAPI().system.getConfigValue(path);
     return normalizeConfigValueResponse(result);
+  },
+  async exportLogs() {
+    const result = await requireElectronAPI().system.exportLogs();
+    if (result && typeof result === 'object' && result.success === false) {
+      throw new Error(result.error || 'Failed to export logs');
+    }
+    return result;
   }
 };
