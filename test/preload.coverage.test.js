@@ -82,7 +82,9 @@ jest.mock('../src/shared/securityConfig', () => ({
     'operation-failed',
     'file-operation-complete',
     'notification',
-    'batch-results-chunk'
+    'batch-results-chunk',
+    'chat:stream-chunk',
+    'chat:stream-end'
   ],
   ALLOWED_SEND_CHANNELS: ['renderer-error-report']
 }));
@@ -190,7 +192,8 @@ jest.mock('../src/shared/constants', () => ({
       GET_SIMILARITY_EDGES: 'emb:similarity-edges',
       GET_FILE_METADATA: 'emb:file-metadata',
       FIND_DUPLICATES: 'emb:find-duplicates',
-      CLEAR_CLUSTERS: 'emb:clear-clusters'
+      CLEAR_CLUSTERS: 'emb:clear-clusters',
+      FIND_FILES_BY_PATHS: 'emb:find-files-by-paths'
     },
     SYSTEM: {
       GET_METRICS: 'system:metrics',
@@ -243,7 +246,14 @@ jest.mock('../src/shared/constants', () => ({
     },
     CHAT: {
       QUERY: 'chat:query',
-      RESET_SESSION: 'chat:reset'
+      QUERY_STREAM: 'chat:query-stream',
+      STREAM_CHUNK: 'chat:stream-chunk',
+      STREAM_END: 'chat:stream-end',
+      RESET_SESSION: 'chat:reset',
+      LIST_CONVERSATIONS: 'chat:list-conversations',
+      GET_CONVERSATION: 'chat:get-conversation',
+      DELETE_CONVERSATION: 'chat:delete-conversation',
+      SEARCH_CONVERSATIONS: 'chat:search-conversations'
     },
     KNOWLEDGE: {
       GET_RELATIONSHIP_EDGES: 'know:edges',
@@ -571,7 +581,8 @@ describe('Preload Coverage', () => {
 
     test('exposes chat API', () => {
       expect(electronAPI.chat).toBeDefined();
-      expect(typeof electronAPI.chat.query).toBe('function');
+      expect(typeof electronAPI.chat.queryStream).toBe('function');
+      expect(typeof electronAPI.chat.cancelStream).toBe('function');
     });
 
     test('exposes knowledge API', () => {

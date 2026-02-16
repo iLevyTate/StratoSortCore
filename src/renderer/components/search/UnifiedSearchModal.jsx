@@ -28,6 +28,10 @@ import {
 } from 'lucide-react';
 
 import Modal, { ConfirmModal } from '../ui/Modal';
+import TriageModal from '../organize/TriageModal';
+import DuplicateResolutionModal from '../organize/DuplicateResolutionModal';
+import BridgeAnalysisModal from './BridgeAnalysisModal';
+import TagClusterModal from '../organize/TagClusterModal';
 import { ModalLoadingOverlay } from '../ui/LoadingSkeleton';
 import { Button, IconButton, Input, Select, StateMessage, Textarea } from '../ui';
 import HighlightedText from '../ui/HighlightedText';
@@ -56,6 +60,7 @@ import { useGraphState, useGraphKeyboardNav, useFileActions } from '../../hooks'
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { toggleSettings } from '../../store/slices/uiSlice';
 import { embeddingsIpc } from '../../services/ipc';
+import { queryStream, getConversation } from '../../services/ipc/chatIpc';
 import { NODE_TYPES, EDGE_TYPES } from './graphTypes';
 import SearchAutocomplete, { addToRecentSearches } from './SearchAutocomplete';
 import ClusterLegend from './ClusterLegend';
@@ -63,10 +68,13 @@ import EmptySearchState from './EmptySearchState';
 import GraphTour from './GraphTour';
 import GraphErrorBoundary from './GraphErrorBoundary';
 import ChatPanel from './ChatPanel';
+import ConversationSidebar from './ConversationSidebar';
+import DocumentScopePanel from './DocumentScopePanel';
 import { mapErrorToNotification } from '../../utils/errorMapping';
 import { nextRequestId, isCurrentRequest, invalidateRequests } from '../../utils/requestGuard';
 import { List as VirtualizedList } from 'react-window';
 import { UI_VIRTUALIZATION } from '../../../shared/constants';
+import { CHAT_PERSONAS, DEFAULT_CHAT_PERSONA_ID } from '../../../shared/chatPersonas';
 
 const logger = createLogger('UnifiedSearchModal');
 const SEARCH_RESULTS_ROW_HEIGHT =
@@ -181,6 +189,14 @@ const normalizeList = (value) => {
       .filter(Boolean);
   }
   return [];
+};
+
+const getParentFolderName = (filePath) => {
+  if (typeof filePath !== 'string' || !filePath) return '';
+  const normalized = filePath.replace(/\\/g, '/').replace(/\/+$/, '');
+  const parts = normalized.split('/').filter(Boolean);
+  if (parts.length < 2) return '';
+  return parts[parts.length - 2] || '';
 };
 
 const getConnectionReason = (edge) => {
@@ -925,11 +941,15 @@ export default function UnifiedSearchModal({
 
   // Chat tab state
   const [chatMessages, setChatMessages] = useState([]);
+  const [currentConversationId, setCurrentConversationId] = useState(null);
+  const [strictScope, setStrictScope] = useState(false);
+  const [documentScope, setDocumentScope] = useState([]);
   const [isChatting, setIsChatting] = useState(false);
   const [chatError, setChatError] = useState('');
   const [chatWarning, setChatWarning] = useState('');
   const [useSearchContext, setUseSearchContext] = useState(true);
   const [responseMode, setResponseMode] = useState('fast');
+  const [chatPersona, setChatPersona] = useState(DEFAULT_CHAT_PERSONA_ID);
   const chatSessionRef = useRef(null);
   const [recommendationMap, setRecommendationMap] = useState({});
   const [_isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
@@ -937,7 +957,7 @@ export default function UnifiedSearchModal({
   useEffect(() => {
     if (!isOpen) return;
     let isMounted = true;
-    const loadResponseMode = async () => {
+    const loadChatPreferences = async () => {
       try {
         const settings = await window.electronAPI?.settings?.get?.();
         if (!isMounted) return;
@@ -945,13 +965,17 @@ export default function UnifiedSearchModal({
         if (savedMode === 'fast' || savedMode === 'deep') {
           setResponseMode(savedMode);
         }
+        const savedPersona = settings?.chatPersona;
+        if (CHAT_PERSONAS.some((persona) => persona.id === savedPersona)) {
+          setChatPersona(savedPersona);
+        }
       } catch (error) {
-        logger.debug('[UnifiedSearchModal] Failed to load chat response mode', {
+        logger.debug('[UnifiedSearchModal] Failed to load chat preferences', {
           error: error?.message || String(error)
         });
       }
     };
-    loadResponseMode();
+    loadChatPreferences();
     return () => {
       isMounted = false;
     };
@@ -964,9 +988,8 @@ export default function UnifiedSearchModal({
   const [addMode, setAddMode] = useState(true);
   const [withinQuery, setWithinQuery] = useState('');
   const [debouncedWithinQuery, setDebouncedWithinQuery] = useState('');
-  // No-op for removed status bar to prevent breaking existing calls
-  // eslint-disable-next-line no-unused-vars
-  const [graphStatus, setGraphStatus] = useState('');
+  // Keep setter for status updates while intentionally ignoring current status value.
+  const [, setGraphStatus] = useState('');
 
   // Layout state
   const [autoLayout, setAutoLayout] = useState(true);
@@ -985,7 +1008,6 @@ export default function UnifiedSearchModal({
 
   // Persistence and Notes state
   const [graphNotes, setGraphNotes] = useState({}); // Map of nodeId -> note string
-  const [enableAutoClustering, setEnableAutoClustering] = useState(true);
   const [showEdgeLabels, setShowEdgeLabels] = useState(true); // Default to showing labels for clarity
   const showEdgeLabelsRef = useRef(true); // Ref for access in callbacks without dependency
   const edgeTooltipsRef = useRef(true);
@@ -1005,6 +1027,21 @@ export default function UnifiedSearchModal({
   // Guide assistant state
   const [showGuidePanel, setShowGuidePanel] = useState(false);
   const [guideInput, setGuideInput] = useState('');
+  const [showInsightsPanel, setShowInsightsPanel] = useState(true);
+  const [duplicateSummary, setDuplicateSummary] = useState({
+    groupCount: 0,
+    totalDuplicates: 0,
+    loading: false,
+    groups: [] // Store the actual groups for the modal
+  });
+
+  // Triage & Resolution Modals
+  const [isTriageModalOpen, setIsTriageModalOpen] = useState(false);
+  const [triageFiles, setTriageFiles] = useState([]);
+  const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
+  const [isBridgeModalOpen, setIsBridgeModalOpen] = useState(false);
+  const [isTagModalOpen, setIsTagModalOpen] = useState(false);
+  const [selectedClusterForTagging, setSelectedClusterForTagging] = useState(null);
 
   // Persist cluster preferences locally (simple best-effort)
   useEffect(() => {
@@ -1147,7 +1184,7 @@ export default function UnifiedSearchModal({
 
   // Focus mode state - for local graph view
   const [focusNodeId, setFocusNodeId] = useState(null);
-  const [focusDepth, setFocusDepth] = useState(2);
+  const [focusDepth, setFocusDepth] = useState(1);
 
   // Related clusters UI state (accordion + file list expansion)
   const [expandedRelatedClusters, setExpandedRelatedClusters] = useState(() => ({}));
@@ -1177,7 +1214,6 @@ export default function UnifiedSearchModal({
   }, []);
 
   // Duplicates detection state (duplicateGroups stored for potential future export feature)
-  // eslint-disable-next-line no-unused-vars
   const [duplicateGroups, setDuplicateGroups] = useState([]);
   const [isFindingDuplicates, setIsFindingDuplicates] = useState(false);
 
@@ -1204,6 +1240,8 @@ export default function UnifiedSearchModal({
   const graphDropRequestCounterRef = useRef(0);
   const chatRequestCounterRef = useRef(0);
   const chatInFlightRef = useRef(false);
+  const chatStreamRef = useRef(null);
+  const [chatStatus, setChatStatus] = useState('');
   const resultListRef = useRef(null);
   const graphContainerRef = useRef(null);
   const wasOpenRef = useRef(false);
@@ -1236,6 +1274,13 @@ export default function UnifiedSearchModal({
   useEffect(() => {
     edgesRef.current = edges;
   }, [edges]);
+  useEffect(
+    () => () => {
+      chatStreamRef.current?.cancel?.();
+      chatStreamRef.current = null;
+    },
+    []
+  );
 
   // File Actions Hook
   const { openFile, revealFile, copyPath } = useFileActions(setError);
@@ -1341,7 +1386,8 @@ export default function UnifiedSearchModal({
   }, []);
 
   const handleChatSend = useCallback(
-    async (text, overrideContextIds = null) => {
+    async (text, overrideContextIds = null, options = {}) => {
+      const { skipAddUserMessage = false } = options || {};
       const trimmed = typeof text === 'string' ? text.trim() : '';
       if (!trimmed) return;
       if (chatInFlightRef.current) {
@@ -1354,8 +1400,8 @@ export default function UnifiedSearchModal({
 
       setChatError('');
       setChatWarning('');
+      setChatStatus('Thinking...');
       setIsChatting(true);
-      setChatMessages((prev) => [...prev, { role: 'user', text: trimmed }]);
 
       try {
         const sessionId = ensureChatSession();
@@ -1363,7 +1409,12 @@ export default function UnifiedSearchModal({
 
         if (Array.isArray(overrideContextIds) && overrideContextIds.length > 0) {
           contextFileIds = overrideContextIds;
+        } else if (documentScope.length > 0) {
+          contextFileIds = documentScope.map((item) => item.id);
         } else if (useSearchContext) {
+          const resultScoreMap = new Map(
+            (searchResults || []).map((result) => [result?.id, Number(result?.score) || 0])
+          );
           contextFileIds = Array.from(
             new Set(
               (searchResults || [])
@@ -1372,13 +1423,25 @@ export default function UnifiedSearchModal({
             )
           )
             .sort((aId, bId) => {
-              const aPath = searchResults.find((r) => r?.id === aId)?.metadata?.path || '';
-              const bPath = searchResults.find((r) => r?.id === bId)?.metadata?.path || '';
-              const aRec = recommendationMap[aPath] ? 1 : 0;
-              const bRec = recommendationMap[bPath] ? 1 : 0;
-              return bRec - aRec;
+              const aScore = resultScoreMap.get(aId) || 0;
+              const bScore = resultScoreMap.get(bId) || 0;
+              return bScore - aScore;
             })
             .slice(0, 200);
+        }
+
+        if (strictScope && contextFileIds.length === 0) {
+          setChatWarning(
+            'Strict scope is enabled but no documents are selected. Add files to the scope or enable Search Context.'
+          );
+          setChatStatus('');
+          setIsChatting(false);
+          chatInFlightRef.current = false;
+          return;
+        }
+
+        if (!skipAddUserMessage) {
+          setChatMessages((prev) => [...prev, { role: 'user', text: trimmed }]);
         }
 
         logger.info('[KnowledgeOS] Chat query', {
@@ -1389,55 +1452,141 @@ export default function UnifiedSearchModal({
           topK: Math.min(8, defaultTopK)
         });
 
-        const response = await window.electronAPI?.chat?.query?.({
+        // Add placeholder assistant message
+        setChatMessages((prev) => [...prev, { role: 'assistant', text: '', isStreaming: true }]);
+
+        const stream = queryStream({
+          requestId,
           sessionId,
           query: trimmed,
           topK: Math.min(8, defaultTopK),
           mode: 'hybrid',
           contextFileIds,
-          responseMode
+          strictScope,
+          responseMode,
+          documentScopeItems: documentScope
         });
-        if (!isCurrentRequest(chatRequestCounterRef, requestId)) return;
+        chatStreamRef.current = stream;
 
-        if (!response || response.success !== true) {
-          throw new Error(response?.error || 'Chat request failed');
-        }
+        stream.on('data', (data) => {
+          if (!isCurrentRequest(chatRequestCounterRef, requestId)) return;
 
-        const nextWarning =
-          response?.meta?.warning ||
-          (response?.meta?.retrievalAvailable === false
-            ? 'Document retrieval unavailable. Responses use model knowledge only.'
-            : '');
-        setChatWarning(nextWarning);
+          if (data.type === 'status') {
+            setChatStatus(data.text);
+          } else if (data.type === 'chunk') {
+            setChatMessages((prev) => {
+              const newMessages = [...prev];
+              const lastMsg = newMessages[newMessages.length - 1];
+              if (lastMsg && lastMsg.role === 'assistant' && lastMsg.isStreaming) {
+                lastMsg.text = (lastMsg.text || '') + data.text;
+              }
+              return newMessages;
+            });
+          } else if (data.type === 'error') {
+            // FIX BUG-001: Handle error events relayed via STREAM_CHUNK
+            logger.warn('[KnowledgeOS] Chat error via stream', { error: data.error });
+            const { message } = mapErrorToNotification({ error: data.error || 'Chat failed' });
+            setChatError(message);
+            setChatWarning('');
+            setChatStatus('');
+            setChatMessages((prev) => {
+              const newMessages = [...prev];
+              const lastMsg = newMessages[newMessages.length - 1];
+              if (lastMsg && lastMsg.role === 'assistant' && lastMsg.isStreaming) {
+                newMessages.pop();
+              }
+              return newMessages;
+            });
+            setIsChatting(false);
+            chatInFlightRef.current = false;
+          } else if (data.type === 'done') {
+            const response = data.response;
+            setChatMessages((prev) => {
+              const newMessages = [...prev];
+              const lastMsg = newMessages[newMessages.length - 1];
+              if (lastMsg && lastMsg.role === 'assistant' && lastMsg.isStreaming) {
+                lastMsg.text = ''; // Clear text, use structured fields
+                lastMsg.documentAnswer = response.documentAnswer || [];
+                lastMsg.modelAnswer = response.modelAnswer || [];
+                lastMsg.followUps = response.followUps || [];
+                lastMsg.sources = data.sources || [];
+                lastMsg.meta = {
+                  contradictions: data.meta?.contradictions || [],
+                  comparisonIntent: Boolean(data.meta?.comparisonIntent),
+                  gapAnalysisIntent: Boolean(data.meta?.gapAnalysisIntent),
+                  holisticIntent: Boolean(data.meta?.holisticIntent)
+                };
+                lastMsg.isStreaming = false;
+              }
+              return newMessages;
+            });
 
-        const assistantMessage = {
-          role: 'assistant',
-          documentAnswer: response.response?.documentAnswer || [],
-          modelAnswer: response.response?.modelAnswer || [],
-          followUps: response.response?.followUps || [],
-          sources: response.sources || []
-        };
+            const nextWarning =
+              data.meta?.warning ||
+              (data.meta?.retrievalAvailable === false
+                ? 'Document retrieval unavailable. Responses use model knowledge only.'
+                : '');
+            setChatWarning(nextWarning);
+            setChatStatus('');
 
-        setChatMessages((prev) => [...prev, assistantMessage]);
+            setIsChatting(false);
+            chatInFlightRef.current = false;
+            chatStreamRef.current = null;
+          }
+        });
+
+        // FIX BUG-004: Listen for 'end' to ensure IPC listeners are cleaned up
+        stream.on('end', () => {
+          if (chatInFlightRef.current) {
+            setIsChatting(false);
+            chatInFlightRef.current = false;
+          }
+          chatStreamRef.current = null;
+        });
+
+        stream.on('error', (err) => {
+          if (!isCurrentRequest(chatRequestCounterRef, requestId)) return;
+
+          logger.warn('[KnowledgeOS] Chat query failed', { error: err?.message || err });
+          const { message } = mapErrorToNotification({ error: err?.message || err });
+          setChatError(message);
+          setChatWarning('');
+          setChatStatus('');
+
+          // Remove the streaming message
+          setChatMessages((prev) => {
+            const newMessages = [...prev];
+            const lastMsg = newMessages[newMessages.length - 1];
+            if (lastMsg && lastMsg.role === 'assistant' && lastMsg.isStreaming) {
+              newMessages.pop();
+            }
+            return newMessages;
+          });
+
+          setIsChatting(false);
+          chatInFlightRef.current = false;
+          chatStreamRef.current = null;
+        });
       } catch (chatErr) {
         if (!isCurrentRequest(chatRequestCounterRef, requestId)) return;
         logger.warn('[KnowledgeOS] Chat query failed', { error: chatErr?.message || chatErr });
         const { message } = mapErrorToNotification({ error: chatErr?.message || chatErr });
         setChatError(message);
         setChatWarning('');
-      } finally {
-        if (isCurrentRequest(chatRequestCounterRef, requestId)) {
-          setIsChatting(false);
-          chatInFlightRef.current = false;
-        }
+        setChatStatus('');
+        setIsChatting(false);
+        chatInFlightRef.current = false;
+        chatStreamRef.current?.cancel?.();
+        chatStreamRef.current = null;
       }
     },
     [
       defaultTopK,
+      documentScope,
       ensureChatSession,
-      recommendationMap,
       responseMode,
       searchResults,
+      strictScope,
       useSearchContext
     ]
   );
@@ -1453,18 +1602,211 @@ export default function UnifiedSearchModal({
     });
   }, []);
 
-  const handleChatReset = useCallback(async () => {
+  const handleChatPersonaChange = useCallback((nextPersona) => {
+    if (!CHAT_PERSONAS.some((persona) => persona.id === nextPersona)) return;
+    setChatPersona(nextPersona);
+    window.electronAPI?.settings?.save?.({ chatPersona: nextPersona }).catch((err) => {
+      logger.debug('[UnifiedSearchModal] Failed to save chat persona', {
+        error: err?.message || String(err)
+      });
+      setError('Failed to save chat persona. Please try again.');
+    });
+  }, []);
+
+  const handleAddToScope = useCallback(async (items) => {
+    const allPaths = [];
+    const unresolvedNames = [];
+    for (const item of items) {
+      const itemPath = typeof item?.path === 'string' ? item.path.trim() : '';
+      const isFolder = item?.type === 'folder';
+      if (isFolder) {
+        try {
+          const result = await window.electronAPI.files.getDirectoryContents(itemPath);
+          if (result.success && result.files) {
+            allPaths.push(...result.files.map((f) => f.path));
+          }
+        } catch (err) {
+          logger.warn('[UnifiedSearchModal] Failed to scan folder for scope', {
+            path: item?.path,
+            error: err?.message || String(err)
+          });
+        }
+      } else {
+        if (!itemPath) continue;
+        if (/[\\/]/.test(itemPath)) {
+          allPaths.push(itemPath);
+        } else {
+          unresolvedNames.push(itemPath);
+        }
+      }
+    }
+
+    try {
+      const result = await window.electronAPI.embeddings.findFilesByPaths(allPaths);
+      const directMatches = result?.success && result.results ? result.results : [];
+      const nameMatches = [];
+
+      for (const unresolvedName of unresolvedNames) {
+        try {
+          const searchResp = await window.electronAPI.embeddings.search(unresolvedName, {
+            topK: 30,
+            mode: 'hybrid'
+          });
+          if (!searchResp?.success || !Array.isArray(searchResp.results)) continue;
+          const lowerName = unresolvedName.toLowerCase();
+          const exactNameMatches = searchResp.results.filter((candidate) => {
+            const candidateName = candidate?.metadata?.name || '';
+            return typeof candidateName === 'string' && candidateName.toLowerCase() === lowerName;
+          });
+          nameMatches.push(...exactNameMatches);
+        } catch (nameMatchErr) {
+          logger.debug('[UnifiedSearchModal] Failed unresolved name lookup', {
+            name: unresolvedName,
+            error: nameMatchErr?.message || String(nameMatchErr)
+          });
+        }
+      }
+
+      const combined = [...directMatches, ...nameMatches];
+      if (combined.length > 0) {
+        const newItems = combined
+          .map((r) => ({
+            id: r.id,
+            path: r.path || r?.metadata?.path || '',
+            name: r.name || r?.metadata?.name || '',
+            type: r.type || r?.metadata?.type || 'file'
+          }))
+          .filter((item) => item.id && item.path);
+        const dedupedNewItems = Array.from(
+          new Map(newItems.map((item) => [item.id, item])).values()
+        );
+
+        // FIX BUG-010: Warn about files not in index
+        const resolvedPaths = new Set(dedupedNewItems.map((i) => i.path));
+        const droppedPaths = allPaths.filter((p) => !resolvedPaths.has(p));
+        const unresolvedFoundByName = new Set(
+          dedupedNewItems.map((item) => item.name?.toLowerCase()).filter(Boolean)
+        );
+        const droppedNames = unresolvedNames.filter(
+          (name) => !unresolvedFoundByName.has(name.toLowerCase())
+        );
+        const droppedEntries = [...droppedPaths, ...droppedNames];
+        if (droppedEntries.length > 0) {
+          const visibleNames = droppedEntries.map((p) => p.split(/[/\\]/).pop()).slice(0, 5);
+          const suffix = droppedEntries.length > 5 ? ` and ${droppedEntries.length - 5} more` : '';
+          setChatWarning(
+            `${droppedEntries.length} file(s) not in index: ${visibleNames.join(', ')}${suffix}. Index these files first.`
+          );
+        }
+
+        setDocumentScope((prev) => {
+          const existingIds = new Set(prev.map((i) => i.id));
+          const uniqueNew = dedupedNewItems.filter((i) => !existingIds.has(i.id));
+          return [...prev, ...uniqueNew];
+        });
+      }
+    } catch (e) {
+      logger.error('Failed to resolve scope files', e);
+    }
+  }, []);
+
+  const handleRemoveFromScope = useCallback((id) => {
+    setDocumentScope((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const handleClearScope = useCallback(() => {
+    setDocumentScope([]);
+  }, []);
+
+  const handleNewConversation = useCallback(() => {
+    const previousSessionId = chatSessionRef.current;
+    chatStreamRef.current?.cancel?.();
+    chatStreamRef.current = null;
     invalidateRequests(chatRequestCounterRef);
     chatInFlightRef.current = false;
+    setCurrentConversationId(null);
     setChatMessages([]);
+    setDocumentScope([]);
     setChatError('');
     setChatWarning('');
+    setChatStatus('');
     setIsChatting(false);
-    const sessionId = ensureChatSession();
-    logger.info('[KnowledgeOS] Chat session reset', { sessionId });
-    await window.electronAPI?.chat?.resetSession?.(sessionId);
+    if (previousSessionId) {
+      window.electronAPI?.chat?.resetSession?.(previousSessionId).catch((err) => {
+        logger.debug('[UnifiedSearchModal] Failed to reset chat session', {
+          sessionId: previousSessionId,
+          error: err?.message || String(err)
+        });
+      });
+    }
     chatSessionRef.current = crypto.randomUUID();
-  }, [ensureChatSession]);
+  }, []);
+
+  const handleSelectConversation = useCallback(async (id) => {
+    try {
+      const conversation = await getConversation(id);
+      if (conversation) {
+        chatStreamRef.current?.cancel?.();
+        chatStreamRef.current = null;
+        invalidateRequests(chatRequestCounterRef);
+        chatInFlightRef.current = false;
+        setCurrentConversationId(id);
+        setChatMessages(conversation.messages || []);
+        setChatError('');
+        setChatWarning('');
+        setChatStatus('');
+        setIsChatting(false);
+        chatSessionRef.current = id;
+        setDocumentScope(conversation.documentScope || []);
+      }
+    } catch (err) {
+      logger.error('[UnifiedSearchModal] Failed to load conversation', err);
+      setChatError('Failed to load conversation');
+    }
+  }, []);
+
+  const handleStopGenerating = useCallback(() => {
+    chatStreamRef.current?.cancel?.();
+    chatStreamRef.current?.cleanup?.();
+    chatStreamRef.current = null;
+    invalidateRequests(chatRequestCounterRef);
+    chatInFlightRef.current = false;
+    setChatStatus('');
+    setIsChatting(false);
+    setChatWarning('Generation stopped.');
+    setChatMessages((prev) => {
+      const next = [...prev];
+      const last = next[next.length - 1];
+      if (last && last.role === 'assistant' && last.isStreaming) {
+        next.pop();
+      }
+      return next;
+    });
+  }, []);
+
+  const handleChatReset = useCallback(async () => {
+    handleNewConversation();
+  }, [handleNewConversation]);
+
+  const handleRegenerate = useCallback(
+    async (text) => {
+      const lastUserMsg = [...chatMessages].reverse().find((m) => m.role === 'user');
+      const queryText = typeof text === 'string' && text.trim() ? text : lastUserMsg?.text;
+      if (!queryText) return;
+
+      setChatMessages((prev) => {
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (last && last.role === 'assistant') {
+          next.pop();
+        }
+        return next;
+      });
+
+      await handleChatSend(queryText, null, { skipAddUserMessage: true });
+    },
+    [chatMessages, handleChatSend]
+  );
 
   const handleChatOpenSource = useCallback(
     (source) => {
@@ -1733,7 +2075,6 @@ export default function UnifiedSearchModal({
         notes: graphNotes,
         chatMessages,
         settings: {
-          enableAutoClustering,
           autoLayout,
           showEdgeLabels
         },
@@ -1745,7 +2086,7 @@ export default function UnifiedSearchModal({
       logger.error('Failed to save graph', e);
       setError('Failed to save graph state');
     }
-  }, [nodes, edges, graphNotes, chatMessages, enableAutoClustering, autoLayout, showEdgeLabels]);
+  }, [nodes, edges, graphNotes, chatMessages, autoLayout, showEdgeLabels]);
 
   const handleLoadGraph = useCallback(() => {
     try {
@@ -1788,8 +2129,6 @@ export default function UnifiedSearchModal({
 
         // Restore settings
         if (state.settings) {
-          if (state.settings.enableAutoClustering !== undefined)
-            setEnableAutoClustering(state.settings.enableAutoClustering);
           if (state.settings.autoLayout !== undefined) setAutoLayout(state.settings.autoLayout);
           setShowEdgeLabels(loadedShowLabels);
         }
@@ -2151,6 +2490,7 @@ export default function UnifiedSearchModal({
       const { nodeId } = event.detail || {};
       if (!nodeId) return;
       setFocusNodeId(nodeId);
+      setFocusDepth(1);
 
       // Center on the focused node
       const currentNodes = nodesRef.current || [];
@@ -2639,6 +2979,61 @@ export default function UnifiedSearchModal({
   /**
    * Rename a cluster label (user override of auto-generated label)
    */
+  const handleTagCluster = useCallback((clusterData) => {
+    if (clusterData) {
+      setSelectedClusterForTagging(clusterData);
+      setIsTagModalOpen(true);
+    }
+  }, []);
+
+  const handleApplyTags = useCallback(
+    async (tags) => {
+      if (!selectedClusterForTagging) return;
+
+      const memberIds = selectedClusterForTagging.memberIds || [];
+      if (memberIds.length === 0) return;
+
+      setGraphStatus(`Applying ${tags.length} tags to ${memberIds.length} files...`);
+
+      try {
+        // Call backend to add tags
+        const result = await window.electronAPI.files.addTags(memberIds, tags);
+
+        if (!result?.success) {
+          throw new Error(result?.errors?.[0]?.error || 'Failed to add tags');
+        }
+
+        // Update local graph node to reflect new tags immediately
+        graphActions.setNodes((prev) =>
+          prev.map((n) => {
+            if (n.id === selectedClusterForTagging.id) {
+              const currentTags = n.data.commonTags || [];
+              const newTags = [...new Set([...currentTags, ...tags])];
+              return {
+                ...n,
+                data: {
+                  ...n.data,
+                  commonTags: newTags,
+                  topTerms: newTags.slice(0, 3) // Update display
+                }
+              };
+            }
+            return n;
+          })
+        );
+
+        setGraphStatus(`Applied tags to cluster: ${selectedClusterForTagging.label}`);
+      } catch (error) {
+        logger.error('Failed to apply tags', {
+          error: error?.message,
+          stack: error?.stack
+        });
+        setError('Failed to apply tags');
+      }
+    },
+    [selectedClusterForTagging, graphActions]
+  );
+
   const handleRenameCluster = useCallback(
     (clusterData) => {
       const clusterId = clusterData?.id || clusterData?.clusterId;
@@ -2890,11 +3285,47 @@ export default function UnifiedSearchModal({
         return;
       }
 
+      const normalizedGroups = (Array.isArray(result.groups) ? result.groups : []).map(
+        (group, groupIndex) => {
+          const normalizedMembers = (Array.isArray(group?.members) ? group.members : [])
+            .map((member, memberIndex) => {
+              const filePath =
+                member?.path ||
+                member?.filePath ||
+                member?.metadata?.path ||
+                member?.originalPath ||
+                '';
+              const memberId = member?.id || filePath || `dup:${groupIndex}:${memberIndex}`;
+              return {
+                id: memberId,
+                path: filePath,
+                name:
+                  member?.name ||
+                  member?.fileName ||
+                  member?.metadata?.name ||
+                  safeBasename(filePath || memberId),
+                size: Number(member?.size ?? member?.fileSize ?? member?.metadata?.size ?? 0)
+              };
+            })
+            .filter((member) => Boolean(member.id));
+
+          return {
+            ...group,
+            members: normalizedMembers
+          };
+        }
+      );
+
+      if (normalizedGroups.length === 0) {
+        setGraphStatus('No duplicate files found');
+        return;
+      }
+
       // Store duplicate groups
-      setDuplicateGroups(result.groups);
+      setDuplicateGroups(normalizedGroups);
 
       // Display duplicates as special cluster nodes
-      const dupNodes = result.groups.map((group, idx) => ({
+      const dupNodes = normalizedGroups.map((group, idx) => ({
         id: group.id,
         type: 'clusterNode',
         position: defaultNodePosition(idx),
@@ -2902,7 +3333,7 @@ export default function UnifiedSearchModal({
           kind: 'duplicate',
           label: `Duplicates (${Math.round(group.averageSimilarity * 100)}% similar)`,
           memberCount: group.memberCount,
-          memberIds: group.members.map((m) => m.id),
+          memberIds: group.members.map((m) => m.id).filter(Boolean),
           expanded: false,
           confidence: 'high',
           dominantCategory: 'Duplicate Group',
@@ -2915,6 +3346,7 @@ export default function UnifiedSearchModal({
           onOpenAllFiles: handleOpenAllFilesInCluster,
           onSearchWithinCluster: handleSearchWithinCluster,
           onRenameCluster: handleRenameCluster,
+          onTagCluster: handleTagCluster,
           // Expand/collapse callback
           onExpand: handleClusterExpand
         },
@@ -2939,6 +3371,7 @@ export default function UnifiedSearchModal({
     handleExportFileList,
     handleOpenAllFilesInCluster,
     handleSearchWithinCluster,
+    handleTagCluster,
     handleRenameCluster,
     handleClusterExpand,
     graphActions
@@ -3028,6 +3461,106 @@ export default function UnifiedSearchModal({
       connectedEdgeCounts
     };
   }, [showClusters, nodes, edges]);
+
+  const insightSummary = useMemo(() => {
+    const clusterNodes = clusterInsights.clusterNodes || [];
+    const crossClusterEdges = edges.filter((e) => e?.data?.kind === 'cross_cluster');
+
+    const bridgeDocIds = new Set();
+    crossClusterEdges.forEach((edge) => {
+      const bridgeFiles = Array.isArray(edge?.data?.bridgeFiles) ? edge.data.bridgeFiles : [];
+      bridgeFiles.forEach((file) => {
+        const key = file?.path || file?.id || String(file || '');
+        if (key) bridgeDocIds.add(key);
+      });
+    });
+
+    const scatteredFiles = clusterNodes.reduce((sum, clusterNode) => {
+      const memberCount = clusterNode?.data?.memberCount || 0;
+      const hasDominantFolder = Boolean(clusterNode?.data?.dominantFolderName);
+      return sum + (hasDominantFolder ? 0 : memberCount);
+    }, 0);
+
+    return {
+      topicClusters: clusterNodes.length,
+      bridgeDocuments: bridgeDocIds.size,
+      nearDuplicates: duplicateSummary.totalDuplicates,
+      scatteredFiles
+    };
+  }, [clusterInsights.clusterNodes, duplicateSummary.totalDuplicates, edges]);
+
+  const dailyDiscoveries = useMemo(() => {
+    const clustersById = clusterInsights.clustersById || new Map();
+    const crossClusterEdges = edges.filter((e) => e?.data?.kind === 'cross_cluster');
+
+    return crossClusterEdges
+      .map((edge) => {
+        const sourceCluster = clustersById.get(edge.source);
+        const targetCluster = clustersById.get(edge.target);
+        const sourceFolder = sourceCluster?.data?.dominantFolderName || '';
+        const targetFolder = targetCluster?.data?.dominantFolderName || '';
+        const sameFolder = sourceFolder && targetFolder && sourceFolder === targetFolder;
+        const folderDistanceBoost = sameFolder ? 0.45 : 1;
+        const similarity = Number.isFinite(edge?.data?.similarity) ? edge.data.similarity : 0;
+        const bridgeCount = edge?.data?.bridgeCount || 0;
+        const surpriseScore = similarity * 100 * folderDistanceBoost + Math.min(bridgeCount, 5) * 2;
+        return {
+          id: edge.id,
+          sourceId: edge.source,
+          targetId: edge.target,
+          sourceLabel: sourceCluster?.data?.label || edge.source,
+          targetLabel: targetCluster?.data?.label || edge.target,
+          similarity,
+          surpriseScore
+        };
+      })
+      .sort((a, b) => b.surpriseScore - a.surpriseScore)
+      .slice(0, 3);
+  }, [clusterInsights.clustersById, edges]);
+
+  const organizationalHealth = useMemo(() => {
+    const clusters = clusterInsights.clusterNodes || [];
+    const isolatedClusters = clusters.filter(
+      (node) => (clusterInsights.connectedEdgeCounts.get(node.id) || 0) === 0
+    ).length;
+    const clustersWithoutFolder = clusters.filter((node) => !node?.data?.dominantFolderName).length;
+    const scatteredFiles = insightSummary.scatteredFiles;
+    const duplicateFiles = insightSummary.nearDuplicates;
+
+    const penalty =
+      Math.min(35, scatteredFiles * 0.8) +
+      Math.min(25, duplicateFiles * 1.2) +
+      Math.min(20, isolatedClusters * 4) +
+      Math.min(20, clustersWithoutFolder * 3);
+
+    const score = Math.max(0, Math.round(100 - penalty));
+    const grade =
+      score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F';
+    const findings = [
+      {
+        key: 'scattered',
+        label: `${scatteredFiles} scattered file${scatteredFiles === 1 ? '' : 's'}`,
+        active: scatteredFiles > 0
+      },
+      {
+        key: 'duplicates',
+        label: `${duplicateFiles} near-duplicate file${duplicateFiles === 1 ? '' : 's'}`,
+        active: duplicateFiles > 0
+      },
+      {
+        key: 'isolated',
+        label: `${isolatedClusters} isolated topic group${isolatedClusters === 1 ? '' : 's'}`,
+        active: isolatedClusters > 0
+      },
+      {
+        key: 'unmapped',
+        label: `${clustersWithoutFolder} topic group${clustersWithoutFolder === 1 ? '' : 's'} without folder signal`,
+        active: clustersWithoutFolder > 0
+      }
+    ];
+
+    return { score, grade, findings };
+  }, [clusterInsights.clusterNodes, clusterInsights.connectedEdgeCounts, insightSummary]);
 
   /**
    * Guide assistant intent handler
@@ -3494,7 +4027,8 @@ export default function UnifiedSearchModal({
       const isStaleRequest = () =>
         !isCurrentRequest(graphDropRequestCounterRef, requestId) || !isMountedRef.current;
 
-      const { paths: droppedPaths } = extractDroppedFiles(e.dataTransfer);
+      const { paths, unresolvedNames = [] } = extractDroppedFiles(e.dataTransfer);
+      const droppedPaths = Array.from(new Set([...paths, ...unresolvedNames]));
       if (droppedPaths.length === 0) return;
 
       setGraphStatus(
@@ -3523,10 +4057,14 @@ export default function UnifiedSearchModal({
             continue;
           }
 
-          // Find exact path match in results
-          const matchingResult = searchResp.results.find(
-            (r) => r.metadata?.path?.toLowerCase() === filePath.toLowerCase()
-          );
+          const hasFullPath = /[\\/]/.test(filePath);
+          const normalizedDrop = String(filePath).toLowerCase();
+          const matchingResult = searchResp.results.find((r) => {
+            const candidatePath = String(r?.metadata?.path || '').toLowerCase();
+            const candidateName = String(r?.metadata?.name || '').toLowerCase();
+            if (hasFullPath) return candidatePath === normalizedDrop;
+            return candidateName === normalizedDrop;
+          });
 
           if (!matchingResult) {
             logger.debug('[Graph] No exact path match for:', filePath);
@@ -3759,6 +4297,7 @@ export default function UnifiedSearchModal({
       }
 
       const ordered = sortClustersForMode(filteredClusters);
+      const clusterById = new Map(ordered.map((cluster) => [cluster.id, cluster]));
 
       const clusterNodes = ordered.map((cluster, idx) => ({
         id: cluster.id,
@@ -3775,6 +4314,7 @@ export default function UnifiedSearchModal({
           topTerms: cluster.topTerms || cluster.commonTags || [],
           confidence: cluster.confidence || 'low',
           dominantCategory: cluster.dominantCategory || null,
+          dominantFolderName: cluster.dominantFolderName || '',
           commonTags: cluster.commonTags || [],
           timeRange: cluster.timeRange || null,
           isAutoGenerated: true,
@@ -3784,6 +4324,7 @@ export default function UnifiedSearchModal({
           onOpenAllFiles: handleOpenAllFilesInCluster,
           onSearchWithinCluster: handleSearchWithinCluster,
           onRenameCluster: handleRenameCluster,
+          onTagCluster: handleTagCluster,
           onExpand: handleClusterExpand
         },
         draggable: true
@@ -3864,29 +4405,40 @@ export default function UnifiedSearchModal({
         return isTopForSource || isTopForTarget;
       });
 
-      const clusterEdges = meaningfulEdges.map((edge) => ({
-        id: `cross:${edge.source}->${edge.target}`,
-        source: edge.source,
-        target: edge.target,
-        type: 'similarity',
-        animated: true,
-        style: {
-          stroke: '#9ca3af',
-          strokeWidth: Math.max(1, (edge.similarity || 0.5) * 1.5),
-          strokeDasharray: '4,8',
-          opacity: 0.35
-        },
-        className: 'cross-cluster-edge',
-        data: {
-          kind: 'cross_cluster',
-          similarity: edge.similarity || 0.5,
-          bridgeCount: edge.count || 0,
-          sharedTerms: Array.from(new Set(edge.sharedTerms || [])).slice(0, 3),
-          bridgeFiles: edge.bridgeFiles || [],
-          showEdgeLabels: false,
-          showEdgeTooltips: edgeTooltipsRef.current
-        }
-      }));
+      const clusterEdges = meaningfulEdges.map((edge) => {
+        const sourceCluster = clusterById.get(edge.source);
+        const targetCluster = clusterById.get(edge.target);
+        const sourceFolder = String(sourceCluster?.dominantFolderName || '');
+        const targetFolder = String(targetCluster?.dominantFolderName || '');
+        const foldersDiffer =
+          sourceFolder.length > 0 && targetFolder.length > 0 && sourceFolder !== targetFolder;
+        const isSurprise = (edge.similarity || 0) >= 0.82 && foldersDiffer;
+
+        return {
+          id: `cross:${edge.source}->${edge.target}`,
+          source: edge.source,
+          target: edge.target,
+          type: 'similarity',
+          animated: true,
+          style: {
+            stroke: '#9ca3af',
+            strokeWidth: Math.max(1, (edge.similarity || 0.5) * 1.5),
+            strokeDasharray: '4,8',
+            opacity: 0.35
+          },
+          className: 'cross-cluster-edge',
+          data: {
+            kind: 'cross_cluster',
+            similarity: edge.similarity || 0.5,
+            bridgeCount: edge.count || 0,
+            isSurprise,
+            sharedTerms: Array.from(new Set(edge.sharedTerms || [])).slice(0, 3),
+            bridgeFiles: edge.bridgeFiles || [],
+            showEdgeLabels: false,
+            showEdgeTooltips: edgeTooltipsRef.current
+          }
+        };
+      });
 
       graphActions.setNodes(clusterNodes);
       graphActions.setEdges(clusterEdges);
@@ -3924,6 +4476,7 @@ export default function UnifiedSearchModal({
       handleExportFileList,
       handleOpenAllFilesInCluster,
       handleSearchWithinCluster,
+      handleTagCluster,
       handleRenameCluster,
       handleClusterExpand
     ]
@@ -4004,15 +4557,59 @@ export default function UnifiedSearchModal({
   // Auto-load clusters when opening graph tab (if files are indexed)
   useEffect(() => {
     if (!isOpen || activeTab !== 'graph') return;
+    setShowInsightsPanel(true);
     if (hasAutoLoadedClusters.current) return;
     if (nodes.length > 0) return; // Already have nodes
     if (!stats?.files || stats.files === 0) return; // No indexed files
-    if (!enableAutoClustering) return; // Skip if auto-clustering is disabled
 
     // Auto-load clusters to give users something to explore
     hasAutoLoadedClusters.current = true;
     loadClusters();
-  }, [isOpen, activeTab, stats, nodes.length, loadClusters, enableAutoClustering]);
+  }, [isOpen, activeTab, stats, nodes.length, loadClusters]);
+
+  // Pre-compute near-duplicate insight counts for graph landing card
+  useEffect(() => {
+    let cancelled = false;
+    if (!isOpen || activeTab !== 'graph') return undefined;
+    if (!stats?.files || stats.files < 2) {
+      setDuplicateSummary((prev) => ({
+        ...prev,
+        loading: false,
+        groupCount: 0,
+        totalDuplicates: 0
+      }));
+      return undefined;
+    }
+
+    const run = async () => {
+      setDuplicateSummary((prev) => ({ ...prev, loading: true }));
+      try {
+        const result = await window.electronAPI?.embeddings?.findDuplicates?.({
+          threshold: 0.9,
+          maxResults: 20
+        });
+        if (cancelled) return;
+        if (result?.success) {
+          setDuplicateSummary({
+            loading: false,
+            groupCount: Array.isArray(result.groups) ? result.groups.length : 0,
+            totalDuplicates: Number.isFinite(result.totalDuplicates) ? result.totalDuplicates : 0
+          });
+          return;
+        }
+      } catch {
+        // Non-critical insight card enrichment failure.
+      }
+      if (!cancelled) {
+        setDuplicateSummary((prev) => ({ ...prev, loading: false }));
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, activeTab, stats?.files]);
 
   // Refresh cluster presentation when mode/filters change (no recompute needed).
   useEffect(() => {
@@ -4476,7 +5073,8 @@ export default function UnifiedSearchModal({
               label: n.data?.label || '',
               tags: n.data?.tags || [],
               category: n.data?.category || '',
-              subject: n.data?.subject || ''
+              subject: n.data?.subject || '',
+              path: n.data?.path || ''
             });
           }
         });
@@ -4492,21 +5090,33 @@ export default function UnifiedSearchModal({
             if (simEdgesResp?.success && Array.isArray(simEdgesResp.edges)) {
               const similarityEdges = simEdgesResp.edges
                 .filter((e) => finalNodeIds.has(e.source) && finalNodeIds.has(e.target))
-                .map((e) => ({
-                  id: e.id,
-                  source: e.source,
-                  target: e.target,
-                  type: 'similarity', // Use custom edge component
-                  animated: false,
-                  data: {
-                    kind: 'similarity',
-                    similarity: e.similarity,
-                    sourceData: nodeDataMap.get(e.source) || {},
-                    targetData: nodeDataMap.get(e.target) || {},
-                    showEdgeLabels: showEdgeLabelsRef.current,
-                    showEdgeTooltips: edgeTooltipsRef.current
-                  }
-                }));
+                .map((e) => {
+                  const sourceData = nodeDataMap.get(e.source) || {};
+                  const targetData = nodeDataMap.get(e.target) || {};
+                  const sourceFolder = getParentFolderName(sourceData.path);
+                  const targetFolder = getParentFolderName(targetData.path);
+                  const foldersDiffer =
+                    sourceFolder.length > 0 &&
+                    targetFolder.length > 0 &&
+                    sourceFolder !== targetFolder;
+                  const isSurprise = Number(e.similarity || 0) >= 0.85 && foldersDiffer;
+                  return {
+                    id: e.id,
+                    source: e.source,
+                    target: e.target,
+                    type: 'similarity', // Use custom edge component
+                    animated: false,
+                    data: {
+                      kind: 'similarity',
+                      similarity: e.similarity,
+                      isSurprise,
+                      sourceData,
+                      targetData,
+                      showEdgeLabels: showEdgeLabelsRef.current,
+                      showEdgeTooltips: edgeTooltipsRef.current
+                    }
+                  };
+                });
 
               if (similarityEdges.length > 0) {
                 graphActions.setEdges((prev) => {
@@ -4604,7 +5214,8 @@ export default function UnifiedSearchModal({
           label: seed.data?.label || '',
           tags: seed.data?.tags || [],
           category: seed.data?.category || '',
-          subject: seed.data?.subject || ''
+          subject: seed.data?.subject || '',
+          path: seed.data?.path || ''
         };
 
         results.forEach((r, idx) => {
@@ -4621,8 +5232,15 @@ export default function UnifiedSearchModal({
             label: node.data?.label || '',
             tags: node.data?.tags || [],
             category: node.data?.category || '',
-            subject: node.data?.subject || ''
+            subject: node.data?.subject || '',
+            path: node.data?.path || ''
           };
+
+          const sourceFolder = getParentFolderName(seedNodeData.path);
+          const targetFolder = getParentFolderName(targetNodeData.path);
+          const foldersDiffer =
+            sourceFolder.length > 0 && targetFolder.length > 0 && sourceFolder !== targetFolder;
+          const isSurprise = Number(r.score || 0) >= 0.85 && foldersDiffer;
 
           nextEdges.push({
             id: `e:${seedId}->${node.id}`,
@@ -4633,6 +5251,7 @@ export default function UnifiedSearchModal({
             data: {
               kind: 'similarity',
               similarity: r.score || 0,
+              isSurprise,
               sourceData: seedNodeData,
               targetData: targetNodeData,
               showEdgeLabels: showEdgeLabelsRef.current,
@@ -4740,27 +5359,40 @@ export default function UnifiedSearchModal({
                   label: n.data?.label || '',
                   tags: n.data?.tags || [],
                   category: n.data?.category || '',
-                  subject: n.data?.subject || ''
+                  subject: n.data?.subject || '',
+                  path: n.data?.path || ''
                 });
               });
 
               const interNodeEdges = simEdgesResp.edges
                 .filter((e) => e.source !== seedId && e.target !== seedId) // Exclude seed edges (already added)
-                .map((e) => ({
-                  id: `sim:${e.source}->${e.target}`,
-                  source: e.source,
-                  target: e.target,
-                  type: 'similarity',
-                  animated: false,
-                  data: {
-                    kind: 'similarity',
-                    similarity: e.similarity,
-                    sourceData: nodeDataMap.get(e.source) || {},
-                    targetData: nodeDataMap.get(e.target) || {},
-                    showEdgeLabels: showEdgeLabelsRef.current,
-                    showEdgeTooltips: edgeTooltipsRef.current
-                  }
-                }));
+                .map((e) => {
+                  const sourceData = nodeDataMap.get(e.source) || {};
+                  const targetData = nodeDataMap.get(e.target) || {};
+                  const sourceFolder = getParentFolderName(sourceData.path);
+                  const targetFolder = getParentFolderName(targetData.path);
+                  const foldersDiffer =
+                    sourceFolder.length > 0 &&
+                    targetFolder.length > 0 &&
+                    sourceFolder !== targetFolder;
+                  const isSurprise = Number(e.similarity || 0) >= 0.85 && foldersDiffer;
+                  return {
+                    id: `sim:${e.source}->${e.target}`,
+                    source: e.source,
+                    target: e.target,
+                    type: 'similarity',
+                    animated: false,
+                    data: {
+                      kind: 'similarity',
+                      similarity: e.similarity,
+                      isSurprise,
+                      sourceData,
+                      targetData,
+                      showEdgeLabels: showEdgeLabelsRef.current,
+                      showEdgeTooltips: edgeTooltipsRef.current
+                    }
+                  };
+                });
 
               if (interNodeEdges.length > 0) {
                 graphActions.setEdges((prev) => {
@@ -5016,6 +5648,11 @@ export default function UnifiedSearchModal({
     (_, node) => {
       if (!node?.id) return;
       graphActions.selectNode(node.id);
+      // Insight-first default: file selection narrows to local context.
+      if (node?.data?.kind === 'file') {
+        setFocusNodeId(node.id);
+        setFocusDepth(1);
+      }
     },
     [graphActions]
   );
@@ -5288,6 +5925,13 @@ export default function UnifiedSearchModal({
       })
       .sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
   }, [nodeLabelById, selectedNode?.id, selectedNodeEdges]);
+  const selectedNodeHeroConnectionText = useMemo(() => {
+    if (selectedKind !== 'file') return '';
+    const top = selectedNodeWhyConnections[0];
+    if (!top) return '';
+    const score = Math.round((top.similarity || 0) * 100);
+    return `${selectedLabel || 'This file'} is most strongly connected to ${top.targetLabel} (${score}% related) because ${String(top.detail || top.label || 'they share context').replace(/\.$/, '')}.`;
+  }, [selectedKind, selectedLabel, selectedNodeWhyConnections]);
 
   // Cluster-specific derived data
   const selectedClusterInfo = useMemo(() => {
@@ -5317,6 +5961,154 @@ export default function UnifiedSearchModal({
       neighbors: neighborNodes
     };
   }, [edges, rfNodes, selectedKind, selectedNode]);
+
+  const handleMoveFiles = useCallback(
+    async (files, destination) => {
+      try {
+        const operations = files.map((f) => ({
+          type: 'move',
+          source: f.path || f.id,
+          destination: joinPath(destination, safeBasename(f.path || f.id))
+        }));
+
+        const result = await window.electronAPI.files.performOperation(operations);
+        if (result.success) {
+          refreshStats();
+          // Remove moved files from triage list
+          setTriageFiles((prev) =>
+            prev.filter((f) => !files.find((mf) => (mf.path || mf.id) === (f.path || f.id)))
+          );
+        }
+      } catch (error) {
+        logger.error('Failed to move files', {
+          error: error?.message,
+          stack: error?.stack
+        });
+        setError('Failed to move files: ' + error.message);
+      }
+    },
+    [refreshStats]
+  );
+
+  const handleResolveDuplicates = useCallback(
+    async (resolutions) => {
+      try {
+        const filesToDelete = resolutions.flatMap((r) => r.delete.map((f) => f.path || f.id));
+        if (filesToDelete.length === 0) return;
+
+        for (const filePath of filesToDelete) {
+          await window.electronAPI.files.delete(filePath);
+        }
+
+        refreshStats();
+        // Refresh duplicates
+        handleFindDuplicates();
+      } catch (error) {
+        logger.error('Failed to resolve duplicates', {
+          error: error?.message,
+          stack: error?.stack
+        });
+        setError('Failed to resolve duplicates: ' + error.message);
+      }
+    },
+    [refreshStats, handleFindDuplicates]
+  );
+
+  const handleOpenTriage = useCallback(async () => {
+    const clusterNodes = clusterInsights.clusterNodes || [];
+    const scatteredClusters = clusterNodes.filter((n) => !n.data?.dominantFolderName);
+
+    if (scatteredClusters.length === 0) {
+      setGraphStatus('No scattered files found.');
+      return;
+    }
+
+    setGraphStatus('Loading scattered files...');
+
+    try {
+      const allFiles = [];
+      for (const cluster of scatteredClusters) {
+        const clusterId = parseInt(cluster.id.replace('cluster:', ''));
+        if (isNaN(clusterId)) continue;
+
+        const result = await window.electronAPI.embeddings.getClusterMembers(clusterId);
+        if (result.success && result.members) {
+          allFiles.push(
+            ...result.members.map((m) => ({
+              id: m.id,
+              path: m.metadata?.path || m.id,
+              name: m.metadata?.name || safeBasename(m.metadata?.path || m.id),
+              size: m.metadata?.size
+            }))
+          );
+        }
+      }
+
+      // Deduplicate by path
+      const uniqueFiles = Array.from(new Map(allFiles.map((f) => [f.path, f])).values());
+
+      setTriageFiles(uniqueFiles);
+      setIsTriageModalOpen(true);
+      setGraphStatus('');
+    } catch (e) {
+      logger.error('Failed to load scattered files', {
+        error: e?.message,
+        stack: e?.stack
+      });
+      setGraphStatus('Failed to load scattered files');
+    }
+  }, [clusterInsights.clusterNodes]);
+
+  const handleInsightStatClick = useCallback(
+    (key) => {
+      if (key === 'clusters') {
+        setShowClusters(true);
+        setActiveFilters((prev) => ({ ...prev, types: ['cluster'] }));
+        loadClustersRef.current?.();
+        return;
+      }
+      if (key === 'bridges') {
+        setShowClusters(true);
+        setBridgeOverlayEnabled(true);
+        setActiveFilters((prev) => ({ ...prev, types: ['cluster'] }));
+        loadClustersRef.current?.();
+        setIsBridgeModalOpen(true);
+        return;
+      }
+      if (key === 'duplicates') {
+        handleFindDuplicates();
+        setIsDuplicateModalOpen(true);
+        return;
+      }
+      if (key === 'scattered') {
+        handleOpenTriage();
+        return;
+      }
+    },
+    [handleFindDuplicates, handleOpenTriage]
+  );
+
+  const handleOrgFindingClick = useCallback(
+    (findingKey) => {
+      if (findingKey === 'duplicates') {
+        handleFindDuplicates();
+        setIsDuplicateModalOpen(true);
+        return;
+      }
+      if (findingKey === 'isolated') {
+        setShowClusters(true);
+        setBridgeOverlayEnabled(false);
+        setActiveFilters((prev) => ({ ...prev, types: ['cluster'] }));
+        loadClustersRef.current?.();
+        return;
+      }
+      if (findingKey === 'unmapped' || findingKey === 'scattered') {
+        handleOpenTriage();
+        return;
+      }
+    },
+    [handleFindDuplicates, handleOpenTriage]
+  );
 
   // Reset related-cluster UI when selection changes to avoid "sticky" expansion noise
   useEffect(() => {
@@ -5801,33 +6593,57 @@ export default function UnifiedSearchModal({
         {/* Chat Tab Content */}
         {activeTab === 'chat' && (
           <div className="flex-1 min-h-[60vh] surface-panel flex flex-col overflow-hidden">
-            {hasLoadedStats && !statsUnavailable && (!stats || stats.files === 0) && (
-              <div className="mx-4 mt-4 rounded-lg border border-stratosort-warning/30 bg-stratosort-warning/10 px-3 py-2 flex items-center justify-between gap-3">
-                <Text as="span" variant="tiny" className="text-system-gray-700">
-                  Embeddings are not ready yet. Build your embeddings in Settings to enable document
-                  citations and sources.
-                </Text>
-                <Button variant="secondary" size="sm" onClick={handleOpenSettings}>
-                  Open Settings
-                </Button>
+            <div className="flex h-full">
+              <ConversationSidebar
+                currentConversationId={currentConversationId}
+                onSelectConversation={handleSelectConversation}
+                onNewConversation={handleNewConversation}
+                className="w-64 shrink-0"
+              />
+              <div className="flex-1 flex flex-col min-w-0 border-l border-system-gray-200">
+                {hasLoadedStats && !statsUnavailable && (!stats || stats.files === 0) && (
+                  <div className="mx-4 mt-4 rounded-lg border border-stratosort-warning/30 bg-stratosort-warning/10 px-3 py-2 flex items-center justify-between gap-3">
+                    <Text as="span" variant="tiny" className="text-system-gray-700">
+                      Embeddings are not ready yet. Build your embeddings in Settings to enable
+                      document citations and sources.
+                    </Text>
+                    <Button variant="secondary" size="sm" onClick={handleOpenSettings}>
+                      Open Settings
+                    </Button>
+                  </div>
+                )}
+                <ChatPanel
+                  messages={chatMessages}
+                  onSend={handleChatSend}
+                  onRegenerate={handleRegenerate}
+                  onReset={handleChatReset}
+                  onStopGenerating={handleStopGenerating}
+                  isSending={isChatting}
+                  statusMessage={chatStatus}
+                  error={chatError}
+                  warning={chatWarning}
+                  useSearchContext={useSearchContext}
+                  onToggleSearchContext={(next) => setUseSearchContext(next)}
+                  strictScope={strictScope}
+                  onToggleStrictScope={setStrictScope}
+                  onOpenSource={handleChatOpenSource}
+                  onUseSourcesInGraph={handleUseSourcesInGraph}
+                  isSearching={isSearching}
+                  isLoadingStats={isLoadingStats}
+                  responseMode={responseMode}
+                  onResponseModeChange={handleResponseModeChange}
+                  chatPersona={chatPersona}
+                  onChatPersonaChange={handleChatPersonaChange}
+                />
               </div>
-            )}
-            <ChatPanel
-              messages={chatMessages}
-              onSend={handleChatSend}
-              onReset={handleChatReset}
-              isSending={isChatting}
-              error={chatError}
-              warning={chatWarning}
-              useSearchContext={useSearchContext}
-              onToggleSearchContext={(next) => setUseSearchContext(next)}
-              onOpenSource={handleChatOpenSource}
-              onUseSourcesInGraph={handleUseSourcesInGraph}
-              isSearching={isSearching}
-              isLoadingStats={isLoadingStats}
-              responseMode={responseMode}
-              onResponseModeChange={handleResponseModeChange}
-            />
+              <DocumentScopePanel
+                scope={documentScope}
+                onAddToScope={handleAddToScope}
+                onRemoveFromScope={handleRemoveFromScope}
+                onClearScope={handleClearScope}
+                className="w-64 shrink-0"
+              />
+            </div>
           </div>
         )}
 
@@ -5919,6 +6735,181 @@ export default function UnifiedSearchModal({
                       </div>
                     </div>
                   </div>
+
+                  {/* Insight Hero */}
+                  <section className="space-y-2">
+                    <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Insights</span>
+                    </Text>
+                    <div className={GRAPH_SIDEBAR_CARD}>
+                      <div className="flex items-center justify-between gap-2">
+                        <Text
+                          as="span"
+                          variant="tiny"
+                          className="font-semibold text-system-gray-700"
+                        >
+                          Insight Summary
+                        </Text>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowInsightsPanel((prev) => !prev)}
+                          className="h-7 px-2 py-0 text-xs text-system-gray-500"
+                        >
+                          {showInsightsPanel ? 'Hide' : 'Show'}
+                        </Button>
+                      </div>
+
+                      {showInsightsPanel && (
+                        <div className="mt-2 space-y-3 pt-2 border-t border-system-gray-100">
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleInsightStatClick('clusters')}
+                              className="rounded-md border border-system-gray-200 bg-white px-2 py-2 text-left hover:bg-system-gray-50"
+                            >
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="font-semibold text-system-gray-800"
+                              >
+                                {insightSummary.topicClusters}
+                              </Text>
+                              <Text as="div" variant="tiny" className="text-system-gray-500">
+                                topic clusters
+                              </Text>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleInsightStatClick('bridges')}
+                              className="rounded-md border border-system-gray-200 bg-white px-2 py-2 text-left hover:bg-system-gray-50"
+                            >
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="font-semibold text-system-gray-800"
+                              >
+                                {insightSummary.bridgeDocuments}
+                              </Text>
+                              <Text as="div" variant="tiny" className="text-system-gray-500">
+                                bridge documents
+                              </Text>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleInsightStatClick('duplicates')}
+                              className="rounded-md border border-system-gray-200 bg-white px-2 py-2 text-left hover:bg-system-gray-50"
+                            >
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="font-semibold text-system-gray-800"
+                              >
+                                {duplicateSummary.loading ? '...' : insightSummary.nearDuplicates}
+                              </Text>
+                              <Text as="div" variant="tiny" className="text-system-gray-500">
+                                near-duplicates
+                              </Text>
+                              {duplicateSummary.groupCount > 0 && (
+                                <Text as="div" variant="tiny" className="text-system-gray-400">
+                                  {duplicateSummary.groupCount} group
+                                  {duplicateSummary.groupCount === 1 ? '' : 's'}
+                                </Text>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleInsightStatClick('scattered')}
+                              className="rounded-md border border-system-gray-200 bg-white px-2 py-2 text-left hover:bg-system-gray-50"
+                            >
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="font-semibold text-system-gray-800"
+                              >
+                                {insightSummary.scatteredFiles}
+                              </Text>
+                              <Text as="div" variant="tiny" className="text-system-gray-500">
+                                scattered files
+                              </Text>
+                            </button>
+                          </div>
+
+                          {dailyDiscoveries.length > 0 && (
+                            <div className="space-y-1.5">
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="font-semibold text-system-gray-500 uppercase tracking-wider"
+                              >
+                                Daily discovery
+                              </Text>
+                              {dailyDiscoveries.map((discovery) => (
+                                <button
+                                  key={discovery.id}
+                                  type="button"
+                                  onClick={() => focusNode(discovery.targetId)}
+                                  className="w-full text-left rounded-lg border border-system-gray-200 bg-white hover:bg-system-gray-50 px-2 py-2"
+                                >
+                                  <Text as="div" variant="tiny" className="text-system-gray-700">
+                                    <span className="font-medium">{discovery.sourceLabel}</span>
+                                    <span className="mx-1 text-system-gray-400">↔</span>
+                                    <span className="font-medium">{discovery.targetLabel}</span>
+                                  </Text>
+                                  <Text
+                                    as="div"
+                                    variant="tiny"
+                                    className="text-system-gray-500 mt-0.5"
+                                  >
+                                    Unexpected connection ({Math.round(discovery.similarity * 100)}%
+                                    related)
+                                  </Text>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="rounded-lg border border-system-gray-200 bg-system-gray-50 p-2.5 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <Text
+                                as="span"
+                                variant="tiny"
+                                className="font-semibold text-system-gray-700"
+                              >
+                                Organizational Health
+                              </Text>
+                              <span className="text-xs font-semibold text-stratosort-blue">
+                                {organizationalHealth.grade} ({organizationalHealth.score})
+                              </span>
+                            </div>
+                            <div className="space-y-1">
+                              {organizationalHealth.findings
+                                .filter((finding) => finding.active)
+                                .slice(0, 3)
+                                .map((finding) => (
+                                  <button
+                                    key={finding.key}
+                                    type="button"
+                                    onClick={() => handleOrgFindingClick(finding.key)}
+                                    className="w-full text-left text-xs text-system-gray-700 rounded border border-system-gray-200 bg-white px-2 py-1.5 hover:bg-system-gray-50"
+                                  >
+                                    {finding.label}
+                                  </button>
+                                ))}
+                              {organizationalHealth.findings.every(
+                                (finding) => !finding.active
+                              ) && (
+                                <Text as="div" variant="tiny" className="text-system-gray-500">
+                                  No major organization issues detected.
+                                </Text>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </section>
 
                   {/* Add to Graph */}
                   <section className="space-y-2">
@@ -6565,7 +7556,7 @@ export default function UnifiedSearchModal({
                                 onClick={handleClearFocus}
                                 className="text-xs text-indigo-600 hover:bg-indigo-100 px-2 py-0.5 h-auto"
                               >
-                                Clear Focus
+                                Show Full Graph
                               </Button>
                             </div>
                             <div>
@@ -6685,20 +7676,6 @@ export default function UnifiedSearchModal({
                                 className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
                               />
                               Auto-layout on changes
-                            </Text>
-
-                            <Text
-                              as="label"
-                              variant="tiny"
-                              className="text-system-gray-600 flex items-center gap-2 select-none cursor-pointer"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={enableAutoClustering}
-                                onChange={(e) => setEnableAutoClustering(e.target.checked)}
-                                className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
-                              />
-                              Auto-load clusters
                             </Text>
 
                             <Text
@@ -6875,37 +7852,63 @@ export default function UnifiedSearchModal({
                     <Network className="w-10 h-10 text-stratosort-blue opacity-50" />
                   </div>
 
-                  <Heading as="h3" variant="h4" className="mb-2">
-                    Stop Searching. Start Finding.
-                  </Heading>
-                  <Text
-                    variant="small"
-                    className="text-system-gray-500 max-w-md mb-8 leading-relaxed"
-                  >
-                    Your files are scattered across folders. Clustering reveals how they naturally
-                    belong together—even files you forgot you had.
-                  </Text>
-
-                  {/* Inline Search for Empty State */}
-                  <div className="w-full max-w-sm mb-8 relative z-10">
-                    <div className="relative group">
-                      <SearchAutocomplete
-                        value={query}
-                        onChange={setQuery}
-                        onSearch={runGraphSearch}
-                        placeholder="Search for files to start..."
-                        className="shadow-md border-transparent bg-white/80 backdrop-blur-sm rounded-2xl focus-within:border-stratosort-blue/50 focus-within:shadow-lg focus-within:ring-0 transition-all duration-300"
-                        autoFocus
-                      />
+                  {stats?.files === 0 ? (
+                    <div className="max-w-md">
+                      <Heading as="h3" variant="h4" className="mb-2">
+                        Your files already know things you do not.
+                      </Heading>
+                      <Text
+                        variant="small"
+                        className="text-system-gray-500 max-w-md mb-6 leading-relaxed"
+                      >
+                        Point StratoSort at a folder to discover hidden connections, duplicate work,
+                        and organization gaps.
+                      </Text>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={handleOpenSettings}
+                        className="mx-auto justify-center px-4 py-2"
+                      >
+                        <FolderPlus className="h-4 w-4" />
+                        <span>Point StratoSort at a folder</span>
+                      </Button>
                     </div>
-                    <Text
-                      as="div"
-                      variant="tiny"
-                      className="text-system-gray-400 mt-2 flex justify-center gap-4"
-                    >
-                      <span>or drag files here from the list</span>
-                    </Text>
-                  </div>
+                  ) : (
+                    <>
+                      <Heading as="h3" variant="h4" className="mb-2">
+                        Stop Searching. Start Finding.
+                      </Heading>
+                      <Text
+                        variant="small"
+                        className="text-system-gray-500 max-w-md mb-8 leading-relaxed"
+                      >
+                        Your files are scattered across folders. Clustering reveals how they
+                        naturally belong together-even files you forgot you had.
+                      </Text>
+
+                      {/* Inline Search for Empty State */}
+                      <div className="w-full max-w-sm mb-8 relative z-10">
+                        <div className="relative group">
+                          <SearchAutocomplete
+                            value={query}
+                            onChange={setQuery}
+                            onSearch={runGraphSearch}
+                            placeholder="Search for files to start..."
+                            className="shadow-md border-transparent bg-white/80 backdrop-blur-sm rounded-2xl focus-within:border-stratosort-blue/50 focus-within:shadow-lg focus-within:ring-0 transition-all duration-300"
+                            autoFocus
+                          />
+                        </div>
+                        <Text
+                          as="div"
+                          variant="tiny"
+                          className="text-system-gray-400 mt-2 flex justify-center gap-4"
+                        >
+                          <span>or drag files here from the list</span>
+                        </Text>
+                      </div>
+                    </>
+                  )}
 
                   {/* Quick start options */}
                   {stats?.files > 0 && (
@@ -6925,25 +7928,6 @@ export default function UnifiedSearchModal({
                         </span>
                       </Button>
                     </div>
-                  )}
-
-                  {/* Empty state guidance */}
-                  {stats?.files === 0 && (
-                    <StateMessage
-                      icon={FolderPlus}
-                      tone="warning"
-                      size="sm"
-                      align="left"
-                      title="No files indexed yet"
-                      description={
-                        <>
-                          Go to Settings &rarr; Embeddings &rarr; Rebuild Files to index your
-                          analyzed files.
-                        </>
-                      }
-                      className="mb-8 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg"
-                      contentClassName="max-w-xs"
-                    />
                   )}
 
                   <Text
@@ -7262,6 +8246,18 @@ export default function UnifiedSearchModal({
                             </div>
                           )}
 
+                          {selectedNodeHeroConnectionText && (
+                            <div className="rounded-lg border border-stratosort-blue/20 bg-stratosort-blue/5 px-3 py-2">
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="text-stratosort-blue font-medium"
+                              >
+                                {selectedNodeHeroConnectionText}
+                              </Text>
+                            </div>
+                          )}
+
                           {selectedNodeWhyConnections.length > 0 && (
                             <div className="space-y-2">
                               <Text
@@ -7574,6 +8570,18 @@ export default function UnifiedSearchModal({
                               </div>
                             </div>
                           </div>
+
+                          {selectedNodeHeroConnectionText && (
+                            <div className="rounded-lg border border-stratosort-blue/20 bg-stratosort-blue/5 px-3 py-2">
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="text-stratosort-blue font-medium"
+                              >
+                                {selectedNodeHeroConnectionText}
+                              </Text>
+                            </div>
+                          )}
 
                           {selectedNodeWhyConnections.length > 0 && (
                             <div className="space-y-2">
@@ -8019,6 +9027,37 @@ export default function UnifiedSearchModal({
         confirmText="Clear Graph"
         cancelText="Cancel"
         variant="warning"
+      />
+      {/* Triage Modal */}
+      <TriageModal
+        isOpen={isTriageModalOpen}
+        onClose={() => setIsTriageModalOpen(false)}
+        files={triageFiles}
+        title="Organize Scattered Files"
+        description="These files don't belong to any specific topic cluster. Move them to a folder to organize them."
+        onMoveFiles={handleMoveFiles}
+      />
+
+      {/* Duplicate Resolution Modal */}
+      <DuplicateResolutionModal
+        isOpen={isDuplicateModalOpen}
+        onClose={() => setIsDuplicateModalOpen(false)}
+        duplicateGroups={duplicateGroups}
+        onResolve={handleResolveDuplicates}
+      />
+      {/* Bridge Analysis Modal */}
+      <BridgeAnalysisModal
+        isOpen={isBridgeModalOpen}
+        onClose={() => setIsBridgeModalOpen(false)}
+        bridges={edges.filter((e) => e.data?.kind === 'cross_cluster')}
+        clusters={clusterInsights.clusterNodes || []}
+      />
+      {/* Tag Cluster Modal */}
+      <TagClusterModal
+        isOpen={isTagModalOpen}
+        onClose={() => setIsTagModalOpen(false)}
+        clusterName={selectedClusterForTagging?.label}
+        onApplyTags={handleApplyTags}
       />
     </Modal>
   );

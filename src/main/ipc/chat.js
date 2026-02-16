@@ -44,6 +44,7 @@ function registerChatIpc(servicesOrParams) {
     const embeddingService = safeResolve(ServiceIds.PARALLEL_EMBEDDING);
     const llamaService = safeResolve(ServiceIds.LLAMA_SERVICE);
     const settingsService = safeResolve(ServiceIds.SETTINGS);
+    const chatHistoryStore = safeResolve(ServiceIds.CHAT_HISTORY_STORE);
 
     // FIX 85: Don't cache ChatService when critical deps are null.
     // If cached with null llamaService, all chat queries fail for the entire session.
@@ -62,7 +63,8 @@ function registerChatIpc(servicesOrParams) {
         vectorDbService,
         embeddingService,
         llamaService,
-        settingsService
+        settingsService,
+        chatHistoryStore
       });
     } catch (error) {
       logger.error('[Chat] Failed to initialize ChatService', {
@@ -89,12 +91,35 @@ function registerChatIpc(servicesOrParams) {
     logger,
     context: 'Chat',
     handlers: {
-      [IPC_CHANNELS.CHAT.QUERY]: {
+      [IPC_CHANNELS.CHAT.QUERY_STREAM]: {
         schema: schemas.chatQuery,
         serviceName: 'chat',
         getService: getChatServiceSafe,
         fallbackResponse: { success: false, error: 'Chat service unavailable' },
-        handler: async (event, payload, service) => service.query(payload)
+        handler: async (event, payload, service) => {
+          const sender = event.sender;
+          await service.queryStreaming({
+            ...payload,
+            onEvent: (data) => {
+              if (!sender.isDestroyed()) {
+                sender.send(IPC_CHANNELS.CHAT.STREAM_CHUNK, data);
+              }
+            }
+          });
+          if (!sender.isDestroyed()) {
+            sender.send(IPC_CHANNELS.CHAT.STREAM_END);
+          }
+        }
+      },
+      [IPC_CHANNELS.CHAT.CANCEL_STREAM]: {
+        schema: schemas.chatCancel,
+        serviceName: 'chat',
+        getService: getChatServiceSafe,
+        fallbackResponse: { success: false, error: 'Chat service unavailable' },
+        handler: async (event, payload = {}, service) => {
+          const result = await service.cancelStreamingRequest(payload);
+          return { success: true, ...result };
+        }
       },
       [IPC_CHANNELS.CHAT.RESET_SESSION]: {
         schema: schemas.chatReset,
@@ -104,6 +129,60 @@ function registerChatIpc(servicesOrParams) {
         handler: async (event, { sessionId } = {}, service) => {
           await service.resetSession(sessionId);
           return { success: true };
+        }
+      },
+      [IPC_CHANNELS.CHAT.LIST_CONVERSATIONS]: {
+        serviceName: 'chat',
+        getService: getChatServiceSafe,
+        fallbackResponse: { success: false, error: 'Chat service unavailable' },
+        handler: async (event, { limit, offset } = {}, service) => {
+          if (!service.chatHistoryStore) return { success: false, error: 'History not available' };
+          return {
+            success: true,
+            conversations: service.chatHistoryStore.listConversations(limit, offset)
+          };
+        }
+      },
+      [IPC_CHANNELS.CHAT.GET_CONVERSATION]: {
+        serviceName: 'chat',
+        getService: getChatServiceSafe,
+        fallbackResponse: { success: false, error: 'Chat service unavailable' },
+        handler: async (event, { id } = {}, service) => {
+          if (!service.chatHistoryStore) return { success: false, error: 'History not available' };
+          const conv = service.chatHistoryStore.getConversation(id);
+          return { success: true, conversation: conv };
+        }
+      },
+      [IPC_CHANNELS.CHAT.DELETE_CONVERSATION]: {
+        serviceName: 'chat',
+        getService: getChatServiceSafe,
+        fallbackResponse: { success: false, error: 'Chat service unavailable' },
+        handler: async (event, { id } = {}, service) => {
+          if (!service.chatHistoryStore) return { success: false, error: 'History not available' };
+          service.chatHistoryStore.deleteConversation(id);
+          return { success: true };
+        }
+      },
+      [IPC_CHANNELS.CHAT.SEARCH_CONVERSATIONS]: {
+        serviceName: 'chat',
+        getService: getChatServiceSafe,
+        fallbackResponse: { success: false, error: 'Chat service unavailable' },
+        handler: async (event, { query } = {}, service) => {
+          if (!service.chatHistoryStore) return { success: false, error: 'History not available' };
+          return { success: true, results: service.chatHistoryStore.searchConversations(query) };
+        }
+      },
+      [IPC_CHANNELS.CHAT.EXPORT_CONVERSATION]: {
+        serviceName: 'chat',
+        getService: getChatServiceSafe,
+        fallbackResponse: { success: false, error: 'Chat service unavailable' },
+        handler: async (event, { id } = {}, service) => {
+          if (!service.chatHistoryStore) return { success: false, error: 'History not available' };
+          if (!service.chatHistoryStore.exportAsMarkdown)
+            return { success: false, error: 'Export not supported' };
+          const markdown = service.chatHistoryStore.exportAsMarkdown(id);
+          if (!markdown) return { success: false, error: 'Conversation not found' };
+          return { success: true, markdown };
         }
       }
     }

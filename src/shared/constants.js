@@ -109,6 +109,7 @@ const IPC_CHANNELS = {
     GET_CLUSTER_MEMBERS: 'embeddings:get-cluster-members',
     GET_SIMILARITY_EDGES: 'embeddings:get-similarity-edges',
     GET_FILE_METADATA: 'embeddings:get-file-metadata',
+    FIND_FILES_BY_PATHS: 'embeddings:find-files-by-paths',
     FIND_DUPLICATES: 'embeddings:find-duplicates',
     CLEAR_CLUSTERS: 'embeddings:clear-clusters'
   },
@@ -166,8 +167,16 @@ const IPC_CHANNELS = {
   },
   // Dependencies removed - in-process AI stack only
   CHAT: {
-    QUERY: 'chat:query',
-    RESET_SESSION: 'chat:reset-session'
+    QUERY_STREAM: 'chat:query-stream',
+    CANCEL_STREAM: 'chat:cancel-stream',
+    STREAM_CHUNK: 'chat:stream-chunk',
+    STREAM_END: 'chat:stream-end',
+    RESET_SESSION: 'chat:reset-session',
+    LIST_CONVERSATIONS: 'chat:list-conversations',
+    GET_CONVERSATION: 'chat:get-conversation',
+    DELETE_CONVERSATION: 'chat:delete-conversation',
+    SEARCH_CONVERSATIONS: 'chat:search-conversations',
+    EXPORT_CONVERSATION: 'chat:export-conversation'
   },
   KNOWLEDGE: {
     GET_RELATIONSHIP_EDGES: 'knowledge:get-relationship-edges',

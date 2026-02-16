@@ -50,7 +50,7 @@ export const isFileDragEvent = (event) => {
 
 export const extractDroppedFiles = (dataTransfer) => {
   if (!dataTransfer) {
-    return { paths: [], fileList: [], itemFiles: [] };
+    return { paths: [], unresolvedNames: [], fileList: [], itemFiles: [] };
   }
 
   const fileList = Array.from(dataTransfer.files || []);
@@ -84,8 +84,13 @@ export const extractDroppedFiles = (dataTransfer) => {
     ...parsedPlainText
   ].filter(Boolean);
 
+  const unique = Array.from(new Set(collectedPaths));
+  const unresolvedNames = unique.filter((value) => !/[\\/]/.test(value));
+  const resolvedPaths = unique.filter((value) => /[\\/]/.test(value));
+
   return {
-    paths: Array.from(new Set(collectedPaths)),
+    paths: resolvedPaths,
+    unresolvedNames,
     fileList,
     itemFiles
   };

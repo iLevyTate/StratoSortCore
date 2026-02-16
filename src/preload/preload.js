@@ -7,10 +7,7 @@ const { sanitizePath } = require('../shared/pathSanitization');
 // Import performance constants for configuration values
 const { LIMITS: PERF_LIMITS, TIMEOUTS } = require('../shared/performanceConstants');
 // Import centralized security config to avoid channel definition drift
-const {
-  ALLOWED_RECEIVE_CHANNELS: SECURITY_RECEIVE_CHANNELS,
-  ALLOWED_SEND_CHANNELS: SECURITY_SEND_CHANNELS
-} = require('../shared/securityConfig');
+const { ALLOWED_RECEIVE_CHANNELS: SECURITY_RECEIVE_CHANNELS } = require('../shared/securityConfig');
 
 // === START GENERATED IPC_CHANNELS ===
 // Auto-generated from src/shared/constants.js
@@ -31,7 +28,8 @@ const IPC_CHANNELS = {
     COPY_FILE: 'files:copy',
     OPEN_FOLDER: 'files:open-folder',
     DELETE_FOLDER: 'files:delete-folder',
-    CLEANUP_ANALYSIS: 'files:cleanup-analysis'
+    CLEANUP_ANALYSIS: 'files:cleanup-analysis',
+    ADD_TAGS: 'files:add-tags'
   },
 
   // SMART_FOLDERS
@@ -131,6 +129,7 @@ const IPC_CHANNELS = {
     GET_CLUSTER_MEMBERS: 'embeddings:get-cluster-members',
     GET_SIMILARITY_EDGES: 'embeddings:get-similarity-edges',
     GET_FILE_METADATA: 'embeddings:get-file-metadata',
+    FIND_FILES_BY_PATHS: 'embeddings:find-files-by-paths',
     FIND_DUPLICATES: 'embeddings:find-duplicates',
     CLEAR_CLUSTERS: 'embeddings:clear-clusters'
   },
@@ -198,8 +197,16 @@ const IPC_CHANNELS = {
 
   // CHAT
   CHAT: {
-    QUERY: 'chat:query',
-    RESET_SESSION: 'chat:reset-session'
+    QUERY_STREAM: 'chat:query-stream',
+    CANCEL_STREAM: 'chat:cancel-stream',
+    STREAM_CHUNK: 'chat:stream-chunk',
+    STREAM_END: 'chat:stream-end',
+    RESET_SESSION: 'chat:reset-session',
+    LIST_CONVERSATIONS: 'chat:list-conversations',
+    GET_CONVERSATION: 'chat:get-conversation',
+    DELETE_CONVERSATION: 'chat:delete-conversation',
+    SEARCH_CONVERSATIONS: 'chat:search-conversations',
+    EXPORT_CONVERSATION: 'chat:export-conversation'
   },
 
   // KNOWLEDGE
@@ -288,12 +295,8 @@ const ALLOWED_CHANNELS = {
 // FIX: Use IPC_CHANNELS constant instead of hardcoded string
 const ALLOWED_RECEIVE_CHANNELS = [...SECURITY_RECEIVE_CHANNELS];
 
-// Allowed send channels (for ipcRenderer.send, not invoke)
-// FIX: Use centralized security config
-const ALLOWED_SEND_CHANNELS = [...SECURITY_SEND_CHANNELS];
-
-// Flatten allowed send channels for validation
-const ALL_SEND_CHANNELS = Object.values(ALLOWED_CHANNELS).flat();
+// Flatten allowed send channels for validation (Set for O(1) lookup and no coercion edge cases)
+const ALL_SEND_CHANNELS = new Set(Object.values(ALLOWED_CHANNELS).flat());
 
 const THROTTLED_CHANNELS = new Map([
   // Avoid request bursts on large folder scans.
@@ -341,7 +344,6 @@ class SecureIPCManager {
       channel === IPC_CHANNELS.ANALYSIS.ANALYZE_IMAGE ||
       channel === IPC_CHANNELS.ANALYSIS.ANALYZE_DOCUMENT ||
       channel === IPC_CHANNELS.ANALYSIS.ANALYZE_BATCH ||
-      channel === IPC_CHANNELS.CHAT.QUERY ||
       channel === IPC_CHANNELS.SUGGESTIONS.GET_BATCH_SUGGESTIONS ||
       channel === IPC_CHANNELS.SUGGESTIONS.GET_FILE_SUGGESTIONS ||
       channel === IPC_CHANNELS.FILES.PERFORM_OPERATION ||
@@ -551,7 +553,7 @@ class SecureIPCManager {
   async safeInvokeCore(channel, ...args) {
     try {
       // Channel validation
-      if (!ALL_SEND_CHANNELS.includes(channel)) {
+      if (!ALL_SEND_CHANNELS.has(channel)) {
         log.warn(`Blocked invoke to unauthorized channel: ${channel}`);
         throw new Error(`Unauthorized IPC channel: ${channel}`);
       }
@@ -966,6 +968,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       }),
     getFileMetadata: (fileIds) =>
       secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_FILE_METADATA, { fileIds }),
+    findFilesByPaths: (paths) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FIND_FILES_BY_PATHS, { paths }),
     findDuplicates: (options) =>
       secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FIND_DUPLICATES, options || {}),
     clearClusters: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.CLEAR_CLUSTERS)
@@ -973,9 +977,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Chat
   chat: {
-    query: (payload) => secureIPC.safeInvoke(IPC_CHANNELS.CHAT.QUERY, payload),
+    queryStream: (payload) => secureIPC.safeInvoke(IPC_CHANNELS.CHAT.QUERY_STREAM, payload),
+    cancelStream: (payload) => secureIPC.safeInvoke(IPC_CHANNELS.CHAT.CANCEL_STREAM, payload),
+    onStreamChunk: (callback) => secureIPC.safeOn(IPC_CHANNELS.CHAT.STREAM_CHUNK, callback),
+    onStreamEnd: (callback) => secureIPC.safeOn(IPC_CHANNELS.CHAT.STREAM_END, callback),
     resetSession: (sessionId) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.CHAT.RESET_SESSION, { sessionId })
+      secureIPC.safeInvoke(IPC_CHANNELS.CHAT.RESET_SESSION, { sessionId }),
+    listConversations: (limit, offset) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.CHAT.LIST_CONVERSATIONS, { limit, offset }),
+    getConversation: (id) => secureIPC.safeInvoke(IPC_CHANNELS.CHAT.GET_CONVERSATION, { id }),
+    deleteConversation: (id) => secureIPC.safeInvoke(IPC_CHANNELS.CHAT.DELETE_CONVERSATION, { id }),
+    searchConversations: (query) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.CHAT.SEARCH_CONVERSATIONS, { query }),
+    exportConversation: (id) => secureIPC.safeInvoke(IPC_CHANNELS.CHAT.EXPORT_CONVERSATION, { id })
   },
 
   // Knowledge
@@ -1126,7 +1140,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       try {
         if (!errorData || typeof errorData !== 'object' || !errorData.message) return;
         const channel = IPC_CHANNELS.SYSTEM.RENDERER_ERROR_REPORT;
-        if (!ALLOWED_SEND_CHANNELS.includes(channel)) return;
+        if (!ALL_SEND_CHANNELS.has(channel)) return;
         const sanitized = {
           ...(typeof errorData.message === 'string' && {
             message: errorData.message.slice(0, 2048)

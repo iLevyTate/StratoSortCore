@@ -717,6 +717,7 @@ if (!z) {
    */
   const chatQuerySchema = z.object({
     sessionId: z.string().min(1).max(128).optional(),
+    requestId: z.union([z.string().min(1).max(128), z.number().int().nonnegative()]).optional(),
     query: z
       .string()
       .min(2, 'Query must be at least 2 characters')
@@ -726,6 +727,18 @@ if (!z) {
     chunkTopK: z.number().int().min(1).max(2000).optional(),
     chunkWeight: z.number().min(0).max(1).optional(),
     contextFileIds: z.array(z.string().min(1).max(2048)).max(1000).optional(),
+    documentScopeItems: z
+      .array(
+        z.object({
+          id: z.string().min(1).max(2048),
+          path: z.string().min(1).max(8192),
+          name: z.string().min(1).max(2048).optional(),
+          type: z.string().min(1).max(128).optional()
+        })
+      )
+      .max(1000)
+      .optional(),
+    strictScope: z.boolean().optional().default(false),
     responseMode: z.enum(['fast', 'deep']).optional().default('fast')
   });
 
@@ -733,6 +746,14 @@ if (!z) {
    * Chat session reset parameters
    */
   const chatResetSchema = z.object({
+    sessionId: z.string().min(1).max(128).optional()
+  });
+
+  /**
+   * Chat stream cancel parameters
+   */
+  const chatCancelSchema = z.object({
+    requestId: z.union([z.string().min(1).max(128), z.number().int().nonnegative()]).optional(),
     sessionId: z.string().min(1).max(128).optional()
   });
 
@@ -818,6 +839,7 @@ if (!z) {
     // Chat
     chatQuery: chatQuerySchema,
     chatReset: chatResetSchema,
+    chatCancel: chatCancelSchema,
 
     // Backup
     backupPath: backupPathSchema

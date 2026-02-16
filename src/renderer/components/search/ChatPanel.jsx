@@ -1,11 +1,16 @@
 import React, { useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { useSelector } from 'react-redux';
-import { Send, RefreshCw, FileText, AlertTriangle, RotateCcw } from 'lucide-react';
-import { Button, Textarea, Switch, StateMessage } from '../ui';
+import { Send, RefreshCw, FileText, AlertTriangle, RotateCcw, Square } from 'lucide-react';
+import { Button, Textarea, Switch, StateMessage, Select } from '../ui';
 import { Text } from '../ui/Typography';
 import { formatDisplayPath } from '../../utils/pathDisplay';
 import { selectRedactPaths } from '../../store/selectors';
+import { CHAT_PERSONAS, DEFAULT_CHAT_PERSONA_ID } from '../../../shared/chatPersonas';
+import CitationRenderer from './CitationRenderer';
+import ContradictionCard from './ContradictionCard';
+import ComparisonTable from './ComparisonTable';
+import GapAnalysisCard from './GapAnalysisCard';
 
 function normalizeImageSource(value) {
   if (typeof value !== 'string') return '';
@@ -26,20 +31,6 @@ function normalizeImageSource(value) {
     return `file://${normalized}`;
   }
   return trimmed;
-}
-
-function buildAssistantText(message) {
-  if (!message || message.role !== 'assistant') return '';
-  if (typeof message.text === 'string' && message.text.trim().length > 0) {
-    return message.text.trim();
-  }
-  const docText = (message.documentAnswer || [])
-    .map((item) => (typeof item?.text === 'string' ? item.text.trim() : ''))
-    .filter(Boolean);
-  const modelText = (message.modelAnswer || [])
-    .map((item) => (typeof item?.text === 'string' ? item.text.trim() : ''))
-    .filter(Boolean);
-  return [...docText, ...modelText].join('\n\n');
 }
 
 function ThinkingDots() {
@@ -258,9 +249,9 @@ function AnswerBlock({ title, items, showTitle = true, sources = [], onOpenSourc
       <div className="space-y-2">
         {items.map((item, idx) => (
           <div key={`${title}-${idx}`}>
-            <Text as="div" variant="small" className="text-system-gray-800">
-              {item.text}
-            </Text>
+            <div className="text-sm text-system-gray-800 leading-relaxed">
+              <CitationRenderer text={item.text} sources={sources} onOpenSource={onOpenSource} />
+            </div>
             {item.citations && item.citations.length > 0 ? (
               <Text
                 as="div"
@@ -328,18 +319,25 @@ ChatModeToggle.propTypes = {
 export default function ChatPanel({
   messages,
   onSend,
+  onRegenerate = null,
   onReset,
+  onStopGenerating = () => {},
   isSending,
+  statusMessage,
   error = '',
   warning = '',
   useSearchContext,
   onToggleSearchContext,
+  strictScope,
+  onToggleStrictScope,
   onOpenSource,
   onUseSourcesInGraph,
   isSearching,
   isLoadingStats,
   responseMode = 'fast',
-  onResponseModeChange = () => {}
+  onResponseModeChange = () => {},
+  chatPersona = DEFAULT_CHAT_PERSONA_ID,
+  onChatPersonaChange = () => {}
 }) {
   const [input, setInput] = useState('');
   const showSearchStatus = useSearchContext && (isSearching || isLoadingStats);
@@ -376,17 +374,39 @@ export default function ChatPanel({
           {isSending && (
             <div className="inline-flex items-center gap-2 text-[11px] text-system-gray-500 bg-stratosort-blue/10 px-2 py-1 rounded-full">
               <div className="h-2 w-2 rounded-full bg-stratosort-blue animate-pulse" />
-              Assistant thinking <ThinkingDots />
+              {statusMessage || 'Assistant thinking'} <ThinkingDots />
             </div>
           )}
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-compact">
               <Text as="span" variant="tiny" className="text-system-gray-500">
-                Use search context
+                Strict
+              </Text>
+              <Switch
+                checked={strictScope}
+                onChange={onToggleStrictScope}
+                title="Only answer from selected documents"
+              />
+            </div>
+            <div className="flex items-center gap-compact">
+              <Text as="span" variant="tiny" className="text-system-gray-500">
+                Context
               </Text>
               <Switch checked={useSearchContext} onChange={onToggleSearchContext} />
             </div>
             <ChatModeToggle value={responseMode} onChange={onResponseModeChange} />
+            <Select
+              value={chatPersona}
+              onChange={(event) => onChatPersonaChange(event.target.value)}
+              className="h-7 text-xs w-32"
+              title="Choose chat persona"
+            >
+              {CHAT_PERSONAS.map((persona) => (
+                <option key={persona.id} value={persona.id}>
+                  {persona.label}
+                </option>
+              ))}
+            </Select>
           </div>
           <Button variant="ghost" size="sm" onClick={onReset} title="Reset chat">
             <RefreshCw className="w-4 h-4" />
@@ -410,7 +430,6 @@ export default function ChatPanel({
 
         {messages.map((message, idx) => {
           const isUser = message.role === 'user';
-          const assistantText = buildAssistantText(message);
           const hasDocumentAnswer =
             Array.isArray(message.documentAnswer) && message.documentAnswer.length > 0;
           const hasSources = Array.isArray(message.sources) && message.sources.length > 0;
@@ -431,11 +450,62 @@ export default function ChatPanel({
                 ) : (
                   <div className="space-y-3">
                     <div className="chat-message-text whitespace-pre-wrap">
-                      {assistantText ||
-                        (isSending
-                          ? 'Thinking...'
-                          : 'I could not find an answer in the selected documents.')}
+                      {message.text ? (
+                        <CitationRenderer
+                          text={message.text}
+                          sources={message.sources}
+                          onOpenSource={onOpenSource}
+                        />
+                      ) : (
+                        <>
+                          {message.documentAnswer?.map((item, i) => (
+                            <div key={`doc-${i}`} className="mb-2">
+                              <CitationRenderer
+                                text={item.text}
+                                sources={message.sources}
+                                onOpenSource={onOpenSource}
+                              />
+                            </div>
+                          ))}
+                          {message.modelAnswer?.map((item, i) => (
+                            <div key={`model-${i}`} className="mb-2">
+                              <CitationRenderer
+                                text={item.text}
+                                sources={message.sources}
+                                onOpenSource={onOpenSource}
+                              />
+                            </div>
+                          ))}
+                          {!message.text &&
+                            (!message.documentAnswer || message.documentAnswer.length === 0) &&
+                            (!message.modelAnswer || message.modelAnswer.length === 0) &&
+                            (isSending
+                              ? 'Thinking...'
+                              : 'I could not find an answer in the selected documents.')}
+                        </>
+                      )}
                     </div>
+                    {/* Contradiction detection */}
+                    {Array.isArray(message.meta?.contradictions) &&
+                      message.meta.contradictions.length > 0 && (
+                        <ContradictionCard
+                          contradictions={message.meta.contradictions}
+                          sources={message.sources}
+                          onOpenSource={onOpenSource}
+                        />
+                      )}
+                    {/* Comparison table for comparison queries */}
+                    {message.meta?.comparisonIntent && hasDocumentAnswer && (
+                      <ComparisonTable
+                        documentAnswer={message.documentAnswer}
+                        sources={message.sources}
+                        onOpenSource={onOpenSource}
+                      />
+                    )}
+                    {/* Gap analysis for gap queries */}
+                    {message.meta?.gapAnalysisIntent && hasSources && (
+                      <GapAnalysisCard sources={message.sources} onSend={onSend} />
+                    )}
                     {/* Only show the citations detail panel when document answers
                         actually have citation links — otherwise the collapsible sections
                         just duplicate the main text and add visual noise. */}
@@ -482,7 +552,11 @@ export default function ChatPanel({
                                   .reverse()
                                   .find((m) => m.role === 'user');
                                 if (lastUserMsg?.text) {
-                                  onSend(lastUserMsg.text);
+                                  if (typeof onRegenerate === 'function') {
+                                    onRegenerate(lastUserMsg.text);
+                                  } else {
+                                    onSend(lastUserMsg.text);
+                                  }
                                 }
                               }}
                               variant="ghost"
@@ -530,7 +604,7 @@ export default function ChatPanel({
             </div>
             <div className="chat-bubble chat-bubble-assistant">
               <div className="chat-message-text text-system-gray-500">
-                Assistant is thinking <ThinkingDots />
+                {statusMessage || 'Assistant is thinking'} <ThinkingDots />
               </div>
             </div>
           </div>
@@ -574,15 +648,23 @@ export default function ChatPanel({
               </Button>
             ) : null}
           </div>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={handleSend}
-            disabled={isSending || !input.trim()}
-          >
-            <Send className="w-4 h-4" />
-            <span>Send</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            {isSending ? (
+              <Button variant="secondary" size="sm" onClick={onStopGenerating}>
+                <Square className="w-3 h-3" />
+                <span>Stop</span>
+              </Button>
+            ) : null}
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleSend}
+              disabled={isSending || !input.trim()}
+            >
+              <Send className="w-4 h-4" />
+              <span>Send</span>
+            </Button>
+          </div>
         </div>
       </div>
     </div>
@@ -601,16 +683,23 @@ ChatPanel.propTypes = {
     })
   ).isRequired,
   onSend: PropTypes.func.isRequired,
+  onRegenerate: PropTypes.func,
   onReset: PropTypes.func.isRequired,
+  onStopGenerating: PropTypes.func,
   isSending: PropTypes.bool.isRequired,
+  statusMessage: PropTypes.string,
   error: PropTypes.string,
   warning: PropTypes.string,
   useSearchContext: PropTypes.bool.isRequired,
   onToggleSearchContext: PropTypes.func.isRequired,
+  strictScope: PropTypes.bool,
+  onToggleStrictScope: PropTypes.func,
   onOpenSource: PropTypes.func.isRequired,
   onUseSourcesInGraph: PropTypes.func.isRequired,
   isSearching: PropTypes.bool,
   isLoadingStats: PropTypes.bool,
   responseMode: PropTypes.oneOf(['fast', 'deep']),
-  onResponseModeChange: PropTypes.func
+  onResponseModeChange: PropTypes.func,
+  chatPersona: PropTypes.string,
+  onChatPersonaChange: PropTypes.func
 };
