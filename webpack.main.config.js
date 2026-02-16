@@ -127,14 +127,21 @@ module.exports = (env, argv) => {
       filename: '[name].js',
       clean: false
     },
-    target: 'web', // Use 'web' to force bundling of node modules like path
+    target: 'electron-preload',
     resolve: {
       ...common.resolve,
+      alias: {
+        ...common.resolve?.alias,
+        'node:os': require.resolve('os-browserify/browser'),
+        'node:path': require.resolve('path-browserify'),
+        'node:process': require.resolve('process/browser')
+      },
       fallback: {
         ...common.resolve?.fallback,
         path: require.resolve('path-browserify'),
         fs: false, // Ensure fs is disabled
-        os: false
+        os: require.resolve('os-browserify/browser'),
+        process: require.resolve('process/browser')
       }
     },
     externals: {

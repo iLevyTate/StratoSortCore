@@ -462,7 +462,9 @@ function createMainWindow() {
       pendingTimers.push(id);
       return id;
     };
-    win.once('closed', () => pendingTimers.forEach(clearTimeout));
+    const clearPendingTimers = () => pendingTimers.forEach(clearTimeout);
+    win.once('closed', clearPendingTimers);
+    win.once('destroy', clearPendingTimers);
 
     // CRITICAL FIX: Add delay before showing window to prevent Mojo interface errors
     track(
@@ -532,13 +534,12 @@ function createMainWindow() {
   });
 
   // Capture renderer console output for diagnosis (always enabled)
-  // Electron 40 still passes positional args (deprecated); fall back to event properties
-  win.webContents.on('console-message', (event, levelArg, messageArg, lineArg, sourceIdArg) => {
-    const level = typeof levelArg === 'number' ? levelArg : (event?.level ?? 0);
-    const message =
-      typeof messageArg === 'string' ? messageArg : (event?.message ?? String(messageArg));
-    const line = typeof lineArg === 'number' ? lineArg : (event?.line ?? 0);
-    const sourceId = typeof sourceIdArg === 'string' ? sourceIdArg : (event?.sourceId ?? '');
+  // Electron 40+ passes properties on the event object
+  win.webContents.on('console-message', (event) => {
+    const level = event.level ?? 0;
+    const message = event.message ?? '';
+    const line = event.line ?? 0;
+    const sourceId = event.sourceId ?? '';
     const prefix = '[RENDERER]';
     const meta = { line, sourceId: sourceId ? sourceId.split('/').pop() : '' };
 
@@ -602,7 +603,13 @@ function createMainWindow() {
         })
         .catch(() => {});
     }, 5000);
-    win.once('closed', () => clearTimeout(_healthCheckTimerId));
+    const clearHealthCheck = () => {
+      if (_healthCheckTimerId) {
+        clearTimeout(_healthCheckTimerId);
+      }
+    };
+    win.once('closed', clearHealthCheck);
+    win.once('destroy', clearHealthCheck);
   });
 
   // Block navigation attempts within the app (e.g., dropped links or external redirects)
