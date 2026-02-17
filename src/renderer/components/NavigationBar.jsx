@@ -426,8 +426,6 @@ function NavigationBar() {
   const dispatch = useAppDispatch();
   const currentPhase = useAppSelector((state) => state.ui.currentPhase);
   const isOrganizing = useAppSelector((state) => state.ui.isOrganizing);
-  // FIX: Use analysis slice as single source of truth for isAnalyzing
-  const isAnalyzing = useAppSelector((state) => state.analysis.isAnalyzing);
   const isLoading = useAppSelector((state) => state.ui.isLoading);
   const health = useAppSelector((state) => state.system.health);
   const connectionStatus = useMemo(() => {
@@ -569,7 +567,8 @@ function NavigationBar() {
   }, [actions]);
 
   // Check if navigation should be blocked
-  const isBlockedByOperation = isOrganizing || isAnalyzing || isLoading;
+  // Keep top-level navigation responsive; analysis state can become stale or run in background.
+  const isBlockedByOperation = isOrganizing || isLoading;
   // Only show a nav spinner for loading states other than analysis to avoid duplicate indicators
   const navSpinnerActive = isOrganizing || isLoading;
 
