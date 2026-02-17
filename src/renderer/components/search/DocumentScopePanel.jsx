@@ -92,14 +92,13 @@ export default function DocumentScopePanel({
   );
 
   const handleAddClick = async () => {
-    // Use the existing files.select() API from the preload bridge
     const result = await window.electronAPI?.files?.select?.();
 
-    if (result && Array.isArray(result) && result.length > 0) {
-      const files = result.map((p) => ({
-        path: p,
-        name: p.split(/[/\\]/).pop(),
-        type: 'unknown'
+    if (result?.success && Array.isArray(result.files) && result.files.length > 0) {
+      const files = result.files.map((f) => ({
+        path: f.path,
+        name: f.name || f.path.split(/[/\\]/).pop(),
+        type: 'file'
       }));
       onAddToScope(files);
     }
