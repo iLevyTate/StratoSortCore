@@ -1531,7 +1531,12 @@ class OramaVectorService extends EventEmitter {
       });
       return {
         success: false,
-        count: files.length,
+        count: 0,
+        failed: files.map((f) => ({
+          id: f.id || f.path,
+          error: 'dimension_mismatch',
+          requiresRebuild: true
+        })),
         error: 'dimension_mismatch',
         requiresRebuild: true
       };
@@ -2198,7 +2203,13 @@ class OramaVectorService extends EventEmitter {
       });
       return {
         success: false,
-        count: folders.length,
+        count: 0,
+        skipped: [],
+        failed: folders.map((f) => ({
+          id: f.id,
+          error: 'dimension_mismatch',
+          requiresRebuild: true
+        })),
         error: 'dimension_mismatch',
         requiresRebuild: true
       };

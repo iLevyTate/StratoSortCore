@@ -300,8 +300,8 @@ ${truncated}`;
     });
 
     // FIX MED #11: Reduce retries to prevent exceeding outer timeout
-    // With 60s outer timeout and ~20s per LLM call, 2 retries (3 attempts) + delays fits within budget
-    // Previous: 3 retries with 4s max delay could exceed 60s (4 attempts × 20s + 7s delays = 87s)
+    // With 300s outer timeout (AI_ANALYSIS_LONG) and variable LLM call times,
+    // 2 retries (3 attempts) provides a safe buffer even for slower CPU inference.
     try {
       const generateDocumentText = (promptText, requestedMaxTokens, dedupeKey = null) =>
         withAbortableTimeout(
@@ -338,9 +338,20 @@ ${truncated}`;
         maxTokens: usedMaxTokens
       });
       let response;
+      const inferenceStartTime = Date.now();
       try {
         response = await generateDocumentText(prompt, usedMaxTokens, deduplicationKey);
+        logger.info('[documentLlm] LLM inference completed', {
+          fileName: originalFileName,
+          durationMs: Date.now() - inferenceStartTime,
+          model: modelToUse
+        });
       } catch (error) {
+        logger.warn('[documentLlm] LLM inference failed or timed out', {
+          fileName: originalFileName,
+          durationMs: Date.now() - inferenceStartTime,
+          error: error.message
+        });
         if (isPromptOverflowError(error)) {
           // Context-shift compression can fail when combined prompt/system text is too large.
           // Retry once with smaller content and a tighter generation budget.
@@ -441,7 +452,8 @@ ${truncated}`;
             if (!parsedJson) {
               logger.warn('[documentLlm] JSON repair and strict retry failed, using fallback', {
                 fileName: originalFileName,
-                model: modelToUse
+                model: modelToUse,
+                reason: 'Could not extract valid JSON from any attempt'
               });
               return {
                 error: 'Failed to parse document analysis JSON from AI engine.',

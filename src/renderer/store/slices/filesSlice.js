@@ -89,9 +89,9 @@ const filesSlice = createSlice({
       const { path, state: fileState, metadata } = action.payload;
       const safeMetadata = serializeData(metadata);
       state.fileStates[path] = {
+        ...safeMetadata,
         state: fileState,
-        timestamp: new Date().toISOString(),
-        ...safeMetadata
+        timestamp: new Date().toISOString()
       };
     },
     setFileStates: (state, action) => {
@@ -139,20 +139,19 @@ const filesSlice = createSlice({
       const { oldPaths, newPaths } = action.payload;
       if (!Array.isArray(oldPaths) || !Array.isArray(newPaths)) return;
 
-      // FIX: Handle partial failures gracefully instead of silently returning
-      // If arrays have different lengths, still update what we can (matches analysisSlice behavior)
+      // Enforce atomicity: never perform partial path remaps.
       if (oldPaths.length !== newPaths.length) {
-        logger.warn('[filesSlice] updateFilePathsAfterMove: array length mismatch', {
+        logger.error('[filesSlice] updateFilePathsAfterMove: array length mismatch, skipping', {
           oldPathsLength: oldPaths.length,
           newPathsLength: newPaths.length,
-          action: 'proceeding with partial update'
+          action: 'no-op to preserve state consistency'
         });
+        return;
       }
 
-      // Create path mapping using minimum length to avoid undefined entries
-      const minLength = Math.min(oldPaths.length, newPaths.length);
+      // Create path mapping only after payload validation passes.
       const pathMap = {};
-      for (let i = 0; i < minLength; i++) {
+      for (let i = 0; i < oldPaths.length; i++) {
         pathMap[oldPaths[i]] = newPaths[i];
       }
 

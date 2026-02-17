@@ -201,7 +201,7 @@ function createFailedItemHandler(config) {
       if (deduped.length === 0) {
         return;
       }
-      logger.info(`[EmbeddingQueue] Re-queuing ${itemsToRetry.length} failed items for retry`);
+      logger.info(`[EmbeddingQueue] Re-queuing ${deduped.length} failed items for retry`);
       // Prepend to queue for priority processing
       // Use splice(0, 0, ...batch) in chunks to avoid stack overflow and O(n*m) unshift loop
       queue.splice(0, 0, ...deduped);

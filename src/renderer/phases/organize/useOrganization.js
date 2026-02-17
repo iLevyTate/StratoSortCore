@@ -10,8 +10,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { PHASES } from '../../../shared/constants';
 import { createLogger } from '../../../shared/logger';
 import { createOrganizeBatchAction } from '../../components/UndoRedoSystem';
-import { updateResultPathsAfterMove } from '../../store/slices/analysisSlice';
-import { updateFilePathsAfterMove } from '../../store/slices/filesSlice';
+import { atomicUpdateFilePathsAfterMove } from '../../store/slices/filesSlice';
 
 const logger = createLogger('OrganizePhase-Organization');
 /**
@@ -485,8 +484,10 @@ export function useOrganization({
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      // Guarantee global organizing flag is cleared on unmount/interrupted flows.
+      setOrganizingState(false);
     };
-  }, []);
+  }, [setOrganizingState]);
 
   const handleOrganizeFiles = useCallback(
     async (filesToOrganize = null) => {
@@ -518,8 +519,6 @@ export function useOrganization({
             'warning'
           );
           logger.warn('[ORGANIZE] No files to process - returning early');
-          setIsOrganizing(false);
-          setOrganizingState(false);
           return;
         }
 
@@ -561,9 +560,6 @@ export function useOrganization({
             invalidCount: invalidOperations.length,
             sample: invalidOperations.slice(0, 3)
           });
-          setIsOrganizing(false);
-          setOrganizingState(false);
-          setBatchProgress({ current: 0, total: 0, currentFile: '' });
           return;
         }
 
@@ -595,9 +591,6 @@ export function useOrganization({
             4000,
             'organize-no-operations'
           );
-          setIsOrganizing(false);
-          setOrganizingState(false);
-          setBatchProgress({ current: 0, total: 0, currentFile: '' });
           return;
         }
 
@@ -624,9 +617,6 @@ export function useOrganization({
               'organize-conflicts'
             );
             logger.warn('[ORGANIZE] Destination conflicts detected:', conflicts);
-            setIsOrganizing(false);
-            setOrganizingState(false);
-            setBatchProgress({ current: 0, total: 0, currentFile: '' });
             return;
           }
         } catch (previewError) {
@@ -691,8 +681,7 @@ export function useOrganization({
               if (dispatch && successfulMoves.length > 0) {
                 const oldPaths = successfulMoves.map((r) => r.source);
                 const newPaths = successfulMoves.map((r) => r.destination);
-                dispatch(updateResultPathsAfterMove({ oldPaths, newPaths }));
-                dispatch(updateFilePathsAfterMove({ oldPaths, newPaths }));
+                dispatch(atomicUpdateFilePathsAfterMove({ oldPaths, newPaths }));
               }
               if (uiResults.length > 0) {
                 // FIX H-3: Use addOrganizedFiles to append to current state safely (avoids stale closures)
@@ -790,8 +779,7 @@ export function useOrganization({
                     sampleNew: newPaths[0]
                   });
 
-                  dispatch(updateResultPathsAfterMove({ oldPaths, newPaths }));
-                  dispatch(updateFilePathsAfterMove({ oldPaths, newPaths }));
+                  dispatch(atomicUpdateFilePathsAfterMove({ oldPaths, newPaths }));
                 }
               }
 
@@ -882,8 +870,7 @@ export function useOrganization({
               if (dispatch && redoMoves.length > 0) {
                 const oldPaths = redoMoves.map((r) => r.source);
                 const newPaths = redoMoves.map((r) => r.destination);
-                dispatch(updateResultPathsAfterMove({ oldPaths, newPaths }));
-                dispatch(updateFilePathsAfterMove({ oldPaths, newPaths }));
+                dispatch(atomicUpdateFilePathsAfterMove({ oldPaths, newPaths }));
               }
 
               if (uiResults.length > 0) {
@@ -1005,9 +992,10 @@ export function useOrganization({
           addNotification(`Organization failed: ${error.message}`, 'error');
         }
       } finally {
+        // Always clear global organizing flag, even if the phase unmounted mid-operation.
+        setOrganizingState(false);
         if (isMountedRef.current) {
           setIsOrganizing(false);
-          setOrganizingState(false);
           setBatchProgress({ current: 0, total: 0, currentFile: '' });
         }
       }

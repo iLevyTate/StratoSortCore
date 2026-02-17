@@ -313,7 +313,7 @@ describe('filesSlice', () => {
       expect(result.fileStates['/old/a.pdf']).toBeUndefined();
     });
 
-    test('handles partial update when array lengths differ', () => {
+    test('does not mutate state when array lengths differ', () => {
       const state = {
         ...initialState,
         selectedFiles: [{ path: '/old/a.pdf' }, { path: '/old/b.pdf' }]
@@ -327,7 +327,7 @@ describe('filesSlice', () => {
         })
       );
 
-      expect(result.selectedFiles[0].path).toBe('/new/a.pdf');
+      expect(result.selectedFiles[0].path).toBe('/old/a.pdf');
       expect(result.selectedFiles[1].path).toBe('/old/b.pdf');
     });
 

@@ -86,71 +86,24 @@ const CRITICAL_ACTION_CREATORS = new Set([
   updateHealth,
   addNotification
 ]);
-
-// FIX Bug 7: localStorage key for persisting critical events that would be lost
-const CRITICAL_EVENTS_STORAGE_KEY = 'ipc_critical_events';
+let droppedCriticalEventCount = 0;
 
 /**
- * Persist critical event to localStorage when queue overflows
- * This prevents complete loss of important state updates
- * @param {Function} actionCreator - The Redux action creator
- * @param {*} data - The event payload
- */
-function persistCriticalEvent(actionCreator, data) {
-  if (!CRITICAL_ACTION_CREATORS.has(actionCreator)) return;
-
-  try {
-    const parsed = JSON.parse(localStorage.getItem(CRITICAL_EVENTS_STORAGE_KEY) || '[]');
-    const stored = Array.isArray(parsed) ? parsed : [];
-    stored.push({
-      actionType: actionCreator?.name || 'unknown',
-      data,
-      timestamp: Date.now()
-    });
-    // Limit persisted events to prevent localStorage bloat
-    if (stored.length > 50) stored.shift();
-    localStorage.setItem(CRITICAL_EVENTS_STORAGE_KEY, JSON.stringify(stored));
-  } catch {
-    // localStorage may be unavailable or full - best effort only
-  }
-}
-
-/**
- * Recover persisted critical events after store initialization
- * Should be called after markStoreReady
+ * Emit a startup warning if critical events were dropped due to queue pressure.
+ * Should be called after markStoreReady.
  */
 export function recoverPersistedCriticalEvents() {
   if (!storeRef || !isStoreReady) return;
-
-  try {
-    const parsed = JSON.parse(localStorage.getItem(CRITICAL_EVENTS_STORAGE_KEY) || '[]');
-    const stored = Array.isArray(parsed) ? parsed : [];
-    if (stored.length === 0) return;
-
-    logger.info('[IPC Middleware] Recovering persisted critical events', { count: stored.length });
-
-    // Clear immediately to prevent duplicate recovery
-    localStorage.removeItem(CRITICAL_EVENTS_STORAGE_KEY);
-
-    // Process persisted events (they're informational at this point)
-    // Only dispatch a single notification about missed events
-    if (stored.length > 0) {
-      storeRef.dispatch(
-        addNotification({
-          message: `${stored.length} updates were queued during startup.`,
-          severity: 'info',
-          duration: 5000
-        })
-      );
-    }
-  } catch {
-    // Recovery failed - clear corrupted data
-    try {
-      localStorage.removeItem(CRITICAL_EVENTS_STORAGE_KEY);
-    } catch {
-      // Ignore
-    }
-  }
+  if (droppedCriticalEventCount <= 0) return;
+  const droppedCount = droppedCriticalEventCount;
+  droppedCriticalEventCount = 0;
+  storeRef.dispatch(
+    addNotification({
+      message: `${droppedCount} critical updates were dropped during startup pressure.`,
+      severity: 'warning',
+      duration: 6000
+    })
+  );
 }
 
 /**
@@ -178,12 +131,9 @@ function safeDispatch(actionCreator, data) {
       if (dropIndex >= 0) {
         eventQueue.splice(dropIndex, 1);
       } else {
-        // FIX Bug 7: When forced to drop a critical event, persist it to localStorage
-        // so it can be recovered after the store initializes
+        // Queue is fully critical. Drop oldest and track a visible warning for startup.
         const droppedEvent = eventQueue.shift();
-        if (droppedEvent) {
-          persistCriticalEvent(droppedEvent.actionCreator, droppedEvent.data);
-        }
+        if (droppedEvent) droppedCriticalEventCount += 1;
       }
     };
 
@@ -301,6 +251,8 @@ const ipcMiddleware = (store) => {
         const { valid, data: validatedData } = validateIncomingEvent('operation-progress', data);
         if (!valid) return;
         safeDispatch(updateProgress, normalizeAnalysisProgressPayload(validatedData));
+        // Re-dispatch as DOM CustomEvent so runBatchPath's progress listener receives it
+        window.dispatchEvent(new CustomEvent('operation-progress', { detail: validatedData }));
       });
       if (progressCleanup) cleanupFunctions.push(progressCleanup);
     } else {
@@ -569,6 +521,7 @@ export const cleanupIpcListeners = (isTeardown = false) => {
   if (isTeardown) {
     isStoreReady = false;
     eventQueue = [];
+    droppedCriticalEventCount = 0;
     storeRef = null;
     // FIX: Reset overflow warning flag so it can fire again after reinit
     if (typeof safeDispatch !== 'undefined') {

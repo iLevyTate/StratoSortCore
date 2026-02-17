@@ -1048,9 +1048,10 @@ class OrganizationSuggestionServiceCore {
         return 0;
       }
 
-      const successful = await this.vectorDb.batchUpsertFolders(folderPayloads);
-      logger.debug(`[OrganizationSuggestionService] Upserted ${successful} folder embeddings`);
-      return successful;
+      const result = await this.vectorDb.batchUpsertFolders(folderPayloads);
+      const upsertedCount = result?.count ?? 0;
+      logger.debug(`[OrganizationSuggestionService] Upserted ${upsertedCount} folder embeddings`);
+      return upsertedCount;
     } catch (error) {
       logger.warn('[OrganizationSuggestionService] Failed to ensure embeddings:', error);
       return 0;

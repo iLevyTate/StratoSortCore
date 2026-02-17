@@ -70,6 +70,12 @@ const analysisSlice = createSlice({
           ...payload,
           lastActivity: Date.now()
         };
+      } else if (payload.lastActivity) {
+        // Always keep lastActivity fresh for liveness detection, even when
+        // progress counts haven't changed. Without this, heartbeat-only
+        // updates are silently discarded and the stale-lock detector at
+        // useAnalysis.js:700-715 can false-trigger during slow inference.
+        state.analysisProgress = { ...current, lastActivity: Date.now() };
       }
       if (payload.currentFile) {
         state.currentAnalysisFile = payload.currentFile;
@@ -180,23 +186,21 @@ const analysisSlice = createSlice({
       const { oldPaths, newPaths } = action.payload;
       if (!Array.isArray(oldPaths) || !Array.isArray(newPaths)) return;
 
-      // FIX: Handle partial failures gracefully instead of silently skipping
-      // If arrays have different lengths, still update what we can
+      // Enforce atomicity: never perform partial path remaps.
       if (oldPaths.length !== newPaths.length) {
-        // Log warning but continue with partial update using the shorter length
-        // This handles cases where a batch move operation partially fails
-        logger.warn('[analysisSlice] updateResultPathsAfterMove: array length mismatch', {
-          oldPathsLength: oldPaths.length,
-          newPathsLength: newPaths.length,
-          action: 'proceeding with partial update'
-        });
+        logger.error(
+          '[analysisSlice] updateResultPathsAfterMove: array length mismatch, skipping',
+          {
+            oldPathsLength: oldPaths.length,
+            newPathsLength: newPaths.length,
+            action: 'no-op to preserve state consistency'
+          }
+        );
+        return;
       }
 
-      // Create path mapping using the minimum length to avoid undefined entries
-      const minLength = Math.min(oldPaths.length, newPaths.length);
-      const pathMap = Object.fromEntries(
-        oldPaths.slice(0, minLength).map((oldPath, i) => [oldPath, newPaths[i]])
-      );
+      // Create path mapping only after payload validation passes.
+      const pathMap = Object.fromEntries(oldPaths.map((oldPath, i) => [oldPath, newPaths[i]]));
 
       // Update results array with new paths
       state.results = state.results.map((result) => {

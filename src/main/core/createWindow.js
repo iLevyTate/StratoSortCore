@@ -12,6 +12,7 @@ const { isDevelopment, getEnvBool } = require('../../shared/configDefaults');
 
 const isDev = isDevelopment();
 const isMac = process.platform === 'darwin';
+const isWindows = process.platform === 'win32';
 
 function getAppRootPath() {
   // Works in both dev (repo root) and packaged (app.asar)
@@ -38,6 +39,19 @@ const getAssetPath = (...paths) => {
     : path.join(getAppRootPath(), 'assets');
   return path.join(base, ...paths);
 };
+
+function getWindowIconCandidatePaths() {
+  if (isWindows) {
+    // Use ICO first on Windows to avoid falling back to Electron's default icon.
+    return [getAssetPath('icons', 'win', 'icon.ico'), getAssetPath('stratosort-logo.png')];
+  }
+
+  if (process.platform === 'linux') {
+    return [getAssetPath('icons', 'png', '512x512.png'), getAssetPath('stratosort-logo.png')];
+  }
+
+  return [getAssetPath('stratosort-logo.png')];
+}
 
 function getPreloadPath() {
   // In dev and in packaged builds, main/preload are emitted to `dist/`
@@ -247,23 +261,33 @@ function createMainWindow() {
     );
   }
 
-  // Load app icon with nativeImage for reliable cross-platform display
-  const iconPath = getAssetPath('stratosort-logo.png');
+  // Load app icon with platform-specific preference order.
+  const iconPaths = getWindowIconCandidatePaths();
   let appIcon;
   try {
-    if (fs.existsSync(iconPath)) {
-      appIcon = nativeImage.createFromPath(iconPath);
-      if (appIcon.isEmpty()) {
-        logger.warn('App icon loaded but image is empty', { iconPath });
-        appIcon = undefined;
-      } else {
-        logger.debug('App icon loaded', { iconPath, size: appIcon.getSize() });
+    for (const iconPath of iconPaths) {
+      if (!fs.existsSync(iconPath)) {
+        continue;
       }
-    } else {
-      logger.warn('App icon not found, using Electron default', { iconPath });
+
+      const candidate = nativeImage.createFromPath(iconPath);
+      if (candidate.isEmpty()) {
+        logger.warn('App icon loaded but image is empty', { iconPath });
+        continue;
+      }
+
+      appIcon = candidate;
+      logger.debug('App icon loaded', { iconPath, size: candidate.getSize() });
+      break;
+    }
+
+    if (!appIcon) {
+      logger.warn('No usable app icon found, using Electron default', {
+        attemptedPaths: iconPaths
+      });
     }
   } catch (err) {
-    logger.warn('Failed to load app icon', { iconPath, error: err.message });
+    logger.warn('Failed to load app icon', { attemptedPaths: iconPaths, error: err.message });
   }
 
   const win = new BrowserWindow({
@@ -307,6 +331,14 @@ function createMainWindow() {
   });
 
   logger.debug('BrowserWindow created');
+
+  if (appIcon && typeof win.setIcon === 'function') {
+    try {
+      win.setIcon(appIcon);
+    } catch (error) {
+      logger.debug('Failed to force-apply BrowserWindow icon', { error: error.message });
+    }
+  }
 
   // Manage window state with cleanup tracking
   mainWindowState.manage(win);

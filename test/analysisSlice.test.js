@@ -20,7 +20,8 @@ import analysisReducer, {
   analysisFailure,
   stopAnalysis,
   setAnalysisResults,
-  resetAnalysisState
+  resetAnalysisState,
+  updateResultPathsAfterMove
 } from '../src/renderer/store/slices/analysisSlice';
 
 describe('analysisSlice', () => {
@@ -222,6 +223,47 @@ describe('analysisSlice', () => {
       const result = analysisReducer(state, setAnalysisResults(newResults));
 
       expect(result.results).toEqual(newResults);
+    });
+  });
+
+  describe('updateResultPathsAfterMove', () => {
+    test('updates result paths when payload arrays are valid', () => {
+      const state = {
+        ...initialState,
+        results: [{ path: '/old/a.pdf', name: 'a.pdf', analysis: { category: 'docs' } }]
+      };
+
+      const result = analysisReducer(
+        state,
+        updateResultPathsAfterMove({
+          oldPaths: ['/old/a.pdf'],
+          newPaths: ['/new/a.pdf']
+        })
+      );
+
+      expect(result.results[0].path).toBe('/new/a.pdf');
+      expect(result.results[0].name).toBe('a.pdf');
+    });
+
+    test('does not mutate results when payload arrays mismatch', () => {
+      const state = {
+        ...initialState,
+        results: [
+          { path: '/old/a.pdf', name: 'a.pdf', analysis: { category: 'docs' } },
+          { path: '/old/b.pdf', name: 'b.pdf', analysis: { category: 'docs' } }
+        ]
+      };
+
+      const result = analysisReducer(
+        state,
+        updateResultPathsAfterMove({
+          oldPaths: ['/old/a.pdf', '/old/b.pdf'],
+          newPaths: ['/new/a.pdf']
+        })
+      );
+
+      expect(result.results[0].path).toBe('/old/a.pdf');
+      expect(result.results[1].path).toBe('/old/b.pdf');
     });
   });
 

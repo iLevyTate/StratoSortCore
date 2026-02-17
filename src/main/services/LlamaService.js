@@ -942,7 +942,7 @@ class LlamaService extends EventEmitter {
   }
 
   async _waitForIdleOperations(reason, timeoutMs = 30000, options = {}) {
-    if (!this._coordinator) return;
+    if (!this._coordinator) return true;
     const { modelType, excludeOperationId } = options || {};
     const getActiveCount = (status) => {
       const operations = Array.isArray(status?.operations) ? status.operations : [];
@@ -1932,9 +1932,18 @@ class LlamaService extends EventEmitter {
                 // may not be immediately available. Yield briefly to let any
                 // pending reclaim complete before allocating a new sequence.
                 if (typeof context.sequencesLeft === 'number' && context.sequencesLeft === 0) {
+                  const waitStart = Date.now();
                   for (let _wait = 0; _wait < 50; _wait++) {
                     await delay(10);
                     if (context.sequencesLeft > 0) break;
+                  }
+                  const waitDuration = Date.now() - waitStart;
+                  if (waitDuration > 400) {
+                    logger.warn('[LlamaService] Slow sequence allocation detected', {
+                      waitDuration,
+                      sequencesLeft: context.sequencesLeft,
+                      model: this._selectedModels?.text
+                    });
                   }
                 }
 
@@ -2105,9 +2114,18 @@ class LlamaService extends EventEmitter {
                 // may not be immediately available. Yield briefly to let any
                 // pending reclaim complete before allocating a new sequence.
                 if (typeof context.sequencesLeft === 'number' && context.sequencesLeft === 0) {
+                  const waitStart = Date.now();
                   for (let _wait = 0; _wait < 50; _wait++) {
                     await delay(10);
                     if (context.sequencesLeft > 0) break;
+                  }
+                  const waitDuration = Date.now() - waitStart;
+                  if (waitDuration > 400) {
+                    logger.warn('[LlamaService] Slow sequence allocation detected', {
+                      waitDuration,
+                      sequencesLeft: context.sequencesLeft,
+                      model: this._selectedModels?.text
+                    });
                   }
                 }
 

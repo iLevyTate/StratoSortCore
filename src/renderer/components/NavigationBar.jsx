@@ -57,22 +57,13 @@ const SpinnerIcon = memo(function SpinnerIcon({ className = '' }) {
 });
 SpinnerIcon.propTypes = { className: PropTypes.string };
 
-// FIX: Add null check for PHASES to prevent crash during module initialization
-const PHASE_ICONS = PHASES
-  ? {
-      [PHASES.WELCOME]: HomeIcon,
-      [PHASES.SETUP]: SettingsIcon,
-      [PHASES.DISCOVER]: SearchIcon,
-      [PHASES.ORGANIZE]: FolderIcon,
-      [PHASES.COMPLETE]: CheckCircleIcon
-    }
-  : {
-      welcome: HomeIcon,
-      setup: SettingsIcon,
-      discover: SearchIcon,
-      organize: FolderIcon,
-      complete: CheckCircleIcon
-    };
+const PHASE_ICONS = {
+  [PHASES.WELCOME]: HomeIcon,
+  [PHASES.SETUP]: SettingsIcon,
+  [PHASES.DISCOVER]: SearchIcon,
+  [PHASES.ORGANIZE]: FolderIcon,
+  [PHASES.COMPLETE]: CheckCircleIcon
+};
 
 // =============================================================================
 // Sub-Components
@@ -233,7 +224,6 @@ const NavTab = memo(function NavTab({
           />
         )
       )}
-      {/* FIX: Always show label, with clear size/line-height for visibility */}
       <span className="phase-nav-label">{label}</span>
 
       {/* Active state is conveyed via phase-nav-tab-active (bg, border, text color) */}
@@ -566,8 +556,6 @@ function NavigationBar() {
     actions.toggleSettings();
   }, [actions]);
 
-  // Check if navigation should be blocked
-  // Keep top-level navigation responsive; analysis state can become stale or run in background.
   const isBlockedByOperation = isOrganizing || isLoading;
   // Only show a nav spinner for loading states other than analysis to avoid duplicate indicators
   const navSpinnerActive = isOrganizing || isLoading;
@@ -582,54 +570,58 @@ function NavigationBar() {
         ${isScrolled ? 'bg-white/95 shadow-md' : 'bg-white/85 shadow-sm'}
       `}
       style={{
-        WebkitAppRegion: 'drag',
-        isolation: 'isolate',
-        willChange: 'auto'
+        WebkitAppRegion: 'no-drag',
+        pointerEvents: 'none'
       }}
     >
-      <div className="relative flex h-[var(--app-nav-height)] items-center px-4 lg:px-6">
+      <div className="relative flex h-[var(--app-nav-height)] items-center px-4 lg:px-6 pointer-events-none">
+        {/* Dedicated drag rail avoids click interception over interactive controls */}
+        <div
+          aria-hidden="true"
+          className="absolute inset-x-0 top-0 h-3 z-0"
+          style={{ WebkitAppRegion: 'drag', pointerEvents: 'auto' }}
+        />
+
         {/* Left: Brand */}
         <div
-          className={`flex-shrink-0 z-20 ${isMac ? 'ml-[78px] lg:ml-[84px]' : ''}`}
+          className={`flex-shrink-0 z-20 pointer-events-auto ${isMac ? 'ml-[78px] lg:ml-[84px]' : ''}`}
           style={{ WebkitAppRegion: 'no-drag' }}
         >
           <Brand status={connectionStatus} />
         </div>
 
-        {/* Center: Phase Navigation */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <nav
-            className="phase-nav max-w-[64vw] xl:max-w-[44rem] pointer-events-auto"
-            style={{ WebkitAppRegion: 'no-drag' }}
-            aria-label="Phase navigation"
-          >
-            {(PHASE_ORDER || ['welcome', 'setup', 'discover', 'organize', 'complete']).map(
-              (phase) => {
-                const isActive = phase === currentPhase;
+        {/* Center: Phase Navigation -- absolutely centered, no overlay wrapper */}
+        <nav
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 phase-nav max-w-[64vw] xl:max-w-[44rem] pointer-events-auto"
+          style={{ WebkitAppRegion: 'no-drag' }}
+          aria-label="Phase navigation"
+        >
+          {(PHASE_ORDER || ['welcome', 'setup', 'discover', 'organize', 'complete']).map(
+            (phase) => {
+              const isActive = phase === currentPhase;
 
-                const canNavigate =
-                  (isActive || canTransitionTo(currentPhase, phase)) && !isBlockedByOperation;
+              const canNavigate =
+                (isActive || canTransitionTo(currentPhase, phase)) && !isBlockedByOperation;
 
-                return (
-                  <NavTab
-                    key={phase}
-                    phase={phase}
-                    isActive={isActive}
-                    canNavigate={canNavigate}
-                    isLoading={isActive && navSpinnerActive}
-                    onPhaseChange={handlePhaseChange}
-                    onHover={setHoveredTab}
-                    isHovered={hoveredTab === phase}
-                  />
-                );
-              }
-            )}
-          </nav>
-        </div>
+              return (
+                <NavTab
+                  key={phase}
+                  phase={phase}
+                  isActive={isActive}
+                  canNavigate={canNavigate}
+                  isLoading={isActive && navSpinnerActive}
+                  onPhaseChange={handlePhaseChange}
+                  onHover={setHoveredTab}
+                  isHovered={hoveredTab === phase}
+                />
+              );
+            }
+          )}
+        </nav>
 
         {/* Right: Actions + Window Controls */}
         <div
-          className="ml-auto flex items-center gap-2 z-20"
+          className="ml-auto flex items-center gap-2 z-20 pointer-events-auto"
           style={{ WebkitAppRegion: 'no-drag' }}
         >
           <NavActions onSettingsClick={handleSettingsClick} />
