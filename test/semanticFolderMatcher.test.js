@@ -199,6 +199,46 @@ describe('semanticFolderMatcher', () => {
     expect(matcher.batchUpsertFolders).toHaveBeenCalledTimes(1);
   });
 
+  test('retries smart-folder upsert when previous attempt persisted nothing', async () => {
+    const vectorDb = { initialize: jest.fn().mockResolvedValue(undefined) };
+    const matcher = {
+      embeddingCache: { initialized: true },
+      initialize: jest.fn(),
+      batchUpsertFolders: jest.fn().mockResolvedValue({
+        count: 0,
+        skipped: [{ error: 'dimension_mismatch' }],
+        requiresRebuild: true
+      }),
+      embedText: jest.fn().mockResolvedValue({ vector: [1, 2, 3], model: 'm' }),
+      matchVectorToFolders: jest.fn().mockResolvedValue([])
+    };
+
+    container.tryResolve.mockImplementation((serviceId) => {
+      if (serviceId === 'ORAMA_VECTOR') return vectorDb;
+      if (serviceId === 'FOLDER_MATCHING') return matcher;
+      return null;
+    });
+
+    const baseParams = {
+      fileName: 'a.pdf',
+      fileExtension: '.pdf',
+      smartFolders: [{ name: 'Financial', path: 'C:\\Sorted\\Financial' }]
+    };
+
+    await applySemanticFolderMatching({
+      ...baseParams,
+      analysis: { category: 'Documents', confidence: 0.9 },
+      filePath: 'C:\\Sorted\\Financial\\a.pdf'
+    });
+    await applySemanticFolderMatching({
+      ...baseParams,
+      analysis: { category: 'Documents', confidence: 0.9 },
+      filePath: 'C:\\Sorted\\Financial\\b.pdf'
+    });
+
+    expect(matcher.batchUpsertFolders).toHaveBeenCalledTimes(2);
+  });
+
   test('overrides category when embedding match exceeds threshold and effective LLM confidence', async () => {
     const vectorDb = { initialize: jest.fn().mockResolvedValue(undefined) };
     const matcher = {

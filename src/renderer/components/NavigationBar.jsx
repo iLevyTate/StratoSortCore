@@ -168,7 +168,7 @@ const NavTab = memo(function NavTab({
   // Stable click handler - avoids inline arrow in parent's render loop
   const handleClick = useCallback(() => {
     if (canNavigate) onPhaseChange(phase);
-  }, [canNavigate, onPhaseChange, phase, isActive]);
+  }, [canNavigate, onPhaseChange, phase]);
 
   const handleMouseEnter = useCallback(() => onHover(phase), [onHover, phase]);
   const handleMouseLeave = useCallback(() => onHover(null), [onHover]);

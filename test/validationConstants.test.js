@@ -85,11 +85,13 @@ describe('validationConstants', () => {
     test('accepts valid model names', () => {
       expect(isValidModelName('llama3:latest')).toBe(true);
       expect(isValidModelName('model@latest')).toBe(true);
+      expect(isValidModelName('Qwen2.5 7B Instruct (Q4_K_M).gguf')).toBe(true);
       expect(isValidModelName('a')).toBe(true);
     });
 
     test('rejects invalid model names', () => {
-      expect(isValidModelName('model with spaces')).toBe(false);
+      expect(isValidModelName('model;rm -rf /')).toBe(false);
+      expect(isValidModelName('../model.gguf')).toBe(false);
       expect(isValidModelName('')).toBe(false);
       expect(isValidModelName('a'.repeat(MAX_MODEL_NAME_LENGTH + 1))).toBe(false);
     });

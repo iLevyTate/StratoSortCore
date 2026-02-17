@@ -484,6 +484,30 @@ describe('Preload Coverage', () => {
     });
   });
 
+  describe('system.log payload normalization', () => {
+    test('coerces primitive data into an object payload', async () => {
+      mockInvoke.mockResolvedValue({ success: true });
+      await electronAPI.system.log('warn', 'hello', 'raw-string-data');
+
+      expect(mockInvoke).toHaveBeenCalledWith('system:log', {
+        level: 'warn',
+        message: 'hello',
+        data: { value: 'raw-string-data' }
+      });
+    });
+
+    test('maps unknown level and empty message to safe defaults', async () => {
+      mockInvoke.mockResolvedValue({ success: true });
+      await electronAPI.system.log('not-a-level', '', null);
+
+      expect(mockInvoke).toHaveBeenCalledWith('system:log', {
+        level: 'info',
+        message: '[renderer-log]',
+        data: {}
+      });
+    });
+  });
+
   describe('embeddings.search payload building', () => {
     test('builds default search payload', async () => {
       mockInvoke.mockResolvedValue({ results: [] });

@@ -182,6 +182,7 @@ See **[SECURITY.md](SECURITY.md)** for the complete security policy.
 | **[Architecture](docs/ARCHITECTURE.md)**           | System design and data flow              |
 | **[Graph Features](docs/FEATURES_GRAPH.md)**       | Knowledge Graph capabilities             |
 | **[IPC Contracts](docs/IPC_CONTRACTS.md)**         | IPC communication specifications         |
+| **[Motion System](docs/MOTION_SYSTEM.md)**         | UI animation timing and easing standards |
 | **[Release Guide](docs/RELEASING.md)**             | Release process and checks               |
 
 ## Contributing

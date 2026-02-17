@@ -65,11 +65,9 @@ describe('validationSchemas (Zod path)', () => {
       expect(result.success).toBe(false);
     });
 
-    test('rejects invalid model name with special chars', () => {
-      // Model names allow alphanumeric, hyphens, underscores, dots, @, colons, slashes
-      // but not spaces, shell metacharacters, or control chars
-      const result = schemas.settings.safeParse({ textModel: 'model name with spaces' });
-      expect(result.success).toBe(false);
+    test('accepts model names with spaces used by local GGUF files', () => {
+      const result = schemas.settings.safeParse({ textModel: 'Qwen2.5 7B Instruct (Q4_K_M).gguf' });
+      expect(result.success).toBe(true);
     });
 
     test('rejects model name with shell metacharacters', () => {

@@ -1,4 +1,4 @@
-const { BrowserWindow, shell, app } = require('electron');
+const { BrowserWindow, shell, app, nativeImage } = require('electron');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
@@ -247,6 +247,25 @@ function createMainWindow() {
     );
   }
 
+  // Load app icon with nativeImage for reliable cross-platform display
+  const iconPath = getAssetPath('stratosort-logo.png');
+  let appIcon;
+  try {
+    if (fs.existsSync(iconPath)) {
+      appIcon = nativeImage.createFromPath(iconPath);
+      if (appIcon.isEmpty()) {
+        logger.warn('App icon loaded but image is empty', { iconPath });
+        appIcon = undefined;
+      } else {
+        logger.debug('App icon loaded', { iconPath, size: appIcon.getSize() });
+      }
+    } else {
+      logger.warn('App icon not found, using Electron default', { iconPath });
+    }
+  } catch (err) {
+    logger.warn('Failed to load app icon', { iconPath, error: err.message });
+  }
+
   const win = new BrowserWindow({
     x: windowX,
     y: windowY,
@@ -282,7 +301,7 @@ function createMainWindow() {
       nodeIntegrationInWorker: false,
       nodeIntegrationInSubFrames: false
     },
-    icon: getAssetPath('stratosort-logo.png'),
+    ...(appIcon ? { icon: appIcon } : {}),
     show: false,
     autoHideMenuBar: true // Keep menu accessible via Alt while preserving a clean chrome
   });

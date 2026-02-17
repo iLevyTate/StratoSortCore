@@ -188,11 +188,34 @@ async function applySemanticFolderMatching(params) {
       if (validFolders.length > 0) {
         const fingerprint = createSmartFolderFingerprint(validFolders);
         if (shouldUpsertSmartFolders(matcher, fingerprint)) {
-          await matcher.batchUpsertFolders(validFolders);
-          rememberSmartFolderUpsert(matcher, fingerprint);
-          logger.debug('[FolderMatcher] Upserted folder embeddings', {
-            folderCount: validFolders.length
-          });
+          const upsertResult = await matcher.batchUpsertFolders(validFolders);
+          const upsertCount = Number(upsertResult?.count) || 0;
+          const skipped = Array.isArray(upsertResult?.skipped) ? upsertResult.skipped : [];
+          const hasHardFailure =
+            upsertResult?.requiresRebuild === true ||
+            Boolean(upsertResult?.error) ||
+            skipped.some(
+              (entry) => entry?.error && entry.error !== 'already_upserted_this_session'
+            );
+
+          if (hasHardFailure && upsertCount === 0) {
+            logger.warn(
+              '[FolderMatcher] Smart-folder upsert did not persist embeddings; will retry',
+              {
+                folderCount: validFolders.length,
+                skippedCount: skipped.length,
+                error: upsertResult?.error || null,
+                requiresRebuild: upsertResult?.requiresRebuild === true
+              }
+            );
+          } else {
+            rememberSmartFolderUpsert(matcher, fingerprint);
+            logger.debug('[FolderMatcher] Upserted folder embeddings', {
+              folderCount: validFolders.length,
+              persistedCount: upsertCount,
+              skippedCount: skipped.length
+            });
+          }
         } else {
           logger.debug('[FolderMatcher] Skipped repeated smart-folder upsert', {
             folderCount: validFolders.length

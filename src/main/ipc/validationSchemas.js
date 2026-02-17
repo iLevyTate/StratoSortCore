@@ -14,7 +14,9 @@ const {
   NAMING_CONVENTIONS,
   CASE_CONVENTIONS,
   SMART_FOLDER_ROUTING_MODES,
-  SEPARATOR_PATTERN
+  SEPARATOR_PATTERN,
+  MODEL_NAME_PATTERN,
+  MAX_MODEL_NAME_LENGTH
 } = require('../../shared/validationConstants');
 const { collapseDuplicateProtocols } = require('../../shared/urlUtils');
 const { logger } = require('../../shared/logger');
@@ -273,11 +275,8 @@ if (!z) {
    */
   const modelNameSchema = z
     .string()
-    .regex(
-      /^[a-zA-Z0-9._:@/\\-]+$/,
-      'Model name must be alphanumeric with hyphens, underscores, dots, @, colons, or slashes'
-    )
-    .max(100, 'Model name too long (max 100 chars)')
+    .regex(MODEL_NAME_PATTERN, 'Model name contains invalid characters')
+    .max(MAX_MODEL_NAME_LENGTH, `Model name too long (max ${MAX_MODEL_NAME_LENGTH} chars)`)
     .nullish();
 
   const chatPersonaSchema = z.enum(CHAT_PERSONAS.map((persona) => persona.id)).nullish();
@@ -804,9 +803,9 @@ if (!z) {
    * System log input validation
    */
   const systemLogSchema = z.object({
-    level: z.enum(['debug', 'info', 'warn', 'error']),
+    level: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']),
     message: z.string().min(1).max(8192),
-    data: z.record(z.unknown()).optional()
+    data: z.record(z.string(), z.any()).optional()
   });
 
   /**

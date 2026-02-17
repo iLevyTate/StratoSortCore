@@ -622,8 +622,10 @@ class FolderMatchingService {
       }
 
       const { onProgress = null } = options;
+      const forceRefresh = options.forceRefresh === true;
       const skipped = [];
       const payloads = [];
+      const folderById = new Map(folders.map((f) => [f.id || this.generateFolderId(f), f]));
 
       const { AI_DEFAULTS } = require('../../shared/constants');
       const cfg = await getLlamaService().getConfig();
@@ -644,7 +646,7 @@ class FolderMatchingService {
         const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
         const folderId = folder.id || this.generateFolderId(folder);
 
-        if (this._upsertedFolderIds.has(folderId)) {
+        if (!forceRefresh && this._upsertedFolderIds.has(folderId)) {
           skipped.push({ folder, error: 'already_upserted_this_session' });
           continue;
         }
@@ -662,7 +664,6 @@ class FolderMatchingService {
             model: cachedResult.model,
             updatedAt: new Date().toISOString()
           });
-          this._trackUpsertedFolder(folderId);
         } else {
           uncachedFolders.push(folder);
         }
@@ -730,7 +731,6 @@ class FolderMatchingService {
               model: result.model,
               updatedAt: new Date().toISOString()
             });
-            this._trackUpsertedFolder(result.id);
           }
         }
 
@@ -749,17 +749,113 @@ class FolderMatchingService {
       }
 
       // Batch upsert to vector DB
+      let persistedCount = 0;
+      let requiresRebuild = false;
       if (payloads.length > 0) {
-        await this.vectorDbService.batchUpsertFolders(payloads);
+        let upsertResult = await this.vectorDbService.batchUpsertFolders(payloads);
+
+        // Automatic self-heal for folder embeddings after embedding-model dimension changes.
+        // Folder vectors can be deterministically regenerated from smart-folder metadata,
+        // so we can safely reset only the folders collection and retry once.
+        if (
+          upsertResult?.requiresRebuild === true &&
+          typeof this.vectorDbService.resetFolders === 'function'
+        ) {
+          try {
+            logger.warn(
+              '[FolderMatchingService] Folder embedding dimension mismatch detected; resetting folders collection and retrying once'
+            );
+            await this.vectorDbService.resetFolders();
+            upsertResult = await this.vectorDbService.batchUpsertFolders(payloads);
+          } catch (resetError) {
+            logger.warn(
+              '[FolderMatchingService] Folder collection reset/retry failed after dimension mismatch',
+              {
+                error: resetError?.message
+              }
+            );
+          }
+        }
+        const failedIds = new Set();
+
+        if (Array.isArray(upsertResult?.failed)) {
+          for (const failedItem of upsertResult.failed) {
+            const id = failedItem?.id;
+            if (!id) continue;
+            failedIds.add(id);
+            if (failedItem?.requiresRebuild === true) {
+              requiresRebuild = true;
+            }
+            skipped.push({
+              folder: folderById.get(id) || null,
+              error: failedItem?.error || 'upsert_failed',
+              stage: 'vector_upsert',
+              requiresRebuild: failedItem?.requiresRebuild === true
+            });
+          }
+        }
+
+        if (Array.isArray(upsertResult?.skipped)) {
+          for (const skippedItem of upsertResult.skipped) {
+            const id = skippedItem?.id;
+            if (!id) continue;
+            failedIds.add(id);
+            skipped.push({
+              folder: folderById.get(id) || null,
+              error: skippedItem?.error || 'upsert_skipped',
+              stage: 'vector_upsert'
+            });
+          }
+        }
+
+        if (upsertResult?.success === false) {
+          if (upsertResult?.requiresRebuild === true) {
+            requiresRebuild = true;
+          }
+          if (failedIds.size === 0) {
+            const errorCode = upsertResult?.error || 'upsert_failed';
+            for (const payload of payloads) {
+              failedIds.add(payload.id);
+              skipped.push({
+                folder: folderById.get(payload.id) || null,
+                error: errorCode,
+                stage: 'vector_upsert',
+                requiresRebuild: upsertResult?.requiresRebuild === true
+              });
+            }
+          }
+        }
+
+        const successfulPayloads = payloads.filter((payload) => !failedIds.has(payload.id));
+        for (const payload of successfulPayloads) {
+          this._trackUpsertedFolder(payload.id);
+        }
+        persistedCount = successfulPayloads.length;
+
+        if (persistedCount === 0) {
+          logger.warn(
+            '[FolderMatchingService] Folder embedding upsert produced no persisted rows',
+            {
+              attempted: payloads.length,
+              failed: failedIds.size,
+              error: upsertResult?.error || null,
+              requiresRebuild
+            }
+          );
+        }
+
         logger.debug('[FolderMatchingService] Batch upserted folder embeddings', {
-          count: payloads.length,
-          skipped: skipped.length
+          count: persistedCount,
+          attempted: payloads.length,
+          skipped: skipped.length,
+          requiresRebuild
         });
       }
 
       return {
-        count: payloads.length,
+        count: persistedCount,
         skipped,
+        requiresRebuild,
         stats: {
           total: folders.length,
           cached: cachedPayloads.length,

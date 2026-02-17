@@ -235,6 +235,45 @@ const serializePreloadLogData = (value) => {
   return value;
 };
 
+const MAX_SYSTEM_LOG_MESSAGE_CHARS = 8192;
+const ALLOWED_SYSTEM_LOG_LEVELS = new Set(['trace', 'debug', 'info', 'warn', 'error', 'fatal']);
+
+const normalizeSystemLogPayload = (level, message, data) => {
+  const normalizedLevel = ALLOWED_SYSTEM_LOG_LEVELS.has(level) ? level : 'info';
+
+  let normalizedMessage = '';
+  if (typeof message === 'string') {
+    normalizedMessage = message;
+  } else if (message instanceof Error) {
+    normalizedMessage = message.message || String(message);
+  } else if (message != null) {
+    normalizedMessage = String(message);
+  }
+  if (!normalizedMessage) {
+    normalizedMessage = '[renderer-log]';
+  }
+  if (normalizedMessage.length > MAX_SYSTEM_LOG_MESSAGE_CHARS) {
+    normalizedMessage = normalizedMessage.slice(0, MAX_SYSTEM_LOG_MESSAGE_CHARS);
+  }
+
+  const serializedData = serializePreloadLogData(data);
+  let normalizedData = {};
+  if (serializedData && typeof serializedData === 'object' && !Array.isArray(serializedData)) {
+    normalizedData = serializedData;
+  } else if (Array.isArray(serializedData)) {
+    normalizedData = { items: serializedData };
+  } else if (serializedData != null) {
+    normalizedData = { value: serializedData };
+  }
+
+  return {
+    level: normalizedLevel,
+    message: normalizedMessage,
+    data: normalizedData
+  };
+};
+
+/* eslint-disable no-console */
 const writePreloadLog = (level, message, data) => {
   if (!shouldLogPreloadLevel(level)) return;
   const payload = serializePreloadLogData(data);
@@ -253,6 +292,7 @@ const writePreloadLog = (level, message, data) => {
   }
   console.info(prefix, message, payload ?? '');
 };
+/* eslint-enable no-console */
 
 const log = {
   debug: (message, data) => writePreloadLog('debug', message, data),
@@ -1099,7 +1139,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getRecommendedConcurrency: () =>
       secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_RECOMMENDED_CONCURRENCY),
     log: (level, message, data) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.LOG, { level, message, data }),
+      secureIPC.safeInvoke(
+        IPC_CHANNELS.SYSTEM.LOG,
+        normalizeSystemLogPayload(level, message, data)
+      ),
     exportLogs: () => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.EXPORT_LOGS),
     onOpenSemanticSearch: (callback) => secureIPC.safeOn('open-semantic-search', callback)
   },

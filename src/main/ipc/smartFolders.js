@@ -84,8 +84,30 @@ async function syncSmartFolderEmbeddings({
 
     let upsertCount = 0;
     if (typeof folderMatcher.batchUpsertFolders === 'function' && validNextFolders.length > 0) {
-      const upsertResult = await folderMatcher.batchUpsertFolders(validNextFolders);
+      const upsertResult = await folderMatcher.batchUpsertFolders(validNextFolders, {
+        // Smart-folder config writes must refresh embeddings even if this session has
+        // already upserted these IDs (name/description/path can change).
+        forceRefresh: true
+      });
       upsertCount = Number(upsertResult?.count) || 0;
+      const skipped = Array.isArray(upsertResult?.skipped) ? upsertResult.skipped : [];
+      const hasHardFailure =
+        upsertResult?.requiresRebuild === true ||
+        Boolean(upsertResult?.error) ||
+        skipped.some((entry) => {
+          const err = entry?.error;
+          return Boolean(err) && err !== 'already_upserted_this_session';
+        });
+      if (hasHardFailure) {
+        logger.warn('[SMART-FOLDERS] Embedding sync degraded', {
+          reason,
+          folders: validNextFolders.length,
+          upserted: upsertCount,
+          skipped: skipped.length,
+          error: upsertResult?.error || null,
+          requiresRebuild: upsertResult?.requiresRebuild === true
+        });
+      }
     }
 
     const previousIds = new Set(

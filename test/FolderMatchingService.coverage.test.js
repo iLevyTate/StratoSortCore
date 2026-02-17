@@ -74,11 +74,16 @@ jest.mock('../src/main/services/EmbeddingCache', () => {
 describe('FolderMatchingService', () => {
   let FolderMatchingService;
   let mockVectorDb;
+  let LlamaService;
 
   beforeEach(() => {
     jest.clearAllMocks();
     jest.resetModules();
     FolderMatchingService = require('../src/main/services/FolderMatchingService');
+    LlamaService = require('../src/main/services/LlamaService');
+    LlamaService.getInstance.mockReturnValue({
+      getConfig: jest.fn().mockResolvedValue({ embeddingModel: 'm' })
+    });
 
     mockVectorDb = {
       upsert: jest.fn().mockResolvedValue(),
@@ -193,6 +198,140 @@ describe('FolderMatchingService', () => {
       const service = new FolderMatchingService(mockVectorDb);
       const cached = service.embeddingCache.get('nonexistent');
       expect(cached).toBeNull();
+    });
+  });
+
+  describe('batchUpsertFolders persistence tracking', () => {
+    test('does not mark folders as upserted when vector DB batch write fails', async () => {
+      const vectorDb = {
+        initialize: jest.fn().mockResolvedValue(undefined),
+        batchUpsertFolders: jest.fn().mockResolvedValue({
+          success: false,
+          error: 'dimension_mismatch',
+          requiresRebuild: true
+        })
+      };
+      const embeddingService = {
+        batchEmbedFolders: jest.fn().mockResolvedValue({
+          results: [{ id: 'f1', success: true, vector: [0.1, 0.2], model: 'm' }],
+          errors: [],
+          stats: {}
+        })
+      };
+
+      const service = new FolderMatchingService(vectorDb, {
+        parallelEmbeddingService: embeddingService
+      });
+
+      const result = await service.batchUpsertFolders([
+        { id: 'f1', name: 'Financial', path: '/sorted/financial', description: 'Money docs' }
+      ]);
+
+      expect(vectorDb.batchUpsertFolders).toHaveBeenCalledTimes(1);
+      expect(result.count).toBe(0);
+      expect(result.requiresRebuild).toBe(true);
+      expect(service._upsertedFolderIds.has('f1')).toBe(false);
+    });
+
+    test('marks folders as upserted only after successful vector DB persistence', async () => {
+      const vectorDb = {
+        initialize: jest.fn().mockResolvedValue(undefined),
+        batchUpsertFolders: jest.fn().mockResolvedValue({
+          success: true,
+          count: 1,
+          failed: []
+        })
+      };
+      const embeddingService = {
+        batchEmbedFolders: jest.fn().mockResolvedValue({
+          results: [{ id: 'f1', success: true, vector: [0.1, 0.2], model: 'm' }],
+          errors: [],
+          stats: {}
+        })
+      };
+
+      const service = new FolderMatchingService(vectorDb, {
+        parallelEmbeddingService: embeddingService
+      });
+
+      const result = await service.batchUpsertFolders([
+        { id: 'f1', name: 'Financial', path: '/sorted/financial', description: 'Money docs' }
+      ]);
+
+      expect(result.count).toBe(1);
+      expect(service._upsertedFolderIds.has('f1')).toBe(true);
+    });
+
+    test('forceRefresh bypasses session dedupe and re-upserts existing folder IDs', async () => {
+      const vectorDb = {
+        initialize: jest.fn().mockResolvedValue(undefined),
+        batchUpsertFolders: jest.fn().mockResolvedValue({
+          success: true,
+          count: 1,
+          failed: []
+        })
+      };
+      const embeddingService = {
+        batchEmbedFolders: jest.fn().mockResolvedValue({
+          results: [{ id: 'f1', success: true, vector: [0.1, 0.2], model: 'm' }],
+          errors: [],
+          stats: {}
+        })
+      };
+
+      const service = new FolderMatchingService(vectorDb, {
+        parallelEmbeddingService: embeddingService
+      });
+      service._upsertedFolderIds.add('f1');
+
+      const result = await service.batchUpsertFolders(
+        [{ id: 'f1', name: 'Financial', path: '/sorted/financial', description: 'Updated rules' }],
+        { forceRefresh: true }
+      );
+
+      expect(embeddingService.batchEmbedFolders).toHaveBeenCalledTimes(1);
+      expect(vectorDb.batchUpsertFolders).toHaveBeenCalledTimes(1);
+      expect(result.count).toBe(1);
+    });
+
+    test('auto-resets folders and retries once on requiresRebuild', async () => {
+      const vectorDb = {
+        initialize: jest.fn().mockResolvedValue(undefined),
+        resetFolders: jest.fn().mockResolvedValue(undefined),
+        batchUpsertFolders: jest
+          .fn()
+          .mockResolvedValueOnce({
+            success: false,
+            count: 0,
+            error: 'dimension_mismatch',
+            requiresRebuild: true
+          })
+          .mockResolvedValueOnce({
+            success: true,
+            count: 1,
+            failed: []
+          })
+      };
+      const embeddingService = {
+        batchEmbedFolders: jest.fn().mockResolvedValue({
+          results: [{ id: 'f1', success: true, vector: [0.1, 0.2], model: 'm' }],
+          errors: [],
+          stats: {}
+        })
+      };
+
+      const service = new FolderMatchingService(vectorDb, {
+        parallelEmbeddingService: embeddingService
+      });
+
+      const result = await service.batchUpsertFolders([
+        { id: 'f1', name: 'Financial', path: '/sorted/financial', description: 'Money docs' }
+      ]);
+
+      expect(vectorDb.resetFolders).toHaveBeenCalledTimes(1);
+      expect(vectorDb.batchUpsertFolders).toHaveBeenCalledTimes(2);
+      expect(result.count).toBe(1);
+      expect(service._upsertedFolderIds.has('f1')).toBe(true);
     });
   });
 
