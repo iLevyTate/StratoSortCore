@@ -124,8 +124,9 @@ function FloatingSearchWidget({ isOpen, onClose, onOpenSearch }) {
   return (
     <div
       ref={widgetRef}
-      className="fixed z-[120] pointer-events-auto"
+      className="fixed pointer-events-auto"
       style={{
+        zIndex: 'var(--z-toast)',
         left: `${position.x}px`,
         top: `${position.y}px`,
         cursor: isDragging ? 'grabbing' : 'default'

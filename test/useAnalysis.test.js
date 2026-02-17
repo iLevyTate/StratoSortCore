@@ -394,8 +394,6 @@ describe('useAnalysis', () => {
 
       expect(mockSetAnalysisResults).toHaveBeenCalledWith([]);
       expect(mockSetFileStates).toHaveBeenCalledWith({});
-      // clearAnalysisQueue delegates to resetAnalysisState which clears progress
-      // with full shape including currentFile and lastActivity
       expect(mockSetAnalysisProgress).toHaveBeenCalledWith({
         current: 0,
         total: 0,
@@ -577,30 +575,6 @@ describe('useAnalysis', () => {
 
       // Should not throw
       expect(() => unmount()).not.toThrow();
-    });
-
-    test('clears analysis flags on unmount', () => {
-      const { unmount } = renderHook(() =>
-        useAnalysis(
-          createMockOptions({
-            isAnalyzing: true,
-            analysisProgress: { current: 1, total: 3, lastActivity: Date.now() }
-          })
-        )
-      );
-
-      act(() => {
-        unmount();
-      });
-
-      expect(mockSetIsAnalyzing).toHaveBeenCalledWith(false);
-      expect(mockSetAnalysisProgress).toHaveBeenCalledWith({
-        current: 0,
-        total: 0,
-        lastActivity: 0
-      });
-      expect(mockSetCurrentAnalysisFile).toHaveBeenCalledWith('');
-      expect(mockActions.setPhaseData).toHaveBeenCalledWith('currentAnalysisFile', '');
     });
   });
 

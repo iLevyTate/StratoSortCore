@@ -57,13 +57,22 @@ const SpinnerIcon = memo(function SpinnerIcon({ className = '' }) {
 });
 SpinnerIcon.propTypes = { className: PropTypes.string };
 
-const PHASE_ICONS = {
-  [PHASES.WELCOME]: HomeIcon,
-  [PHASES.SETUP]: SettingsIcon,
-  [PHASES.DISCOVER]: SearchIcon,
-  [PHASES.ORGANIZE]: FolderIcon,
-  [PHASES.COMPLETE]: CheckCircleIcon
-};
+// FIX: Add null check for PHASES to prevent crash during module initialization
+const PHASE_ICONS = PHASES
+  ? {
+      [PHASES.WELCOME]: HomeIcon,
+      [PHASES.SETUP]: SettingsIcon,
+      [PHASES.DISCOVER]: SearchIcon,
+      [PHASES.ORGANIZE]: FolderIcon,
+      [PHASES.COMPLETE]: CheckCircleIcon
+    }
+  : {
+      welcome: HomeIcon,
+      setup: SettingsIcon,
+      discover: SearchIcon,
+      organize: FolderIcon,
+      complete: CheckCircleIcon
+    };
 
 // =============================================================================
 // Sub-Components
@@ -224,6 +233,7 @@ const NavTab = memo(function NavTab({
           />
         )
       )}
+      {/* FIX: Always show label, with clear size/line-height for visibility */}
       <span className="phase-nav-label">{label}</span>
 
       {/* Active state is conveyed via phase-nav-tab-active (bg, border, text color) */}
@@ -368,7 +378,7 @@ const WindowControls = memo(function WindowControls() {
       <button
         type="button"
         onClick={handleMinimize}
-        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 transition-colors transition-shadow [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2"
+        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 transition-all [transition-duration:var(--duration-normal)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2"
         aria-label="Minimize window"
         title="Minimize"
       >
@@ -377,7 +387,7 @@ const WindowControls = memo(function WindowControls() {
       <button
         type="button"
         onClick={handleToggleMaximize}
-        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 transition-colors transition-shadow [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2"
+        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 transition-all [transition-duration:var(--duration-normal)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2"
         aria-label={isMaximized ? 'Restore window' : 'Maximize window'}
         title={isMaximized ? 'Restore' : 'Maximize'}
       >
@@ -398,7 +408,7 @@ const WindowControls = memo(function WindowControls() {
       <button
         type="button"
         onClick={handleClose}
-        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-white hover:bg-stratosort-danger transition-colors transition-shadow [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2"
+        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-white hover:bg-stratosort-danger transition-all [transition-duration:var(--duration-normal)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2"
         aria-label="Close window"
         title="Close"
       >
@@ -556,6 +566,7 @@ function NavigationBar() {
     actions.toggleSettings();
   }, [actions]);
 
+  // Keep top-level navigation responsive; analysis state can become stale.
   const isBlockedByOperation = isOrganizing || isLoading;
   // Only show a nav spinner for loading states other than analysis to avoid duplicate indicators
   const navSpinnerActive = isOrganizing || isLoading;
@@ -563,65 +574,62 @@ function NavigationBar() {
   return (
     <header
       className={`
-        fixed inset-x-0 top-0 z-header
+        fixed inset-x-0 top-0 z-[100]
         border-b border-border-soft/60
         backdrop-blur-xl backdrop-saturate-150
-        transition-colors transition-shadow [transition-duration:var(--motion-duration-standard)] [transition-timing-function:var(--motion-ease-standard)]
+        transition-all duration-300 ease-out
         ${isScrolled ? 'bg-white/95 shadow-md' : 'bg-white/85 shadow-sm'}
       `}
       style={{
-        WebkitAppRegion: 'no-drag',
-        pointerEvents: 'none'
+        WebkitAppRegion: 'drag',
+        zIndex: 'var(--z-header)',
+        isolation: 'isolate',
+        willChange: 'auto'
       }}
     >
-      <div className="relative flex h-[var(--app-nav-height)] items-center px-4 lg:px-6 pointer-events-none">
-        {/* Dedicated drag rail avoids click interception over interactive controls */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-x-0 top-0 h-3 z-0"
-          style={{ WebkitAppRegion: 'drag', pointerEvents: 'auto' }}
-        />
-
+      <div className="relative flex h-[var(--app-nav-height)] items-center px-4 lg:px-6">
         {/* Left: Brand */}
         <div
-          className={`flex-shrink-0 z-20 pointer-events-auto ${isMac ? 'ml-[78px] lg:ml-[84px]' : ''}`}
+          className={`flex-shrink-0 z-20 ${isMac ? 'ml-[78px] lg:ml-[84px]' : ''}`}
           style={{ WebkitAppRegion: 'no-drag' }}
         >
           <Brand status={connectionStatus} />
         </div>
 
-        {/* Center: Phase Navigation -- absolutely centered, no overlay wrapper */}
-        <nav
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 phase-nav max-w-[64vw] xl:max-w-[44rem] pointer-events-auto"
-          style={{ WebkitAppRegion: 'no-drag' }}
-          aria-label="Phase navigation"
-        >
-          {(PHASE_ORDER || ['welcome', 'setup', 'discover', 'organize', 'complete']).map(
-            (phase) => {
-              const isActive = phase === currentPhase;
+        {/* Center: Phase Navigation - layered center; nav gets pointer-events-auto so it receives clicks */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <nav
+            className="phase-nav max-w-[64vw] xl:max-w-[44rem] pointer-events-auto"
+            style={{ WebkitAppRegion: 'no-drag' }}
+            aria-label="Phase navigation"
+          >
+            {(PHASE_ORDER || ['welcome', 'setup', 'discover', 'organize', 'complete']).map(
+              (phase) => {
+                const isActive = phase === currentPhase;
 
-              const canNavigate =
-                (isActive || canTransitionTo(currentPhase, phase)) && !isBlockedByOperation;
+                const canNavigate =
+                  (isActive || canTransitionTo(currentPhase, phase)) && !isBlockedByOperation;
 
-              return (
-                <NavTab
-                  key={phase}
-                  phase={phase}
-                  isActive={isActive}
-                  canNavigate={canNavigate}
-                  isLoading={isActive && navSpinnerActive}
-                  onPhaseChange={handlePhaseChange}
-                  onHover={setHoveredTab}
-                  isHovered={hoveredTab === phase}
-                />
-              );
-            }
-          )}
-        </nav>
+                return (
+                  <NavTab
+                    key={phase}
+                    phase={phase}
+                    isActive={isActive}
+                    canNavigate={canNavigate}
+                    isLoading={isActive && navSpinnerActive}
+                    onPhaseChange={handlePhaseChange}
+                    onHover={setHoveredTab}
+                    isHovered={hoveredTab === phase}
+                  />
+                );
+              }
+            )}
+          </nav>
+        </div>
 
         {/* Right: Actions + Window Controls */}
         <div
-          className="ml-auto flex items-center gap-2 z-20 pointer-events-auto"
+          className="ml-auto flex items-center gap-2 z-20"
           style={{ WebkitAppRegion: 'no-drag' }}
         >
           <NavActions onSettingsClick={handleSettingsClick} />

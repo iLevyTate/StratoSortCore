@@ -50,14 +50,26 @@ jest.mock('../src/main/services/ModelDownloadManager', () => ({
   getInstance: jest.fn(() => mockDownloadManager)
 }));
 
+const mockEnsureResolvedModelsPath = jest.fn();
+jest.mock('../src/main/services/modelPathResolver', () => ({
+  ensureResolvedModelsPath: (...args) => mockEnsureResolvedModelsPath(...args)
+}));
+
 const { registerLlamaIpc } = require('../src/main/ipc/llama');
 const { container } = require('../src/main/services/ServiceContainer');
+const { safeSend } = require('../src/main/ipc/ipcWrappers');
+const { IPC_EVENTS } = require('../src/shared/constants');
 
 describe('llama IPC – extended handlers', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockHandlers.clear();
     container.reset();
+    mockEnsureResolvedModelsPath.mockResolvedValue({
+      source: 'current',
+      modelsPath: '/test/userData/models',
+      currentModelsPath: '/test/userData/models'
+    });
 
     registerLlamaIpc({
       ipcMain: {},
@@ -192,6 +204,47 @@ describe('llama IPC – extended handlers', () => {
       expect(mockDownloadManager.downloadModel).toHaveBeenCalledWith(
         'model.gguf',
         expect.objectContaining({ onProgress: expect.any(Function) })
+      );
+    });
+
+    test('emits legacy directory warning before download when legacy path is active', async () => {
+      mockHandlers.clear();
+      const win = { isDestroyed: () => false, webContents: {} };
+      mockEnsureResolvedModelsPath.mockResolvedValueOnce({
+        source: 'legacy',
+        modelsPath: '/legacy/userData/models',
+        currentModelsPath: '/test/userData/models'
+      });
+
+      registerLlamaIpc({
+        ipcMain: {},
+        IPC_CHANNELS: {
+          LLAMA: {
+            GET_MODELS: 'llama:get-models',
+            GET_CONFIG: 'llama:get-config',
+            UPDATE_CONFIG: 'llama:update-config',
+            TEST_CONNECTION: 'llama:test-connection',
+            DOWNLOAD_MODEL: 'llama:download-model',
+            DELETE_MODEL: 'llama:delete-model',
+            GET_DOWNLOAD_STATUS: 'llama:get-download-status'
+          }
+        },
+        logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+        systemAnalytics: {},
+        getMainWindow: () => win
+      });
+
+      const handler = getHandler('download-model');
+      const result = await handler({}, 'legacy-model.gguf');
+
+      expect(result.success).toBe(true);
+      expect(safeSend).toHaveBeenCalledWith(
+        win.webContents,
+        IPC_EVENTS.NOTIFICATION,
+        expect.objectContaining({
+          message: expect.stringContaining('legacy models directory'),
+          severity: 'warning'
+        })
       );
     });
   });

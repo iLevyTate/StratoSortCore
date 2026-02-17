@@ -66,7 +66,7 @@ describe('FloatingSearchWidget', () => {
       expect(widgetRoot.style.left).toBe('12px');
     });
 
-    expect(container.querySelector('.z-\\[120\\]')).toBeInTheDocument();
+    expect(container.querySelector('.glass-panel')).toBeInTheDocument();
   });
 
   test('clamps Y position to header-safe offset when dragged above header', async () => {
@@ -83,18 +83,23 @@ describe('FloatingSearchWidget', () => {
     const widgetRoot = container.querySelector('.fixed');
     expect(widgetRoot).toBeInTheDocument();
 
-    // Start drag from the grip handle
     fireEvent.mouseDown(dragHandle, { clientX: 160, clientY: 100 });
-
-    // Drag upward past the navigation header
     fireEvent.mouseMove(document, { clientX: 160, clientY: 10 });
 
-    // Y should be clamped to header safe offset: Math.max(56, 72 + 8) = 80
     await waitFor(() => {
       expect(widgetRoot.style.top).toBe('80px');
     });
 
-    // Release the drag
     fireEvent.mouseUp(document);
+  });
+
+  test('uses z-index token so widget layers above header', () => {
+    const { container } = render(
+      <FloatingSearchWidget isOpen onClose={jest.fn()} onOpenSearch={jest.fn()} />
+    );
+
+    const widgetRoot = container.querySelector('.fixed');
+    expect(widgetRoot).toBeInTheDocument();
+    expect(widgetRoot.style.zIndex).toBe('var(--z-toast)');
   });
 });

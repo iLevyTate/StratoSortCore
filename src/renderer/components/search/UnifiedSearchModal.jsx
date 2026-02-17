@@ -21,6 +21,7 @@ import {
   Layers,
   FolderPlus,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Maximize2,
   Minimize2,
@@ -990,6 +991,8 @@ export default function UnifiedSearchModal({
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [strictScope, setStrictScope] = useState(false);
   const [documentScope, setDocumentScope] = useState([]);
+  const [isConvSidebarOpen, setIsConvSidebarOpen] = useState(true);
+  const [isDocScopeOpen, setIsDocScopeOpen] = useState(false);
   const [isChatting, setIsChatting] = useState(false);
   const [chatError, setChatError] = useState('');
   const [chatWarning, setChatWarning] = useState('');
@@ -6665,12 +6668,39 @@ export default function UnifiedSearchModal({
         {activeTab === 'chat' && (
           <div className="flex-1 min-h-[60vh] surface-panel flex flex-col overflow-hidden">
             <div className="flex flex-1 min-h-0">
-              <ConversationSidebar
-                currentConversationId={currentConversationId}
-                onSelectConversation={handleSelectConversation}
-                onNewConversation={handleNewConversation}
-                className="w-64 shrink-0"
-              />
+              {isConvSidebarOpen ? (
+                <div className="relative shrink-0 flex">
+                  <ConversationSidebar
+                    currentConversationId={currentConversationId}
+                    onSelectConversation={handleSelectConversation}
+                    onNewConversation={handleNewConversation}
+                    className="w-56 shrink-0"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setIsConvSidebarOpen(false)}
+                    className="absolute top-2 -right-3 z-10 w-6 h-6 rounded-full bg-white border border-system-gray-200 shadow-sm flex items-center justify-center hover:bg-system-gray-50 transition-colors"
+                    title="Collapse sidebar"
+                    aria-label="Collapse conversation sidebar"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5 text-system-gray-500" />
+                  </button>
+                </div>
+              ) : (
+                <div className="shrink-0 flex flex-col items-center py-2 px-1 bg-system-gray-50 border-r border-system-gray-200 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsConvSidebarOpen(true)}
+                    className="w-7 h-7 rounded-md bg-white border border-system-gray-200 shadow-sm flex items-center justify-center hover:bg-system-gray-50 transition-colors"
+                    title="Show conversations"
+                    aria-label="Show conversation sidebar"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5 text-system-gray-500" />
+                  </button>
+                  <MessageSquare className="w-4 h-4 text-system-gray-400" />
+                </div>
+              )}
+
               <div className="flex-1 flex flex-col min-w-0 min-h-0 border-l border-system-gray-200">
                 {hasLoadedStats && !statsUnavailable && (!stats || stats.files === 0) && (
                   <div className="mx-4 mt-4 rounded-lg border border-stratosort-warning/30 bg-stratosort-warning/10 px-3 py-2 flex items-center justify-between gap-3">
@@ -6707,13 +6737,44 @@ export default function UnifiedSearchModal({
                   onChatPersonaChange={handleChatPersonaChange}
                 />
               </div>
-              <DocumentScopePanel
-                scope={documentScope}
-                onAddToScope={handleAddToScope}
-                onRemoveFromScope={handleRemoveFromScope}
-                onClearScope={handleClearScope}
-                className="w-64 shrink-0"
-              />
+              {isDocScopeOpen ? (
+                <div className="relative shrink-0 flex">
+                  <button
+                    type="button"
+                    onClick={() => setIsDocScopeOpen(false)}
+                    className="absolute top-2 -left-3 z-10 w-6 h-6 rounded-full bg-white border border-system-gray-200 shadow-sm flex items-center justify-center hover:bg-system-gray-50 transition-colors"
+                    title="Collapse document scope"
+                    aria-label="Collapse document scope sidebar"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5 text-system-gray-500" />
+                  </button>
+                  <DocumentScopePanel
+                    scope={documentScope}
+                    onAddToScope={handleAddToScope}
+                    onRemoveFromScope={handleRemoveFromScope}
+                    onClearScope={handleClearScope}
+                    className="w-56 shrink-0"
+                  />
+                </div>
+              ) : (
+                <div className="shrink-0 flex flex-col items-center py-2 px-1 bg-system-gray-50 border-l border-system-gray-200 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsDocScopeOpen(true)}
+                    className="w-7 h-7 rounded-md bg-white border border-system-gray-200 shadow-sm flex items-center justify-center hover:bg-system-gray-50 transition-colors"
+                    title="Show document scope"
+                    aria-label="Show document scope sidebar"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5 text-system-gray-500" />
+                  </button>
+                  <FolderInput className="w-4 h-4 text-system-gray-400" />
+                  {documentScope.length > 0 && (
+                    <span className="text-[10px] font-medium text-stratosort-blue bg-stratosort-blue/10 rounded-full w-5 h-5 flex items-center justify-center">
+                      {documentScope.length}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}

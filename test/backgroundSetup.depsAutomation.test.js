@@ -66,6 +66,11 @@ jest.mock('../src/main/services/ModelDownloadManager', () => ({
   }))
 }));
 
+const mockEnsureResolvedModelsPath = jest.fn();
+jest.mock('../src/main/services/modelPathResolver', () => ({
+  ensureResolvedModelsPath: (...args) => mockEnsureResolvedModelsPath(...args)
+}));
+
 // Import after mocks so module under test uses our fakes
 const { runBackgroundSetup } = require('../src/main/core/backgroundSetup');
 
@@ -87,6 +92,11 @@ describe('backgroundSetup automated dependencies', () => {
     fs.access = async (p) => originalAccess(posixNormalize(p));
     const originalUnlink = fs.unlink.bind(fs);
     fs.unlink = async (p) => originalUnlink(posixNormalize(p));
+    mockEnsureResolvedModelsPath.mockResolvedValue({
+      source: 'current',
+      modelsPath: '/test/userData/models',
+      currentModelsPath: '/test/userData/models'
+    });
 
     // Create directories needed for the test
     await fs.mkdir('/test/exe', { recursive: true });
@@ -103,6 +113,29 @@ describe('backgroundSetup automated dependencies', () => {
 
     // Emits progress at least once
     expect(mockSendSpy).toHaveBeenCalled();
+  });
+
+  test('notifies when model downloads use legacy models directory', async () => {
+    const { getInstance: getLlamaService } = require('../src/main/services/LlamaService');
+    getLlamaService().listModels.mockResolvedValueOnce([]);
+    mockEnsureResolvedModelsPath.mockResolvedValueOnce({
+      source: 'legacy',
+      modelsPath: '/legacy/userData/models',
+      currentModelsPath: '/test/userData/models'
+    });
+
+    await runBackgroundSetup();
+
+    const legacyWarningCalls = mockSendSpy.mock.calls.filter((call) =>
+      call.some(
+        (arg) =>
+          arg &&
+          typeof arg === 'object' &&
+          typeof arg.message === 'string' &&
+          arg.message.includes('legacy directory')
+      )
+    );
+    expect(legacyWarningCalls.length).toBeGreaterThan(0);
   });
 
   test('not first run skips dependency automation but still checks models', async () => {

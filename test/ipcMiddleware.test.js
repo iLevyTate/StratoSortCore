@@ -183,34 +183,45 @@ describe('ipcMiddleware', () => {
       });
     });
 
-    test('persists critical events when queue overflows', () => {
+    test('dispatches warning when critical events are dropped under queue pressure', () => {
       jest.useFakeTimers();
       ipcMiddleware(mockStore);
 
+      // Exceed MAX_EVENT_QUEUE_SIZE (300) with critical updateProgress events
       for (let i = 0; i < 305; i += 1) {
         operationProgressHandler({ percent: i });
       }
 
-      const stored = storedLocalStorage.getItem('ipc_critical_events');
-      expect(stored).not.toBeNull();
-      expect(JSON.parse(stored).length).toBeGreaterThan(0);
+      markStoreReady();
+
+      const warningCalls = mockDispatch.mock.calls.filter(
+        (entry) =>
+          entry[0]?.type === 'system/addNotification' &&
+          String(entry[0]?.payload?.message || '').includes('critical updates were dropped')
+      );
+      expect(warningCalls.length).toBeGreaterThan(0);
       jest.useRealTimers();
     });
 
-    test('recovers persisted critical events after store is ready', () => {
+    test('recovers dropped count and notifies when store is ready', () => {
       jest.useFakeTimers();
       ipcMiddleware(mockStore);
-      storedLocalStorage.setItem(
-        'ipc_critical_events',
-        JSON.stringify([{ actionType: 'updateProgress', data: { percent: 50 } }])
-      );
+
+      // Overflow queue to trigger dropped critical events
+      for (let i = 0; i < 350; i += 1) {
+        operationProgressHandler({ percent: i });
+      }
 
       markStoreReady();
-      recoverPersistedCriticalEvents();
 
-      expect(storedLocalStorage.removeItem).toHaveBeenCalledWith('ipc_critical_events');
       expect(mockDispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'system/addNotification' })
+        expect.objectContaining({
+          type: 'system/addNotification',
+          payload: expect.objectContaining({
+            message: expect.stringContaining('critical updates were dropped'),
+            severity: 'warning'
+          })
+        })
       );
       jest.useRealTimers();
     });

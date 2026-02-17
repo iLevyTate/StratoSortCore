@@ -1035,6 +1035,7 @@ export function useAnalysis(options = {}) {
             if (current > previousCompleted && typeof payload.currentFile === 'string') {
               batchCompletedPathsRef.current.add(payload.currentFile);
             }
+            const total = Math.max(1, Number(payload.total) || uniqueFiles.length);
             completedCountRef.current = current;
             lastProgressAtRef.current = Date.now();
 
@@ -1044,8 +1045,15 @@ export function useAnalysis(options = {}) {
               actions.setPhaseData('currentAnalysisFile', currentFileName);
             }
 
-            // Redux progress state is already updated by ipcMiddleware (line 303).
-            // This handler's job is only ref updates (above) and currentFile display.
+            const progress = {
+              current,
+              total,
+              currentFile: currentFileName || undefined,
+              lastActivity: Date.now()
+            };
+            if (validateProgressState(progress)) {
+              setAnalysisProgress(progress);
+            }
           };
 
           window.addEventListener(BATCH_ANALYSIS_PROGRESS_EVENT, onBatchProgress);
@@ -1395,11 +1403,14 @@ export function useAnalysis(options = {}) {
             requeueInFlightFileStates();
           }
 
-          // Always clear analysis flags when a run exits to avoid stale global blockers.
-          isAnalyzingRef.current = false;
-          setIsAnalyzing(false);
-          setAnalysisProgress({ current: 0, total: 0, lastActivity: 0 });
-          if (isMountedRef.current && didComplete) {
+          // CRITICAL FIX: Only preserve Redux state if analysis is still in-flight.
+          // If we already completed, clear state even if component unmounted to avoid
+          // "analysis continuing in background" banners with 100% progress.
+          if (isMountedRef.current || didComplete) {
+            isAnalyzingRef.current = false;
+            setIsAnalyzing(false);
+
+            // FIX: Delay clearing the current file name to allow UI to show final state
             if (clearCurrentFileTimeoutRef.current) {
               clearTimeout(clearCurrentFileTimeoutRef.current);
             }
@@ -1409,9 +1420,12 @@ export function useAnalysis(options = {}) {
                 actions.setPhaseData('currentAnalysisFile', '');
               }
             }, 500);
+
+            // FIX: Include lastActivity in reset to fully clear progress state
+            setAnalysisProgress({ current: 0, total: 0, lastActivity: 0 });
+            // Redux is the single source of truth for isAnalyzing.
           } else {
-            setCurrentAnalysisFile('');
-            actions.setPhaseData('currentAnalysisFile', '');
+            logger.info('Analysis interrupted by navigation - preserving state for resume');
           }
 
           analysisLockRef.current = false;
@@ -1525,10 +1539,8 @@ export function useAnalysis(options = {}) {
     }
     clearCurrentFileTimeoutRef.current = setTimeout(() => {
       clearCurrentFileTimeoutRef.current = null;
-      if (isMountedRef.current) {
-        setCurrentAnalysisFile('');
-        actions.setPhaseData('currentAnalysisFile', '');
-      }
+      setCurrentAnalysisFile('');
+      actions.setPhaseData('currentAnalysisFile', '');
     }, 300);
 
     addNotification('Analysis stopped', 'info', 2000);
@@ -1551,10 +1563,9 @@ export function useAnalysis(options = {}) {
     clearAutoAdvanceTimeoutRef(autoAdvanceTimeoutRef);
     // Clear any pending files
     pendingFilesRef.current = [];
-    // Full cleanup: abort controller, heartbeat, timeouts, lock release, run ID increment
-    // — prevents orphaned background analysis from continuing after queue clear
+    // Release any in-flight work and reset lock/liveness state.
     resetAnalysisState('Queue cleared');
-    // resetAnalysisState preserves completed results; clear queue wipes everything
+    // Queue clear is stronger than reset: wipe in-memory results/state too.
     setAnalysisResults([]);
     setFileStates({});
     actions.setPhaseData('selectedFiles', []);
@@ -1628,15 +1639,8 @@ export function useAnalysis(options = {}) {
         clearTimeout(pendingFilesTimeoutRef.current);
         pendingFilesTimeoutRef.current = null;
       }
-      analysisLockRef.current = false;
-      isAnalyzingRef.current = false;
-      pendingFilesRef.current = [];
-      setIsAnalyzing(false);
-      setAnalysisProgress({ current: 0, total: 0, lastActivity: 0 });
-      setCurrentAnalysisFile('');
-      actions.setPhaseData('currentAnalysisFile', '');
     };
-  }, [actions, setAnalysisProgress, setCurrentAnalysisFile, setIsAnalyzing]);
+  }, []);
 
   // Resume analysis on mount
   useEffect(() => {

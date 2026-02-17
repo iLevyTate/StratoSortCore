@@ -10,6 +10,7 @@
 const { IpcServiceContext, createFromLegacyParams } = require('./IpcServiceContext');
 const { createHandler, safeHandle, safeSend, z } = require('./ipcWrappers');
 const { container: serviceContainer, ServiceIds } = require('../services/ServiceContainer');
+const { ensureResolvedModelsPath } = require('../services/modelPathResolver');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
 const { AI_DEFAULTS, IPC_EVENTS } = require('../../shared/constants');
 const { withTimeout } = require('../../shared/promiseUtils');
@@ -342,6 +343,16 @@ function registerLlamaIpc(servicesOrParams) {
               model: normalizedName
             });
             return { success: true, alreadyInProgress: true };
+          }
+
+          const resolved = await ensureResolvedModelsPath();
+          if (resolved.source === 'legacy' && win && !win.isDestroyed()) {
+            safeSend(win.webContents, IPC_EVENTS.NOTIFICATION, {
+              message:
+                'Downloading to legacy models directory. Consider moving models to the current app data folder.',
+              severity: 'warning',
+              duration: 6000
+            });
           }
 
           // Set up progress callback

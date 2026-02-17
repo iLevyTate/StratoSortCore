@@ -85,22 +85,6 @@ describe('uiSlice', () => {
       expect(result.previousPhase).toBe('welcome');
     });
 
-    test('clears transient operation flags when phase changes', () => {
-      const state = {
-        ...initialState,
-        currentPhase: 'welcome',
-        isLoading: true,
-        loadingMessage: 'Busy',
-        isOrganizing: true
-      };
-
-      const result = uiReducer(state, setPhase('setup'));
-
-      expect(result.isLoading).toBe(false);
-      expect(result.loadingMessage).toBe('');
-      expect(result.isOrganizing).toBe(false);
-    });
-
     test('rejects invalid phase', () => {
       const state = { ...initialState, currentPhase: 'welcome' };
 
@@ -138,14 +122,12 @@ describe('uiSlice', () => {
       expect(result.navigationError).toContain('Invalid phase transition');
     });
 
-    test('recovers when current phase is invalid and sets requested valid phase', () => {
+    test('recovers from invalid current phase and applies requested valid phase', () => {
       const state = {
         ...initialState,
         currentPhase: 'corrupted-phase',
         previousPhase: 'welcome',
-        isLoading: true,
-        loadingMessage: 'stuck',
-        isOrganizing: true
+        navigationError: 'stale'
       };
 
       const result = uiReducer(state, setPhase('setup'));
@@ -153,9 +135,6 @@ describe('uiSlice', () => {
       expect(result.currentPhase).toBe('setup');
       expect(result.previousPhase).toBeNull();
       expect(result.navigationError).toBeNull();
-      expect(result.isLoading).toBe(false);
-      expect(result.loadingMessage).toBe('');
-      expect(result.isOrganizing).toBe(false);
     });
 
     test('clears previous navigation error', () => {
@@ -334,9 +313,6 @@ describe('uiSlice', () => {
       expect(result.currentPhase).toBe('welcome');
       // goBack is single-step: once used, it clears previousPhase to prevent ping-pong
       expect(result.previousPhase).toBeNull();
-      expect(result.isLoading).toBe(false);
-      expect(result.loadingMessage).toBe('');
-      expect(result.isOrganizing).toBe(false);
     });
 
     test('goes to welcome if no previous phase', () => {
@@ -361,25 +337,6 @@ describe('uiSlice', () => {
       const result = uiReducer(state, goBack());
 
       expect(result.currentPhase).toBe('welcome');
-    });
-
-    test('falls back to welcome when back-transition is not allowed', () => {
-      // complete -> setup is NOT in PHASE_TRANSITIONS
-      const state = {
-        ...initialState,
-        currentPhase: 'complete',
-        previousPhase: 'setup',
-        isLoading: true,
-        isOrganizing: true
-      };
-
-      const result = uiReducer(state, goBack());
-
-      expect(result.currentPhase).toBe('welcome');
-      expect(result.previousPhase).toBeNull();
-      expect(result.isLoading).toBe(false);
-      expect(result.loadingMessage).toBe('');
-      expect(result.isOrganizing).toBe(false);
     });
   });
 

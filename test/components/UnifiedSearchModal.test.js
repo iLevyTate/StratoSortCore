@@ -67,6 +67,7 @@ jest.mock('lucide-react', () => ({
   AlertCircle: () => <span data-testid="icon-alert">AlertCircle</span>,
   Loader2: () => <span data-testid="icon-loader">Loader2</span>,
   ChevronDown: () => <span data-testid="icon-chevron-down">ChevronDown</span>,
+  ChevronLeft: () => <span data-testid="icon-chevron-left">ChevronLeft</span>,
   ChevronRight: () => <span data-testid="icon-chevron-right">ChevronRight</span>,
   ChevronUp: () => <span data-testid="icon-chevron-up">ChevronUp</span>,
   Plus: () => <span data-testid="icon-plus">Plus</span>,
@@ -216,6 +217,11 @@ jest.mock('../../src/renderer/components/search/EmptySearchState', () => ({
       <button onClick={() => onSearchClick?.('test suggestion')}>Suggestion</button>
     </div>
   )
+}));
+
+jest.mock('../../src/renderer/components/search/ChatPanel', () => ({
+  __esModule: true,
+  default: () => <div data-testid="chat-panel" />
 }));
 
 // Mock shared utilities
@@ -648,6 +654,55 @@ describe('UnifiedSearchModal', () => {
       // Since we mocked reactflow, we can check if that mock is rendered or if the "Explore File Connections" empty state is shown
       // The empty state has text "Stop Searching. Start Finding."
       expect(screen.queryByText(/Stop Searching. Start Finding./i)).toBeInTheDocument();
+    });
+
+    test('keeps graph sidebar sections collapsible', () => {
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} initialTab="graph" />);
+
+      const insightsToggle = screen.getByRole('button', { name: /Insights/i });
+      expect(insightsToggle).toHaveAttribute('aria-expanded', 'false');
+
+      fireEvent.click(insightsToggle);
+      expect(insightsToggle).toHaveAttribute('aria-expanded', 'true');
+
+      fireEvent.click(insightsToggle);
+      expect(insightsToggle).toHaveAttribute('aria-expanded', 'false');
+    });
+  });
+
+  describe('Chat Sidebars', () => {
+    test('keeps conversation sidebar collapse and re-open controls working', () => {
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} initialTab="chat" />);
+
+      const collapseButton = screen.getByRole('button', {
+        name: /Collapse conversation sidebar/i
+      });
+      fireEvent.click(collapseButton);
+
+      expect(
+        screen.getByRole('button', { name: /Show conversation sidebar/i })
+      ).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: /Show conversation sidebar/i }));
+      expect(
+        screen.getByRole('button', { name: /Collapse conversation sidebar/i })
+      ).toBeInTheDocument();
+    });
+
+    test('keeps document scope sidebar collapse and re-open controls working', () => {
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} initialTab="chat" />);
+
+      const showButton = screen.getByRole('button', { name: /Show document scope sidebar/i });
+      fireEvent.click(showButton);
+
+      expect(
+        screen.getByRole('button', { name: /Collapse document scope sidebar/i })
+      ).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: /Collapse document scope sidebar/i }));
+      expect(
+        screen.getByRole('button', { name: /Show document scope sidebar/i })
+      ).toBeInTheDocument();
     });
   });
 
