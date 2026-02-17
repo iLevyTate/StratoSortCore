@@ -81,10 +81,20 @@ const LENIENT_URL_PATTERN =
 
 /**
  * Model name validation pattern
- * Allows alphanumeric with hyphens, underscores, dots, @, colons, slashes
- * FIX CRIT-21: Block path traversal (..) by using negative lookahead
+ * Accepts common local GGUF filename characters (including spaces, +, and parentheses)
+ * while still blocking traversal and dangerous shell/path metacharacters.
+ *
+ * Allowed examples:
+ * - "Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+ * - "Qwen2.5 7B Instruct (Q4_K_M).gguf"
+ * - "nomic-embed-text-v1.5.gguf"
+ *
+ * Rejected examples:
+ * - "../evil.gguf" (path traversal)
+ * - "model;rm -rf /" (shell metacharacters)
  */
-const MODEL_NAME_PATTERN = /^(?!.*\.\.)[a-zA-Z0-9][a-zA-Z0-9\-_.@:/]*$/;
+// eslint-disable-next-line no-control-regex
+const MODEL_NAME_PATTERN = /^(?!.*\.\.)(?!.*[<>"|?*\x00-\x1f])[a-zA-Z0-9][a-zA-Z0-9\-_.@:/+() ]*$/;
 
 /**
  * Maximum model name length

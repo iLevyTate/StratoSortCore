@@ -161,7 +161,8 @@ jest.mock('../src/shared/securityConfig', () => ({
     ]),
     patterns: {
       url: /^https?:\/\/[a-zA-Z0-9][-a-zA-Z0-9._:]*(?:\/[^\s]*)?$/,
-      modelName: /^[a-zA-Z0-9][a-zA-Z0-9\-_.@:/]*$/
+      // eslint-disable-next-line no-control-regex
+      modelName: /^(?!.*\.\.)(?!.*[<>:"|?*\x00-\x1f])[a-zA-Z0-9][a-zA-Z0-9\-_.@:/+() ]*$/
     }
   },
   PROTOTYPE_POLLUTION_KEYS: ['__proto__', 'constructor', 'prototype']
@@ -173,7 +174,8 @@ jest.mock('../src/shared/validationConstants', () => ({
   LOGGING_LEVELS: ['error', 'warn', 'info', 'debug'],
   LENIENT_URL_PATTERN:
     /^(?:https?:\/\/)?(?:\[[0-9a-f:]+\]|[\w.-]+|\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?(?:\/.*)?$/i,
-  MODEL_NAME_PATTERN: /^(?!.*\.\.)[a-zA-Z0-9][a-zA-Z0-9\-_.@:/]*$/,
+  // eslint-disable-next-line no-control-regex
+  MODEL_NAME_PATTERN: /^(?!.*\.\.)(?!.*[<>:"|?*\x00-\x1f])[a-zA-Z0-9][a-zA-Z0-9\-_.@:/+() ]*$/,
   MAX_MODEL_NAME_LENGTH: 100,
   NOTIFICATION_MODES: ['both', 'ui', 'tray', 'none'],
   NAMING_CONVENTIONS: [
