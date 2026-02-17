@@ -470,7 +470,7 @@ function SetupPhase() {
       <div className="flex-1 min-h-0 relative">
         {showSkeletonLayer && (
           <div
-            className={`transition-opacity duration-200 ${
+            className={`transition-opacity [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] ${
               isLoading ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0'
             }`}
             aria-hidden={!isLoading}
@@ -480,7 +480,7 @@ function SetupPhase() {
         )}
 
         <div
-          className={`transition-opacity duration-200 ${
+          className={`transition-opacity [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] ${
             contentVisible ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0'
           }`}
         >

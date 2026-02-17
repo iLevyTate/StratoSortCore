@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import { AlertTriangle, Database, Info, FileText } from 'lucide-react';
+import { Database, Info, FileText } from 'lucide-react';
 import Select from '../ui/Select';
 import AlertBox from '../ui/AlertBox';
 import StatusBadge from '../ui/StatusBadge';

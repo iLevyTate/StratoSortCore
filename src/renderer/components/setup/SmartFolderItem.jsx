@@ -72,7 +72,7 @@ const SmartFolderItem = memo(function SmartFolderItem({
     return (
       <Card
         variant="compact"
-        className="flex items-center gap-3 transition-all duration-200 hover:scale-[1.01] hover:shadow-md cursor-pointer active:scale-[0.99]"
+        className="flex items-center gap-3 transition-colors transition-shadow [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] hover:shadow-md cursor-pointer"
         onClick={() => onToggleExpand?.(folder.id)}
         role="button"
         tabIndex={0}

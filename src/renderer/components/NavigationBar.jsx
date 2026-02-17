@@ -168,7 +168,7 @@ const NavTab = memo(function NavTab({
   // Stable click handler - avoids inline arrow in parent's render loop
   const handleClick = useCallback(() => {
     if (canNavigate) onPhaseChange(phase);
-  }, [canNavigate, onPhaseChange, phase]);
+  }, [canNavigate, onPhaseChange, phase, isActive]);
 
   const handleMouseEnter = useCallback(() => onHover(phase), [onHover, phase]);
   const handleMouseLeave = useCallback(() => onHover(null), [onHover]);
@@ -378,7 +378,7 @@ const WindowControls = memo(function WindowControls() {
       <button
         type="button"
         onClick={handleMinimize}
-        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 transition-all [transition-duration:var(--duration-normal)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2"
+        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 transition-colors transition-shadow [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2"
         aria-label="Minimize window"
         title="Minimize"
       >
@@ -387,7 +387,7 @@ const WindowControls = memo(function WindowControls() {
       <button
         type="button"
         onClick={handleToggleMaximize}
-        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 transition-all [transition-duration:var(--duration-normal)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2"
+        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 transition-colors transition-shadow [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2"
         aria-label={isMaximized ? 'Restore window' : 'Maximize window'}
         title={isMaximized ? 'Restore' : 'Maximize'}
       >
@@ -408,7 +408,7 @@ const WindowControls = memo(function WindowControls() {
       <button
         type="button"
         onClick={handleClose}
-        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-white hover:bg-stratosort-danger transition-all [transition-duration:var(--duration-normal)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2"
+        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-white hover:bg-stratosort-danger transition-colors transition-shadow [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2"
         aria-label="Close window"
         title="Close"
       >
@@ -426,6 +426,8 @@ function NavigationBar() {
   const dispatch = useAppDispatch();
   const currentPhase = useAppSelector((state) => state.ui.currentPhase);
   const isOrganizing = useAppSelector((state) => state.ui.isOrganizing);
+  // FIX: Use analysis slice as single source of truth for isAnalyzing
+  const isAnalyzing = useAppSelector((state) => state.analysis.isAnalyzing);
   const isLoading = useAppSelector((state) => state.ui.isLoading);
   const health = useAppSelector((state) => state.system.health);
   const connectionStatus = useMemo(() => {
@@ -566,23 +568,22 @@ function NavigationBar() {
     actions.toggleSettings();
   }, [actions]);
 
-  // Keep top-level navigation responsive; analysis state can become stale.
-  const isBlockedByOperation = isOrganizing || isLoading;
+  // Check if navigation should be blocked
+  const isBlockedByOperation = isOrganizing || isAnalyzing || isLoading;
   // Only show a nav spinner for loading states other than analysis to avoid duplicate indicators
   const navSpinnerActive = isOrganizing || isLoading;
 
   return (
     <header
       className={`
-        fixed inset-x-0 top-0 z-[100]
+        fixed inset-x-0 top-0 z-header
         border-b border-border-soft/60
         backdrop-blur-xl backdrop-saturate-150
-        transition-all duration-300 ease-out
+        transition-colors transition-shadow [transition-duration:var(--motion-duration-standard)] [transition-timing-function:var(--motion-ease-standard)]
         ${isScrolled ? 'bg-white/95 shadow-md' : 'bg-white/85 shadow-sm'}
       `}
       style={{
         WebkitAppRegion: 'drag',
-        zIndex: 'var(--z-header)',
         isolation: 'isolate',
         willChange: 'auto'
       }}
@@ -596,10 +597,10 @@ function NavigationBar() {
           <Brand status={connectionStatus} />
         </div>
 
-        {/* Center: Phase Navigation - layered center so it never blocks side controls */}
+        {/* Center: Phase Navigation */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <nav
-            className="phase-nav max-w-[64vw] xl:max-w-[44rem]"
+            className="phase-nav max-w-[64vw] xl:max-w-[44rem] pointer-events-auto"
             style={{ WebkitAppRegion: 'no-drag' }}
             aria-label="Phase navigation"
           >

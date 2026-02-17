@@ -326,9 +326,16 @@ function VirtualizedFileGrid({
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-auto-fit-md gap-4" role="status" aria-label="Loading files">
+      <div
+        className="grid grid-cols-auto-fit-md gap-4 animate-loading-fade"
+        role="status"
+        aria-label="Loading files"
+      >
         {[...Array(6)].map((_, i) => (
-          <div key={i} className="h-64 rounded-xl bg-system-gray-100 animate-pulse" />
+          <div
+            key={i}
+            className="h-64 rounded-xl bg-system-gray-100 animate-pulse animate-loading-content"
+          />
         ))}
       </div>
     );

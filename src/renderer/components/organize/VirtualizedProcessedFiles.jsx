@@ -102,11 +102,15 @@ function VirtualizedProcessedFiles({ files, isLoading = false }) {
 
   if (isLoading) {
     return (
-      <div className="space-y-3" role="status" aria-label="Loading organized files">
+      <div
+        className="space-y-3 animate-loading-fade"
+        role="status"
+        aria-label="Loading organized files"
+      >
         {[...Array(3)].map((_, i) => (
           <div
             key={i}
-            className="h-16 rounded-xl border border-border-soft bg-system-gray-100 animate-pulse"
+            className="h-16 rounded-xl border border-border-soft bg-system-gray-100 animate-pulse animate-loading-content"
           />
         ))}
       </div>

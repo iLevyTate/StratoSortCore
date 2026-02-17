@@ -21,7 +21,6 @@ import {
   Layers,
   FolderPlus,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Maximize2,
   Minimize2,
@@ -376,7 +375,7 @@ const ResultRow = memo(function ResultRow({
       }}
       style={{ animationDelay }}
       className={`
-        group w-full text-left rounded-xl border p-4 transition-all cursor-pointer search-result-item relative
+        group w-full text-left rounded-xl border p-4 transition-colors transition-shadow [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] cursor-pointer search-result-item relative
         ${isSelected ? 'border-stratosort-blue bg-stratosort-blue/5 shadow-sm' : 'border-system-gray-200 bg-white hover:border-system-gray-300 hover:shadow-md'}
         ${isBulkSelected ? 'ring-2 ring-stratosort-blue/20' : ''}
         ${isFocused && !isSelected ? 'ring-2 ring-stratosort-blue/40 border-stratosort-blue/50' : ''}
@@ -684,7 +683,11 @@ function StatsDisplay({ stats, isLoadingStats, statsUnavailable, onRefresh }) {
           <span>file{stats.files !== 1 ? 's' : ''} indexed</span>
         </Text>
       ) : isLoadingStats ? (
-        <Text as="span" variant="tiny" className="flex items-center gap-2 text-system-gray-400">
+        <Text
+          as="span"
+          variant="tiny"
+          className="flex items-center gap-2 text-system-gray-400 animate-loading-fade"
+        >
           <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-system-gray-300" />
           Loading index...
         </Text>
@@ -872,7 +875,7 @@ function SidebarSection({ icon: Icon, title, isOpen, onToggle, badge, children }
           )}
         </span>
         <ChevronDown
-          className={`w-3.5 h-3.5 text-system-gray-400 transition-transform duration-200 ${isOpen ? '' : '-rotate-90'}`}
+          className={`w-3.5 h-3.5 text-system-gray-400 transition-transform [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] ${isOpen ? '' : '-rotate-90'}`}
           aria-hidden="true"
         />
       </button>
@@ -987,8 +990,6 @@ export default function UnifiedSearchModal({
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [strictScope, setStrictScope] = useState(false);
   const [documentScope, setDocumentScope] = useState([]);
-  const [isConvSidebarOpen, setIsConvSidebarOpen] = useState(true);
-  const [isDocScopeOpen, setIsDocScopeOpen] = useState(false);
   const [isChatting, setIsChatting] = useState(false);
   const [chatError, setChatError] = useState('');
   const [chatWarning, setChatWarning] = useState('');
@@ -6197,7 +6198,7 @@ export default function UnifiedSearchModal({
       onClose={onClose}
       title="KnowledgeOS"
       size="full"
-      className={`search-modal transition-colors duration-300 ${
+      className={`search-modal transition-colors [transition-duration:var(--motion-duration-standard)] [transition-timing-function:var(--motion-ease-standard)] ${
         isGraphMaximized ? 'bg-system-gray-100' : ''
       }`}
     >
@@ -6586,8 +6587,8 @@ export default function UnifiedSearchModal({
 
                     {/* Document content preview */}
                     {isLoadingDocumentDetails ? (
-                      <div className="flex-1 flex items-center justify-center p-4">
-                        <RefreshCw className="w-5 h-5 text-system-gray-300 animate-spin" />
+                      <div className="flex-1 flex items-center justify-center p-4 animate-loading-fade">
+                        <RefreshCw className="w-5 h-5 text-system-gray-300 animate-spin animate-loading-content" />
                       </div>
                     ) : (
                       (selectedDocumentDetails?.analysis?.extractedText ||
@@ -6664,37 +6665,12 @@ export default function UnifiedSearchModal({
         {activeTab === 'chat' && (
           <div className="flex-1 min-h-[60vh] surface-panel flex flex-col overflow-hidden">
             <div className="flex flex-1 min-h-0">
-              {/* Collapsible Conversation Sidebar */}
-              {isConvSidebarOpen ? (
-                <div className="relative shrink-0 flex">
-                  <ConversationSidebar
-                    currentConversationId={currentConversationId}
-                    onSelectConversation={handleSelectConversation}
-                    onNewConversation={handleNewConversation}
-                    className="w-56 shrink-0"
-                  />
-                  <button
-                    onClick={() => setIsConvSidebarOpen(false)}
-                    className="absolute top-2 -right-3 z-10 w-6 h-6 rounded-full bg-white border border-system-gray-200 shadow-sm flex items-center justify-center hover:bg-system-gray-50 transition-colors"
-                    title="Collapse sidebar"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5 text-system-gray-500" />
-                  </button>
-                </div>
-              ) : (
-                <div className="shrink-0 flex flex-col items-center py-2 px-1 bg-system-gray-50 border-r border-system-gray-200 gap-2">
-                  <button
-                    onClick={() => setIsConvSidebarOpen(true)}
-                    className="w-7 h-7 rounded-md bg-white border border-system-gray-200 shadow-sm flex items-center justify-center hover:bg-system-gray-50 transition-colors"
-                    title="Show conversations"
-                  >
-                    <ChevronRight className="w-3.5 h-3.5 text-system-gray-500" />
-                  </button>
-                  <MessageSquare className="w-4 h-4 text-system-gray-400" />
-                </div>
-              )}
-
-              {/* Center Chat Area */}
+              <ConversationSidebar
+                currentConversationId={currentConversationId}
+                onSelectConversation={handleSelectConversation}
+                onNewConversation={handleNewConversation}
+                className="w-64 shrink-0"
+              />
               <div className="flex-1 flex flex-col min-w-0 min-h-0 border-l border-system-gray-200">
                 {hasLoadedStats && !statsUnavailable && (!stats || stats.files === 0) && (
                   <div className="mx-4 mt-4 rounded-lg border border-stratosort-warning/30 bg-stratosort-warning/10 px-3 py-2 flex items-center justify-between gap-3">
@@ -6731,42 +6707,13 @@ export default function UnifiedSearchModal({
                   onChatPersonaChange={handleChatPersonaChange}
                 />
               </div>
-
-              {/* Collapsible Document Scope Sidebar */}
-              {isDocScopeOpen ? (
-                <div className="relative shrink-0 flex">
-                  <button
-                    onClick={() => setIsDocScopeOpen(false)}
-                    className="absolute top-2 -left-3 z-10 w-6 h-6 rounded-full bg-white border border-system-gray-200 shadow-sm flex items-center justify-center hover:bg-system-gray-50 transition-colors"
-                    title="Collapse document scope"
-                  >
-                    <ChevronRight className="w-3.5 h-3.5 text-system-gray-500" />
-                  </button>
-                  <DocumentScopePanel
-                    scope={documentScope}
-                    onAddToScope={handleAddToScope}
-                    onRemoveFromScope={handleRemoveFromScope}
-                    onClearScope={handleClearScope}
-                    className="w-56 shrink-0"
-                  />
-                </div>
-              ) : (
-                <div className="shrink-0 flex flex-col items-center py-2 px-1 bg-system-gray-50 border-l border-system-gray-200 gap-2">
-                  <button
-                    onClick={() => setIsDocScopeOpen(true)}
-                    className="w-7 h-7 rounded-md bg-white border border-system-gray-200 shadow-sm flex items-center justify-center hover:bg-system-gray-50 transition-colors"
-                    title="Show document scope"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5 text-system-gray-500" />
-                  </button>
-                  <FolderInput className="w-4 h-4 text-system-gray-400" />
-                  {documentScope.length > 0 && (
-                    <span className="text-[10px] font-medium text-stratosort-blue bg-stratosort-blue/10 rounded-full w-5 h-5 flex items-center justify-center">
-                      {documentScope.length}
-                    </span>
-                  )}
-                </div>
-              )}
+              <DocumentScopePanel
+                scope={documentScope}
+                onAddToScope={handleAddToScope}
+                onRemoveFromScope={handleRemoveFromScope}
+                onClearScope={handleClearScope}
+                className="w-64 shrink-0"
+              />
             </div>
           </div>
         )}
@@ -6774,7 +6721,7 @@ export default function UnifiedSearchModal({
         {/* Graph Tab Content */}
         {GRAPH_FEATURE_FLAGS.SHOW_GRAPH && activeTab === 'graph' && (
           <div
-            className={`grid gap-3 flex-1 transition-all duration-300 ${
+            className={`grid gap-3 flex-1 [transition-property:grid-template-columns,min-height,height] [transition-duration:var(--motion-duration-standard)] [transition-timing-function:var(--motion-ease-standard)] ${
               isGraphMaximized
                 ? 'grid-cols-1 min-h-[70vh]'
                 : 'grid-cols-1 lg:grid-cols-[minmax(260px,300px)_minmax(0,1fr)_minmax(260px,320px)] lg:h-[calc(80vh-4rem)]'
@@ -7823,7 +7770,7 @@ export default function UnifiedSearchModal({
 
             {/* Center: Graph */}
             <div
-              className={`surface-panel p-0 overflow-hidden min-h-[40vh] lg:min-h-0 rounded-xl border relative transition-all duration-300 ${
+              className={`surface-panel p-0 overflow-hidden min-h-[40vh] lg:min-h-0 rounded-xl border relative [transition-property:background-color,border-color,box-shadow] [transition-duration:var(--motion-duration-standard)] [transition-timing-function:var(--motion-ease-standard)] ${
                 isGraphMaximized ? 'shadow-lg ring-1 ring-system-gray-200' : ''
               } ${
                 isDragOver
@@ -7911,7 +7858,7 @@ export default function UnifiedSearchModal({
 
               {/* Drag overlay indicator */}
               {isDragOver && (
-                <div className="absolute inset-0 z-30 flex items-center justify-center bg-stratosort-blue/10 backdrop-blur-sm pointer-events-none animate-in fade-in duration-200">
+                <div className="absolute inset-0 z-30 flex items-center justify-center bg-stratosort-blue/10 backdrop-blur-sm pointer-events-none animate-loading-fade">
                   <div className="bg-white rounded-xl shadow-xl px-8 py-6 flex flex-col items-center gap-3 border-2 border-stratosort-blue border-dashed">
                     <div className="w-12 h-12 rounded-full bg-stratosort-blue/10 flex items-center justify-center">
                       <FolderPlus className="w-6 h-6 text-stratosort-blue" />
@@ -7927,7 +7874,7 @@ export default function UnifiedSearchModal({
               )}
 
               {nodes.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center p-8 animate-in fade-in duration-500">
+                <div className="flex flex-col items-center justify-center h-full text-center p-8 animate-loading-content">
                   <div className="w-20 h-20 bg-system-gray-50 rounded-full flex items-center justify-center mb-6">
                     <Network className="w-10 h-10 text-stratosort-blue opacity-50" />
                   </div>
@@ -7975,7 +7922,7 @@ export default function UnifiedSearchModal({
                             onChange={setQuery}
                             onSearch={runGraphSearch}
                             placeholder="Search for files to start..."
-                            className="shadow-md border-transparent bg-white/80 backdrop-blur-sm rounded-2xl focus-within:border-stratosort-blue/50 focus-within:shadow-lg focus-within:ring-0 transition-all duration-300"
+                            className="shadow-md border-transparent bg-white/80 backdrop-blur-sm rounded-2xl focus-within:border-stratosort-blue/50 focus-within:shadow-lg focus-within:ring-0 [transition-property:background-color,border-color,box-shadow] [transition-duration:var(--motion-duration-standard)] [transition-timing-function:var(--motion-ease-standard)]"
                             autoFocus
                           />
                         </div>
@@ -8058,7 +8005,7 @@ export default function UnifiedSearchModal({
                     {`
                       .graph-zoomed-out .file-node-label {
                         opacity: 0;
-                        transition: opacity 0.2s;
+                        transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
                       }
 
                       /* Hide connection handles (dots) for now */
@@ -8140,7 +8087,7 @@ export default function UnifiedSearchModal({
                       <Text
                         as="div"
                         variant="tiny"
-                        className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-system-gray-900/75 backdrop-blur-md text-white px-4 py-2 rounded-full shadow-lg pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-300 z-50 border border-white/10"
+                        className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-system-gray-900/75 backdrop-blur-md text-white px-4 py-2 rounded-full shadow-lg pointer-events-none animate-in fade-in slide-in-from-bottom-2 [animation-duration:var(--motion-duration-standard)] [animation-timing-function:var(--motion-ease-emphasized)] z-50 border border-white/10"
                       >
                         Labels hidden at this zoom • Use the zoom controls (+/-) to zoom in
                       </Text>
@@ -8165,7 +8112,7 @@ export default function UnifiedSearchModal({
                       <Text
                         as="div"
                         variant="tiny"
-                        className="absolute top-4 left-1/2 -translate-x-1/2 bg-system-gray-900/80 backdrop-blur-md text-white px-3 py-1.5 rounded-full shadow-md pointer-events-none animate-in fade-in slide-in-from-top-1 duration-200 z-40 border border-white/10"
+                        className="absolute top-4 left-1/2 -translate-x-1/2 bg-system-gray-900/80 backdrop-blur-md text-white px-3 py-1.5 rounded-full shadow-md pointer-events-none animate-in fade-in slide-in-from-top-1 [animation-duration:var(--motion-duration-fast)] [animation-timing-function:var(--motion-ease-standard)] z-40 border border-white/10"
                       >
                         {performanceNotice}
                       </Text>
@@ -8756,8 +8703,8 @@ export default function UnifiedSearchModal({
 
                           {/* Content Preview */}
                           {isLoadingDocumentDetails ? (
-                            <div className="flex items-center justify-center p-4">
-                              <RefreshCw className="w-5 h-5 text-system-gray-300 animate-spin" />
+                            <div className="flex items-center justify-center p-4 animate-loading-fade">
+                              <RefreshCw className="w-5 h-5 text-system-gray-300 animate-spin animate-loading-content" />
                             </div>
                           ) : (
                             (selectedDocumentDetails?.analysis?.extractedText ||

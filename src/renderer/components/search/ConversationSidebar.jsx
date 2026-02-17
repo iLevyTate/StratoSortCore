@@ -156,8 +156,8 @@ export default function ConversationSidebar({
 
       <div className="flex-1 overflow-y-auto p-2">
         {loading && conversations.length === 0 ? (
-          <div className="flex justify-center py-4">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-stratosort-blue"></div>
+          <div className="flex justify-center py-4 animate-loading-fade">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-stratosort-blue animate-loading-content"></div>
           </div>
         ) : conversations.length === 0 ? (
           <div className="text-center py-8 text-system-gray-400">

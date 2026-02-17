@@ -38,7 +38,12 @@ const SelectionCard = memo(function SelectionCard({
 
   return (
     <Component
-      className={`text-left rounded-xl border p-4 transition-all ${selectedClasses} ${disabledClasses} ${className}`.trim()}
+      className={`text-left rounded-xl border p-4 ${selectedClasses} ${disabledClasses} focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 ${className}`.trim()}
+      style={{
+        transitionProperty: 'background-color, border-color, box-shadow, color, opacity',
+        transitionDuration: 'var(--motion-duration-fast)',
+        transitionTimingFunction: 'var(--motion-ease-standard)'
+      }}
       {...buttonProps}
       {...rest}
     >

@@ -165,10 +165,17 @@
   --heading-3: clamp(18px, 2.1vw, 24px);
   --body-text: clamp(15px, 1.7vw, 16px);
 
-  /* Animation duration tokens */
-  --duration-fast: 150ms;
-  --duration-normal: 200ms;
-  --duration-slow: 300ms;
+  /* Premium motion system (subtle, consistent, non-cheesy) */
+  --motion-duration-fast: 140ms;
+  --motion-duration-standard: 220ms;
+  --motion-duration-slow: 320ms;
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Backward-compatible aliases used across older components */
+  --duration-fast: var(--motion-duration-fast);
+  --duration-normal: var(--motion-duration-standard);
+  --duration-slow: var(--motion-duration-slow);
 }
 
 @media (min-width: 1440px) {
@@ -346,10 +353,12 @@
   }
 
   .surface-panel {
-    @apply rounded-[var(--radius-panel)] border border-border-soft/80 bg-white/85 shadow-sm backdrop-blur-md transition-all;
+    @apply rounded-[var(--radius-panel)] border border-border-soft/80 bg-white/85 shadow-sm backdrop-blur-md;
     box-shadow: var(--shadow-soft);
     padding: var(--panel-padding);
-    transition-duration: var(--duration-normal);
+    transition-property: background-color, border-color, box-shadow, opacity;
+    transition-duration: var(--motion-duration-standard);
+    transition-timing-function: var(--motion-ease-standard);
   }
 
   /* Organize page: force solid panels to avoid blur/ghosting overlap */
@@ -411,15 +420,17 @@
   }
 
   .surface-card {
-    @apply rounded-[var(--radius-card)] border border-border-soft bg-white/90 shadow-sm backdrop-blur-md transition-all;
+    @apply rounded-[var(--radius-card)] border border-border-soft bg-white/90 shadow-sm backdrop-blur-md;
     box-shadow: var(--shadow-soft);
     padding: var(--panel-padding);
-    transition-duration: var(--duration-normal);
+    transition-property: background-color, border-color, box-shadow, opacity;
+    transition-duration: var(--motion-duration-standard);
+    transition-timing-function: var(--motion-ease-standard);
   }
 
   .surface-card:hover,
   .surface-panel:hover {
-    @apply shadow-lg border-border-strong/60 -translate-y-0.5;
+    @apply shadow-lg border-border-strong/60;
   }
 
   .glass-panel {
@@ -451,13 +462,16 @@
   }
 
   .phase-nav-tab {
-    @apply relative flex flex-col sm:flex-row items-center justify-center rounded-full whitespace-nowrap flex-shrink-0 transition-all duration-200 ease-out;
+    @apply relative flex flex-col sm:flex-row items-center justify-center rounded-full whitespace-nowrap flex-shrink-0;
     padding: var(--nav-tab-padding-y) var(--nav-tab-padding-x);
     gap: var(--nav-tab-gap);
     min-height: var(--nav-tab-min-height);
     min-width: clamp(5.25rem, 8vw, 6.5rem);
     font-weight: 500;
     color: var(--color-system-gray-600);
+    transition-property: color, background-color, border-color, box-shadow, opacity;
+    transition-duration: var(--motion-duration-fast);
+    transition-timing-function: var(--motion-ease-standard);
   }
 
   .phase-nav-tab-active {
@@ -479,6 +493,11 @@
   .phase-nav-tab-interactive:hover {
     @apply bg-white text-system-gray-900;
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  }
+
+  .phase-nav-tab-interactive:active {
+    background-color: color-mix(in srgb, var(--surface-primary) 94%, var(--color-system-gray-100));
+    box-shadow: 0 1px 1px rgba(15, 23, 42, 0.05);
   }
 
   .phase-nav-tab-disabled {
@@ -574,16 +593,20 @@
   }
 
   .btn-base {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
-    transition-duration: var(--duration-normal);
+    transition-property: background-color, border-color, color, box-shadow, opacity;
+    transition-duration: var(--motion-duration-fast);
+    transition-timing-function: var(--motion-ease-standard);
     gap: var(--button-icon-gap);
   }
 
   .btn-primary {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
-    transition-duration: var(--duration-normal);
+    transition-property: background-color, border-color, color, box-shadow, opacity;
+    transition-duration: var(--motion-duration-fast);
+    transition-timing-function: var(--motion-ease-standard);
     gap: var(--button-icon-gap);
     @apply text-white shadow-md shadow-stratosort-blue/20;
     background: linear-gradient(
@@ -594,71 +617,113 @@
   }
   .btn-primary:hover {
     @apply shadow-lg shadow-stratosort-blue/30;
-    transform: translateY(-1px);
+  }
+  .btn-primary:active {
+    filter: brightness(0.97);
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
-    transition-duration: var(--duration-normal);
+    transition-property: background-color, border-color, color, box-shadow, opacity;
+    transition-duration: var(--motion-duration-fast);
+    transition-timing-function: var(--motion-ease-standard);
     gap: var(--button-icon-gap);
     @apply bg-white/90 border border-border-soft text-system-gray-700 shadow-sm;
   }
+  .btn-secondary:active {
+    background-color: color-mix(in srgb, var(--surface-primary) 92%, var(--color-system-gray-100));
+  }
 
   .btn-ghost {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
-    transition-duration: var(--duration-normal);
+    transition-property: background-color, border-color, color, box-shadow, opacity;
+    transition-duration: var(--motion-duration-fast);
+    transition-timing-function: var(--motion-ease-standard);
     gap: var(--button-icon-gap);
     @apply bg-transparent text-system-gray-600 border border-transparent hover:border-border-soft hover:bg-system-gray-50;
   }
+  .btn-ghost:active {
+    @apply bg-system-gray-100;
+  }
 
   .btn-outline {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
-    transition-duration: var(--duration-normal);
+    transition-property: background-color, border-color, color, box-shadow, opacity;
+    transition-duration: var(--motion-duration-fast);
+    transition-timing-function: var(--motion-ease-standard);
     gap: var(--button-icon-gap);
     @apply border-2 border-stratosort-blue text-stratosort-blue bg-transparent;
   }
+  .btn-outline:active {
+    background-color: color-mix(in srgb, var(--color-stratosort-blue) 8%, transparent);
+  }
 
   .btn-subtle {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
-    transition-duration: var(--duration-normal);
+    transition-property: background-color, border-color, color, box-shadow, opacity;
+    transition-duration: var(--motion-duration-fast);
+    transition-timing-function: var(--motion-ease-standard);
     gap: var(--button-icon-gap);
     @apply bg-system-gray-100 text-system-gray-700 border border-border-soft;
   }
+  .btn-subtle:active {
+    @apply bg-system-gray-200;
+  }
 
   .btn-success {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
-    transition-duration: var(--duration-normal);
+    transition-property: background-color, border-color, color, box-shadow, opacity;
+    transition-duration: var(--motion-duration-fast);
+    transition-timing-function: var(--motion-ease-standard);
     gap: var(--button-icon-gap);
-    @apply bg-stratosort-success text-white shadow-md hover:shadow-lg hover:-translate-y-0.5;
+    @apply bg-stratosort-success text-white shadow-md hover:shadow-lg;
+  }
+  .btn-success:active {
+    filter: brightness(0.97);
   }
 
   .btn-danger {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
-    transition-duration: var(--duration-normal);
+    transition-property: background-color, border-color, color, box-shadow, opacity;
+    transition-duration: var(--motion-duration-fast);
+    transition-timing-function: var(--motion-ease-standard);
     gap: var(--button-icon-gap);
-    @apply bg-stratosort-danger text-white shadow-md hover:shadow-lg hover:-translate-y-0.5;
+    @apply bg-stratosort-danger text-white shadow-md hover:shadow-lg;
+  }
+  .btn-danger:active {
+    filter: brightness(0.97);
   }
 
   .btn-warning {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-warning focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-warning focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
-    transition-duration: var(--duration-normal);
+    transition-property: background-color, border-color, color, box-shadow, opacity;
+    transition-duration: var(--motion-duration-fast);
+    transition-timing-function: var(--motion-ease-standard);
     gap: var(--button-icon-gap);
-    @apply bg-stratosort-warning text-white shadow-md hover:shadow-lg hover:-translate-y-0.5;
+    @apply bg-stratosort-warning text-white shadow-md hover:shadow-lg;
+  }
+  .btn-warning:active {
+    filter: brightness(0.97);
   }
 
   .btn-info {
-    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
-    transition-duration: var(--duration-normal);
+    transition-property: background-color, border-color, color, box-shadow, opacity;
+    transition-duration: var(--motion-duration-fast);
+    transition-timing-function: var(--motion-ease-standard);
     gap: var(--button-icon-gap);
-    @apply bg-stratosort-blue text-white shadow-md shadow-stratosort-blue/20 hover:shadow-lg hover:-translate-y-0.5;
+    @apply bg-stratosort-blue text-white shadow-md shadow-stratosort-blue/20 hover:shadow-lg;
+  }
+  .btn-info:active {
+    filter: brightness(0.97);
   }
 
   .button-icon {
@@ -760,7 +825,7 @@
 
   /* Dropdown menu animation - smooth entrance */
   .animate-dropdown-enter {
-    animation: dropdownEnter 150ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: dropdownEnter var(--motion-duration-fast) var(--motion-ease-emphasized) forwards;
     transform-origin: top center;
     will-change: transform, opacity;
   }
@@ -1060,22 +1125,23 @@
 
   /* Modal entrance/backdrop animations */
   .animate-modal-backdrop {
-    animation: modalBackdropFadeIn 180ms ease-out forwards;
+    animation: modalBackdropFadeIn var(--motion-duration-standard) var(--motion-ease-standard)
+      forwards;
   }
 
   .animate-modal-enter {
-    animation: modalPanelIn 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    will-change: transform, opacity;
+    animation: modalPanelIn var(--motion-duration-standard) var(--motion-ease-emphasized) forwards;
+    will-change: opacity;
   }
 
   /* Modal exit animations */
   .animate-modal-backdrop-exit {
-    animation: modalBackdropFadeOut 150ms ease-in forwards;
+    animation: modalBackdropFadeOut var(--motion-duration-fast) var(--motion-ease-standard) forwards;
   }
 
   .animate-modal-exit {
-    animation: modalPanelOut 150ms ease-in forwards;
-    will-change: transform, opacity;
+    animation: modalPanelOut var(--motion-duration-fast) var(--motion-ease-standard) forwards;
+    will-change: opacity;
   }
 
   @keyframes modalBackdropFadeIn {
@@ -1099,50 +1165,50 @@
   @keyframes modalPanelIn {
     from {
       opacity: 0;
-      transform: translate3d(0, 10px, 0);
     }
     to {
       opacity: 1;
-      transform: translate3d(0, 0, 0);
     }
   }
 
   @keyframes modalPanelOut {
     from {
       opacity: 1;
-      transform: translate3d(0, 0, 0);
     }
     to {
       opacity: 0;
-      transform: translate3d(0, 8px, 0);
     }
   }
 
   /* Side panel slide animations */
   .animate-sidepanel-enter-right {
-    animation: sidePanelSlideInRight 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: sidePanelSlideInRight var(--motion-duration-standard) var(--motion-ease-emphasized)
+      forwards;
     will-change: transform, opacity;
   }
 
   .animate-sidepanel-exit-right {
-    animation: sidePanelSlideOutRight 200ms ease-in forwards;
+    animation: sidePanelSlideOutRight var(--motion-duration-fast) var(--motion-ease-standard)
+      forwards;
     will-change: transform, opacity;
   }
 
   .animate-sidepanel-enter-left {
-    animation: sidePanelSlideInLeft 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: sidePanelSlideInLeft var(--motion-duration-standard) var(--motion-ease-emphasized)
+      forwards;
     will-change: transform, opacity;
   }
 
   .animate-sidepanel-exit-left {
-    animation: sidePanelSlideOutLeft 200ms ease-in forwards;
+    animation: sidePanelSlideOutLeft var(--motion-duration-fast) var(--motion-ease-standard)
+      forwards;
     will-change: transform, opacity;
   }
 
   @keyframes sidePanelSlideInRight {
     from {
       opacity: 0;
-      transform: translate3d(24px, 0, 0);
+      transform: translate3d(16px, 0, 0);
     }
     to {
       opacity: 1;
@@ -1157,14 +1223,14 @@
     }
     to {
       opacity: 0;
-      transform: translate3d(24px, 0, 0);
+      transform: translate3d(16px, 0, 0);
     }
   }
 
   @keyframes sidePanelSlideInLeft {
     from {
       opacity: 0;
-      transform: translate3d(-24px, 0, 0);
+      transform: translate3d(-16px, 0, 0);
     }
     to {
       opacity: 1;
@@ -1179,7 +1245,7 @@
     }
     to {
       opacity: 0;
-      transform: translate3d(-24px, 0, 0);
+      transform: translate3d(-16px, 0, 0);
     }
   }
 
@@ -1188,7 +1254,34 @@
     animation: skeletonFadeIn 200ms ease-out forwards;
   }
 
+  /* Generic loading fade utilities (opacity only to avoid layout jitter) */
+  .animate-loading-fade {
+    animation: loadingFadeIn var(--motion-duration-standard) var(--motion-ease-emphasized) both;
+  }
+
+  .animate-loading-content {
+    animation: loadingContentFadeIn var(--motion-duration-slow) var(--motion-ease-emphasized) both;
+  }
+
   @keyframes skeletonFadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes loadingFadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes loadingContentFadeIn {
     from {
       opacity: 0;
     }
@@ -1206,7 +1299,9 @@
     .animate-sidepanel-exit-right,
     .animate-sidepanel-enter-left,
     .animate-sidepanel-exit-left,
-    .animate-skeleton-enter {
+    .animate-skeleton-enter,
+    .animate-loading-fade,
+    .animate-loading-content {
       animation-duration: 1ms !important;
       animation-iteration-count: 1 !important;
     }

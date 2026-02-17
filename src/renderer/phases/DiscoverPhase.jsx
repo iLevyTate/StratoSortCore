@@ -469,12 +469,12 @@ function DiscoverPhase() {
           </Inline>
 
           <div
-            className={`flex-1 flex flex-col items-center justify-center animate-fade-in text-center min-h-[200px] p-8 transition-colors duration-200 border-2 border-dashed rounded-xl ${
+            className={`flex-1 flex flex-col items-center justify-center animate-fade-in text-center min-h-[200px] p-8 transition-colors [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] border-2 border-dashed rounded-xl ${
               isDragging ? 'border-stratosort-blue bg-stratosort-blue/5' : 'border-system-gray-200'
             }`}
             {...dragProps}
           >
-            <div className="w-16 h-16 bg-gradient-to-br from-stratosort-blue to-stratosort-indigo shadow-lg flex items-center justify-center transform transition-transform hover:scale-105 duration-300 rounded-xl mb-4">
+            <div className="w-16 h-16 bg-gradient-to-br from-stratosort-blue to-stratosort-indigo shadow-lg flex items-center justify-center transition-shadow [transition-duration:var(--motion-duration-standard)] [transition-timing-function:var(--motion-ease-standard)] hover:shadow-xl rounded-xl mb-4">
               <FolderOpen className="w-8 h-8 text-white" />
             </div>
 

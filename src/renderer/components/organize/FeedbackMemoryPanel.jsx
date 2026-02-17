@@ -123,7 +123,7 @@ function FeedbackMemoryPanel({ className = '', refreshToken }) {
       </div>
 
       {loading ? (
-        <Text variant="tiny" className="text-system-gray-500">
+        <Text variant="tiny" className="text-system-gray-500 animate-loading-fade">
           Loading memories...
         </Text>
       ) : memories.length === 0 ? (

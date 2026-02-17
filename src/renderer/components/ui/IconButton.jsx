@@ -28,18 +28,20 @@ function IconButton({
 
   const variantClasses = {
     default:
-      'bg-white border border-system-gray-200 text-system-gray-600 hover:text-stratosort-blue hover:border-stratosort-blue hover:shadow-md',
-    primary: 'bg-stratosort-blue text-white hover:bg-stratosort-blue/90 shadow-sm hover:shadow-md',
+      'bg-white border border-system-gray-200 text-system-gray-600 hover:text-stratosort-blue hover:border-stratosort-blue hover:shadow-md active:bg-system-gray-50',
+    primary:
+      'bg-stratosort-blue text-white hover:bg-stratosort-blue/90 shadow-sm hover:shadow-md active:brightness-95',
     secondary:
-      'bg-white/90 border border-border-soft text-system-gray-700 hover:bg-system-gray-50 hover:border-system-gray-300 shadow-sm',
-    ghost: 'text-system-gray-600 hover:bg-system-gray-100 hover:text-system-gray-900'
+      'bg-white/90 border border-border-soft text-system-gray-700 hover:bg-system-gray-50 hover:border-system-gray-300 shadow-sm active:bg-system-gray-100',
+    ghost:
+      'text-system-gray-600 hover:bg-system-gray-100 hover:text-system-gray-900 active:bg-system-gray-200/70'
   };
 
   return (
     <button
       className={`
         inline-flex items-center justify-center
-        rounded-full transition-all [transition-duration:var(--duration-normal)]
+        rounded-full transition-colors transition-shadow [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)]
         focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2
         disabled:opacity-50 disabled:cursor-not-allowed
         ${sizeClasses[size]}

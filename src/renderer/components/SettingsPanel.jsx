@@ -147,6 +147,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const settingsRef = useRef(null);
   const uiSettingsRef = useRef(uiSettings);
   const settingsLoadedRef = useRef(false);
+  const modelLoadRequestRef = useRef(0);
   const lastSavedSnapshotRef = useRef(stableStringify(sanitizeSettings(DEFAULT_SETTINGS)));
 
   useEffect(() => {
@@ -229,9 +230,15 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   }, [applySettingsUpdate, dispatch, updateLastSavedSnapshot]);
 
   const loadModels = useCallback(async () => {
+    const requestId = modelLoadRequestRef.current + 1;
+    modelLoadRequestRef.current = requestId;
+
     try {
       setIsRefreshingModels(true);
       const response = await llamaIpc.getModels();
+      if (modelLoadRequestRef.current !== requestId) {
+        return;
+      }
       const categories = response?.categories || {
         text: [],
         vision: [],
@@ -260,6 +267,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       // but applying it here can silently overwrite user-configured models
       // with fallback/default selections and then persist them on next save.
     } catch (error) {
+      if (modelLoadRequestRef.current !== requestId) {
+        return;
+      }
       logger.error('Failed to load AI models', {
         error: error.message,
         stack: error.stack
@@ -267,7 +277,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       setModelLists({ text: [], vision: [], embedding: [], all: [] });
       addNotification('Failed to load AI models. Check model downloads.', 'warning');
     } finally {
-      setIsRefreshingModels(false);
+      if (modelLoadRequestRef.current === requestId) {
+        setIsRefreshingModels(false);
+      }
     }
   }, [addNotification]);
 
@@ -679,7 +691,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       role="presentation"
     >
       <div
-        className="surface-panel !p-0 w-full max-w-4xl mx-auto max-h-[86vh] flex flex-col overflow-hidden shadow-2xl animate-modal-enter pointer-events-auto"
+        className="surface-panel !p-0 w-full max-w-4xl mx-auto max-h-[86vh] flex flex-col overflow-hidden shadow-2xl pointer-events-auto"
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
@@ -774,8 +786,8 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
             <div className="p-6 flex flex-col gap-6 flex-1 min-h-0 overflow-y-auto modern-scrollbar relative">
               {isHydrating && (
-                <div className="absolute inset-0 bg-surface-primary/80 flex items-center justify-center z-10 rounded-b-2xl">
-                  <div className="text-center">
+                <div className="absolute inset-0 bg-surface-primary/80 flex items-center justify-center z-10 rounded-b-2xl animate-loading-fade">
+                  <div className="text-center animate-loading-content">
                     <div className="animate-spin w-10 h-10 border-3 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-3" />
                     <Text variant="small" className="text-system-gray-600">
                       Loading settings\u2026

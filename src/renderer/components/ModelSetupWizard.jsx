@@ -1,15 +1,7 @@
 // src/renderer/components/ModelSetupWizard.jsx
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import {
-  Download,
-  HardDrive,
-  Cpu,
-  CheckCircle,
-  Loader2,
-  AlertTriangle,
-  RefreshCw
-} from 'lucide-react';
+import { Download, HardDrive, Cpu, CheckCircle, Loader2, RefreshCw } from 'lucide-react';
 import AlertBox from './ui/AlertBox';
 import Button from './ui/Button';
 import Card from './ui/Card';
@@ -361,21 +353,23 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
 
   if (step === 'checking') {
     return (
-      <Card className="max-w-2xl mx-auto p-8 text-center">
-        <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-blue/10 mb-4">
-          <Loader2 className="w-7 h-7 text-stratosort-blue animate-spin" />
+      <Card className="max-w-2xl mx-auto p-8 text-center animate-loading-fade">
+        <div className="animate-loading-content">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-blue/10 mb-4">
+            <Loader2 className="w-7 h-7 text-stratosort-blue animate-spin" />
+          </div>
+          <Heading as="h2" variant="h2">
+            Checking System...
+          </Heading>
+          <Text className="text-system-gray-600 mt-2">Detecting GPU and memory configuration</Text>
         </div>
-        <Heading as="h2" variant="h2">
-          Checking System...
-        </Heading>
-        <Text className="text-system-gray-600 mt-2">Detecting GPU and memory configuration</Text>
       </Card>
     );
   }
 
   if (step === 'select') {
     return (
-      <Card className="max-w-2xl mx-auto p-8">
+      <Card className="max-w-2xl mx-auto p-8 animate-loading-fade">
         <div className="text-center mb-6">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-blue/10 mb-4">
             <Cpu className="w-7 h-7 text-stratosort-blue" />
@@ -557,7 +551,7 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     );
 
     return (
-      <Card className="max-w-2xl mx-auto p-8">
+      <Card className="max-w-2xl mx-auto p-8 animate-loading-fade">
         <div className="text-center mb-6">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-blue/10 mb-4">
             <Download className="w-7 h-7 text-stratosort-blue" />
@@ -638,7 +632,7 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
   }
 
   return (
-    <Card className="max-w-2xl mx-auto p-8 text-center">
+    <Card className="max-w-2xl mx-auto p-8 text-center animate-loading-fade">
       <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-success/10 mb-4">
         <CheckCircle className="w-7 h-7 text-stratosort-success" />
       </div>

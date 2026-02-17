@@ -1,68 +1,65 @@
-let lockCount = 0;
+const activeLockIds = new Set();
+let anonymousLockCount = 0;
 let savedOverflow = { body: '', main: '' };
-let savedPaddingRight = { body: '', main: '' };
 
-/** Get viewport scrollbar width (fallback target). */
-function getViewportScrollbarWidth() {
-  if (typeof document === 'undefined') return 0;
-  return window.innerWidth - document.documentElement.clientWidth;
+function normalizeLockId(lockId) {
+  return typeof lockId === 'string' && lockId.trim().length > 0 ? lockId : null;
 }
 
-/** Get element scrollbar width to reserve space and prevent layout shift. */
-function getElementScrollbarWidth(element) {
-  if (!element) return 0;
-  return Math.max(0, element.offsetWidth - element.clientWidth);
+function getTotalLockCount() {
+  return activeLockIds.size + anonymousLockCount;
 }
 
-export function lockAppScroll(_lockId) {
+export function lockAppScroll(lockId) {
   if (typeof document === 'undefined') return;
 
-  lockCount += 1;
-  if (lockCount > 1) return;
+  const normalizedLockId = normalizeLockId(lockId);
+
+  if (normalizedLockId) {
+    if (activeLockIds.has(normalizedLockId)) {
+      return;
+    }
+    activeLockIds.add(normalizedLockId);
+  } else {
+    anonymousLockCount += 1;
+  }
+
+  if (getTotalLockCount() > 1) return;
 
   const mainContent = document.getElementById('main-content');
   savedOverflow = {
     body: document.body.style.overflow || '',
     main: mainContent?.style.overflow || ''
   };
-  savedPaddingRight = {
-    body: document.body.style.paddingRight || '',
-    main: mainContent?.style.paddingRight || ''
-  };
 
   // Keep body lock semantics for compatibility and deterministic behavior.
   document.body.style.overflow = 'hidden';
 
-  // Prefer locking the app scroller itself to avoid viewport width jumps.
+  // Lock app scroller as well. Keep width stable via CSS scrollbar-gutter.
   if (mainContent) {
-    const scrollbarWidth = getElementScrollbarWidth(mainContent);
     mainContent.style.overflow = 'hidden';
-    if (scrollbarWidth > 0) {
-      mainContent.style.paddingRight = `${scrollbarWidth}px`;
-    }
-    return;
-  }
-
-  // Fallback for early boot or non-standard layouts.
-  const scrollbarWidth = getViewportScrollbarWidth();
-  if (scrollbarWidth > 0) {
-    document.body.style.paddingRight = `${scrollbarWidth}px`;
   }
 }
 
-export function unlockAppScroll(_lockId) {
+export function unlockAppScroll(lockId) {
   if (typeof document === 'undefined') return;
-  if (lockCount === 0) return;
+  const normalizedLockId = normalizeLockId(lockId);
 
-  lockCount = Math.max(0, lockCount - 1);
-  if (lockCount > 0) return;
+  if (normalizedLockId) {
+    if (!activeLockIds.has(normalizedLockId)) return;
+    activeLockIds.delete(normalizedLockId);
+  } else if (anonymousLockCount > 0) {
+    anonymousLockCount = Math.max(0, anonymousLockCount - 1);
+  } else {
+    return;
+  }
+
+  if (getTotalLockCount() > 0) return;
 
   document.body.style.overflow = savedOverflow.body || '';
-  document.body.style.paddingRight = savedPaddingRight.body || '';
 
   const mainContent = document.getElementById('main-content');
   if (mainContent) {
     mainContent.style.overflow = savedOverflow.main || '';
-    mainContent.style.paddingRight = savedPaddingRight.main || '';
   }
 }

@@ -14,7 +14,7 @@ const VARIANT_TO_CLASS = {
   warning:
     'bg-gradient-to-br from-warning-muted to-warning-muted/90 border border-stratosort-warning/30 rounded-xl p-4 sm:p-6 shadow-sm',
   interactive:
-    'surface-card p-4 sm:p-6 shadow-sm border border-system-gray-200/60 transition-all duration-200 hover:scale-[1.01] hover:shadow-md cursor-pointer active:scale-[0.99]'
+    'surface-card p-4 sm:p-6 shadow-sm border border-system-gray-200/60 hover:shadow-md cursor-pointer'
 };
 
 const Card = memo(function Card({
