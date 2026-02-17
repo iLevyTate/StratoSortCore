@@ -167,12 +167,8 @@ const NavTab = memo(function NavTab({
 
   // Stable click handler - avoids inline arrow in parent's render loop
   const handleClick = useCallback(() => {
-    // DEBUG: temporary diagnostic - remove after fix verified
-    console.log(
-      `[NAV-DEBUG] tab clicked: ${phase} canNavigate=${canNavigate} isActive=${isActive}`
-    );
     if (canNavigate) onPhaseChange(phase);
-  }, [canNavigate, onPhaseChange, phase, isActive]);
+  }, [canNavigate, onPhaseChange, phase]);
 
   const handleMouseEnter = useCallback(() => onHover(phase), [onHover, phase]);
   const handleMouseLeave = useCallback(() => onHover(null), [onHover]);
@@ -430,8 +426,6 @@ function NavigationBar() {
   const dispatch = useAppDispatch();
   const currentPhase = useAppSelector((state) => state.ui.currentPhase);
   const isOrganizing = useAppSelector((state) => state.ui.isOrganizing);
-  // FIX: Use analysis slice as single source of truth for isAnalyzing
-  const isAnalyzing = useAppSelector((state) => state.analysis.isAnalyzing);
   const isLoading = useAppSelector((state) => state.ui.isLoading);
   const health = useAppSelector((state) => state.system.health);
   const connectionStatus = useMemo(() => {
@@ -572,22 +566,15 @@ function NavigationBar() {
     actions.toggleSettings();
   }, [actions]);
 
-  // Check if navigation should be blocked
-  const isBlockedByOperation = isOrganizing || isAnalyzing || isLoading;
+  // Keep top-level navigation responsive; analysis state can become stale.
+  const isBlockedByOperation = isOrganizing || isLoading;
   // Only show a nav spinner for loading states other than analysis to avoid duplicate indicators
   const navSpinnerActive = isOrganizing || isLoading;
-
-  // DEBUG: temporary diagnostic - remove after fix verified
-  useEffect(() => {
-    console.log(
-      `[NAV-DEBUG] blocked=${isBlockedByOperation} organizing=${isOrganizing} analyzing=${isAnalyzing} loading=${isLoading} phase=${currentPhase}`
-    );
-  }, [isOrganizing, isAnalyzing, isLoading, isBlockedByOperation, currentPhase]);
 
   return (
     <header
       className={`
-        fixed inset-x-0 top-0 z-header
+        fixed inset-x-0 top-0 z-[100]
         border-b border-border-soft/60
         backdrop-blur-xl backdrop-saturate-150
         transition-all duration-300 ease-out
@@ -595,23 +582,22 @@ function NavigationBar() {
       `}
       style={{
         WebkitAppRegion: 'drag',
+        zIndex: 'var(--z-header)',
         isolation: 'isolate',
         willChange: 'auto'
       }}
     >
-      <div className="grid grid-cols-[auto_1fr_auto] h-[var(--app-nav-height)] items-center px-4 lg:px-6">
+      <div className="relative flex h-[var(--app-nav-height)] items-center px-4 lg:px-6">
         {/* Left: Brand */}
         <div
-          className={`flex-shrink-0 ${isMac ? 'ml-[78px] lg:ml-[84px]' : ''}`}
+          className={`flex-shrink-0 z-20 ${isMac ? 'ml-[78px] lg:ml-[84px]' : ''}`}
           style={{ WebkitAppRegion: 'no-drag' }}
         >
           <Brand status={connectionStatus} />
         </div>
 
-        {/* Center: Phase Navigation */}
-        {/* Grid 1fr column centers the nav; no pointer-events-none needed. */}
-        {/* Empty space in this cell inherits header drag; nav itself is no-drag. */}
-        <div className="flex items-center justify-center min-w-0 px-2">
+        {/* Center: Phase Navigation - layered center so it never blocks side controls */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <nav
             className="phase-nav max-w-[64vw] xl:max-w-[44rem]"
             style={{ WebkitAppRegion: 'no-drag' }}
@@ -642,7 +628,10 @@ function NavigationBar() {
         </div>
 
         {/* Right: Actions + Window Controls */}
-        <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
+        <div
+          className="ml-auto flex items-center gap-2 z-20"
+          style={{ WebkitAppRegion: 'no-drag' }}
+        >
           <NavActions onSettingsClick={handleSettingsClick} />
           <WindowControls />
         </div>

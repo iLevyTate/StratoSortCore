@@ -316,9 +316,9 @@ function removeSplashScreen() {
       element.remove();
       logger.debug('[Splash] Splash screen removed successfully');
     }
-    // Restore overflow so app scroll works (critical CSS locks it during splash)
-    document.documentElement.style.overflow = 'visible';
-    document.body.style.overflow = 'visible';
+    // Keep root scrolling locked and route scroll through main-content to avoid layout jumps.
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
   }, 300);
 }
 

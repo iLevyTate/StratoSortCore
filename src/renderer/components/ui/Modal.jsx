@@ -178,7 +178,7 @@ const Modal = memo(function Modal({
     >
       {/* Backdrop */}
       <div
-        className={`absolute inset-0 bg-black/40 backdrop-blur-sm ${backdropAnimation}`}
+        className={`absolute inset-0 bg-black/40 backdrop-blur-sm ${closeOnOverlayClick && !isClosing ? 'pointer-events-auto' : 'pointer-events-none'} ${backdropAnimation}`}
         onClick={closeOnOverlayClick && !isClosing ? onClose : undefined}
         aria-hidden="true"
       />

@@ -1099,22 +1099,22 @@
   @keyframes modalPanelIn {
     from {
       opacity: 0;
-      transform: translate3d(0, 12px, 0) scale(0.98);
+      transform: translate3d(0, 10px, 0);
     }
     to {
       opacity: 1;
-      transform: translate3d(0, 0, 0) scale(1);
+      transform: translate3d(0, 0, 0);
     }
   }
 
   @keyframes modalPanelOut {
     from {
       opacity: 1;
-      transform: translate3d(0, 0, 0) scale(1);
+      transform: translate3d(0, 0, 0);
     }
     to {
       opacity: 0;
-      transform: translate3d(0, 8px, 0) scale(0.98);
+      transform: translate3d(0, 8px, 0);
     }
   }
 

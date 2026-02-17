@@ -99,7 +99,7 @@ const SidePanel = memo(function SidePanel({
     <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 'var(--z-modal)' }}>
       {showOverlay && (
         <div
-          className={`absolute inset-0 bg-black/25 backdrop-blur-[1px] pointer-events-auto ${overlayAnimation}`}
+          className={`absolute inset-0 bg-black/25 backdrop-blur-[1px] ${closeOnOverlayClick && !isClosing ? 'pointer-events-auto' : 'pointer-events-none'} ${overlayAnimation}`}
           onClick={closeOnOverlayClick && !isClosing ? onClose : undefined}
           aria-hidden="true"
         />

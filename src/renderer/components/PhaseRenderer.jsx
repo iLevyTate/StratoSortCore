@@ -31,12 +31,10 @@ const preloadPhases = () => {
 // Subtle slide + opacity for refined phase transitions (no slide when reduced motion preferred)
 const pageVariants = (reducedMotion) => ({
   initial: {
-    opacity: 0,
-    y: reducedMotion ? 0 : 6
+    opacity: 0
   },
   in: {
     opacity: 1,
-    y: 0,
     transition: {
       duration: reducedMotion ? 0.1 : 0.22,
       ease: [0.16, 1, 0.3, 1]
@@ -44,7 +42,6 @@ const pageVariants = (reducedMotion) => ({
   },
   out: {
     opacity: 0,
-    y: reducedMotion ? 0 : -4,
     transition: {
       duration: reducedMotion ? 0.08 : 0.15,
       ease: [0.4, 0, 0.2, 1]

@@ -28,6 +28,7 @@ const AppShell = memo(function AppShell({
       <main
         id="main-content"
         className="flex-1 flex flex-col min-h-0 pt-[var(--app-nav-height)] overflow-y-auto overflow-x-hidden modern-scrollbar relative"
+        style={{ scrollbarGutter: 'stable both-edges' }}
       >
         {/* Background pattern or gradient can be added here if needed globally */}
 
