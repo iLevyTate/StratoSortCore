@@ -46,6 +46,8 @@ import GraphRetrievalSection from './settings/GraphRetrievalSection';
 import ApplicationSection from './settings/ApplicationSection';
 import APITestSection from './settings/APITestSection';
 import SettingsBackupSection from './settings/SettingsBackupSection';
+import DebugToolsSection from './settings/DebugToolsSection';
+import DiagnosticsLogsSection from './settings/DiagnosticsLogsSection';
 
 const AnalysisHistoryModal = lazy(() => import('./AnalysisHistoryModal'));
 
@@ -54,8 +56,8 @@ const SECTION_KEYS = [
   'settings-performance',
   'settings-defaults',
   'settings-app',
-  'settings-history',
-  'settings-api'
+  'settings-diagnostics',
+  'settings-history'
 ];
 
 const logger = createLogger('SettingsPanel');
@@ -85,6 +87,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const uiSettings = useAppSelector((state) => state.ui.settings);
   const { addNotification } = useNotification();
   const isApiAvailable = isElectronAPIAvailable();
+  const isDevBuild = process.env.NODE_ENV === 'development';
 
   const handleToggleSettings = useCallback(() => {
     dispatch(toggleSettings());
@@ -923,13 +926,17 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 title={
                   <div className="flex items-center gap-2">
                     <Wrench className="h-4 w-4 text-stratosort-blue" aria-hidden="true" />
-                    <span>Backend API Test</span>
+                    <span>Diagnostics</span>
                   </div>
                 }
                 defaultOpen={false}
-                persistKey="settings-api"
+                persistKey="settings-diagnostics"
               >
-                <APITestSection addNotification={addNotification} />
+                <Stack gap="spacious">
+                  <DiagnosticsLogsSection addNotification={addNotification} />
+                  <APITestSection addNotification={addNotification} />
+                  {isDevBuild && <DebugToolsSection addNotification={addNotification} />}
+                </Stack>
               </Collapsible>
             </div>
 

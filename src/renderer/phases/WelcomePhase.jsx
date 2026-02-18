@@ -9,6 +9,7 @@ import { Heading, Text, Caption } from '../components/ui/Typography';
 import Modal from '../components/ui/Modal';
 import { Stack } from '../components/layout';
 import ModelSetupWizard from '../components/ModelSetupWizard';
+import { isForceModelWizardEnabled } from '../utils/debugFlags';
 
 function WelcomePhase() {
   const dispatch = useAppDispatch();
@@ -21,6 +22,14 @@ function WelcomePhase() {
   useEffect(() => {
     let cancelled = false;
     const RETRY_DELAY_MS = 1800;
+    const forceModelWizard = isForceModelWizardEnabled();
+
+    if (forceModelWizard) {
+      setModelCheckState('missing');
+      return () => {
+        cancelled = true;
+      };
+    }
 
     async function getActiveMissingDownloadCount(missingModelNames = []) {
       const getStatus = window?.electronAPI?.llama?.getDownloadStatus;

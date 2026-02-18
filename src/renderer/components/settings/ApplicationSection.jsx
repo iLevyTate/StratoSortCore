@@ -6,66 +6,15 @@ import SettingRow from './SettingRow';
 import Button from '../ui/Button';
 import SettingsCard from './SettingsCard';
 import { logger } from '../../../shared/logger';
-import { getElectronAPI, settingsIpc, systemIpc } from '../../services/ipc';
+import { getElectronAPI, systemIpc } from '../../services/ipc';
 
 /**
  * Application settings section (launch on startup, etc.)
  */
 function ApplicationSection({ settings, setSettings, addNotification }) {
-  const [isOpeningLogs, setIsOpeningLogs] = React.useState(false);
-  const [isExportingLogs, setIsExportingLogs] = React.useState(false);
   const [isCheckingUpdates, setIsCheckingUpdates] = React.useState(false);
   const electronApi = getElectronAPI();
-  const canOpenLogsFolder = typeof electronApi?.settings?.openLogsFolder === 'function';
-  const canExportLogs = typeof electronApi?.system?.exportLogs === 'function';
   const canCheckUpdates = typeof electronApi?.system?.checkForUpdates === 'function';
-
-  const handleOpenLogsFolder = React.useCallback(async () => {
-    if (isOpeningLogs) return;
-    if (!canOpenLogsFolder) {
-      addNotification?.('Open logs folder is unavailable in this build', 'error');
-      return;
-    }
-
-    setIsOpeningLogs(true);
-    try {
-      const result = await settingsIpc.openLogsFolder();
-      if (result?.success === false) {
-        throw new Error(result.error || 'Failed to open logs folder');
-      }
-    } catch (error) {
-      logger.error('[Settings] Failed to open logs folder', { error });
-      addNotification?.('Failed to open logs folder', 'error');
-    } finally {
-      setIsOpeningLogs(false);
-    }
-  }, [addNotification, canOpenLogsFolder, isOpeningLogs]);
-
-  const handleExportLogs = React.useCallback(async () => {
-    if (isExportingLogs) return;
-    if (!canExportLogs) {
-      addNotification?.('Export logs is unavailable in this build', 'error');
-      return;
-    }
-
-    setIsExportingLogs(true);
-    try {
-      const result = await systemIpc.exportLogs();
-      if (result?.success) {
-        addNotification?.(`Logs exported to ${result.filePath || 'file'}`, 'success');
-      } else if (result?.canceled || result?.cancelled) {
-        // User canceled the save dialog — no notification needed
-      } else if (result?.error) {
-        logger.error('[Settings] Failed to export logs', { error: result.error });
-        addNotification?.(result.error || 'Failed to export logs', 'error');
-      }
-    } catch (error) {
-      logger.error('[Settings] Failed to export logs', { error });
-      addNotification?.('Failed to export logs', 'error');
-    } finally {
-      setIsExportingLogs(false);
-    }
-  }, [addNotification, canExportLogs, isExportingLogs]);
 
   const handleCheckForUpdates = React.useCallback(async () => {
     if (isCheckingUpdates) return;
@@ -120,32 +69,6 @@ function ApplicationSection({ settings, setSettings, addNotification }) {
         >
           Check for Updates
         </Button>
-      </SettingRow>
-
-      <SettingRow
-        label="Troubleshooting Logs"
-        description="Manage application logs for debugging and support."
-      >
-        <div className="flex gap-2">
-          <Button
-            variant="subtle"
-            size="sm"
-            onClick={handleOpenLogsFolder}
-            disabled={!canOpenLogsFolder}
-            isLoading={isOpeningLogs}
-          >
-            Open Folder
-          </Button>
-          <Button
-            variant="subtle"
-            size="sm"
-            onClick={handleExportLogs}
-            disabled={!canExportLogs}
-            isLoading={isExportingLogs}
-          >
-            Export Logs
-          </Button>
-        </div>
       </SettingRow>
     </SettingsCard>
   );

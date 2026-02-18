@@ -55,8 +55,16 @@ jest.mock('lucide-react', () => ({
 import WelcomePhase from '../../src/renderer/phases/WelcomePhase';
 
 describe('WelcomePhase', () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+
   afterEach(() => {
     delete window.electronAPI;
+    delete window.__STRATOSORT_FORCE_MODEL_WIZARD__;
+    delete window.__STRATOSORT_DEBUG_MODE__;
+    window.localStorage.removeItem('stratosort:debugMode');
+    window.localStorage.removeItem('stratosort:forceModelWizard');
+    window.history.replaceState({}, '', '/');
+    process.env.NODE_ENV = originalNodeEnv;
   });
 
   test('renders main content when Electron API is unavailable', async () => {
@@ -106,5 +114,18 @@ describe('WelcomePhase', () => {
       expect(screen.getByText(/Downloading AI Models/i)).toBeInTheDocument();
     });
     expect(screen.queryByTestId('model-setup-wizard')).not.toBeInTheDocument();
+  });
+
+  test('shows model setup wizard when dev force flag is enabled', async () => {
+    process.env.NODE_ENV = 'development';
+    window.history.replaceState({}, '', '/?forceModelWizard=1');
+    window.electronAPI = undefined;
+
+    render(<WelcomePhase />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('model-setup-wizard')).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Organize files now/i)).not.toBeInTheDocument();
   });
 });
