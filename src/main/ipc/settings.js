@@ -90,8 +90,52 @@ async function applySettingsToServices(merged, { logger }) {
 
   // Apply all Llama config changes through LlamaService to trigger proper notifications
   // skipSave: true because we're already in a save operation (settings are saved by the caller)
+  let modelUpdate = null;
   if (Object.keys(llamaConfig).length > 0) {
-    await llamaService.updateConfig(llamaConfig, { skipSave: true });
+    const beforeConfig =
+      typeof llamaService.getConfig === 'function'
+        ? await llamaService.getConfig().catch(() => null)
+        : null;
+    const updateResult = await llamaService.updateConfig(llamaConfig, { skipSave: true });
+    const afterConfig =
+      typeof llamaService.getConfig === 'function'
+        ? await llamaService.getConfig().catch(() => null)
+        : null;
+
+    const changed = {};
+    for (const key of ['textModel', 'visionModel', 'embeddingModel']) {
+      if (beforeConfig?.[key] && afterConfig?.[key] && beforeConfig[key] !== afterConfig[key]) {
+        changed[key] = {
+          from: beforeConfig[key],
+          to: afterConfig[key]
+        };
+      }
+    }
+
+    modelUpdate = {
+      requested: {
+        textModel: llamaConfig.textModel,
+        visionModel: llamaConfig.visionModel,
+        embeddingModel: llamaConfig.embeddingModel
+      },
+      changed,
+      selected: updateResult?.selected || null,
+      modelDowngraded: Boolean(updateResult?.modelDowngraded)
+    };
+
+    logger.info('[SETTINGS] Applied Llama config update', {
+      changedModelKeys: Object.keys(changed),
+      modelDowngraded: modelUpdate.modelDowngraded,
+      requestedEmbeddingModel: llamaConfig.embeddingModel,
+      selectedEmbeddingModel: modelUpdate.selected?.embedding || afterConfig?.embeddingModel || null
+    });
+
+    if (modelUpdate.modelDowngraded) {
+      logger.warn('[SETTINGS] Some requested model selections were adjusted', {
+        requested: modelUpdate.requested,
+        selected: modelUpdate.selected
+      });
+    }
   }
 
   if (typeof merged.launchOnStartup === 'boolean') {
@@ -103,6 +147,8 @@ async function applySettingsToServices(merged, { logger }) {
       logger.warn('[SETTINGS] Failed to set login item settings:', error.message);
     }
   }
+
+  return modelUpdate;
 }
 
 /**
@@ -328,7 +374,7 @@ async function handleSettingsSaveCore(settings, deps) {
     const merged = saveResult.settings || saveResult; // Backward compatibility
     const validationWarnings = saveResult.validationWarnings || [];
 
-    await applySettingsToServices(merged, { logger });
+    const modelUpdate = await applySettingsToServices(merged, { logger });
     logger.info('[SETTINGS] Saved settings');
 
     // Invalidate notification service cache to ensure new settings take effect immediately
@@ -364,6 +410,7 @@ async function handleSettingsSaveCore(settings, deps) {
     return {
       success: true,
       settings: merged,
+      modelUpdate,
       propagationSuccess,
       validationWarnings
     };

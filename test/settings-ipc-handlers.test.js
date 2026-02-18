@@ -1040,7 +1040,7 @@ describe('Settings IPC Handlers', () => {
       });
 
       const handler = handlers[IPC_CHANNELS.SETTINGS.SAVE];
-      await handler(
+      const result = await handler(
         {},
         {
           textModel: 'newmodel',
@@ -1059,6 +1059,14 @@ describe('Settings IPC Handlers', () => {
           embeddingModel: 'newembedding'
         },
         { skipSave: true }
+      );
+      expect(result.modelUpdate).toEqual(
+        expect.objectContaining({
+          requested: expect.objectContaining({
+            embeddingModel: 'newembedding'
+          }),
+          modelDowngraded: false
+        })
       );
     });
 

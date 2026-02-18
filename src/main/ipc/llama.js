@@ -246,13 +246,56 @@ function registerLlamaIpc(servicesOrParams) {
         try {
           const service = getLlamaService();
           await service.initialize();
+          const beforeConfig =
+            typeof service.getConfig === 'function'
+              ? await service.getConfig().catch(() => null)
+              : null;
           const mappedConfig = {
             ...config,
             gpuLayers: config?.gpuLayers ?? config?.llamaGpuLayers,
             contextSize: config?.contextSize ?? config?.llamaContextSize
           };
-          await service.updateConfig(mappedConfig);
-          return { success: true };
+          const updateResult = await service.updateConfig(mappedConfig);
+          const afterConfig =
+            typeof service.getConfig === 'function'
+              ? await service.getConfig().catch(() => null)
+              : null;
+
+          const changed = {};
+          for (const key of ['textModel', 'visionModel', 'embeddingModel']) {
+            if (
+              beforeConfig?.[key] &&
+              afterConfig?.[key] &&
+              beforeConfig[key] !== afterConfig[key]
+            ) {
+              changed[key] = {
+                from: beforeConfig[key],
+                to: afterConfig[key]
+              };
+            }
+          }
+
+          logger.info('[IPC:Llama] Config update applied', {
+            changedModelKeys: Object.keys(changed),
+            modelDowngraded: Boolean(updateResult?.modelDowngraded),
+            requestedEmbeddingModel: config?.embeddingModel,
+            selectedEmbeddingModel:
+              updateResult?.selected?.embedding || afterConfig?.embeddingModel || null
+          });
+
+          if (updateResult?.modelDowngraded) {
+            logger.warn('[IPC:Llama] Unsupported model request adjusted to safe defaults', {
+              requested: config,
+              selected: updateResult?.selected || null
+            });
+          }
+
+          return {
+            success: true,
+            selected: updateResult?.selected || null,
+            modelDowngraded: Boolean(updateResult?.modelDowngraded),
+            changes: changed
+          };
         } catch (error) {
           logger.error('[IPC:Llama] Error updating config:', error);
           return { success: false, error: error.message };

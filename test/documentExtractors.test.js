@@ -10,7 +10,8 @@ const fs = require('fs').promises;
 jest.mock('unpdf', () => ({
   extractText: jest.fn(),
   definePDFJSModule: jest.fn().mockResolvedValue(),
-  renderPageAsImage: jest.fn()
+  renderPageAsImage: jest.fn(),
+  getDocumentProxy: jest.fn()
 }));
 jest.mock('sharp');
 jest.mock('@napi-rs/canvas', () => ({}));
@@ -175,6 +176,9 @@ describe('documentExtractors', () => {
 
       // 2. Mock unpdf page renderer
       unpdf.renderPageAsImage.mockResolvedValue(Buffer.from('png data'));
+      unpdf.getDocumentProxy.mockResolvedValue({
+        destroy: jest.fn().mockResolvedValue(undefined)
+      });
 
       // 3. Mock OCR success
       recognizeIfAvailable.mockResolvedValue({ success: true, text: 'Fallback extracted text' });
@@ -184,6 +188,44 @@ describe('documentExtractors', () => {
       expect(result).toContain('Fallback extracted text');
       // Should have called unpdf.renderPageAsImage
       expect(unpdf.renderPageAsImage).toHaveBeenCalled();
+    });
+
+    test('should reuse a shared PDF document proxy for multi-page OCR fallback', async () => {
+      const sharp = require('sharp');
+      const { recognizeIfAvailable } = require('../src/main/utils/tesseractUtils');
+      const unpdf = require('unpdf');
+
+      jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
+      jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('pdf data'));
+
+      const mockSharp = {
+        metadata: jest
+          .fn()
+          .mockRejectedValue(new Error('Input buffer contains unsupported image format')),
+        resize: jest.fn().mockReturnThis(),
+        png: jest.fn().mockReturnThis(),
+        toBuffer: jest.fn().mockResolvedValue(Buffer.from('png data'))
+      };
+      sharp.mockReturnValue(mockSharp);
+
+      const proxy = {
+        destroy: jest.fn().mockResolvedValue(undefined)
+      };
+      unpdf.getDocumentProxy.mockResolvedValue(proxy);
+      unpdf.renderPageAsImage.mockImplementation(async (renderTarget) => {
+        if (renderTarget !== proxy) {
+          throw new Error('Expected shared PDFDocumentProxy');
+        }
+        return Buffer.from('png data');
+      });
+      recognizeIfAvailable.mockResolvedValue({ success: true, text: 'Fallback extracted text' });
+
+      const result = await ocrPdfIfNeeded(mockFilePath);
+
+      expect(result).toContain('Fallback extracted text');
+      expect(unpdf.getDocumentProxy).toHaveBeenCalledTimes(1);
+      expect(unpdf.renderPageAsImage).toHaveBeenCalledTimes(3);
+      expect(proxy.destroy).toHaveBeenCalledTimes(1);
     });
 
     test('should return empty string for oversized files', async () => {

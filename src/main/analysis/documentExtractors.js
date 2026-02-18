@@ -44,13 +44,15 @@ async function getUnpdfRenderer() {
   unpdfRendererInit = (async () => {
     let definePDFJSModule;
     let renderPageAsImage;
+    let getDocumentProxy;
     try {
-      ({ definePDFJSModule, renderPageAsImage } = require('unpdf'));
+      ({ definePDFJSModule, renderPageAsImage, getDocumentProxy } = require('unpdf'));
     } catch (requireError) {
       try {
         const mod = await import('unpdf');
         definePDFJSModule = mod.definePDFJSModule || mod.default?.definePDFJSModule;
         renderPageAsImage = mod.renderPageAsImage || mod.default?.renderPageAsImage;
+        getDocumentProxy = mod.getDocumentProxy || mod.default?.getDocumentProxy;
       } catch (importError) {
         logger.warn('[OCR] unpdf renderer unavailable', {
           error: importError.message || requireError.message
@@ -80,7 +82,7 @@ async function getUnpdfRenderer() {
       }
     }
 
-    unpdfRenderer = { renderPageAsImage };
+    unpdfRenderer = { renderPageAsImage, getDocumentProxy };
     return unpdfRenderer;
   })();
   return unpdfRendererInit;
@@ -611,27 +613,53 @@ async function ocrPdfWithCanvasRenderer(pdfBuffer, options = {}) {
   }
 
   const canvasImport = () => Promise.resolve(canvasModule);
-  const dataBuffer = new Uint8Array(pdfBuffer.buffer, pdfBuffer.byteOffset, pdfBuffer.byteLength);
+  // Important: create a standalone copy (not a view over Node Buffer memory),
+  // then reuse a PDFDocumentProxy where available so transfer/detach behavior
+  // in PDF.js workers does not break page 2+ renders.
+  const sourceData = Uint8Array.from(pdfBuffer);
+  let pdfDoc = null;
+  if (typeof renderer.getDocumentProxy === 'function') {
+    try {
+      pdfDoc = await renderer.getDocumentProxy(sourceData);
+    } catch (error) {
+      logger.debug(
+        '[OCR] Failed to create shared PDF document proxy; using per-page data fallback',
+        {
+          error: error.message
+        }
+      );
+      pdfDoc = null;
+    }
+  }
   const MAX_PAGES = 3;
   const SCALE = 1.5;
 
   let combinedText = '';
-  for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
-    try {
-      const rendered = await renderer.renderPageAsImage(dataBuffer, pageNumber, {
-        canvasImport,
-        scale: SCALE
-      });
-      const imageBuffer = Buffer.from(rendered);
-      const ocrResult = await recognizeIfAvailable(null, imageBuffer, options);
-      if (ocrResult.success && ocrResult.text && ocrResult.text.trim()) {
-        combinedText += `${ocrResult.text.trim()}\n\n`;
+  try {
+    for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
+      try {
+        const renderTarget = pdfDoc || Uint8Array.from(sourceData);
+        const rendered = await renderer.renderPageAsImage(renderTarget, pageNumber, {
+          canvasImport,
+          scale: SCALE
+        });
+        const imageBuffer = Buffer.from(rendered);
+        const ocrResult = await recognizeIfAvailable(null, imageBuffer, options);
+        if (ocrResult.success && ocrResult.text && ocrResult.text.trim()) {
+          combinedText += `${ocrResult.text.trim()}\n\n`;
+        }
+      } catch (error) {
+        logger.debug('[OCR] PDF page render failed', {
+          pageNumber,
+          error: error.message
+        });
       }
-    } catch (error) {
-      logger.debug('[OCR] PDF page render failed', {
-        pageNumber,
-        error: error.message
-      });
+    }
+  } finally {
+    try {
+      await pdfDoc?.destroy?.();
+    } catch {
+      // Ignore cleanup errors from PDF.js proxy teardown.
     }
   }
 

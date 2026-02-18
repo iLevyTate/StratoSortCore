@@ -556,6 +556,10 @@ class LlamaService extends EventEmitter {
       } else {
         this._selectedModels.embedding = DEFAULT_CONFIG.embeddingModel;
         modelDowngraded = true;
+        logger.warn('[LlamaService] Unsupported embedding model requested; using default instead', {
+          requested,
+          selected: this._selectedModels.embedding
+        });
       }
     }
 
@@ -656,6 +660,19 @@ class LlamaService extends EventEmitter {
           // ignore callback errors
         }
       }
+    }
+
+    if (changedTypes.length > 0) {
+      logger.info('[LlamaService] Model configuration updated', {
+        changedTypes,
+        selectedModels: { ...this._selectedModels },
+        modelDowngraded
+      });
+    } else {
+      logger.debug('[LlamaService] updateConfig applied with no model change', {
+        modelDowngraded,
+        partialKeys: Object.keys(partial || {})
+      });
     }
 
     return { success: true, modelDowngraded, selected: { ...this._selectedModels } };
