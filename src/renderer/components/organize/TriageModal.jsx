@@ -93,6 +93,9 @@ export default function TriageModal({
       title={title}
       description={description}
       size="lg"
+      closeOnOverlayClick={!isMoving}
+      closeOnEsc={!isMoving}
+      closeDisabled={isMoving}
       footer={
         <>
           <Button variant="secondary" size="sm" onClick={onClose} disabled={isMoving}>
@@ -130,9 +133,13 @@ export default function TriageModal({
               Move to:
             </Text>
             <div className="flex items-center gap-2">
-              <div className="px-3 py-1.5 bg-system-gray-50 border border-system-gray-200 rounded text-sm text-system-gray-700 min-w-[200px] max-w-[300px] truncate">
+              <Text
+                as="div"
+                variant="small"
+                className="px-3 py-1.5 bg-system-gray-50 border border-system-gray-200 rounded text-system-gray-700 min-w-[200px] max-w-[300px] truncate"
+              >
                 {destinationPath ? safeBasename(destinationPath) : 'Select folder...'}
-              </div>
+              </Text>
               <Button size="sm" variant="secondary" onClick={handleBrowse}>
                 Browse
               </Button>
@@ -157,6 +164,16 @@ export default function TriageModal({
                   }
                 `}
                 onClick={() => handleToggleFile(path)}
+                role="button"
+                tabIndex={0}
+                aria-pressed={isSelected}
+                onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleToggleFile(path);
+                  }
+                }}
               >
                 <div onClick={(e) => e.stopPropagation()}>
                   <input
@@ -168,10 +185,16 @@ export default function TriageModal({
                 </div>
                 <FileIcon fileName={file.name || safeBasename(path)} className="w-8 h-8 shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm text-system-gray-900 truncate">
+                  <Text
+                    as="div"
+                    variant="small"
+                    className="font-medium text-system-gray-900 truncate"
+                  >
                     {file.name || safeBasename(path)}
-                  </div>
-                  <div className="text-xs text-system-gray-500 truncate">{path}</div>
+                  </Text>
+                  <Text as="div" variant="tiny" className="text-system-gray-500 truncate">
+                    {path}
+                  </Text>
                 </div>
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Button

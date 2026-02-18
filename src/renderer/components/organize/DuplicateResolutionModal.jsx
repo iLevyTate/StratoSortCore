@@ -138,12 +138,17 @@ export default function DuplicateResolutionModal({
       title="Resolve Duplicates"
       description={`Found ${normalizedGroups.length} sets of duplicates. Select which version to keep.`}
       size="xl"
+      closeOnOverlayClick={!isResolving}
+      closeOnEsc={!isResolving}
+      closeDisabled={isResolving}
       footer={
         <>
-          <div className="flex-1 text-sm text-system-gray-500">
+          <Text as="div" variant="small" className="flex-1 text-system-gray-500">
             Potential savings:{' '}
-            <span className="font-medium text-system-gray-900">{formatBytes(totalSavings)}</span>
-          </div>
+            <Text as="span" variant="small" className="font-medium text-system-gray-900">
+              {formatBytes(totalSavings)}
+            </Text>
+          </Text>
           <Button variant="secondary" size="sm" onClick={onClose} disabled={isResolving}>
             Cancel
           </Button>
@@ -192,6 +197,16 @@ export default function DuplicateResolutionModal({
                       }
                     `}
                     onClick={() => handleSelectKeep(groupIndex, path)}
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={isKept}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleSelectKeep(groupIndex, path);
+                      }
+                    }}
                   >
                     <div className="flex items-center justify-center w-6 h-6 shrink-0">
                       <input
@@ -210,25 +225,40 @@ export default function DuplicateResolutionModal({
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span
-                          className={`font-medium text-sm truncate ${isKept ? 'text-system-gray-900' : 'text-system-gray-600'}`}
+                        <Text
+                          as="span"
+                          variant="small"
+                          className={`font-medium truncate ${isKept ? 'text-system-gray-900' : 'text-system-gray-600'}`}
                         >
                           {file.name || safeBasename(path)}
-                        </span>
+                        </Text>
                         {isKept && (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-stratosort-blue/10 text-stratosort-blue">
+                          <Text
+                            as="span"
+                            variant="tiny"
+                            className="inline-flex items-center px-1.5 py-0.5 rounded font-medium bg-stratosort-blue/10 text-stratosort-blue"
+                          >
                             Keep
-                          </span>
+                          </Text>
                         )}
                         {!isKept && (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-600">
+                          <Text
+                            as="span"
+                            variant="tiny"
+                            className="inline-flex items-center px-1.5 py-0.5 rounded font-medium bg-red-50 text-red-600"
+                          >
                             Delete
-                          </span>
+                          </Text>
                         )}
                       </div>
-                      <div className="text-xs text-system-gray-500 truncate font-mono" title={path}>
+                      <Text
+                        as="div"
+                        variant="tiny"
+                        className="text-system-gray-500 truncate font-mono"
+                        title={path}
+                      >
                         {path}
-                      </div>
+                      </Text>
                     </div>
 
                     <div className="flex gap-1">

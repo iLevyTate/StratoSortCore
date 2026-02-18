@@ -68,6 +68,9 @@ export default function TagClusterModal({
       title={`Tag Cluster: ${clusterName}`}
       description="Add tags to all files in this cluster."
       size="sm"
+      closeOnOverlayClick={!isApplying}
+      closeOnEsc={!isApplying}
+      closeDisabled={isApplying}
       footer={
         <>
           <Button variant="secondary" size="sm" onClick={onClose} disabled={isApplying}>
@@ -88,7 +91,9 @@ export default function TagClusterModal({
     >
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-system-gray-700 mb-1">Add Tags</label>
+          <Text as="label" variant="small" className="block font-medium text-system-gray-700 mb-1">
+            Add Tags
+          </Text>
           <div className="flex gap-2">
             <Input
               value={tagInput}
@@ -99,10 +104,12 @@ export default function TagClusterModal({
               disabled={isApplying}
             />
             <Button
+              type="button"
               variant="secondary"
               onClick={handleAddTag}
               disabled={!tagInput.trim() || isApplying}
-              icon={<Plus className="w-4 h-4" />}
+              leftIcon={<Plus className="w-4 h-4" />}
+              aria-label="Add tag"
             />
           </div>
         </div>
@@ -115,13 +122,20 @@ export default function TagClusterModal({
                 className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-system-gray-200 text-sm text-system-gray-700 shadow-sm"
               >
                 <Tag className="w-3 h-3 text-system-gray-400" />
-                {tag}
-                <button
+                <Text as="span" variant="small" className="text-system-gray-700">
+                  {tag}
+                </Text>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
                   onClick={() => handleRemoveTag(tag)}
-                  className="ml-1 p-0.5 rounded-full hover:bg-system-gray-100 text-system-gray-400 hover:text-system-gray-600"
+                  className="ml-1 h-5 w-5 p-0.5 rounded-full text-system-gray-400 hover:text-system-gray-600"
+                  aria-label={`Remove tag ${tag}`}
+                  leftIcon={<X className="w-3 h-3" />}
                 >
-                  <X className="w-3 h-3" />
-                </button>
+                  <span className="sr-only">Remove</span>
+                </Button>
               </span>
             ))}
           </div>

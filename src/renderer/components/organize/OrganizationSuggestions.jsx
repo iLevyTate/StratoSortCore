@@ -123,13 +123,17 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
             </div>
 
             <div className="mb-3">
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-system-gray-600">Folder:</span>
-                <span className="font-medium text-stratosort-blue">
+              <div className="flex items-center gap-2">
+                <Text as="span" variant="small" className="text-system-gray-600">
+                  Folder:
+                </Text>
+                <Text as="span" variant="small" className="font-medium text-stratosort-blue">
                   {sanitizeFolderName(primary.folder)}
-                </span>
+                </Text>
                 {primary.path && (
-                  <span className="text-system-gray-500">({sanitizeFolderName(primary.path)})</span>
+                  <Text as="span" variant="small" className="text-system-gray-500">
+                    ({sanitizeFolderName(primary.path)})
+                  </Text>
                 )}
               </div>
 
@@ -153,12 +157,7 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
             </div>
 
             <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={() => handleAccept(primary)}
-                className="bg-stratosort-blue hover:bg-stratosort-blue/90"
-              >
+              <Button size="sm" variant="primary" onClick={() => handleAccept(primary)}>
                 Accept
               </Button>
               <Button size="sm" variant="secondary" onClick={() => handleReject(primary)}>
@@ -225,7 +224,7 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
             onClick={() => setExpandedAlternatives(!expandedAlternatives)}
             variant="ghost"
             size="sm"
-            className="text-system-gray-600 hover:text-stratosort-blue h-auto px-1 py-0"
+            className="text-system-gray-600 hover:text-stratosort-blue px-1"
           >
             <span
               className={`transform transition-transform ${expandedAlternatives ? 'rotate-90' : ''}`}
@@ -247,9 +246,9 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm">
+                        <Text as="span" variant="small" className="font-medium">
                           {sanitizeFolderName(alt.folder)}
-                        </span>
+                        </Text>
                         <Text
                           as="span"
                           variant="tiny"
@@ -311,7 +310,9 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="font-medium text-sm">{strategy.name}</div>
+                    <Text variant="small" className="font-medium text-system-gray-800">
+                      {strategy.name}
+                    </Text>
                     <Text variant="tiny" className="text-system-gray-600">
                       {strategy.description}
                     </Text>

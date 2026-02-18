@@ -414,17 +414,20 @@ function OrganizePhase() {
               )}
             </div>
             {unprocessedFiles.length > 0 && (
-              <button
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
                 onClick={selectAllFiles}
                 aria-label={
                   selectedFiles.size === unprocessedFiles.length
                     ? 'Deselect all files'
                     : 'Select all files'
                 }
-                className="text-sm text-stratosort-blue hover:text-stratosort-blue/80 font-medium transition-colors"
+                className="text-stratosort-blue hover:text-stratosort-blue/80 font-medium"
               >
                 {selectedFiles.size === unprocessedFiles.length ? 'Deselect All' : 'Select All'}
-              </button>
+              </Button>
             )}
           </div>
 
