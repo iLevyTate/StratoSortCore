@@ -278,6 +278,8 @@ function updateSplashStatus(message) {
 let isAppInitialized = false;
 let splashRemovalInProgress = false;
 let reactRoot = null;
+const SPLASH_FADE_OUT_MS = 220;
+const SPLASH_REMOVAL_FALLBACK_MS = SPLASH_FADE_OUT_MS + 160;
 
 /**
  * Safely remove the splash screen with proper guards against double removal
@@ -303,23 +305,34 @@ function removeSplashScreen() {
     window.__STRATOSORT_CANCEL_SPLASH_TIMEOUT();
   }
 
+  // Keep removal duration aligned with renderer motion tokens for smoother startup.
+  const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  const fadeDuration = prefersReducedMotion ? 1 : SPLASH_FADE_OUT_MS;
+
   // Add fade-out animation
-  initialLoading.style.transition = 'opacity 0.3s ease-out';
+  initialLoading.style.transition = `opacity ${fadeDuration}ms ease-out`;
   initialLoading.style.pointerEvents = 'none';
   initialLoading.style.opacity = '0';
 
-  // Remove after animation completes
-  setTimeout(() => {
-    // Double-check element still exists before removing
+  let finalized = false;
+  const finalizeRemoval = () => {
+    if (finalized) return;
+    finalized = true;
+
     const element = document.getElementById('initial-loading');
     if (element) {
       element.remove();
       logger.debug('[Splash] Splash screen removed successfully');
     }
+
     // Keep root scrolling locked and route scroll through main-content to avoid layout jumps.
     document.documentElement.style.overflow = 'hidden';
     document.body.style.overflow = 'hidden';
-  }, 300);
+  };
+
+  // Prefer transitionend for smoothness, with timeout fallback for reliability.
+  initialLoading.addEventListener('transitionend', finalizeRemoval, { once: true });
+  setTimeout(finalizeRemoval, SPLASH_REMOVAL_FALLBACK_MS);
 }
 
 // Wait for DOM to be ready before initializing React

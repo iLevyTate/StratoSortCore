@@ -10,8 +10,9 @@ import { lockAppScroll, unlockAppScroll } from '../../utils/scrollLock';
 
 // Animation durations in ms
 const ANIMATION = {
-  ENTER: 200,
-  EXIT: 150
+  // Keep in sync with motion tokens used by CSS animation classes.
+  ENTER: 220,
+  EXIT: 140
 };
 
 const SIZES = {
@@ -46,7 +47,8 @@ const Modal = memo(function Modal({
   variant = 'default',
   closeOnOverlayClick = true,
   closeOnEsc = true,
-  initialFocusRef
+  initialFocusRef,
+  closeDisabled = false
 }) {
   const modalRef = useRef(null);
   const previousFocusRef = useRef(null);
@@ -97,7 +99,7 @@ const Modal = memo(function Modal({
 
   // Handle ESC key
   useEffect(() => {
-    if (!isVisible || !closeOnEsc) return;
+    if (!isVisible || !closeOnEsc || closeDisabled) return;
 
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
@@ -107,7 +109,51 @@ const Modal = memo(function Modal({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isVisible, closeOnEsc, onClose]);
+  }, [isVisible, closeOnEsc, closeDisabled, onClose]);
+
+  // Keep keyboard focus trapped inside the open modal.
+  useEffect(() => {
+    if (!isVisible || isClosing) return undefined;
+
+    const handleTabKey = (e) => {
+      if (e.key !== 'Tab') return;
+
+      const root = modalRef.current;
+      if (!root) return;
+
+      const focusable = Array.from(
+        root.querySelectorAll(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]):not([disabled])'
+        )
+      );
+
+      if (focusable.length === 0) {
+        e.preventDefault();
+        root.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      const activeInside = root.contains(active);
+
+      if (e.shiftKey) {
+        if (!activeInside || active === first || active === root) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (!activeInside || active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleTabKey);
+    return () => {
+      document.removeEventListener('keydown', handleTabKey);
+    };
+  }, [isVisible, isClosing]);
 
   // Focus management
   useEffect(() => {
@@ -119,7 +165,7 @@ const Modal = memo(function Modal({
           initialFocusRef.current.focus();
         } else if (modalRef.current) {
           const focusable = modalRef.current.querySelectorAll(
-            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]):not([disabled])'
           );
           if (focusable.length > 0) {
             focusable[0].focus();
@@ -178,8 +224,8 @@ const Modal = memo(function Modal({
     >
       {/* Backdrop */}
       <div
-        className={`absolute inset-0 bg-black/40 backdrop-blur-sm ${closeOnOverlayClick && !isClosing ? 'pointer-events-auto' : 'pointer-events-none'} ${backdropAnimation}`}
-        onClick={closeOnOverlayClick && !isClosing ? onClose : undefined}
+        className={`absolute inset-0 bg-black/40 backdrop-blur-sm ${closeOnOverlayClick && !isClosing && !closeDisabled ? 'pointer-events-auto' : 'pointer-events-none'} ${backdropAnimation}`}
+        onClick={closeOnOverlayClick && !isClosing && !closeDisabled ? onClose : undefined}
         aria-hidden="true"
       />
 
@@ -215,6 +261,7 @@ const Modal = memo(function Modal({
             aria-label="Close modal"
             className="text-system-gray-400 hover:text-system-gray-600 -mr-2"
             icon={<X className="w-5 h-5" />}
+            disabled={closeDisabled || isClosing}
           />
         </div>
 
@@ -245,7 +292,8 @@ Modal.propTypes = {
   variant: PropTypes.oneOf(['default', 'destructive']),
   closeOnOverlayClick: PropTypes.bool,
   closeOnEsc: PropTypes.bool,
-  initialFocusRef: PropTypes.object
+  initialFocusRef: PropTypes.object,
+  closeDisabled: PropTypes.bool
 };
 
 export const ConfirmModal = memo(function ConfirmModal({
@@ -341,6 +389,7 @@ export const ConfirmModal = memo(function ConfirmModal({
       size="sm"
       title={title}
       closeOnOverlayClick={false}
+      closeDisabled={isConfirming}
       variant={variant === 'danger' ? 'destructive' : 'default'}
       footer={
         <>

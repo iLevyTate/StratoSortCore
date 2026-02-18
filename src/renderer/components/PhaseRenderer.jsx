@@ -48,12 +48,6 @@ const pageVariants = (reducedMotion) => ({
   }
 });
 
-const pageTransition = {
-  type: 'tween',
-  ease: [0.22, 1, 0.36, 1],
-  duration: 0.24
-};
-
 function PhaseRenderer() {
   const currentPhase = useAppSelector((state) => state.ui.currentPhase);
   const showSettings = useAppSelector((state) => state.ui.showSettings);
@@ -128,7 +122,6 @@ function PhaseRenderer() {
               animate="in"
               exit="out"
               variants={pageVariants(Boolean(shouldReduceMotion))}
-              transition={pageTransition}
               className="w-full flex-1 flex flex-col"
             >
               {renderCurrentPhase()}
@@ -149,7 +142,6 @@ function PhaseRenderer() {
                   duration: shouldReduceMotion ? 0.05 : 0.22,
                   ease: [0.22, 1, 0.36, 1]
                 }}
-                className="animate-loading-fade"
               >
                 <SettingsPanel />
               </motion.div>
