@@ -41,16 +41,46 @@ const getAssetPath = (...paths) => {
 };
 
 function getWindowIconCandidatePaths() {
+  // In dev, app.getAppPath() can occasionally point to an unexpected location;
+  // add fallbacks from process.cwd() (npm run dev) and __dirname (webpack → dist/)
+  const devFallbackRoots = app.isPackaged
+    ? []
+    : [
+        process.cwd(),
+        path.join(__dirname, '..') // dist/ -> project root when bundled
+      ].filter(Boolean);
+
+  const fallbackPath = (filePath) =>
+    devFallbackRoots.flatMap((root) => path.join(root, 'assets', filePath));
+
   if (isWindows) {
-    // Use ICO first on Windows to avoid falling back to Electron's default icon.
-    return [getAssetPath('icons', 'win', 'icon.ico'), getAssetPath('stratosort-logo.png')];
+    const primary = [getAssetPath('icons', 'win', 'icon.ico'), getAssetPath('stratosort-logo.png')];
+    const fallbacks = fallbackPath(path.join('icons', 'win', 'icon.ico')).concat(
+      fallbackPath('stratosort-logo.png')
+    );
+    return [...primary, ...fallbacks];
   }
 
   if (process.platform === 'linux') {
-    return [getAssetPath('icons', 'png', '512x512.png'), getAssetPath('stratosort-logo.png')];
+    const primary = [
+      getAssetPath('icons', 'png', '512x512.png'),
+      getAssetPath('stratosort-logo.png')
+    ];
+    const fallbacks = fallbackPath(path.join('icons', 'png', '512x512.png')).concat(
+      fallbackPath('stratosort-logo.png')
+    );
+    return [...primary, ...fallbacks];
   }
 
-  return [getAssetPath('stratosort-logo.png')];
+  // macOS
+  const primary = [
+    getAssetPath('icons', 'png', '512x512.png'),
+    getAssetPath('stratosort-logo.png')
+  ];
+  const fallbacks = fallbackPath(path.join('icons', 'png', '512x512.png')).concat(
+    fallbackPath('stratosort-logo.png')
+  );
+  return [...primary, ...fallbacks];
 }
 
 function getPreloadPath() {

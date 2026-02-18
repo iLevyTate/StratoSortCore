@@ -8,6 +8,7 @@
  */
 
 const { app, BrowserWindow, Menu, Tray, nativeImage, globalShortcut } = require('electron');
+const fs = require('fs');
 const path = require('path');
 const { isWindows, isMacOS } = require('../../shared/platformUtils');
 const { IPC_EVENTS } = require('../../shared/constants');
@@ -18,12 +19,14 @@ const { safeSend } = require('../ipc/ipcWrappers');
 const logger = createLogger('Tray');
 
 // Resolve app root reliably in both dev (webpack bundles to dist/) and packaged builds.
-// Avoids __dirname which points to dist/ after webpack bundling.
 function _getAppRoot() {
   try {
     const appPath = app.getAppPath();
     if (appPath.endsWith('src/main') || appPath.endsWith('src\\main')) {
       return path.resolve(appPath, '../..');
+    }
+    if (appPath.endsWith('dist') || appPath.endsWith('dist\\')) {
+      return path.resolve(appPath, '..');
     }
     return appPath;
   } catch {
@@ -31,12 +34,28 @@ function _getAppRoot() {
   }
 }
 
-const getAssetPath = (...paths) => {
-  const RESOURCES_PATH = app.isPackaged
+function _getAssetPath(...pathSegments) {
+  const base = app.isPackaged
     ? path.join(process.resourcesPath, 'assets')
     : path.join(_getAppRoot(), 'assets');
-  return path.join(RESOURCES_PATH, ...paths);
-};
+  return path.join(base, ...pathSegments);
+}
+
+function getAssetPath(...pathSegments) {
+  const primary = _getAssetPath(...pathSegments);
+  if (app.isPackaged || fs.existsSync(primary)) {
+    return primary;
+  }
+  // Dev fallbacks when app.getAppPath() points elsewhere
+  const roots = [process.cwd(), path.join(__dirname, '..')];
+  for (const root of roots) {
+    const candidate = path.join(root, 'assets', ...pathSegments);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return primary;
+}
 
 let tray = null;
 let trayConfig = {

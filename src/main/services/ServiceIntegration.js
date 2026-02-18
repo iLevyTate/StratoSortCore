@@ -76,6 +76,11 @@ class ServiceIntegration {
     this.relationshipIndex = null;
     this.initialized = false;
 
+    // FIX: Register all services in constructor so they exist even when initialize() never runs
+    // (e.g. degraded mode after startup timeout). Handlers like GET_CLUSTERS will then resolve
+    // 'clustering' successfully; individual services may remain uninitialized until first use.
+    this._registerCoreServices();
+
     // FIX: Add initialization mutex to prevent race conditions
     // Multiple concurrent initialize() calls would previously both pass the
     // if (this.initialized) check and run in parallel, causing undefined behavior
