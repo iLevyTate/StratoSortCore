@@ -312,7 +312,7 @@ export function ToastContainer({ toasts = [], onRemoveToast }) {
           <Text
             as="div"
             variant="tiny"
-            className="pointer-events-none text-[11px] text-system-gray-400 text-right"
+            className="pointer-events-none text-system-gray-400 text-right"
           >
             +{hiddenCount} more
           </Text>

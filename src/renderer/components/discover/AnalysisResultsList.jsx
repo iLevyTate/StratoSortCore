@@ -264,58 +264,68 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
           left: `${menuPosition.left}px`
         }}
       >
-        <button
+        <Button
           type="button"
           role="menuitem"
-          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-system-gray-700 hover:bg-system-gray-50 disabled:opacity-50"
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start px-3 text-system-gray-700 hover:bg-system-gray-50 disabled:opacity-50"
           onClick={stopPropAnd(() => handleAction?.('reanalyze', file.path))}
           disabled={!file.path}
+          leftIcon={<RefreshCw className="w-4 h-4 shrink-0" />}
         >
-          <RefreshCw className="w-4 h-4 shrink-0" />
           Reanalyze File
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           role="menuitem"
-          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-system-gray-700 hover:bg-system-gray-50"
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start px-3 text-system-gray-700 hover:bg-system-gray-50"
           onClick={stopPropAnd(() =>
             dispatch(setEmbeddingPolicyForFile(file.path, nextEmbeddingPolicy))
           )}
+          leftIcon={<PolicyIcon className="w-4 h-4 shrink-0" />}
         >
-          <PolicyIcon className="w-4 h-4 shrink-0" />
           {policyLabel === 'Embed locally'
             ? 'Set: Web-only'
             : policyLabel === 'Web-only'
               ? 'Set: Skip'
               : 'Set: Embed locally'}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           role="menuitem"
-          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-system-gray-700 hover:bg-system-gray-50"
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start px-3 text-system-gray-700 hover:bg-system-gray-50"
           onClick={stopPropAnd(() => handleAction?.('open', file.path))}
+          leftIcon={<Eye className="w-4 h-4 shrink-0" />}
         >
-          <Eye className="w-4 h-4 shrink-0" />
           Open File
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           role="menuitem"
-          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-system-gray-700 hover:bg-system-gray-50"
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start px-3 text-system-gray-700 hover:bg-system-gray-50"
           onClick={stopPropAnd(() => handleAction?.('reveal', file.path))}
+          leftIcon={<FolderOpen className="w-4 h-4 shrink-0" />}
         >
-          <FolderOpen className="w-4 h-4 shrink-0" />
           Reveal in Folder
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           role="menuitem"
-          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-stratosort-danger hover:bg-stratosort-danger/10"
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start px-3 text-stratosort-danger hover:bg-stratosort-danger/10"
           onClick={stopPropAnd(() => handleAction?.('remove', file.path))}
+          leftIcon={<Trash2 className="w-4 h-4 shrink-0" />}
         >
-          <Trash2 className="w-4 h-4 shrink-0" />
           Remove from List
-        </button>
+        </Button>
       </div>,
       document.body
     );

@@ -11,6 +11,8 @@ import { formatBytes, formatDuration } from '../utils/format';
 import { AI_DEFAULTS, INSTALL_MODEL_PROFILES } from '../../shared/constants';
 import { getModel } from '../../shared/modelRegistry';
 
+const CHECK_SYSTEM_TIMEOUT_MS = 12000;
+
 const PROFILE_MODELS = {
   base: {
     embedding: INSTALL_MODEL_PROFILES?.BASE_SMALL?.models?.EMBEDDING,
@@ -33,6 +35,17 @@ function detectProfileKey(models) {
     return 'quality';
   }
   return 'base';
+}
+
+function withTimeout(promise, timeoutMs, timeoutMessage) {
+  let timeoutId = null;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
 }
 
 export default function ModelSetupWizard({ onComplete, onSkip }) {
@@ -84,14 +97,18 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
       vision: PROFILE_MODELS.base.vision || AI_DEFAULTS?.IMAGE?.MODEL
     };
 
-    if (!hasLlamaApi) {
-      if (!isMountedRef.current) return;
+    const applyFallbackSelection = () => {
       const fallbackProfile = detectProfileKey(fallbackDefaults);
       const fallbackSelection = PROFILE_MODELS[fallbackProfile] || fallbackDefaults;
       setSelectedProfile(fallbackProfile);
       setRecommendations(fallbackSelection);
       setSelectedModels(fallbackSelection);
       setSystemInfo({ gpuBackend: null, modelsPath: null });
+    };
+
+    if (!hasLlamaApi) {
+      if (!isMountedRef.current) return;
+      applyFallbackSelection();
       setInitError('AI engine is still starting. Please try again in a moment.');
       setStep('select');
       setIsRefreshing(false);
@@ -99,13 +116,17 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     }
 
     try {
-      const [config, modelsResponse, downloadStatus] = await Promise.all([
-        llamaApi.getConfig(),
-        llamaApi.getModels(),
-        typeof llamaApi.getDownloadStatus === 'function'
-          ? llamaApi.getDownloadStatus().catch(() => null)
-          : null
-      ]);
+      const [config, modelsResponse, downloadStatus] = await withTimeout(
+        Promise.all([
+          llamaApi.getConfig(),
+          llamaApi.getModels(),
+          typeof llamaApi.getDownloadStatus === 'function'
+            ? llamaApi.getDownloadStatus().catch(() => null)
+            : null
+        ]),
+        CHECK_SYSTEM_TIMEOUT_MS,
+        'AI system check timed out'
+      );
       if (!isMountedRef.current) return;
 
       const defaults = {
@@ -163,7 +184,14 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
       }
     } catch (error) {
       if (!isMountedRef.current) return;
-      setInitError(error?.message || 'Failed to load AI model status.');
+      applyFallbackSelection();
+      if (error?.message === 'AI system check timed out') {
+        setInitError(
+          'AI check is taking longer than expected. You can continue with manual setup or press Refresh.'
+        );
+      } else {
+        setInitError(error?.message || 'Failed to load AI model status.');
+      }
       setStep('select');
     } finally {
       if (isMountedRef.current) {
@@ -355,13 +383,21 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     return (
       <Card className="max-w-2xl mx-auto p-8 text-center animate-loading-fade">
         <div className="animate-loading-content">
+          <Text variant="tiny" className="uppercase tracking-wide text-system-gray-500 mb-2">
+            Step 1 of 3
+          </Text>
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-blue/10 mb-4">
             <Loader2 className="w-7 h-7 text-stratosort-blue animate-spin" />
           </div>
           <Heading as="h2" variant="h2">
-            Checking System...
+            Preparing AI Setup
           </Heading>
-          <Text className="text-system-gray-600 mt-2">Detecting GPU and memory configuration</Text>
+          <Text className="text-system-gray-600 mt-2">
+            Detecting your hardware, model availability, and download status.
+          </Text>
+          <Text variant="tiny" className="text-system-gray-500 mt-2">
+            If this takes too long, manual setup options will appear automatically.
+          </Text>
         </div>
       </Card>
     );
@@ -371,6 +407,9 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     return (
       <Card className="max-w-2xl mx-auto p-8 animate-loading-fade">
         <div className="text-center mb-6">
+          <Text variant="tiny" className="uppercase tracking-wide text-system-gray-500 mb-2">
+            Step 2 of 3
+          </Text>
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-blue/10 mb-4">
             <Cpu className="w-7 h-7 text-stratosort-blue" />
           </div>
@@ -553,6 +592,9 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     return (
       <Card className="max-w-2xl mx-auto p-8 animate-loading-fade">
         <div className="text-center mb-6">
+          <Text variant="tiny" className="uppercase tracking-wide text-system-gray-500 mb-2">
+            Step 3 of 3
+          </Text>
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-blue/10 mb-4">
             <Download className="w-7 h-7 text-stratosort-blue" />
           </div>
@@ -687,16 +729,26 @@ function ModelSelector({
         </div>
         <div className="flex items-center gap-2">
           {required && (
-            <span className="text-xs bg-stratosort-blue/10 text-stratosort-blue px-2 py-1 rounded">
+            <Text
+              as="span"
+              variant="tiny"
+              className="bg-stratosort-blue/10 text-stratosort-blue px-2 py-1 rounded"
+            >
               Required
-            </span>
+            </Text>
           )}
           {optional && (
-            <span className="text-xs bg-system-gray-100 text-system-gray-600 px-2 py-1 rounded">
+            <Text
+              as="span"
+              variant="tiny"
+              className="bg-system-gray-100 text-system-gray-600 px-2 py-1 rounded"
+            >
               Optional
-            </span>
+            </Text>
           )}
-          <span className={`text-xs px-2 py-1 rounded ${statusClass}`}>{statusLabel}</span>
+          <Text as="span" variant="tiny" className={`px-2 py-1 rounded ${statusClass}`}>
+            {statusLabel}
+          </Text>
         </div>
       </div>
 
@@ -720,9 +772,13 @@ function ModelSelector({
             <Text variant="small" className="font-medium">
               {displayName}
             </Text>
-            <span className="text-xs bg-stratosort-success/10 text-stratosort-success px-2 py-0.5 rounded">
+            <Text
+              as="span"
+              variant="tiny"
+              className="bg-stratosort-success/10 text-stratosort-success px-2 py-0.5 rounded"
+            >
               Recommended
-            </span>
+            </Text>
           </div>
           <Text variant="tiny">{formatBytes(getModelSize(filename))}</Text>
           {error && (

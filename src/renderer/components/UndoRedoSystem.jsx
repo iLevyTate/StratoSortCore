@@ -1002,12 +1002,14 @@ function HistoryModal() {
                 const IconComponent = ACTION_METADATA[action.type]?.icon || FileText;
 
                 return (
-                  <button
+                  <Button
                     key={action.id}
                     onClick={() => handleJumpToPoint(actualIndex)}
                     disabled={isExecuting || isCurrent}
+                    variant="ghost"
+                    size="sm"
                     className={`
-                      w-full flex items-center gap-4 p-3 rounded-xl transition-all text-left group relative
+                      w-full h-auto justify-start items-center gap-4 p-3 rounded-xl transition-all text-left group relative
                       ${
                         isCurrent
                           ? 'bg-stratosort-blue/5 border border-stratosort-blue/30 shadow-sm ring-1 ring-stratosort-blue/20 z-10'
@@ -1045,7 +1047,7 @@ function HistoryModal() {
                         <Text
                           as="span"
                           variant="tiny"
-                          className="text-[10px] text-system-gray-400 flex-shrink-0 font-mono"
+                          className="text-system-gray-400 flex-shrink-0 font-mono"
                         >
                           #{actualIndex + 1}
                         </Text>
@@ -1061,7 +1063,7 @@ function HistoryModal() {
                           <Text
                             as="span"
                             variant="tiny"
-                            className="text-[10px] font-semibold bg-stratosort-blue/10 text-stratosort-blue px-1.5 py-0.5 rounded-full border border-stratosort-blue/10"
+                            className="font-semibold bg-stratosort-blue/10 text-stratosort-blue px-1.5 py-0.5 rounded-full border border-stratosort-blue/10"
                           >
                             Current State
                           </Text>
@@ -1070,14 +1072,14 @@ function HistoryModal() {
                           <Text
                             as="span"
                             variant="tiny"
-                            className="text-[10px] font-medium bg-system-gray-100 text-system-gray-500 px-1.5 py-0.5 rounded-full border border-border-soft"
+                            className="font-medium bg-system-gray-100 text-system-gray-500 px-1.5 py-0.5 rounded-full border border-border-soft"
                           >
                             Undone
                           </Text>
                         )}
                       </div>
                     </div>
-                  </button>
+                  </Button>
                 );
               })}
           </div>

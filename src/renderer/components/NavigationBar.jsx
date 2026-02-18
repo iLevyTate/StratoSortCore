@@ -375,45 +375,47 @@ const WindowControls = memo(function WindowControls() {
       className="flex items-center overflow-hidden rounded-full border border-white/50 bg-white/75 shadow-sm backdrop-blur-sm"
       style={{ WebkitAppRegion: 'no-drag' }}
     >
-      <button
-        type="button"
+      <IconButton
+        icon={<Minus className="h-4 w-4" />}
+        size="sm"
+        variant="ghost"
         onClick={handleMinimize}
-        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 transition-all [transition-duration:var(--duration-normal)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2"
+        className="h-9 w-11 rounded-none rounded-l-full text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 [transition-duration:var(--duration-normal)]"
         aria-label="Minimize window"
         title="Minimize"
-      >
-        <Minus className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
+      />
+      <IconButton
+        icon={
+          isMaximized ? (
+            <svg
+              className="h-3.5 w-3.5"
+              viewBox="0 0 10 10"
+              fill="none"
+              stroke="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M3,1v2H1v6h6V7h2V1H3z M2,8V4h4v4H2z M8,6h-1V3H4V2h4V6z" />
+            </svg>
+          ) : (
+            <Square className="h-3.5 w-3.5" />
+          )
+        }
+        size="sm"
+        variant="ghost"
         onClick={handleToggleMaximize}
-        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 transition-all [transition-duration:var(--duration-normal)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2"
+        className="h-9 w-11 rounded-none text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 [transition-duration:var(--duration-normal)]"
         aria-label={isMaximized ? 'Restore window' : 'Maximize window'}
         title={isMaximized ? 'Restore' : 'Maximize'}
-      >
-        {isMaximized ? (
-          <svg
-            className="h-3.5 w-3.5"
-            viewBox="0 0 10 10"
-            fill="none"
-            stroke="currentColor"
-            aria-hidden="true"
-          >
-            <path d="M3,1v2H1v6h6V7h2V1H3z M2,8V4h4v4H2z M8,6h-1V3H4V2h4V6z" />
-          </svg>
-        ) : (
-          <Square className="h-3.5 w-3.5" />
-        )}
-      </button>
-      <button
-        type="button"
+      />
+      <IconButton
+        icon={<X className="h-4 w-4" />}
+        size="sm"
+        variant="ghost"
         onClick={handleClose}
-        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-white hover:bg-stratosort-danger transition-all [transition-duration:var(--duration-normal)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2"
+        className="h-9 w-11 rounded-none rounded-r-full text-system-gray-500 hover:text-white hover:bg-stratosort-danger [transition-duration:var(--duration-normal)]"
         aria-label="Close window"
         title="Close"
-      >
-        <X className="h-4 w-4" />
-      </button>
+      />
     </div>
   );
 });
