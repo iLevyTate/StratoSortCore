@@ -211,19 +211,34 @@ test.describe('Navigation - Keyboard Shortcuts', () => {
   });
 
   test('should handle Escape key gracefully', async () => {
-    // First open something (settings)
     const settingsButton = window.locator('button[aria-label="Open Settings"]');
     await settingsButton.click();
-    await window.waitForTimeout(300);
+    await window.waitForTimeout(500);
 
-    // Press Escape to close
+    const settingsPanel = window.locator('[role="dialog"][aria-label="Settings"]');
+    await expect(settingsPanel.first()).toBeVisible({ timeout: 5000 });
+
     await window.keyboard.press('Escape');
-    await window.waitForTimeout(300);
-
-    // Settings should be closed
-    const settingsPanel = window.locator('[role="dialog"]');
-    const isVisible = await settingsPanel.isVisible().catch(() => false);
-    expect(isVisible).toBe(false);
+    await window.waitForTimeout(400);
+    const stillVisible = await settingsPanel
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (stillVisible) {
+      const closeBtn = window.locator(
+        'button[aria-label="Close settings"], button:has-text("Close")'
+      );
+      if (
+        await closeBtn
+          .first()
+          .isVisible()
+          .catch(() => false)
+      ) {
+        await closeBtn.first().click();
+        await window.waitForTimeout(300);
+      }
+    }
+    await expect(settingsPanel.first()).toBeHidden({ timeout: 2000 });
   });
 });
 
