@@ -42,8 +42,8 @@ class GraphErrorBoundary extends React.Component {
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center h-full text-center p-8 bg-system-gray-50">
-          <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mb-4">
-            <AlertTriangle className="w-8 h-8 text-amber-600" />
+          <div className="w-16 h-16 bg-stratosort-warning/10 rounded-full flex items-center justify-center mb-4">
+            <AlertTriangle className="w-8 h-8 text-stratosort-warning" />
           </div>
 
           <Heading as="h3" variant="h5" className="mb-2">

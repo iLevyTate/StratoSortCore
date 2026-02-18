@@ -60,7 +60,7 @@ export default function CitationRenderer({ text, sources, onOpenSource }) {
                 key={i}
                 variant="ghost"
                 size="xs"
-                className="align-super font-bold text-stratosort-blue bg-stratosort-blue/10 hover:bg-stratosort-blue hover:text-white rounded px-1 min-w-[16px] h-4 mx-0.5 select-none"
+                className="align-super font-bold text-stratosort-blue bg-stratosort-blue/10 hover:bg-stratosort-blue hover:text-white rounded-md px-1 min-w-[16px] h-4 mx-0.5 select-none"
                 onClick={(e) => {
                   e.stopPropagation();
                   onOpenSource(source);

@@ -118,7 +118,7 @@ export default function BridgeAnalysisModal({
                   <Text
                     as="span"
                     variant="small"
-                    className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full font-medium"
+                    className="px-3 py-1 bg-stratosort-indigo/10 text-stratosort-indigo rounded-full font-medium"
                   >
                     {selectedBridge.sourceLabel}
                   </Text>
@@ -126,7 +126,7 @@ export default function BridgeAnalysisModal({
                   <Text
                     as="span"
                     variant="small"
-                    className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full font-medium"
+                    className="px-3 py-1 bg-stratosort-purple/10 text-stratosort-purple rounded-full font-medium"
                   >
                     {selectedBridge.targetLabel}
                   </Text>

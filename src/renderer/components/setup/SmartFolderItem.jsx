@@ -71,6 +71,7 @@ const SmartFolderItem = memo(function SmartFolderItem({
   if (compact && !isExpanded && !isEditing) {
     return (
       <Card
+        data-testid="folder-item"
         variant="compact"
         className="flex items-center gap-3 transition-colors transition-shadow [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] hover:shadow-md cursor-pointer"
         onClick={() => onToggleExpand?.(folder.id)}
@@ -103,6 +104,7 @@ const SmartFolderItem = memo(function SmartFolderItem({
   if (isEditing) {
     return (
       <Card
+        data-testid="folder-item"
         variant="elevated"
         className={`flex flex-col gap-4 ${cardAnimationClass}`}
         style={{ animationDelay: cardAnimationDelay }}
@@ -221,6 +223,7 @@ const SmartFolderItem = memo(function SmartFolderItem({
   // Expanded view
   return (
     <Card
+      data-testid="folder-item"
       variant="default"
       className={`flex flex-col gap-4 h-full ${cardAnimationClass}`}
       style={{ animationDelay: cardAnimationDelay }}

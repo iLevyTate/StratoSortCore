@@ -239,7 +239,7 @@ const SimilarityEdge = memo(
               }}
               className="nodrag nopan"
             >
-              <span className="px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-700 border border-slate-200 font-medium whitespace-nowrap">
+              <span className="px-1.5 py-0.5 rounded-full bg-system-gray-50 text-system-gray-700 border border-system-gray-200 font-medium whitespace-nowrap">
                 {compactLabelText}
               </span>
             </div>
@@ -258,7 +258,7 @@ const SimilarityEdge = memo(
               }}
               className="nodrag nopan"
             >
-              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+              <span className="inline-flex items-center gap-1 rounded-full border border-stratosort-accent/30 bg-stratosort-accent/10 px-1.5 py-0.5 text-xs font-medium text-stratosort-accent">
                 <Zap className="h-2.5 w-2.5" />
                 Surprise
               </span>
@@ -285,12 +285,12 @@ const SimilarityEdge = memo(
                   ${isHovered ? 'scale-110 z-20' : 'scale-100'}
                   ${
                     primaryType === 'tag'
-                      ? 'bg-blue-50 border-blue-200 text-blue-700'
+                      ? 'bg-stratosort-blue/10 border-stratosort-blue/30 text-stratosort-blue'
                       : primaryType === 'category'
-                        ? 'bg-violet-50 border-violet-200 text-violet-700'
+                        ? 'bg-stratosort-purple/10 border-stratosort-purple/30 text-stratosort-purple'
                         : primaryType === 'content'
-                          ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                          : 'bg-white border-slate-200 text-slate-500'
+                          ? 'bg-stratosort-success/10 border-stratosort-success/30 text-stratosort-success'
+                          : 'bg-white border-system-gray-200 text-system-gray-500'
                   }
                 `}
                 onMouseEnter={tooltipsEnabled ? handleMouseEnter : undefined}
@@ -311,26 +311,26 @@ const SimilarityEdge = memo(
             badgeText={labelText}
             badgeColorClass={
               primaryType === 'tag'
-                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                ? 'bg-stratosort-blue/10 text-stratosort-blue border border-stratosort-blue/30'
                 : primaryType === 'category'
-                  ? 'bg-violet-50 text-violet-700 border border-violet-200'
+                  ? 'bg-stratosort-purple/10 text-stratosort-purple border border-stratosort-purple/30'
                   : primaryType === 'content'
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                    ? 'bg-stratosort-success/10 border-stratosort-success/30 text-stratosort-success'
                     : primaryType === 'cross'
-                      ? 'bg-slate-50 text-slate-700 border border-slate-200'
-                      : 'bg-slate-100 text-slate-500 border border-slate-200'
+                      ? 'bg-system-gray-50 text-system-gray-700 border border-system-gray-200'
+                      : 'bg-system-gray-100 text-system-gray-500 border border-system-gray-200'
             }
             title={
               badgeTitle || (primaryType === 'cross' ? 'Cluster Bridge' : 'Content Similarity')
             }
             headerColorClass={
               primaryType === 'tag'
-                ? 'text-blue-600'
+                ? 'text-stratosort-blue'
                 : primaryType === 'category'
-                  ? 'text-violet-600'
+                  ? 'text-stratosort-purple'
                   : primaryType === 'cross'
-                    ? 'text-slate-600'
-                    : 'text-emerald-600'
+                    ? 'text-system-gray-600'
+                    : 'text-stratosort-success'
             }
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
@@ -339,10 +339,10 @@ const SimilarityEdge = memo(
               <>
                 <div className="flex items-center gap-2">
                   <span className="text-system-gray-500">Similarity:</span>
-                  <span className="font-medium text-emerald-600">{similarityPercent}%</span>
+                  <span className="font-medium text-stratosort-success">{similarityPercent}%</span>
                   <div className="flex-1 h-1.5 bg-system-gray-200 rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-emerald-500 rounded-full"
+                      className="h-full bg-stratosort-success rounded-full"
                       style={{ width: `${similarityPercent}%` }}
                     />
                   </div>
@@ -351,7 +351,7 @@ const SimilarityEdge = memo(
                 {commonTags.length > 0 && (
                   <div>
                     <span className="text-system-gray-500">Common tags: </span>
-                    <span className="text-blue-600">
+                    <span className="text-stratosort-blue">
                       {commonTags.slice(0, 4).join(', ')}
                       {commonTags.length > 4 && ` +${commonTags.length - 4} more`}
                     </span>
@@ -361,7 +361,7 @@ const SimilarityEdge = memo(
                 {sameCategory && (
                   <div>
                     <span className="text-system-gray-500">Category: </span>
-                    <span className="text-purple-600">{sourceCategory}</span>
+                    <span className="text-stratosort-purple">{sourceCategory}</span>
                   </div>
                 )}
 
@@ -370,7 +370,7 @@ const SimilarityEdge = memo(
                     {sourceSubject && (
                       <Text as="div" variant="tiny">
                         <span className="text-system-gray-500">A: </span>
-                        <span className="text-amber-600 truncate">
+                        <span className="text-stratosort-accent truncate">
                           {sourceSubject.slice(0, 40)}
                         </span>
                       </Text>
@@ -378,7 +378,7 @@ const SimilarityEdge = memo(
                     {targetSubject && (
                       <Text as="div" variant="tiny">
                         <span className="text-system-gray-500">B: </span>
-                        <span className="text-amber-600 truncate">
+                        <span className="text-stratosort-accent truncate">
                           {targetSubject.slice(0, 40)}
                         </span>
                       </Text>

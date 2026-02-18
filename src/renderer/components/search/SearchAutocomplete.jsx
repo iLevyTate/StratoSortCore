@@ -60,7 +60,8 @@ const SearchAutocomplete = memo(
     ariaLabel = 'Search',
     autoFocus = false,
     disabled = false,
-    className = ''
+    className = '',
+    showShortcutHint = true
   }) => {
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [suggestions, setSuggestions] = useState([]);
@@ -373,11 +374,11 @@ const SearchAutocomplete = memo(
             />
           )}
 
-          {!value && !disabled && (
+          {!value && !disabled && showShortcutHint && (
             <Text
               as="span"
               variant="tiny"
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-system-gray-400 bg-system-gray-100 px-1.5 py-0.5 rounded border border-system-gray-200 font-medium pointer-events-none"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-system-gray-400 bg-system-gray-100 px-1.5 py-0.5 rounded-md text-xs font-medium pointer-events-none"
             >
               {isMac ? '⌘K' : 'Ctrl+K'}
             </Text>
@@ -428,9 +429,11 @@ const SearchAutocomplete = memo(
                   {item.type === 'file' && (
                     <FileText className="w-4 h-4 text-stratosort-blue shrink-0" />
                   )}
-                  {item.type === 'tag' && <Tag className="w-4 h-4 text-emerald-500 shrink-0" />}
+                  {item.type === 'tag' && (
+                    <Tag className="w-4 h-4 text-stratosort-success shrink-0" />
+                  )}
                   {item.type === 'category' && (
-                    <div className="w-4 h-4 rounded bg-amber-100 flex items-center justify-center text-[10px] font-bold text-amber-600 shrink-0">
+                    <div className="w-4 h-4 rounded-md bg-stratosort-accent/10 flex items-center justify-center text-xs font-bold text-stratosort-accent shrink-0">
                       C
                     </div>
                   )}
@@ -443,12 +446,12 @@ const SearchAutocomplete = memo(
                     <Text
                       as="span"
                       variant="tiny"
-                      className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 font-medium ${
+                      className={`text-xs px-1.5 py-0.5 rounded-full shrink-0 font-medium ${
                         item.rank === 0
-                          ? 'bg-amber-100 text-amber-700'
+                          ? 'bg-stratosort-accent/10 text-stratosort-accent'
                           : item.rank === 1
                             ? 'bg-system-gray-100 text-system-gray-600'
-                            : 'bg-orange-50 text-orange-600'
+                            : 'bg-stratosort-accent/10 text-stratosort-accent'
                       }`}
                     >
                       {item.rank === 0 ? '1st' : item.rank === 1 ? '2nd' : '3rd'}
@@ -485,7 +488,8 @@ SearchAutocomplete.propTypes = {
   ariaLabel: PropTypes.string,
   autoFocus: PropTypes.bool,
   disabled: PropTypes.bool,
-  className: PropTypes.string
+  className: PropTypes.string,
+  showShortcutHint: PropTypes.bool
 };
 
 export default SearchAutocomplete;

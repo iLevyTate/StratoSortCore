@@ -183,7 +183,7 @@ const GraphTour = ({ isOpen, onComplete = null, forceShow = false }) => {
                 type="checkbox"
                 checked={dontShowAgain}
                 onChange={(e) => setDontShowAgain(e.target.checked)}
-                className="rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue"
+                className="rounded-md border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue"
               />
               <EyeOff className="w-3.5 h-3.5" />
               <span>Don&apos;t show this again</span>

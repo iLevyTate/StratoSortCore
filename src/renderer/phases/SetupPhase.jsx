@@ -485,7 +485,10 @@ function SetupPhase() {
           }`}
         >
           {smartFolders.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-8 text-center">
+            <div
+              data-testid="smart-folders-empty-state"
+              className="flex flex-col items-center justify-center p-8 text-center"
+            >
               <StateMessage
                 icon={Folder}
                 size="lg"
@@ -509,6 +512,7 @@ function SetupPhase() {
           ) : (
             <div
               ref={listContainerRef}
+              data-testid="folder-list"
               className={`h-full pb-2 ${
                 isListScrollable ? 'overflow-y-auto modern-scrollbar' : 'overflow-hidden'
               }`}

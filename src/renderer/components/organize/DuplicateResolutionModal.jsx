@@ -236,7 +236,7 @@ export default function DuplicateResolutionModal({
                           <Text
                             as="span"
                             variant="tiny"
-                            className="inline-flex items-center px-1.5 py-0.5 rounded font-medium bg-stratosort-blue/10 text-stratosort-blue"
+                            className="inline-flex items-center px-1.5 py-0.5 rounded-md font-medium bg-stratosort-blue/10 text-stratosort-blue"
                           >
                             Keep
                           </Text>
@@ -245,7 +245,7 @@ export default function DuplicateResolutionModal({
                           <Text
                             as="span"
                             variant="tiny"
-                            className="inline-flex items-center px-1.5 py-0.5 rounded font-medium bg-red-50 text-red-600"
+                            className="inline-flex items-center px-1.5 py-0.5 rounded-md font-medium bg-red-50 text-red-600"
                           >
                             Delete
                           </Text>
@@ -294,7 +294,7 @@ export default function DuplicateResolutionModal({
 
         {normalizedGroups.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-system-gray-400">
-            <Check className="w-12 h-12 mb-2 text-green-500 opacity-50" />
+            <Check className="w-12 h-12 mb-2 text-stratosort-success opacity-50" />
             <Text>No duplicates found!</Text>
           </div>
         )}

@@ -136,7 +136,7 @@ export default function TriageModal({
               <Text
                 as="div"
                 variant="small"
-                className="px-3 py-1.5 bg-system-gray-50 border border-system-gray-200 rounded text-system-gray-700 min-w-[200px] max-w-[300px] truncate"
+                className="px-3 py-1.5 bg-system-gray-50 border border-system-gray-200 rounded-md text-system-gray-700 min-w-[200px] max-w-[300px] truncate"
               >
                 {destinationPath ? safeBasename(destinationPath) : 'Select folder...'}
               </Text>

@@ -441,7 +441,7 @@ const ResultRow = memo(function ResultRow({
                 as="span"
                 variant="tiny"
                 key={`${result.id}-kw-${idx}`}
-                className="px-3 py-1 rounded-full bg-blue-50 text-stratosort-blue font-medium"
+                className="px-3 py-1 rounded-full bg-stratosort-blue/10 text-stratosort-blue font-medium"
               >
                 {keyword}
               </Text>
@@ -6411,15 +6411,15 @@ export default function UnifiedSearchModal({
 
             {/* Query correction feedback - "Did you mean?" */}
             {queryMeta?.corrections?.length > 0 && searchResults.length > 0 && (
-              <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm">
-                <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
-                <span className="text-amber-800">
+              <div className="flex items-center gap-2 px-3 py-2 bg-stratosort-accent/10 border border-stratosort-accent/30 rounded-lg text-sm">
+                <Sparkles className="w-4 h-4 text-stratosort-accent shrink-0" />
+                <span className="text-stratosort-accent">
                   Showing results for{' '}
                   <span className="font-medium">
                     {queryMeta.corrections.map((c) => c.corrected).join(', ')}
                   </span>{' '}
                   instead of{' '}
-                  <span className="text-amber-600 line-through">
+                  <span className="text-stratosort-accent line-through">
                     {queryMeta.corrections.map((c) => c.original).join(', ')}
                   </span>
                 </span>
@@ -6490,7 +6490,7 @@ export default function UnifiedSearchModal({
                         <Text
                           as="span"
                           variant="tiny"
-                          className="text-system-gray-400 bg-system-gray-100 px-1.5 py-0.5 rounded-full"
+                          className="text-system-gray-400 bg-system-gray-100 px-2 py-0.5 rounded-full text-xs font-medium"
                         >
                           {results.length}
                         </Text>
@@ -6807,12 +6807,24 @@ export default function UnifiedSearchModal({
               >
                 <div className="px-4 py-3 border-b border-system-gray-100 bg-system-gray-50/50">
                   <div className="flex items-center justify-between gap-2">
-                    <Text as="div" variant="tiny" className={GRAPH_SIDEBAR_SECTION_TITLE}>
-                      <Network className="w-3.5 h-3.5 text-stratosort-blue" aria-hidden="true" />
+                    <Text
+                      as="div"
+                      variant="tiny"
+                      className={`${GRAPH_SIDEBAR_SECTION_TITLE} items-center`}
+                    >
+                      <Network
+                        className="w-3.5 h-3.5 text-stratosort-blue shrink-0"
+                        aria-hidden="true"
+                      />
                       <span>Graph Controls</span>
                     </Text>
                     {hasGraphFilterIndicators && (
-                      <Button variant="ghost" size="xs" onClick={resetGraphFilters}>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={resetGraphFilters}
+                        className="shrink-0"
+                      >
                         Reset Filters
                       </Button>
                     )}
@@ -6835,8 +6847,8 @@ export default function UnifiedSearchModal({
                         </Button>
                       ) : null}
                     </div>
-                    <div className="mt-2 grid grid-cols-3 gap-2 text-center">
-                      <div className="rounded-md border border-system-gray-200 bg-white px-2 py-1.5">
+                    <div className="mt-2 grid grid-cols-3 gap-2 text-center min-w-0">
+                      <div className="rounded-md border border-system-gray-200 bg-white px-2 py-1.5 min-w-0">
                         <Text
                           as="div"
                           variant="tiny"
@@ -6848,7 +6860,7 @@ export default function UnifiedSearchModal({
                           Nodes
                         </Text>
                       </div>
-                      <div className="rounded-md border border-system-gray-200 bg-white px-2 py-1.5">
+                      <div className="rounded-md border border-system-gray-200 bg-white px-2 py-1.5 min-w-0">
                         <Text
                           as="div"
                           variant="tiny"
@@ -6857,10 +6869,10 @@ export default function UnifiedSearchModal({
                           {edges.length}
                         </Text>
                         <Text as="div" variant="tiny" className="text-system-gray-500">
-                          Links
+                          {edges.length === 1 ? 'Link' : 'Links'}
                         </Text>
                       </div>
-                      <div className="rounded-md border border-system-gray-200 bg-white px-2 py-1.5">
+                      <div className="rounded-md border border-system-gray-200 bg-white px-2 py-1.5 min-w-0">
                         <Text
                           as="div"
                           variant="tiny"
@@ -6869,7 +6881,7 @@ export default function UnifiedSearchModal({
                           {activeSidebarFilterCount}
                         </Text>
                         <Text as="div" variant="tiny" className="text-system-gray-500">
-                          Filters
+                          {activeSidebarFilterCount === 1 ? 'Filter' : 'Filters'}
                         </Text>
                       </div>
                     </div>
@@ -6935,22 +6947,27 @@ export default function UnifiedSearchModal({
                             onClick={() => handleInsightStatClick('duplicates')}
                             className="w-full h-auto justify-start rounded-md border border-system-gray-200 bg-white px-2 py-2"
                           >
-                            <Text
-                              as="div"
-                              variant="tiny"
-                              className="font-semibold text-system-gray-800"
-                            >
-                              {duplicateSummary.loading ? '...' : insightSummary.nearDuplicates}
-                            </Text>
-                            <Text as="div" variant="tiny" className="text-system-gray-500">
-                              near-duplicates
-                            </Text>
-                            {duplicateSummary.groupCount > 0 && (
-                              <Text as="div" variant="tiny" className="text-system-gray-400">
-                                {duplicateSummary.groupCount} group
-                                {duplicateSummary.groupCount === 1 ? '' : 's'}
-                              </Text>
-                            )}
+                            <div className="flex flex-col items-start gap-0.5 text-left">
+                              <div>
+                                <Text
+                                  as="span"
+                                  variant="tiny"
+                                  className="font-semibold text-system-gray-800"
+                                >
+                                  {duplicateSummary.loading ? '...' : insightSummary.nearDuplicates}
+                                </Text>
+                                <Text as="span" variant="tiny" className="text-system-gray-500">
+                                  {' '}
+                                  near-duplicates
+                                </Text>
+                              </div>
+                              {duplicateSummary.groupCount > 0 && (
+                                <Text as="div" variant="tiny" className="text-system-gray-400">
+                                  {duplicateSummary.groupCount} group
+                                  {duplicateSummary.groupCount === 1 ? '' : 's'}
+                                </Text>
+                              )}
+                            </div>
                           </Button>
                           <Button
                             type="button"
@@ -6988,21 +7005,28 @@ export default function UnifiedSearchModal({
                                 variant="ghost"
                                 size="xs"
                                 onClick={() => focusNode(discovery.targetId)}
-                                className="w-full h-auto justify-start rounded-lg border border-system-gray-200 bg-white px-2 py-2"
+                                className="w-full h-auto justify-start rounded-lg border border-system-gray-200 bg-white px-2 py-2 min-w-0 text-left"
                               >
-                                <Text as="div" variant="tiny" className="text-system-gray-700">
-                                  <span className="font-medium">{discovery.sourceLabel}</span>
-                                  <span className="mx-1 text-system-gray-400">↔</span>
-                                  <span className="font-medium">{discovery.targetLabel}</span>
-                                </Text>
-                                <Text
-                                  as="div"
-                                  variant="tiny"
-                                  className="text-system-gray-500 mt-0.5"
-                                >
-                                  Unexpected connection ({Math.round(discovery.similarity * 100)}%
-                                  related)
-                                </Text>
+                                <div className="min-w-0 w-full overflow-hidden">
+                                  <Text
+                                    as="div"
+                                    variant="tiny"
+                                    className="text-system-gray-700 truncate"
+                                    title={`${discovery.sourceLabel} ↔ ${discovery.targetLabel}`}
+                                  >
+                                    <span className="font-medium">{discovery.sourceLabel}</span>
+                                    <span className="mx-1 text-system-gray-400">↔</span>
+                                    <span className="font-medium">{discovery.targetLabel}</span>
+                                  </Text>
+                                  <Text
+                                    as="div"
+                                    variant="tiny"
+                                    className="text-system-gray-500 mt-0.5"
+                                  >
+                                    Unexpected connection ({Math.round(discovery.similarity * 100)}%
+                                    related)
+                                  </Text>
+                                </div>
                               </Button>
                             ))}
                           </div>
@@ -7035,7 +7059,7 @@ export default function UnifiedSearchModal({
                                   variant="ghost"
                                   size="xs"
                                   onClick={() => handleOrgFindingClick(finding.key)}
-                                  className="w-full h-auto justify-start text-system-gray-700 rounded border border-system-gray-200 bg-white px-2 py-1.5"
+                                  className="w-full h-auto justify-start text-system-gray-700 rounded-md border border-system-gray-200 bg-white px-2 py-1.5"
                                 >
                                   {finding.label}
                                 </Button>
@@ -7066,6 +7090,7 @@ export default function UnifiedSearchModal({
                         placeholder="Search files..."
                         ariaLabel="Search to add nodes"
                         className="bg-white shadow-sm"
+                        showShortcutHint={false}
                       />
                       <div className="flex items-center justify-between gap-3">
                         <Text
@@ -7077,7 +7102,7 @@ export default function UnifiedSearchModal({
                             type="checkbox"
                             checked={addMode}
                             onChange={(e) => setAddMode(e.target.checked)}
-                            className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
+                            className="h-4 w-4 rounded-md border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
                           />
                           Add to existing
                         </Text>
@@ -7169,7 +7194,7 @@ export default function UnifiedSearchModal({
                                       return { ...prev, confidence: next };
                                     })
                                   }
-                                  className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
+                                  className="h-4 w-4 rounded-md border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
                                 />
                                 <span className="capitalize">{conf}</span>
                               </Text>
@@ -7312,14 +7337,14 @@ export default function UnifiedSearchModal({
                                         {c.sharedTerms.map((t) => (
                                           <span
                                             key={`${c.id}-${t}`}
-                                            className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded text-[10px]"
+                                            className="px-1.5 py-0.5 bg-stratosort-indigo/10 text-stratosort-indigo border border-stratosort-indigo/30 rounded-md text-xs"
                                           >
                                             {t}
                                           </span>
                                         ))}
                                         {Array.isArray(c.bridgeFiles) &&
                                           c.bridgeFiles.length > 0 && (
-                                            <span className="px-1.5 py-0.5 bg-white border border-system-gray-200 rounded text-[10px] text-system-gray-600">
+                                            <span className="px-1.5 py-0.5 bg-white border border-system-gray-200 rounded-md text-xs text-system-gray-600">
                                               {c.bridgeFiles.length} bridge file
                                               {c.bridgeFiles.length === 1 ? '' : 's'}
                                             </span>
@@ -7338,7 +7363,7 @@ export default function UnifiedSearchModal({
                                           return (
                                             <div
                                               key={filePath || file?.id || label}
-                                              className="flex items-center justify-between gap-2 text-xs text-system-gray-700 bg-white border border-system-gray-100 rounded px-2 py-1"
+                                              className="flex items-center justify-between gap-2 text-xs text-system-gray-700 bg-white border border-system-gray-100 rounded-md px-2 py-1"
                                               onClick={(e) => e.stopPropagation()}
                                               role="presentation"
                                             >
@@ -7676,12 +7701,12 @@ export default function UnifiedSearchModal({
 
                       {focusNodeId && (
                         <div className="pt-3 border-t border-system-gray-100">
-                          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-2">
+                          <div className="bg-stratosort-indigo/10 border border-stratosort-indigo/30 rounded-lg p-3 space-y-2">
                             <div className="flex items-center justify-between">
                               <Text
                                 as="span"
                                 variant="tiny"
-                                className="font-medium text-indigo-700"
+                                className="font-medium text-stratosort-indigo"
                               >
                                 Focus Mode Active
                               </Text>
@@ -7689,7 +7714,7 @@ export default function UnifiedSearchModal({
                                 variant="ghost"
                                 size="sm"
                                 onClick={handleClearFocus}
-                                className="text-xs text-indigo-600 hover:bg-indigo-100 px-2 py-0.5 h-auto"
+                                className="text-xs text-stratosort-indigo hover:bg-stratosort-indigo/10 px-2 py-0.5 h-auto"
                               >
                                 Show Full Graph
                               </Button>
@@ -7698,14 +7723,14 @@ export default function UnifiedSearchModal({
                               <Text
                                 as="label"
                                 variant="tiny"
-                                className="font-medium text-indigo-600 mb-1.5 block"
+                                className="font-medium text-stratosort-indigo mb-1.5 block"
                               >
                                 Focus Depth
                               </Text>
                               <Select
                                 value={focusDepth}
                                 onChange={(e) => setFocusDepth(Number(e.target.value))}
-                                className="text-sm text-indigo-700"
+                                className="text-sm text-stratosort-indigo"
                               >
                                 <option value={0}>Only selected</option>
                                 <option value={1}>1 level (Direct)</option>
@@ -7727,7 +7752,7 @@ export default function UnifiedSearchModal({
                             }
                           }}
                           disabled={nodes.length === 0}
-                          className="w-full justify-center text-red-600 border border-red-100 bg-red-50/40 hover:bg-red-50 hover:text-red-700"
+                          className="w-full justify-center text-stratosort-danger border border-stratosort-danger/20 bg-stratosort-danger/5 hover:bg-stratosort-danger/10 hover:text-stratosort-danger"
                         >
                           Clear Graph
                         </Button>
@@ -7791,7 +7816,7 @@ export default function UnifiedSearchModal({
                             type="checkbox"
                             checked={autoLayout}
                             onChange={(e) => setAutoLayout(e.target.checked)}
-                            className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
+                            className="h-4 w-4 rounded-md border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
                           />
                           Auto-layout on changes
                         </Text>
@@ -7805,7 +7830,7 @@ export default function UnifiedSearchModal({
                             type="checkbox"
                             checked={showEdgeLabels}
                             onChange={(e) => setShowEdgeLabels(e.target.checked)}
-                            className="h-4 w-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
+                            className="h-4 w-4 rounded-md border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue/20"
                           />
                           Show connection labels
                         </Text>
@@ -7897,7 +7922,7 @@ export default function UnifiedSearchModal({
                     aria-label={showClusters ? 'Hide clusters' : 'Show clusters'}
                     className={`h-8 px-2 backdrop-blur-sm shadow-sm ${
                       showClusters
-                        ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                        ? 'bg-stratosort-accent/10 border-stratosort-accent/30 text-stratosort-accent hover:bg-stratosort-accent/20'
                         : 'bg-white/90 border-system-gray-200 text-system-gray-600 hover:text-system-gray-800 hover:bg-white'
                     }`}
                     title={
@@ -8056,25 +8081,25 @@ export default function UnifiedSearchModal({
                     className="grid grid-cols-2 gap-x-8 gap-y-3 text-system-gray-400 max-w-md border-t border-system-gray-100 pt-6"
                   >
                     <div className="flex items-center gap-2">
-                      <kbd className="px-1.5 py-0.5 rounded bg-system-gray-100 border border-system-gray-200 font-mono text-system-gray-600">
+                      <kbd className="px-1.5 py-0.5 rounded-md bg-system-gray-100 border border-system-gray-200 font-mono text-system-gray-600">
                         Click
                       </kbd>
                       <span>to select nodes</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <kbd className="px-1.5 py-0.5 rounded bg-system-gray-100 border border-system-gray-200 font-mono text-system-gray-600">
+                      <kbd className="px-1.5 py-0.5 rounded-md bg-system-gray-100 border border-system-gray-200 font-mono text-system-gray-600">
                         Double-click
                       </kbd>
                       <span>to expand</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <kbd className="px-1.5 py-0.5 rounded bg-system-gray-100 border border-system-gray-200 font-mono text-system-gray-600">
+                      <kbd className="px-1.5 py-0.5 rounded-md bg-system-gray-100 border border-system-gray-200 font-mono text-system-gray-600">
                         Drag
                       </kbd>
                       <span>to pan the canvas</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <kbd className="px-1.5 py-0.5 rounded bg-system-gray-100 border border-system-gray-200 font-mono text-system-gray-600">
+                      <kbd className="px-1.5 py-0.5 rounded-md bg-system-gray-100 border border-system-gray-200 font-mono text-system-gray-600">
                         ?
                       </kbd>
                       <span>for graph help</span>
@@ -8143,19 +8168,19 @@ export default function UnifiedSearchModal({
                       <Panel position="top-left" className="pointer-events-auto">
                         <div className="flex flex-wrap items-center gap-1.5 bg-white/90 backdrop-blur border border-system-gray-200 rounded-lg px-2 py-1 shadow-sm">
                           {clusterMode !== DEFAULT_CLUSTER_MODE && (
-                            <span className="px-2 py-0.5 rounded-full bg-system-gray-50 border border-system-gray-200 text-[10px] text-system-gray-600">
+                            <span className="px-2 py-0.5 rounded-full bg-system-gray-50 border border-system-gray-200 text-xs text-system-gray-600">
                               Mode: {clusterMode}
                             </span>
                           )}
                           {bridgeOverlayEnabled && (
-                            <span className="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10px] text-amber-700">
+                            <span className="px-2 py-0.5 rounded-full bg-stratosort-accent/10 border border-stratosort-accent/30 text-xs text-stratosort-accent">
                               Bridges only
                             </span>
                           )}
                           {activeClusterFilterChips.map((chip) => (
                             <span
                               key={`cluster-${chip}`}
-                              className="px-2 py-0.5 rounded-full bg-system-gray-50 border border-system-gray-200 text-[10px] text-system-gray-600"
+                              className="px-2 py-0.5 rounded-full bg-system-gray-50 border border-system-gray-200 text-xs text-system-gray-600"
                             >
                               {chip}
                             </span>
@@ -8163,7 +8188,7 @@ export default function UnifiedSearchModal({
                           {activeGraphFilterChips.map((chip) => (
                             <span
                               key={`graph-${chip}`}
-                              className="px-2 py-0.5 rounded-full bg-system-gray-50 border border-system-gray-200 text-[10px] text-system-gray-600"
+                              className="px-2 py-0.5 rounded-full bg-system-gray-50 border border-system-gray-200 text-xs text-system-gray-600"
                             >
                               {chip}
                             </span>
@@ -8193,7 +8218,7 @@ export default function UnifiedSearchModal({
                         variant="tiny"
                         className="absolute bottom-3 left-3 text-system-gray-400 pointer-events-none z-10 flex items-center gap-1.5"
                       >
-                        <kbd className="px-1 py-0.5 rounded bg-white/80 border border-system-gray-200 text-system-gray-500 font-mono shadow-sm">
+                        <kbd className="px-1 py-0.5 rounded-md bg-white/80 border border-system-gray-200 text-system-gray-500 font-mono shadow-sm">
                           ?
                         </kbd>
                         <span>for help</span>
@@ -8291,18 +8316,18 @@ export default function UnifiedSearchModal({
                       {isLoadingMetadata ? (
                         /* Skeleton loading state */
                         <div className="animate-pulse space-y-4">
-                          <div className="h-4 bg-system-gray-200 rounded w-3/4" />
-                          <div className="h-3 bg-system-gray-200 rounded w-full" />
-                          <div className="h-3 bg-system-gray-200 rounded w-1/2" />
+                          <div className="h-4 bg-system-gray-200 rounded-md w-3/4" />
+                          <div className="h-3 bg-system-gray-200 rounded-md w-full" />
+                          <div className="h-3 bg-system-gray-200 rounded-md w-1/2" />
                           <div className="flex gap-2 pt-2">
-                            <div className="h-8 bg-system-gray-200 rounded w-20" />
-                            <div className="h-8 bg-system-gray-200 rounded w-20" />
+                            <div className="h-8 bg-system-gray-200 rounded-md w-20" />
+                            <div className="h-8 bg-system-gray-200 rounded-md w-20" />
                           </div>
                         </div>
                       ) : selectedKind === 'cluster' ? (
                         <div className="flex flex-col gap-6">
                           <div className="flex items-start gap-3 mb-2">
-                            <div className="mt-1 p-2 bg-white border border-system-gray-200 rounded-lg shadow-sm text-amber-600">
+                            <div className="mt-1 p-2 bg-white border border-system-gray-200 rounded-lg shadow-sm text-stratosort-accent">
                               <Layers className="h-5 w-5" />
                             </div>
                             <div className="flex-1 min-w-0">
@@ -8350,7 +8375,7 @@ export default function UnifiedSearchModal({
                                 ).map((term) => (
                                   <span
                                     key={term}
-                                    className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs"
+                                    className="px-2 py-0.5 bg-stratosort-accent/10 text-stratosort-accent border border-stratosort-accent/30 rounded-full text-xs"
                                   >
                                     {term}
                                   </span>
@@ -8538,13 +8563,13 @@ export default function UnifiedSearchModal({
                                           {(bridge.sharedTerms || []).map((t) => (
                                             <span
                                               key={t}
-                                              className="px-1.5 py-0.5 bg-white border border-system-gray-200 rounded text-[10px]"
+                                              className="px-1.5 py-0.5 bg-white border border-system-gray-200 rounded-md text-xs"
                                             >
                                               {t}
                                             </span>
                                           ))}
                                           {bridge.bridgeCount > 0 && (
-                                            <span className="px-1.5 py-0.5 bg-white border border-system-gray-200 rounded text-[10px]">
+                                            <span className="px-1.5 py-0.5 bg-white border border-system-gray-200 rounded-md text-xs">
                                               {bridge.bridgeCount} bridge file
                                               {bridge.bridgeCount === 1 ? '' : 's'}
                                             </span>
@@ -8556,7 +8581,7 @@ export default function UnifiedSearchModal({
                                             {visibleFiles.map((file) => (
                                               <div
                                                 key={file?.path || file?.id || file}
-                                                className="flex items-center justify-between text-xs text-system-gray-700 bg-white border border-system-gray-100 rounded px-2 py-1"
+                                                className="flex items-center justify-between text-xs text-system-gray-700 bg-white border border-system-gray-100 rounded-md px-2 py-1"
                                               >
                                                 <span className="truncate flex-1 mr-2">
                                                   {file?.name || file?.path || file}
@@ -8943,7 +8968,7 @@ export default function UnifiedSearchModal({
                                         {neighbor.label}
                                       </span>
                                       {typeof neighbor.similarity === 'number' ? (
-                                        <span className="text-[10px] text-system-gray-400">
+                                        <span className="text-xs text-system-gray-400">
                                           {Math.round(neighbor.similarity * 100)}%
                                         </span>
                                       ) : null}

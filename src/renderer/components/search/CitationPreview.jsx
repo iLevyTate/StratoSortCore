@@ -41,10 +41,10 @@ export default function CitationPreview({ source, onOpen, style }) {
           variant="tiny"
           className={`font-semibold px-1.5 py-0.5 rounded-full ${
             scorePct >= 70
-              ? 'bg-green-50 text-stratosort-success'
+              ? 'bg-stratosort-success/10 text-stratosort-success'
               : scorePct >= 50
-                ? 'bg-blue-50 text-stratosort-blue'
-                : 'bg-gray-100 text-system-gray-500'
+                ? 'bg-stratosort-blue/10 text-stratosort-blue'
+                : 'bg-system-gray-100 text-system-gray-500'
           }`}
         >
           {scorePct}%
@@ -55,7 +55,7 @@ export default function CitationPreview({ source, onOpen, style }) {
         <Text
           as="div"
           variant="tiny"
-          className="mb-3 p-2 bg-system-gray-50 rounded text-system-gray-600 line-clamp-4 leading-relaxed border border-system-gray-100"
+          className="mb-3 p-2 bg-system-gray-50 rounded-md text-system-gray-600 line-clamp-4 leading-relaxed border border-system-gray-100"
         >
           "{source.snippet}"
         </Text>

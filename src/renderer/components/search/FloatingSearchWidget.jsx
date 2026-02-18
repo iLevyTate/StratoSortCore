@@ -167,7 +167,7 @@ function FloatingSearchWidget({ isOpen, onClose, onOpenSearch }) {
             </div>
             <Text variant="tiny" className="mt-2 text-system-gray-400">
               Tip: Press{' '}
-              <kbd className="px-1 py-0.5 bg-system-gray-100 rounded text-system-gray-600 font-mono">
+              <kbd className="px-1 py-0.5 bg-system-gray-100 rounded-md text-system-gray-600 font-mono">
                 {isMac ? '⌘K' : 'Ctrl+K'}
               </kbd>{' '}
               anytime to search

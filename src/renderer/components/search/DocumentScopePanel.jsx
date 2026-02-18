@@ -23,7 +23,7 @@ function ScopeItem({ item, onRemove }) {
           <span className="text-sm font-medium truncate" title={item.path}>
             {item.name || 'Unknown'}
           </span>
-          <span className="text-[10px] text-system-gray-400 truncate">
+          <span className="text-xs text-system-gray-400 truncate">
             {formatDisplayPath(item.path, { redact: redactPaths, segments: 1 })}
           </span>
         </div>
@@ -108,8 +108,12 @@ export default function DocumentScopePanel({
     <div
       className={`flex flex-col h-full bg-system-gray-50 border-l border-system-gray-200 ${className}`}
     >
-      <div className="p-3 border-b border-system-gray-200 flex items-center justify-between">
-        <Text variant="small" className="font-semibold text-system-gray-800">
+      <div className="p-3 border-b border-system-gray-200 flex items-center justify-between min-w-0">
+        <Text
+          variant="small"
+          className="font-semibold text-system-gray-800 truncate"
+          title="Document Scope"
+        >
           Document Scope
         </Text>
         {scope.length > 0 && (

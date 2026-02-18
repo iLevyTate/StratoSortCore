@@ -301,7 +301,7 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
             {strategies.map((strategy) => (
               <div
                 key={strategy.id}
-                className={`p-2 rounded border cursor-pointer transition-all ${
+                className={`p-2 rounded-md border cursor-pointer transition-all ${
                   selectedStrategy === strategy.id
                     ? 'border-stratosort-blue bg-stratosort-blue/5'
                     : 'border-system-gray-200 hover:border-system-gray-300'

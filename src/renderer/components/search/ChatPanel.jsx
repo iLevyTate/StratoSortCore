@@ -51,17 +51,22 @@ function ChatWarningBanner({ message }) {
 function ChatModeToggle({ value, onChange }) {
   const isFast = value === 'fast';
   return (
-    <div className="flex items-center gap-1 rounded-full bg-system-gray-100 p-1">
+    <div
+      className="flex items-center gap-1 rounded-full bg-system-gray-100 p-1 shrink-0"
+      role="group"
+      aria-label="Response mode"
+    >
       <Button
         type="button"
         variant="ghost"
         size="xs"
         onClick={() => onChange('fast')}
         title="Quick response with keyword expansion and spell check"
-        className={`rounded-full ${
+        aria-pressed={isFast}
+        className={`rounded-full px-2.5 ${
           isFast
-            ? 'bg-white text-system-gray-900 shadow-sm'
-            : 'text-system-gray-500 hover:text-system-gray-700'
+            ? 'bg-white text-system-gray-900 shadow-sm ring-1 ring-system-gray-200/50'
+            : 'text-system-gray-500 hover:text-system-gray-700 bg-transparent'
         }`}
       >
         Fast
@@ -72,10 +77,11 @@ function ChatModeToggle({ value, onChange }) {
         size="xs"
         onClick={() => onChange('deep')}
         title="Slower, more accurate response with LLM re-ranking"
-        className={`rounded-full ${
+        aria-pressed={!isFast}
+        className={`rounded-full px-2.5 ${
           !isFast
-            ? 'bg-white text-system-gray-900 shadow-sm'
-            : 'text-system-gray-500 hover:text-system-gray-700'
+            ? 'bg-white text-system-gray-900 shadow-sm ring-1 ring-system-gray-200/50'
+            : 'text-system-gray-500 hover:text-system-gray-700 bg-transparent'
         }`}
       >
         Deep
@@ -194,7 +200,7 @@ function SourceList({ sources, onOpenSource }) {
                         key={tag}
                         as="span"
                         variant="tiny"
-                        className="inline-block px-1.5 py-0.5 font-medium bg-system-gray-100 text-system-gray-600 rounded"
+                        className="inline-block px-1.5 py-0.5 font-medium bg-system-gray-100 text-system-gray-600 rounded-md"
                       >
                         {tag}
                       </Text>
@@ -389,8 +395,8 @@ export default function ChatPanel({
   };
 
   return (
-    <div className="flex flex-1 min-h-0 flex-col chat-panel">
-      <div className="flex items-center justify-between gap-cozy border-b border-system-gray-200 px-4 py-3">
+    <div className="flex flex-1 min-h-0 flex-col chat-panel min-w-0">
+      <div className="flex items-center justify-between gap-cozy border-b border-system-gray-200 px-4 py-3 min-w-0">
         <Text as="div" variant="small" className="font-semibold text-system-gray-800">
           Conversational Chat
         </Text>
@@ -411,9 +417,9 @@ export default function ChatPanel({
               </Text>
             </div>
           )}
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-compact">
-              <Text as="span" variant="tiny" className="text-system-gray-500">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2 shrink-0">
+              <Text as="span" variant="tiny" className="text-system-gray-500 whitespace-nowrap">
                 Strict
               </Text>
               <Switch
@@ -422,8 +428,8 @@ export default function ChatPanel({
                 title="Only answer from selected documents"
               />
             </div>
-            <div className="flex items-center gap-compact">
-              <Text as="span" variant="tiny" className="text-system-gray-500">
+            <div className="flex items-center gap-2 shrink-0">
+              <Text as="span" variant="tiny" className="text-system-gray-500 whitespace-nowrap">
                 Context
               </Text>
               <Switch checked={useSearchContext} onChange={onToggleSearchContext} />

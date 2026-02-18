@@ -30,7 +30,7 @@ function ContradictionPair({ contradiction, onOpenSource, sources }) {
           {safeSharedTopics.map((topic) => (
             <span
               key={topic}
-              className="inline-block px-1.5 py-0.5 text-[10px] font-medium bg-stratosort-warning/10 text-stratosort-warning rounded"
+              className="inline-block px-1.5 py-0.5 text-xs font-medium bg-stratosort-warning/10 text-stratosort-warning rounded-md"
             >
               {topic}
             </span>
@@ -61,7 +61,7 @@ function ContradictionPair({ contradiction, onOpenSource, sources }) {
             <Button
               variant="ghost"
               size="sm"
-              className="mt-1 h-auto px-1 py-0.5 text-[10px] text-stratosort-blue"
+              className="mt-1 h-auto px-1 py-0.5 text-xs text-stratosort-blue"
               onClick={() => onOpenSource(sourceA)}
             >
               <ExternalLink className="w-3 h-3 mr-1" /> Open
@@ -91,7 +91,7 @@ function ContradictionPair({ contradiction, onOpenSource, sources }) {
             <Button
               variant="ghost"
               size="sm"
-              className="mt-1 h-auto px-1 py-0.5 text-[10px] text-stratosort-blue"
+              className="mt-1 h-auto px-1 py-0.5 text-xs text-stratosort-blue"
               onClick={() => onOpenSource(sourceB)}
             >
               <ExternalLink className="w-3 h-3 mr-1" /> Open

@@ -85,7 +85,7 @@ class SearchErrorBoundary extends React.Component {
 
               {/* Show error details in development */}
               {process.env.NODE_ENV === 'development' && this.state.error && (
-                <div className="w-full mb-4 p-3 bg-system-gray-100 rounded text-left">
+                <div className="w-full mb-4 p-3 bg-system-gray-100 rounded-lg text-left">
                   <p className="text-xs font-mono text-stratosort-danger break-all">
                     {this.state.error.message || 'Unknown error'}
                   </p>

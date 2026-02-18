@@ -35,7 +35,7 @@ const BaseEdgeTooltip = memo(
           {/* Badge */}
           <div
             className={`
-              px-1.5 py-0.5 rounded text-[10px] font-medium cursor-pointer
+              px-1.5 py-0.5 rounded-md text-xs font-medium cursor-pointer
               transition-all duration-200
               ${badgeColorClass}
               ${isHovered ? 'shadow-lg scale-110' : ''}
