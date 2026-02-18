@@ -37,7 +37,7 @@ const ClusterLegend = memo(
     if (compact) {
       // Compact layout: single column, minimal noise
       return (
-        <div className={`flex flex-col gap-2 text-[11px] text-system-gray-600 ${className}`}>
+        <div className={`flex flex-col gap-2 text-xs text-system-gray-600 ${className}`}>
           <div className="flex flex-wrap gap-2 text-[10px]">
             <span className="px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
               Cluster
@@ -104,7 +104,7 @@ const ClusterLegend = memo(
               aria-pressed={isTypeActive('cluster')}
               variant="ghost"
               size="sm"
-              className={`w-full justify-start text-left p-1 text-[11px] rounded-md h-auto ${
+              className={`w-full justify-start text-left p-1 text-xs rounded-md h-auto ${
                 isTypeActive('cluster')
                   ? 'hover:bg-amber-50'
                   : 'opacity-50 grayscale hover:opacity-75'
@@ -127,7 +127,7 @@ const ClusterLegend = memo(
               aria-pressed={isTypeActive('file')}
               variant="ghost"
               size="sm"
-              className={`w-full justify-start text-left p-1 text-[11px] rounded-md h-auto ${
+              className={`w-full justify-start text-left p-1 text-xs rounded-md h-auto ${
                 isTypeActive('file') ? 'hover:bg-blue-50' : 'opacity-50 grayscale hover:opacity-75'
               }`}
             >
@@ -148,7 +148,7 @@ const ClusterLegend = memo(
               aria-pressed={isTypeActive('query')}
               variant="ghost"
               size="sm"
-              className={`w-full justify-start text-left p-1 text-[11px] rounded-md h-auto ${
+              className={`w-full justify-start text-left p-1 text-xs rounded-md h-auto ${
                 isTypeActive('query')
                   ? 'hover:bg-indigo-50'
                   : 'opacity-50 grayscale hover:opacity-75'
@@ -218,7 +218,7 @@ const ClusterLegend = memo(
               aria-pressed={isConfidenceActive('high')}
               variant="ghost"
               size="sm"
-              className={`w-full justify-start text-left p-1 text-[11px] rounded-md h-auto ${
+              className={`w-full justify-start text-left p-1 text-xs rounded-md h-auto ${
                 isConfidenceActive('high')
                   ? 'hover:bg-emerald-50'
                   : 'opacity-50 grayscale hover:opacity-75'
@@ -244,7 +244,7 @@ const ClusterLegend = memo(
               aria-pressed={isConfidenceActive('medium')}
               variant="ghost"
               size="sm"
-              className={`w-full justify-start text-left p-1 text-[11px] rounded-md h-auto ${
+              className={`w-full justify-start text-left p-1 text-xs rounded-md h-auto ${
                 isConfidenceActive('medium')
                   ? 'hover:bg-blue-50'
                   : 'opacity-50 grayscale hover:opacity-75'
@@ -270,7 +270,7 @@ const ClusterLegend = memo(
               aria-pressed={isConfidenceActive('low')}
               variant="ghost"
               size="sm"
-              className={`w-full justify-start text-left p-1 text-[11px] rounded-md h-auto ${
+              className={`w-full justify-start text-left p-1 text-xs rounded-md h-auto ${
                 isConfidenceActive('low')
                   ? 'hover:bg-system-gray-50'
                   : 'opacity-50 grayscale hover:opacity-75'

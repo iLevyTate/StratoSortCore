@@ -4,6 +4,7 @@ import PropTypes from 'prop-types';
 import { Zap } from 'lucide-react';
 import BaseEdgeTooltip from './BaseEdgeTooltip';
 import { useElkPath, useEdgeHover } from './useEdgeInteraction';
+import { Text } from '../ui/Typography';
 
 /**
  * Custom edge component for similarity connections with hover tooltip
@@ -367,27 +368,31 @@ const SimilarityEdge = memo(
                 {hasSubjects && (
                   <div className="space-y-0.5">
                     {sourceSubject && (
-                      <div className="text-[11px]">
+                      <Text as="div" variant="tiny">
                         <span className="text-system-gray-500">A: </span>
                         <span className="text-amber-600 truncate">
                           {sourceSubject.slice(0, 40)}
                         </span>
-                      </div>
+                      </Text>
                     )}
                     {targetSubject && (
-                      <div className="text-[11px]">
+                      <Text as="div" variant="tiny">
                         <span className="text-system-gray-500">B: </span>
                         <span className="text-amber-600 truncate">
                           {targetSubject.slice(0, 40)}
                         </span>
-                      </div>
+                      </Text>
                     )}
                   </div>
                 )}
 
-                <div className="text-system-gray-500 italic text-[11px] pt-1 border-t border-system-gray-200">
+                <Text
+                  as="div"
+                  variant="tiny"
+                  className="text-system-gray-500 italic pt-1 border-t border-system-gray-200"
+                >
                   {explanation}
-                </div>
+                </Text>
               </>
             ) : (
               <>
@@ -396,14 +401,14 @@ const SimilarityEdge = memo(
                   <span className="font-medium text-system-gray-700">{similarityPercent}%</span>
                 </div>
                 {Array.isArray(data?.sharedTerms) && data.sharedTerms.length > 0 && (
-                  <div className="text-[11px] text-system-gray-600">
+                  <Text as="div" variant="tiny" className="text-system-gray-600">
                     Shared terms: {data.sharedTerms.slice(0, 4).join(', ')}
-                  </div>
+                  </Text>
                 )}
                 {data?.bridgeCount > 0 && (
-                  <div className="text-[11px] text-system-gray-600">
+                  <Text as="div" variant="tiny" className="text-system-gray-600">
                     Bridge files: {data.bridgeCount}
-                  </div>
+                  </Text>
                 )}
               </>
             )}

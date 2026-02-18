@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { Search, CheckCircle, AlertCircle, HelpCircle } from 'lucide-react';
+import { Button } from '../ui';
 import { Text } from '../ui/Typography';
 
 const COVERAGE_CHIP_LIMIT = 10;
@@ -97,16 +98,18 @@ function CoverageSection({ icon: Icon, title, items, colorClass, onSend }) {
       </div>
       <div className="flex flex-wrap gap-1.5">
         {visibleItems.map((item, i) => (
-          <button
+          <Button
             key={`${item.topic}-${i}`}
-            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium bg-white border border-system-gray-200 rounded-md hover:bg-system-gray-50 hover:border-system-gray-300 transition-colors cursor-pointer"
+            variant="ghost"
+            size="xs"
+            className="h-auto inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-white border border-system-gray-200 rounded-md hover:bg-system-gray-50 hover:border-system-gray-300"
             onClick={() => onSend(`Tell me more about "${item.topic}" across my documents`)}
             title={`${item.count} source${item.count !== 1 ? 's' : ''}: ${item.sources.map((s) => s.name).join(', ')}`}
           >
             <span className={`w-1.5 h-1.5 rounded-full ${colorClass.replace('text-', 'bg-')}`} />
             {item.topic}
             <span className="text-system-gray-400">{item.count}</span>
-          </button>
+          </Button>
         ))}
         {hiddenCount > 0 ? (
           <Text as="span" variant="tiny" className="text-system-gray-500">

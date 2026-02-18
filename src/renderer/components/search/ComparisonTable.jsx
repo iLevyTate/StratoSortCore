@@ -75,7 +75,7 @@ export default function ComparisonTable({ documentAnswer, sources, onOpenSource 
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-system-gray-50 border-b border-system-gray-200">
-              <th className="text-left px-3 py-2 text-[11px] font-semibold text-system-gray-500 uppercase tracking-wide w-24">
+              <th className="text-left px-3 py-2 text-xs font-semibold text-system-gray-500 uppercase tracking-wide w-24">
                 Topic
               </th>
               {comparison.columns.map((col) => (

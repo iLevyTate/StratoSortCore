@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from 'reactflow';
 import BaseEdgeTooltip from './BaseEdgeTooltip';
 import { useElkPath, useEdgeHover } from './useEdgeInteraction';
+import { Text } from '../ui/Typography';
 
 /**
  * KnowledgeEdge
@@ -117,10 +118,14 @@ const KnowledgeEdge = memo(
               <div className="text-system-gray-500">Shared analysis metadata</div>
             )}
             {(sourceLabel || targetLabel) && (
-              <div className="text-[11px] text-system-gray-500 pt-1 border-t border-system-gray-200">
+              <Text
+                as="div"
+                variant="tiny"
+                className="text-system-gray-500 pt-1 border-t border-system-gray-200"
+              >
                 {sourceLabel && <div>A: {sourceLabel.slice(0, 50)}</div>}
                 {targetLabel && <div>B: {targetLabel.slice(0, 50)}</div>}
-              </div>
+              </Text>
             )}
           </BaseEdgeTooltip>
         )}

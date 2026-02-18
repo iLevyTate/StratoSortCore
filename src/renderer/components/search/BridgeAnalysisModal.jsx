@@ -76,15 +76,27 @@ export default function BridgeAnalysisModal({
                 `}
                 onClick={() => setSelectedBridgeId(bridge.id)}
               >
-                <div className="flex items-center gap-2 text-sm font-medium text-system-gray-900">
-                  <span className="truncate max-w-[45%]">{bridge.sourceLabel}</span>
+                <div className="flex items-center gap-2">
+                  <Text
+                    as="span"
+                    variant="small"
+                    className="font-medium text-system-gray-900 truncate max-w-[45%]"
+                  >
+                    {bridge.sourceLabel}
+                  </Text>
                   <ArrowRight className="w-3 h-3 text-system-gray-400 shrink-0" />
-                  <span className="truncate max-w-[45%]">{bridge.targetLabel}</span>
+                  <Text
+                    as="span"
+                    variant="small"
+                    className="font-medium text-system-gray-900 truncate max-w-[45%]"
+                  >
+                    {bridge.targetLabel}
+                  </Text>
                 </div>
-                <div className="mt-1 text-xs text-system-gray-500">
+                <Text variant="tiny" className="mt-1">
                   {bridge.bridgeFiles.length} connecting file
                   {bridge.bridgeFiles.length !== 1 ? 's' : ''}
-                </div>
+                </Text>
               </div>
             ))}
             {enrichedBridges.length === 0 && (
@@ -103,13 +115,21 @@ export default function BridgeAnalysisModal({
               {/* Header */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-sm font-medium">
+                  <Text
+                    as="span"
+                    variant="small"
+                    className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full font-medium"
+                  >
                     {selectedBridge.sourceLabel}
-                  </div>
+                  </Text>
                   <ArrowRight className="w-5 h-5 text-system-gray-400" />
-                  <div className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-sm font-medium">
+                  <Text
+                    as="span"
+                    variant="small"
+                    className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full font-medium"
+                  >
                     {selectedBridge.targetLabel}
-                  </div>
+                  </Text>
                 </div>
               </div>
 
@@ -150,10 +170,15 @@ export default function BridgeAnalysisModal({
                           className="w-8 h-8 shrink-0"
                         />
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium text-sm text-system-gray-900 truncate">
+                          <Text
+                            variant="small"
+                            className="font-medium text-system-gray-900 truncate"
+                          >
                             {file.name || safeBasename(path)}
-                          </div>
-                          <div className="text-xs text-system-gray-500 truncate">{path}</div>
+                          </Text>
+                          <Text variant="tiny" className="truncate">
+                            {path}
+                          </Text>
                         </div>
                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <Button size="xs" variant="ghost" onClick={() => openFile(path)}>

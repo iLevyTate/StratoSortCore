@@ -55,11 +55,13 @@ function ChatModeToggle({ value, onChange }) {
       <Button
         type="button"
         variant="ghost"
-        size="sm"
+        size="xs"
         onClick={() => onChange('fast')}
         title="Quick response with keyword expansion and spell check"
-        className={`h-auto px-2 py-0 text-xs rounded-full ${
-          isFast ? 'bg-white text-system-gray-900 shadow-xs' : 'text-system-gray-500'
+        className={`rounded-full ${
+          isFast
+            ? 'bg-white text-system-gray-900 shadow-sm'
+            : 'text-system-gray-500 hover:text-system-gray-700'
         }`}
       >
         Fast
@@ -67,11 +69,13 @@ function ChatModeToggle({ value, onChange }) {
       <Button
         type="button"
         variant="ghost"
-        size="sm"
+        size="xs"
         onClick={() => onChange('deep')}
         title="Slower, more accurate response with LLM re-ranking"
-        className={`h-auto px-2 py-0 text-xs rounded-full ${
-          !isFast ? 'bg-white text-system-gray-900 shadow-xs' : 'text-system-gray-500'
+        className={`rounded-full ${
+          !isFast
+            ? 'bg-white text-system-gray-900 shadow-sm'
+            : 'text-system-gray-500 hover:text-system-gray-700'
         }`}
       >
         Deep
@@ -89,7 +93,7 @@ function SourceList({ sources, onOpenSource }) {
         size="sm"
         align="left"
         title="No matching documents found."
-        className="mt-3 px-3 py-3 rounded-lg border border-system-gray-200 bg-white"
+        className="mt-3"
       />
     );
   }
@@ -141,8 +145,10 @@ function SourceList({ sources, onOpenSource }) {
             >
               {/* Semantic relevance indicator (raw cosine similarity) */}
               <div className="flex flex-col items-center gap-0.5 pt-0.5 flex-shrink-0 w-8">
-                <div
-                  className={`text-[10px] font-bold leading-none ${
+                <Text
+                  as="span"
+                  variant="tiny"
+                  className={`font-semibold leading-none ${
                     scorePct >= 70
                       ? 'text-stratosort-success'
                       : scorePct >= 50
@@ -151,12 +157,12 @@ function SourceList({ sources, onOpenSource }) {
                   }`}
                 >
                   {scorePct}%
-                </div>
+                </Text>
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-medium text-system-gray-800 truncate">
+                <Text variant="small" className="font-medium text-system-gray-800 truncate">
                   {source.name || source.fileId}
-                </div>
+                </Text>
                 {context ? (
                   <Text as="div" variant="tiny" className="mt-0.5 text-system-gray-500 truncate">
                     {context}
@@ -184,12 +190,14 @@ function SourceList({ sources, onOpenSource }) {
                 {tags.length > 0 ? (
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {tags.map((tag) => (
-                      <span
+                      <Text
                         key={tag}
-                        className="inline-block px-1.5 py-0.5 text-[10px] font-medium bg-system-gray-100 text-system-gray-600 rounded"
+                        as="span"
+                        variant="tiny"
+                        className="inline-block px-1.5 py-0.5 font-medium bg-system-gray-100 text-system-gray-600 rounded"
                       >
                         {tag}
-                      </span>
+                      </Text>
                     ))}
                   </div>
                 ) : null}
@@ -252,7 +260,9 @@ function AnswerBlock({ title, items, showTitle = true, sources = [], onOpenSourc
         {items.map((item, idx) => (
           <div key={`${title}-${idx}`}>
             <div className="text-sm text-system-gray-800 leading-relaxed">
-              <CitationRenderer text={item.text} sources={sources} onOpenSource={onOpenSource} />
+              <Text as="div" variant="small" className="text-system-gray-800 leading-relaxed">
+                <CitationRenderer text={item.text} sources={sources} onOpenSource={onOpenSource} />
+              </Text>
             </div>
             {item.citations && item.citations.length > 0 ? (
               <Text
@@ -272,9 +282,9 @@ function AnswerBlock({ title, items, showTitle = true, sources = [], onOpenSourc
                     <Button
                       key={citation}
                       type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-auto px-2 py-0.5 text-system-gray-600 bg-system-gray-100 hover:bg-system-gray-200"
+                      variant="subtle"
+                      size="xs"
+                      className="px-2 text-system-gray-600"
                       onClick={() => {
                         if (canOpen) onOpenSource(source);
                       }}
@@ -386,15 +396,19 @@ export default function ChatPanel({
         </Text>
         <div className="flex items-center gap-2">
           {showSearchStatus && (
-            <div className="inline-flex items-center gap-2 text-[11px] text-system-gray-500 bg-system-gray-100 px-2 py-1 rounded-full">
+            <div className="inline-flex items-center gap-2 bg-system-gray-100 px-2 py-1 rounded-full">
               <div className="h-2 w-2 rounded-full bg-system-gray-400 animate-pulse" />
-              Updating search context...
+              <Text as="span" variant="tiny" className="text-system-gray-500">
+                Updating search context...
+              </Text>
             </div>
           )}
           {isSending && (
-            <div className="inline-flex items-center gap-2 text-[11px] text-system-gray-500 bg-stratosort-blue/10 px-2 py-1 rounded-full">
+            <div className="inline-flex items-center gap-2 bg-stratosort-blue/10 px-2 py-1 rounded-full">
               <div className="h-2 w-2 rounded-full bg-stratosort-blue animate-pulse" />
-              {statusMessage || 'Assistant thinking'} <ThinkingDots />
+              <Text as="span" variant="tiny" className="text-system-gray-500">
+                {statusMessage || 'Assistant thinking'} <ThinkingDots />
+              </Text>
             </div>
           )}
           <div className="flex items-center gap-2">
@@ -463,7 +477,9 @@ export default function ChatPanel({
               className={`chat-message ${isUser ? 'chat-message-user' : 'chat-message-assistant'}`}
             >
               <div className="chat-message-meta">
-                <div className="chat-message-label">{isUser ? 'You' : 'Assistant'}</div>
+                <Text as="div" variant="tiny" className="chat-message-label">
+                  {isUser ? 'You' : 'Assistant'}
+                </Text>
               </div>
               <div
                 className={`chat-bubble ${isUser ? 'chat-bubble-user' : 'chat-bubble-assistant'}`}
@@ -588,9 +604,9 @@ export default function ChatPanel({
                                 }
                               }}
                               variant="ghost"
-                              size="sm"
+                              size="xs"
                               leftIcon={<RotateCcw className="w-3 h-3" />}
-                              className="text-stratosort-blue hover:text-stratosort-blue-dark text-xs lowercase px-2 py-1"
+                              className="text-stratosort-blue lowercase"
                               title="Regenerate response"
                               disabled={isSending}
                             >
@@ -634,7 +650,9 @@ export default function ChatPanel({
         {isSending && (
           <div className="chat-message chat-message-assistant">
             <div className="chat-message-meta">
-              <div className="chat-message-label">Assistant</div>
+              <Text as="div" variant="tiny" className="chat-message-label">
+                Assistant
+              </Text>
             </div>
             <div className="chat-bubble chat-bubble-assistant">
               <div className="chat-message-text text-system-gray-500">
@@ -653,7 +671,7 @@ export default function ChatPanel({
           align="left"
           title="Chat error"
           description={error}
-          className="px-4 py-2 bg-red-50 border-t border-b border-red-100"
+          className="px-4 py-2 border-t border-border-soft"
           contentClassName="max-w-xl"
         />
       ) : null}
@@ -682,7 +700,7 @@ export default function ChatPanel({
               </Button>
             ) : null}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-cozy">
             {isSending ? (
               <Button variant="secondary" size="sm" onClick={onStopGenerating}>
                 <Square className="w-3 h-3" />

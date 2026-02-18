@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { createPortal } from 'react-dom';
+import { Button } from '../ui';
 import CitationPreview from './CitationPreview';
 
 export default function CitationRenderer({ text, sources, onOpenSource }) {
@@ -55,9 +56,11 @@ export default function CitationRenderer({ text, sources, onOpenSource }) {
             const docNum = docId.replace('doc-', '');
 
             return (
-              <button
+              <Button
                 key={i}
-                className="inline-flex items-center justify-center align-super text-[10px] font-bold text-stratosort-blue bg-stratosort-blue/10 hover:bg-stratosort-blue hover:text-white rounded px-1 min-w-[16px] h-4 mx-0.5 transition-colors cursor-pointer select-none"
+                variant="ghost"
+                size="xs"
+                className="align-super font-bold text-stratosort-blue bg-stratosort-blue/10 hover:bg-stratosort-blue hover:text-white rounded px-1 min-w-[16px] h-4 mx-0.5 select-none"
                 onClick={(e) => {
                   e.stopPropagation();
                   onOpenSource(source);
@@ -67,7 +70,7 @@ export default function CitationRenderer({ text, sources, onOpenSource }) {
                 aria-label={`Citation ${docNum}: ${source.name}`}
               >
                 {docNum}
-              </button>
+              </Button>
             );
           }
           return <span key={i}>{part}</span>;

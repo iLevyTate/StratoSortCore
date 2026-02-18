@@ -20,7 +20,7 @@ function ConversationItem({ conversation, isSelected, onSelect, onDelete, isPend
     <div
       className={`group flex items-center justify-between p-2 rounded-md cursor-pointer mb-1 transition-colors ${
         isSelected
-          ? 'bg-stratosort-blue/10 text-stratosort-blue-dark'
+          ? 'bg-stratosort-blue/10 text-stratosort-blue'
           : 'hover:bg-system-gray-100 text-system-gray-700'
       }`}
       onClick={() => onSelect(conversation.id)}
@@ -30,10 +30,12 @@ function ConversationItem({ conversation, isSelected, onSelect, onDelete, isPend
           className={`w-4 h-4 shrink-0 ${isSelected ? 'text-stratosort-blue' : 'text-system-gray-400'}`}
         />
         <div className="flex flex-col min-w-0">
-          <span className="text-sm font-medium truncate">
+          <Text as="span" variant="small" className="font-medium truncate">
             {conversation.title || 'New Conversation'}
-          </span>
-          <span className="text-[10px] text-system-gray-400">{dateStr}</span>
+          </Text>
+          <Text as="span" variant="tiny" className="text-system-gray-400">
+            {dateStr}
+          </Text>
         </div>
       </div>
       <Button

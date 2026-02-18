@@ -838,7 +838,7 @@ function TabButton({ active, onClick, icon: Icon, label }) {
       variant={active ? 'primary' : 'ghost'}
       size="sm"
       leftIcon={<Icon className="w-4 h-4" />}
-      className={`rounded-lg px-3 ${active ? 'shadow-md' : 'bg-system-gray-100 text-system-gray-600 hover:bg-system-gray-200'}`}
+      className={`rounded-lg ${active ? 'shadow-sm' : 'text-system-gray-600 hover:text-system-gray-800'}`}
     >
       {label}
     </Button>
@@ -860,26 +860,32 @@ TabButton.displayName = 'TabButton';
 function SidebarSection({ icon: Icon, title, isOpen, onToggle, badge, children }) {
   return (
     <section className="space-y-0">
-      <button
+      <Button
         type="button"
         onClick={onToggle}
-        className="w-full flex items-center justify-between gap-2 py-2 px-1 rounded-md hover:bg-system-gray-50 transition-colors group"
+        variant="ghost"
+        size="xs"
+        className="w-full h-auto justify-between gap-2 py-2 px-1 rounded-md hover:bg-system-gray-50 group"
         aria-expanded={isOpen}
       >
         <span className={GRAPH_SIDEBAR_SECTION_TITLE}>
           {Icon && <Icon className="w-3.5 h-3.5" aria-hidden="true" />}
           <span>{title}</span>
           {badge != null && (
-            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-system-gray-100 text-system-gray-500 text-[10px] font-medium not-italic">
+            <Text
+              as="span"
+              variant="tiny"
+              className="ml-1 px-1.5 py-0.5 rounded-full bg-system-gray-100 text-system-gray-500 font-medium not-italic"
+            >
               {badge}
-            </span>
+            </Text>
           )}
         </span>
         <ChevronDown
           className={`w-3.5 h-3.5 text-system-gray-400 transition-transform [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] ${isOpen ? '' : '-rotate-90'}`}
           aria-hidden="true"
         />
-      </button>
+      </Button>
       {isOpen && <div className="pt-2 space-y-3">{children}</div>}
     </section>
   );
@@ -6364,9 +6370,9 @@ export default function UnifiedSearchModal({
                       aria-label="View all results"
                       aria-pressed={viewMode === 'all'}
                       variant={viewMode === 'all' ? 'secondary' : 'ghost'}
-                      size="sm"
+                      size="xs"
                       leftIcon={<List className="w-3.5 h-3.5" />}
-                      className={`rounded-md px-2.5 py-1 text-xs h-auto ${viewMode === 'all' ? 'bg-white text-system-gray-900 shadow-sm' : 'text-system-gray-500 hover:text-system-gray-700'}`}
+                      className={`rounded-md ${viewMode === 'all' ? 'bg-white text-system-gray-900 shadow-sm' : 'text-system-gray-500 hover:text-system-gray-700'}`}
                     >
                       All
                     </Button>
@@ -6376,9 +6382,9 @@ export default function UnifiedSearchModal({
                       aria-label="Group results by type"
                       aria-pressed={viewMode === 'grouped'}
                       variant={viewMode === 'grouped' ? 'secondary' : 'ghost'}
-                      size="sm"
+                      size="xs"
                       leftIcon={<LayoutGrid className="w-3.5 h-3.5" />}
-                      className={`rounded-md px-2.5 py-1 text-xs h-auto ${viewMode === 'grouped' ? 'bg-white text-system-gray-900 shadow-sm' : 'text-system-gray-500 hover:text-system-gray-700'}`}
+                      className={`rounded-md ${viewMode === 'grouped' ? 'bg-white text-system-gray-900 shadow-sm' : 'text-system-gray-500 hover:text-system-gray-700'}`}
                     >
                       By Type
                     </Button>
@@ -6676,27 +6682,27 @@ export default function UnifiedSearchModal({
                     onNewConversation={handleNewConversation}
                     className="w-56 shrink-0"
                   />
-                  <button
-                    type="button"
+                  <IconButton
                     onClick={() => setIsConvSidebarOpen(false)}
-                    className="absolute top-2 -right-3 z-10 w-6 h-6 rounded-full bg-white border border-system-gray-200 shadow-sm flex items-center justify-center hover:bg-system-gray-50 transition-colors"
+                    size="sm"
+                    variant="secondary"
+                    className="absolute top-2 -right-3 z-10 h-6 w-6"
                     title="Collapse sidebar"
                     aria-label="Collapse conversation sidebar"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5 text-system-gray-500" />
-                  </button>
+                    icon={<ChevronLeft className="w-3.5 h-3.5 text-system-gray-500" />}
+                  />
                 </div>
               ) : (
                 <div className="shrink-0 flex flex-col items-center py-2 px-1 bg-system-gray-50 border-r border-system-gray-200 gap-2">
-                  <button
-                    type="button"
+                  <IconButton
                     onClick={() => setIsConvSidebarOpen(true)}
-                    className="w-7 h-7 rounded-md bg-white border border-system-gray-200 shadow-sm flex items-center justify-center hover:bg-system-gray-50 transition-colors"
+                    size="sm"
+                    variant="secondary"
+                    className="w-7 h-7 rounded-md"
                     title="Show conversations"
                     aria-label="Show conversation sidebar"
-                  >
-                    <ChevronRight className="w-3.5 h-3.5 text-system-gray-500" />
-                  </button>
+                    icon={<ChevronRight className="w-3.5 h-3.5 text-system-gray-500" />}
+                  />
                   <MessageSquare className="w-4 h-4 text-system-gray-400" />
                 </div>
               )}
@@ -6739,15 +6745,15 @@ export default function UnifiedSearchModal({
               </div>
               {isDocScopeOpen ? (
                 <div className="relative shrink-0 flex">
-                  <button
-                    type="button"
+                  <IconButton
                     onClick={() => setIsDocScopeOpen(false)}
-                    className="absolute top-2 -left-3 z-10 w-6 h-6 rounded-full bg-white border border-system-gray-200 shadow-sm flex items-center justify-center hover:bg-system-gray-50 transition-colors"
+                    size="sm"
+                    variant="secondary"
+                    className="absolute top-2 -left-3 z-10 h-6 w-6"
                     title="Collapse document scope"
                     aria-label="Collapse document scope sidebar"
-                  >
-                    <ChevronRight className="w-3.5 h-3.5 text-system-gray-500" />
-                  </button>
+                    icon={<ChevronRight className="w-3.5 h-3.5 text-system-gray-500" />}
+                  />
                   <DocumentScopePanel
                     scope={documentScope}
                     onAddToScope={handleAddToScope}
@@ -6758,20 +6764,24 @@ export default function UnifiedSearchModal({
                 </div>
               ) : (
                 <div className="shrink-0 flex flex-col items-center py-2 px-1 bg-system-gray-50 border-l border-system-gray-200 gap-2">
-                  <button
-                    type="button"
+                  <IconButton
                     onClick={() => setIsDocScopeOpen(true)}
-                    className="w-7 h-7 rounded-md bg-white border border-system-gray-200 shadow-sm flex items-center justify-center hover:bg-system-gray-50 transition-colors"
+                    size="sm"
+                    variant="secondary"
+                    className="w-7 h-7 rounded-md"
                     title="Show document scope"
                     aria-label="Show document scope sidebar"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5 text-system-gray-500" />
-                  </button>
+                    icon={<ChevronLeft className="w-3.5 h-3.5 text-system-gray-500" />}
+                  />
                   <FolderInput className="w-4 h-4 text-system-gray-400" />
                   {documentScope.length > 0 && (
-                    <span className="text-[10px] font-medium text-stratosort-blue bg-stratosort-blue/10 rounded-full w-5 h-5 flex items-center justify-center">
+                    <Text
+                      as="span"
+                      variant="tiny"
+                      className="font-medium text-stratosort-blue bg-stratosort-blue/10 rounded-full w-5 h-5 flex items-center justify-center"
+                    >
                       {documentScope.length}
-                    </span>
+                    </Text>
                   )}
                 </div>
               )}
@@ -6882,10 +6892,12 @@ export default function UnifiedSearchModal({
                       </Text>
                       <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-2">
-                          <button
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="xs"
                             onClick={() => handleInsightStatClick('clusters')}
-                            className="rounded-md border border-system-gray-200 bg-white px-2 py-2 text-left hover:bg-system-gray-50"
+                            className="w-full h-auto justify-start rounded-md border border-system-gray-200 bg-white px-2 py-2"
                           >
                             <Text
                               as="div"
@@ -6897,11 +6909,13 @@ export default function UnifiedSearchModal({
                             <Text as="div" variant="tiny" className="text-system-gray-500">
                               topic clusters
                             </Text>
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="xs"
                             onClick={() => handleInsightStatClick('bridges')}
-                            className="rounded-md border border-system-gray-200 bg-white px-2 py-2 text-left hover:bg-system-gray-50"
+                            className="w-full h-auto justify-start rounded-md border border-system-gray-200 bg-white px-2 py-2"
                           >
                             <Text
                               as="div"
@@ -6913,11 +6927,13 @@ export default function UnifiedSearchModal({
                             <Text as="div" variant="tiny" className="text-system-gray-500">
                               bridge documents
                             </Text>
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="xs"
                             onClick={() => handleInsightStatClick('duplicates')}
-                            className="rounded-md border border-system-gray-200 bg-white px-2 py-2 text-left hover:bg-system-gray-50"
+                            className="w-full h-auto justify-start rounded-md border border-system-gray-200 bg-white px-2 py-2"
                           >
                             <Text
                               as="div"
@@ -6935,11 +6951,13 @@ export default function UnifiedSearchModal({
                                 {duplicateSummary.groupCount === 1 ? '' : 's'}
                               </Text>
                             )}
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="xs"
                             onClick={() => handleInsightStatClick('scattered')}
-                            className="rounded-md border border-system-gray-200 bg-white px-2 py-2 text-left hover:bg-system-gray-50"
+                            className="w-full h-auto justify-start rounded-md border border-system-gray-200 bg-white px-2 py-2"
                           >
                             <Text
                               as="div"
@@ -6951,7 +6969,7 @@ export default function UnifiedSearchModal({
                             <Text as="div" variant="tiny" className="text-system-gray-500">
                               scattered files
                             </Text>
-                          </button>
+                          </Button>
                         </div>
 
                         {dailyDiscoveries.length > 0 && (
@@ -6964,11 +6982,13 @@ export default function UnifiedSearchModal({
                               Daily discovery
                             </Text>
                             {dailyDiscoveries.map((discovery) => (
-                              <button
+                              <Button
                                 key={discovery.id}
                                 type="button"
+                                variant="ghost"
+                                size="xs"
                                 onClick={() => focusNode(discovery.targetId)}
-                                className="w-full text-left rounded-lg border border-system-gray-200 bg-white hover:bg-system-gray-50 px-2 py-2"
+                                className="w-full h-auto justify-start rounded-lg border border-system-gray-200 bg-white px-2 py-2"
                               >
                                 <Text as="div" variant="tiny" className="text-system-gray-700">
                                   <span className="font-medium">{discovery.sourceLabel}</span>
@@ -6983,7 +7003,7 @@ export default function UnifiedSearchModal({
                                   Unexpected connection ({Math.round(discovery.similarity * 100)}%
                                   related)
                                 </Text>
-                              </button>
+                              </Button>
                             ))}
                           </div>
                         )}
@@ -6997,22 +7017,28 @@ export default function UnifiedSearchModal({
                             >
                               Organizational Health
                             </Text>
-                            <span className="text-xs font-semibold text-stratosort-blue">
+                            <Text
+                              as="span"
+                              variant="tiny"
+                              className="font-semibold text-stratosort-blue"
+                            >
                               {organizationalHealth.grade} ({organizationalHealth.score})
-                            </span>
+                            </Text>
                           </div>
                           <div className="space-y-1">
                             {organizationalHealth.findings
                               .filter((finding) => finding.active)
                               .map((finding) => (
-                                <button
+                                <Button
                                   key={finding.key}
                                   type="button"
+                                  variant="ghost"
+                                  size="xs"
                                   onClick={() => handleOrgFindingClick(finding.key)}
-                                  className="w-full text-left text-xs text-system-gray-700 rounded border border-system-gray-200 bg-white px-2 py-1.5 hover:bg-system-gray-50"
+                                  className="w-full h-auto justify-start text-system-gray-700 rounded border border-system-gray-200 bg-white px-2 py-1.5"
                                 >
                                   {finding.label}
-                                </button>
+                                </Button>
                               ))}
                             {organizationalHealth.findings.every((finding) => !finding.active) && (
                               <Text as="div" variant="tiny" className="text-system-gray-500">
@@ -7367,11 +7393,13 @@ export default function UnifiedSearchModal({
                               </Text>
                               <div className="space-y-1.5">
                                 {clusterInsights.emergingClusters.map((c) => (
-                                  <button
+                                  <Button
                                     key={c.id}
                                     type="button"
+                                    variant="ghost"
+                                    size="xs"
                                     onClick={() => focusNode(c.id)}
-                                    className="w-full text-left border border-system-gray-200 rounded-lg bg-white hover:bg-system-gray-50 px-2 py-2"
+                                    className="w-full h-auto justify-start border border-system-gray-200 rounded-lg bg-white px-2 py-2"
                                   >
                                     <div className="flex items-center justify-between gap-2">
                                       <Text
@@ -7396,7 +7424,7 @@ export default function UnifiedSearchModal({
                                     >
                                       {c.memberCount} file{c.memberCount === 1 ? '' : 's'}
                                     </Text>
-                                  </button>
+                                  </Button>
                                 ))}
                               </div>
                             </div>
@@ -7849,10 +7877,14 @@ export default function UnifiedSearchModal({
               {/* Graph Controls: Help & Maximize */}
               <div className="absolute top-3 right-3 z-20 flex gap-2">
                 {isGraphMaximized && nodes.length > 0 && (
-                  <div className="bg-white/90 backdrop-blur-sm border border-system-gray-200 rounded-lg px-3 py-1.5 text-xs font-medium text-system-gray-600 shadow-sm flex items-center gap-2">
-                    <span>{nodes.length} nodes</span>
+                  <div className="bg-white/90 backdrop-blur-sm border border-system-gray-200 rounded-lg px-3 py-1.5 shadow-sm flex items-center gap-2">
+                    <Text as="span" variant="tiny" className="font-medium text-system-gray-600">
+                      {nodes.length} nodes
+                    </Text>
                     <span className="w-px h-3 bg-system-gray-300" />
-                    <span>{edges.length} links</span>
+                    <Text as="span" variant="tiny" className="font-medium text-system-gray-600">
+                      {edges.length} links
+                    </Text>
                   </div>
                 )}
                 {/* Toggle Clusters Button - Progressive Disclosure */}
@@ -8442,9 +8474,11 @@ export default function UnifiedSearchModal({
                                         className="border border-system-gray-200 rounded-lg p-2 bg-system-gray-50"
                                       >
                                         <div className="flex items-start justify-between gap-2">
-                                          <button
+                                          <Button
                                             type="button"
-                                            className="min-w-0 flex-1 text-left"
+                                            variant="ghost"
+                                            size="xs"
+                                            className="min-w-0 flex-1 h-auto justify-start text-left p-0"
                                             title="Select related cluster"
                                             onClick={() => {
                                               if (bridge?.targetId)
@@ -8465,7 +8499,7 @@ export default function UnifiedSearchModal({
                                             >
                                               {Math.round((bridge.similarity || 0) * 100)}% match
                                             </Text>
-                                          </button>
+                                          </Button>
 
                                           <Button
                                             variant="ghost"

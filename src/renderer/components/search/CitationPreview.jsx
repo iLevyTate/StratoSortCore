@@ -36,8 +36,10 @@ export default function CitationPreview({ source, onOpen, style }) {
             </Text>
           )}
         </div>
-        <div
-          className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+        <Text
+          as="div"
+          variant="tiny"
+          className={`font-semibold px-1.5 py-0.5 rounded-full ${
             scorePct >= 70
               ? 'bg-green-50 text-stratosort-success'
               : scorePct >= 50
@@ -46,13 +48,17 @@ export default function CitationPreview({ source, onOpen, style }) {
           }`}
         >
           {scorePct}%
-        </div>
+        </Text>
       </div>
 
       {source.snippet && (
-        <div className="mb-3 p-2 bg-system-gray-50 rounded text-[11px] text-system-gray-600 line-clamp-4 leading-relaxed border border-system-gray-100">
+        <Text
+          as="div"
+          variant="tiny"
+          className="mb-3 p-2 bg-system-gray-50 rounded text-system-gray-600 line-clamp-4 leading-relaxed border border-system-gray-100"
+        >
           "{source.snippet}"
-        </div>
+        </Text>
       )}
 
       <Button
