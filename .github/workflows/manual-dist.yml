@@ -156,14 +156,14 @@ jobs:
 
       - name: Download Windows artifacts
         if: ${{ inputs.build_windows }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: stratosort-windows-dist-${{ github.run_number }}
           path: release-upload/windows
 
       - name: Download macOS artifacts
         if: ${{ inputs.build_macos }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: stratosort-macos-dist-${{ github.run_number }}
           path: release-upload/macos
