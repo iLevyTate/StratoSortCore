@@ -865,7 +865,7 @@ function SidebarSection({ icon: Icon, title, isOpen, onToggle, badge, children }
         onClick={onToggle}
         variant="ghost"
         size="xs"
-        className="w-full h-auto justify-between gap-2 py-2 px-1 rounded-md hover:bg-system-gray-50 group"
+        className="w-full h-auto !justify-between gap-2 py-2 px-1 rounded-md hover:bg-system-gray-50 group"
         aria-expanded={isOpen}
       >
         <span className={GRAPH_SIDEBAR_SECTION_TITLE}>
@@ -6680,16 +6680,8 @@ export default function UnifiedSearchModal({
                     currentConversationId={currentConversationId}
                     onSelectConversation={handleSelectConversation}
                     onNewConversation={handleNewConversation}
+                    onClose={() => setIsConvSidebarOpen(false)}
                     className="w-56 shrink-0"
-                  />
-                  <IconButton
-                    onClick={() => setIsConvSidebarOpen(false)}
-                    size="sm"
-                    variant="secondary"
-                    className="absolute top-2 -right-3 z-10 h-6 w-6"
-                    title="Collapse sidebar"
-                    aria-label="Collapse conversation sidebar"
-                    icon={<ChevronLeft className="w-3.5 h-3.5 text-system-gray-500" />}
                   />
                 </div>
               ) : (
@@ -6745,20 +6737,12 @@ export default function UnifiedSearchModal({
               </div>
               {isDocScopeOpen ? (
                 <div className="relative shrink-0 flex">
-                  <IconButton
-                    onClick={() => setIsDocScopeOpen(false)}
-                    size="sm"
-                    variant="secondary"
-                    className="absolute top-2 -left-3 z-10 h-6 w-6"
-                    title="Collapse document scope"
-                    aria-label="Collapse document scope sidebar"
-                    icon={<ChevronRight className="w-3.5 h-3.5 text-system-gray-500" />}
-                  />
                   <DocumentScopePanel
                     scope={documentScope}
                     onAddToScope={handleAddToScope}
                     onRemoveFromScope={handleRemoveFromScope}
                     onClearScope={handleClearScope}
+                    onClose={() => setIsDocScopeOpen(false)}
                     className="w-56 shrink-0"
                   />
                 </div>
@@ -6909,43 +6893,47 @@ export default function UnifiedSearchModal({
                             variant="ghost"
                             size="xs"
                             onClick={() => handleInsightStatClick('clusters')}
-                            className="w-full h-auto justify-start rounded-md border border-system-gray-200 bg-white px-2 py-2"
+                            className="w-full h-auto !justify-start rounded-md border border-system-gray-200 bg-white px-2 py-2"
                           >
-                            <Text
-                              as="div"
-                              variant="tiny"
-                              className="font-semibold text-system-gray-800"
-                            >
-                              {insightSummary.topicClusters}
-                            </Text>
-                            <Text as="div" variant="tiny" className="text-system-gray-500">
-                              topic clusters
-                            </Text>
+                            <div className="flex flex-col items-start gap-0.5 text-left">
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="font-semibold text-system-gray-800"
+                              >
+                                {insightSummary.topicClusters}
+                              </Text>
+                              <Text as="div" variant="tiny" className="text-system-gray-500">
+                                topic clusters
+                              </Text>
+                            </div>
                           </Button>
                           <Button
                             type="button"
                             variant="ghost"
                             size="xs"
                             onClick={() => handleInsightStatClick('bridges')}
-                            className="w-full h-auto justify-start rounded-md border border-system-gray-200 bg-white px-2 py-2"
+                            className="w-full h-auto !justify-start rounded-md border border-system-gray-200 bg-white px-2 py-2"
                           >
-                            <Text
-                              as="div"
-                              variant="tiny"
-                              className="font-semibold text-system-gray-800"
-                            >
-                              {insightSummary.bridgeDocuments}
-                            </Text>
-                            <Text as="div" variant="tiny" className="text-system-gray-500">
-                              bridge documents
-                            </Text>
+                            <div className="flex flex-col items-start gap-0.5 text-left">
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="font-semibold text-system-gray-800"
+                              >
+                                {insightSummary.bridgeDocuments}
+                              </Text>
+                              <Text as="div" variant="tiny" className="text-system-gray-500">
+                                bridge documents
+                              </Text>
+                            </div>
                           </Button>
                           <Button
                             type="button"
                             variant="ghost"
                             size="xs"
                             onClick={() => handleInsightStatClick('duplicates')}
-                            className="w-full h-auto justify-start rounded-md border border-system-gray-200 bg-white px-2 py-2"
+                            className="w-full h-auto !justify-start rounded-md border border-system-gray-200 bg-white px-2 py-2"
                           >
                             <div className="flex flex-col items-start gap-0.5 text-left">
                               <div>
@@ -6974,18 +6962,20 @@ export default function UnifiedSearchModal({
                             variant="ghost"
                             size="xs"
                             onClick={() => handleInsightStatClick('scattered')}
-                            className="w-full h-auto justify-start rounded-md border border-system-gray-200 bg-white px-2 py-2"
+                            className="w-full h-auto !justify-start rounded-md border border-system-gray-200 bg-white px-2 py-2"
                           >
-                            <Text
-                              as="div"
-                              variant="tiny"
-                              className="font-semibold text-system-gray-800"
-                            >
-                              {insightSummary.scatteredFiles}
-                            </Text>
-                            <Text as="div" variant="tiny" className="text-system-gray-500">
-                              scattered files
-                            </Text>
+                            <div className="flex flex-col items-start gap-0.5 text-left">
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="font-semibold text-system-gray-800"
+                              >
+                                {insightSummary.scatteredFiles}
+                              </Text>
+                              <Text as="div" variant="tiny" className="text-system-gray-500">
+                                scattered files
+                              </Text>
+                            </div>
                           </Button>
                         </div>
 
@@ -7005,7 +6995,7 @@ export default function UnifiedSearchModal({
                                 variant="ghost"
                                 size="xs"
                                 onClick={() => focusNode(discovery.targetId)}
-                                className="w-full h-auto justify-start rounded-lg border border-system-gray-200 bg-white px-2 py-2 min-w-0 text-left"
+                                className="w-full h-auto !justify-start rounded-lg border border-system-gray-200 bg-white px-2 py-2 min-w-0 text-left"
                               >
                                 <div className="min-w-0 w-full overflow-hidden">
                                   <Text
@@ -7059,7 +7049,7 @@ export default function UnifiedSearchModal({
                                   variant="ghost"
                                   size="xs"
                                   onClick={() => handleOrgFindingClick(finding.key)}
-                                  className="w-full h-auto justify-start text-system-gray-700 rounded-md border border-system-gray-200 bg-white px-2 py-1.5"
+                                  className="w-full h-auto !justify-start text-system-gray-700 rounded-md border border-system-gray-200 bg-white px-2 py-1.5"
                                 >
                                   {finding.label}
                                 </Button>
@@ -7424,7 +7414,7 @@ export default function UnifiedSearchModal({
                                     variant="ghost"
                                     size="xs"
                                     onClick={() => focusNode(c.id)}
-                                    className="w-full h-auto justify-start border border-system-gray-200 rounded-lg bg-white px-2 py-2"
+                                    className="w-full h-auto !justify-start border border-system-gray-200 rounded-lg bg-white px-2 py-2"
                                   >
                                     <div className="flex items-center justify-between gap-2">
                                       <Text
@@ -7538,7 +7528,7 @@ export default function UnifiedSearchModal({
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="text-xs justify-start h-8"
+                              className="text-xs !justify-start h-8"
                               onClick={() => handleGuideIntent('related')}
                             >
                               Related topics
@@ -7546,7 +7536,7 @@ export default function UnifiedSearchModal({
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="text-xs justify-start h-8"
+                              className="text-xs !justify-start h-8"
                               onClick={() => handleGuideIntent('recent')}
                             >
                               Recent changes
@@ -7554,7 +7544,7 @@ export default function UnifiedSearchModal({
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="text-xs justify-start h-8"
+                              className="text-xs !justify-start h-8"
                               onClick={() => handleGuideIntent('type')}
                             >
                               By type
@@ -7562,7 +7552,7 @@ export default function UnifiedSearchModal({
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="text-xs justify-start h-8"
+                              className="text-xs !justify-start h-8"
                               onClick={() => handleGuideIntent('bridges')}
                             >
                               Bridges/gaps
@@ -7570,7 +7560,7 @@ export default function UnifiedSearchModal({
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="text-xs justify-start h-8"
+                              className="text-xs !justify-start h-8"
                               onClick={() => handleGuideIntent('expand')}
                             >
                               Expand selection
@@ -7578,7 +7568,7 @@ export default function UnifiedSearchModal({
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="text-xs justify-start h-8"
+                              className="text-xs !justify-start h-8"
                               onClick={() => handleGuideIntent('bridgesOnly')}
                             >
                               Bridges only
@@ -8503,7 +8493,7 @@ export default function UnifiedSearchModal({
                                             type="button"
                                             variant="ghost"
                                             size="xs"
-                                            className="min-w-0 flex-1 h-auto justify-start text-left p-0"
+                                            className="min-w-0 flex-1 h-auto !justify-start text-left p-0"
                                             title="Select related cluster"
                                             onClick={() => {
                                               if (bridge?.targetId)
