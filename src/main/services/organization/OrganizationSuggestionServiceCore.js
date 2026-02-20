@@ -89,7 +89,7 @@ function buildSmartFolderIndex(smartFolders = []) {
   const byPath = new Map();
 
   for (const folder of smartFolders) {
-    // MED-12: Validate smartFolders elements
+    // Validate smartFolders elements
     if (!folder || typeof folder !== 'object') continue;
     if (!folder.id && !folder.name && !folder.path) continue;
 
@@ -183,7 +183,6 @@ class OrganizationSuggestionServiceCore {
     this.folderMatcher = folderMatchingService;
     this.settings = settingsService;
 
-    // FIX: Support both direct injection and lazy getter to break circular dependencies
     // Lazy getter is preferred as it allows ClusteringService to be resolved when first needed
     this._clusteringService = clusteringService || null;
     this._getClusteringService = getClusteringService || null;
@@ -250,7 +249,6 @@ class OrganizationSuggestionServiceCore {
       saveThrottleMs: 5000
     });
 
-    // FIX: CRITICAL - Track loading promise to prevent race condition
     // Previously, this was fire-and-forget which could cause:
     // 1. Suggestions generated without historical patterns
     // 2. recordFeedback overwriting patterns before they're loaded
@@ -258,7 +256,6 @@ class OrganizationSuggestionServiceCore {
     this._loadingFeedbackMemory = this._loadFeedbackMemoryAsync();
     this._rebuildingFeedbackMemory = false;
     this._lastEmbeddingMismatchSignature = null;
-    // FIX C-2: Track whether patterns have been successfully loaded
     this._patternsLoaded = false;
   }
 
@@ -269,8 +266,6 @@ class OrganizationSuggestionServiceCore {
    * @returns {Promise<void>}
    */
   async _ensurePatternsLoaded() {
-    // FIX C-2: Check flag first to avoid unnecessary await
-    // FIX HIGH-10: Check _patternsLoadedSuccessfully to allow retry on failure
     if (this._patternsLoaded && this._patternsLoadedSuccessfully) {
       return;
     }
@@ -477,7 +472,7 @@ class OrganizationSuggestionServiceCore {
       analysis.category ||
       analysis.type ||
       analysis.purpose;
-    // MED-21: Ensure rawCategory is string before trim()
+    // Ensure rawCategory is string before trim()
     if (typeof rawCategory !== 'string' || !rawCategory.trim()) {
       return null;
     }
@@ -486,6 +481,32 @@ class OrganizationSuggestionServiceCore {
     const folderMatch = smartFolders.find(
       (f) => String(f?.name || '').toLowerCase() === String(matchedFolder || '').toLowerCase()
     );
+
+    // Verify match quality to avoid boosting fallbacks
+    // matchCategoryToFolder may return the first folder as a fallback if no match is found.
+    // We only want to boost if the LLM output actually resembles the folder name.
+    let isHighQualityMatch = false;
+    if (folderMatch) {
+      const rawLower = rawCategory.toLowerCase();
+      const matchLower = matchedFolder.toLowerCase();
+
+      // Check for exact/partial match or reasonable edit distance
+      if (
+        rawLower === matchLower ||
+        rawLower.includes(matchLower) ||
+        matchLower.includes(rawLower)
+      ) {
+        isHighQualityMatch = true;
+      } else {
+        const dist = FolderMatchingService.levenshteinDistance(rawLower, matchLower);
+        const len = Math.max(rawLower.length, matchLower.length);
+        // Allow ~30% difference or up to 3 chars
+        if (dist <= 3 || dist / len < 0.3) {
+          isHighQualityMatch = true;
+        }
+      }
+    }
+
     const rawConfidence = Number(analysis.confidence);
     const confidence =
       Number.isFinite(rawConfidence) && rawConfidence > 1
@@ -494,11 +515,14 @@ class OrganizationSuggestionServiceCore {
           ? Math.min(1, Math.max(0, rawConfidence))
           : 0.6;
 
+    // If the LLM explicitly categorized it and we matched it to a folder, trust it.
+    const score = folderMatch && isHighQualityMatch ? Math.max(confidence, 0.95) : confidence;
+
     return {
       folder: matchedFolder,
       path: folderMatch?.path || '',
       description: folderMatch?.description || '',
-      score: confidence,
+      score: score,
       confidence,
       method: 'llm_category',
       source: 'llm',
@@ -544,13 +568,10 @@ class OrganizationSuggestionServiceCore {
       if (stored) {
         this.patternMatcher.loadPatterns(stored);
       }
-      // FIX C-2: Mark patterns as loaded on success
       this._patternsLoaded = true;
-      // FIX H-5: Track successful load separately to allow retry on transient failures
       this._patternsLoadedSuccessfully = true;
     } catch (error) {
       logger.warn('Failed to load user patterns', { error: error.message });
-      // FIX H-5: Mark as loaded to prevent immediate retry loops, but track failure
       // This allows future operations to check if patterns were actually loaded successfully
       this._patternsLoaded = true;
       this._patternsLoadedSuccessfully = false;
@@ -586,7 +607,6 @@ class OrganizationSuggestionServiceCore {
    * Get organization suggestions for a single file
    */
   async getSuggestionsForFile(file, smartFolders = [], options = {}) {
-    // FIX: Ensure patterns are loaded before generating suggestions
     await this._ensurePatternsLoaded();
     await this._ensureFeedbackMemoryLoaded();
 
@@ -691,9 +711,9 @@ class OrganizationSuggestionServiceCore {
           : [];
 
       const llmCategorySuggestion = this._buildLlmCategorySuggestion(normalizedFile, smartFolders);
-      const shouldIncludeLlmCategory =
-        Boolean(llmCategorySuggestion) &&
-        (routing.mode === ROUTING_MODES.LLM || semanticMatches.length === 0 || hybridNeedsLlm);
+      // This ensures explicit LLM categorization (which "understands" the file) takes precedence
+      // over potentially weak semantic matches, restoring the "old way" that worked for the user.
+      const shouldIncludeLlmCategory = Boolean(llmCategorySuggestion);
 
       const improvementSuggestions = await this.getImprovementSuggestions(
         normalizedFile,
@@ -717,7 +737,7 @@ class OrganizationSuggestionServiceCore {
         allSuggestions.push(match);
       }
       for (const match of patternMatches) {
-        match.source = 'pattern';
+        match.source = match.method === 'user_pattern' ? 'user_pattern' : 'pattern';
         allSuggestions.push(match);
       }
       for (const suggestion of llmSuggestions) {
@@ -849,7 +869,7 @@ class OrganizationSuggestionServiceCore {
       description: defaultFolder.description || 'Default folder for unmatched files',
       source: 'default',
       isSmartFolder: true,
-      // MED-18: Consistent return structure (add folderId)
+      // Consistent return structure (add folderId)
       folderId: defaultFolder.id
     };
   }
@@ -858,7 +878,6 @@ class OrganizationSuggestionServiceCore {
    * Get suggestions for batch organization
    */
   async getBatchSuggestions(files, smartFolders = [], options = {}) {
-    // FIX: Ensure patterns are loaded before generating suggestions
     await this._ensurePatternsLoaded();
 
     try {
@@ -999,7 +1018,6 @@ class OrganizationSuggestionServiceCore {
 
       const embeddingPromises = smartFolders.map(async (folder) => {
         try {
-          // FIX H-1: Validate folder object before accessing properties
           if (!folder || typeof folder !== 'object') {
             logger.warn('[OrganizationSuggestionService] Invalid folder object skipped');
             return null;
@@ -1031,7 +1049,6 @@ class OrganizationSuggestionServiceCore {
             updatedAt: new Date().toISOString()
           };
         } catch {
-          // FIX H-1: Use safe access for folder.name in error logging
           logger.warn(
             '[OrganizationSuggestionService] Failed to embed folder:',
             folder?.name || 'unknown'
@@ -1165,15 +1182,29 @@ class OrganizationSuggestionServiceCore {
    * @returns {Promise<void>}
    */
   async recordFeedback(file, suggestion, accepted, note) {
-    // FIX: Ensure patterns are loaded before modifying them
     // This prevents overwriting patterns that haven't been loaded yet
     await this._ensurePatternsLoaded();
 
-    // FIX CRITICAL: Check for successful load to prevent data loss
     if (!this._patternsLoadedSuccessfully) {
-      throw new Error(
-        'Cannot record feedback: Pattern storage failed to load. Saving now would overwrite with empty state.'
+      logger.warn(
+        '[OrganizationSuggestionService] Pattern storage failed to load. Attempting to recover...'
       );
+      try {
+        if (this.persistence && typeof this.persistence.recover === 'function') {
+          await this.persistence.recover();
+        }
+        // Reset to empty state and mark as loaded so we can proceed
+        this.patternMatcher.loadPatterns({ patterns: [], feedbackHistory: [] });
+        this._patternsLoadedSuccessfully = true;
+        logger.info(
+          '[OrganizationSuggestionService] Recovery successful. Starting with empty patterns.'
+        );
+      } catch (recoveryError) {
+        throw new Error(
+          `Cannot record feedback: Pattern storage failed to load and recovery failed: ${recoveryError.message}`,
+          { cause: recoveryError }
+        );
+      }
     }
 
     this.patternMatcher.recordFeedback(file, suggestion, accepted);
@@ -1263,7 +1294,6 @@ class OrganizationSuggestionServiceCore {
     const entry = buildMemoryEntry(text, metadata);
     if (!entry) return null;
 
-    // FIX H-2: Wrap feedbackMemoryStore.add in try-catch to handle storage failures
     let stored;
     try {
       stored = await this.feedbackMemoryStore.add(entry);
@@ -1310,7 +1340,6 @@ class OrganizationSuggestionServiceCore {
             logger.warn('[OrganizationSuggestionService] Retry upsert failed', {
               error: retryError.message
             });
-            // FIX L-1: Schedule a full rebuild to recover from repeated dimension mismatches
             try {
               await this.rebuildFeedbackMemoryEmbeddings();
             } catch (rebuildError) {
@@ -1427,7 +1456,7 @@ class OrganizationSuggestionServiceCore {
         const summary = generateFileSummary(file);
         const { vector } = await this.folderMatcher.embedText(summary || file.name);
         memoryMatches = await this.vectorDb.queryFeedbackMemory(vector, 5);
-        // MED-16: Validate response is array
+        // Validate response is array
         if (!Array.isArray(memoryMatches)) {
           memoryMatches = [];
         }
@@ -1459,11 +1488,13 @@ class OrganizationSuggestionServiceCore {
 
     const adjusted = rankedSuggestions.map((suggestion) => {
       const suggestionFolder = suggestion.folder || suggestion.path;
-      const baseScore = Number.isFinite(suggestion.score)
-        ? suggestion.score
-        : Number.isFinite(suggestion.confidence)
-          ? suggestion.confidence
-          : 0;
+      const baseScore = Number.isFinite(suggestion.weightedScore)
+        ? suggestion.weightedScore
+        : Number.isFinite(suggestion.score)
+          ? suggestion.score
+          : Number.isFinite(suggestion.confidence)
+            ? suggestion.confidence
+            : 0;
 
       let boost = 0;
       let penalty = 0;
@@ -1485,10 +1516,14 @@ class OrganizationSuggestionServiceCore {
       for (const match of memoryMatches) {
         const entry = memoryById.get(match.id);
         if (!entry?.targetFolder) continue;
-        if (
-          suggestionFolder &&
-          entry.targetFolder.toLowerCase() === suggestionFolder.toLowerCase()
-        ) {
+        const folderMatches =
+          suggestionFolder && entry.targetFolder.toLowerCase() === suggestionFolder.toLowerCase();
+
+        if (entry.source === 'feedback_reject') {
+          if (folderMatches) {
+            penalty = Math.max(penalty, Math.min(0.15, match.score * 0.15));
+          }
+        } else if (folderMatches) {
           boost = Math.max(boost, Math.min(0.15, match.score * 0.15));
         }
       }
@@ -1497,7 +1532,8 @@ class OrganizationSuggestionServiceCore {
       const updated = {
         ...suggestion,
         score: adjustedScore,
-        confidence: adjustedScore
+        confidence: adjustedScore,
+        weightedScore: adjustedScore
       };
 
       if (boost > 0 || penalty > 0) {
@@ -1510,7 +1546,9 @@ class OrganizationSuggestionServiceCore {
       return updated;
     });
 
-    return adjusted.sort((a, b) => (b.score || 0) - (a.score || 0));
+    return adjusted.sort(
+      (a, b) => (b.weightedScore || b.score || 0) - (a.weightedScore || a.score || 0)
+    );
   }
 
   async rebuildFeedbackMemoryEmbeddings() {
@@ -1655,7 +1693,6 @@ class OrganizationSuggestionServiceCore {
       const suggestions = [];
       for (const [, vote] of folderVotes) {
         const avgScore = vote.count > 0 ? vote.totalScore / vote.count : 0;
-        // FIX M-3: Guard against division by zero when cluster has no members
         const memberCount = clusterMembers.length || 1;
         const clusterConsistency = memberCount > 0 ? vote.count / memberCount : 0;
 
@@ -1737,7 +1774,6 @@ class OrganizationSuggestionServiceCore {
       }
 
       const clusters = this.clustering.clusters || [];
-      // FIX M-2: Wrap getSemanticFileId in try-catch to handle invalid paths
       const fileIdSet = new Set(
         files
           .map((f) => {
@@ -1847,7 +1883,7 @@ class OrganizationSuggestionServiceCore {
     }
 
     // Second pass: keyword overlap
-    // MED-13: Limit split results to prevent memory issues with massive labels
+    // Limit split results to prevent memory issues with massive labels
     const labelWords = labelLower.split(/\s+/).slice(0, 50);
     let bestMatch = null;
     let bestScore = 0;
@@ -1866,7 +1902,7 @@ class OrganizationSuggestionServiceCore {
       ];
 
       const overlap = labelWords.filter((w) => folderWords.some((fw) => fw.includes(w))).length;
-      // MED-14: Prevent division by zero if labelWords is empty
+      // Prevent division by zero if labelWords is empty
       const score = labelWords.length > 0 ? overlap / labelWords.length : 0;
 
       if (score > bestScore) {
@@ -1995,12 +2031,15 @@ class OrganizationSuggestionServiceCore {
       // Create a set of folders recommended by cluster analysis
       const clusterRecommendedFolders = new Set(clusterSuggestions.map((s) => s.path));
 
-      // Boost matching suggestions
       return suggestions.map((s) => {
         if (clusterRecommendedFolders.has(s.path)) {
+          const boostedScore = s.score * this.config.clusterBoostFactor;
           return {
             ...s,
-            score: s.score * this.config.clusterBoostFactor,
+            score: boostedScore,
+            weightedScore: Number.isFinite(s.weightedScore)
+              ? s.weightedScore * this.config.clusterBoostFactor
+              : boostedScore,
             clusterBoosted: true
           };
         }

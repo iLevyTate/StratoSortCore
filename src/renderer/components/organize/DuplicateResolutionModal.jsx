@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { Trash2, Check } from 'lucide-react';
 import Modal from '../ui/Modal';
@@ -27,7 +27,9 @@ export default function DuplicateResolutionModal({
   // Map of groupIndex -> fileId (or path) to keep
   const [selections, setSelections] = useState({});
   const [isResolving, setIsResolving] = useState(false);
+  const [resolveError, setResolveError] = useState(null);
   const { openFile, revealFile } = useFileActions();
+  const prevIsOpenRef = useRef(false);
   const normalizedGroups = useMemo(
     () =>
       (Array.isArray(duplicateGroups) ? duplicateGroups : [])
@@ -37,7 +39,7 @@ export default function DuplicateResolutionModal({
             : Array.isArray(group?.members)
               ? group.members
               : [];
-          return members
+          const normalizedMembers = members
             .map((member) => {
               const resolvedPath =
                 member?.path ||
@@ -59,20 +61,34 @@ export default function DuplicateResolutionModal({
               };
             })
             .filter((member) => Boolean(member.id));
+
+          const similarity = Number(group?.averageSimilarity);
+          return {
+            id: group?.id,
+            members: normalizedMembers,
+            averageSimilarity: Number.isFinite(similarity)
+              ? Math.max(0, Math.min(1, similarity))
+              : null
+          };
         })
-        .filter((group) => group.length > 0),
+        .filter((group) => group.members.length > 0),
     [duplicateGroups]
   );
 
-  // Initialize selections: default to keeping the first file in each group
+  // Initialize selections only when isOpen transitions from false to true
   React.useEffect(() => {
-    if (isOpen && normalizedGroups.length > 0) {
+    const wasOpen = prevIsOpenRef.current;
+    prevIsOpenRef.current = isOpen;
+
+    if (isOpen && !wasOpen && normalizedGroups.length > 0) {
       const initialSelections = {};
       normalizedGroups.forEach((group, index) => {
-        if (group.length > 0) {
+        if (group.members.length > 0) {
           // Default to the one with the shortest path (often the "original") or just the first
           // Simple heuristic: prefer shorter path length
-          const sorted = [...group].sort((a, b) => (a.path || '').length - (b.path || '').length);
+          const sorted = [...group.members].sort(
+            (a, b) => (a.path || '').length - (b.path || '').length
+          );
           initialSelections[index] = sorted?.[0]?.path || sorted?.[0]?.id;
         }
       });
@@ -89,14 +105,15 @@ export default function DuplicateResolutionModal({
 
   const handleResolve = async () => {
     setIsResolving(true);
+    setResolveError(null);
     try {
       const resolutions = [];
       normalizedGroups.forEach((group, index) => {
         const keepId = selections[index];
         if (!keepId) return;
 
-        const keepFile = group.find((f) => (f.path || f.id) === keepId);
-        const deleteFiles = group.filter((f) => (f.path || f.id) !== keepId);
+        const keepFile = group.members.find((f) => (f.path || f.id) === keepId);
+        const deleteFiles = group.members.filter((f) => (f.path || f.id) !== keepId);
 
         if (keepFile && deleteFiles.length > 0) {
           resolutions.push({
@@ -113,6 +130,7 @@ export default function DuplicateResolutionModal({
         error: error?.message,
         stack: error?.stack
       });
+      setResolveError(error?.message || 'Failed to resolve duplicates');
     } finally {
       setIsResolving(false);
     }
@@ -122,7 +140,7 @@ export default function DuplicateResolutionModal({
     let bytes = 0;
     normalizedGroups.forEach((group, index) => {
       const keepId = selections[index];
-      group.forEach((file) => {
+      group.members.forEach((file) => {
         if ((file.path || file.id) !== keepId) {
           bytes += file.size || 0;
         }
@@ -166,22 +184,38 @@ export default function DuplicateResolutionModal({
       }
     >
       <div className="flex flex-col h-[60vh] space-y-6 overflow-y-auto pr-2">
+        {resolveError && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+            {resolveError}
+          </div>
+        )}
         {normalizedGroups.map((group, groupIndex) => (
           <div
-            key={groupIndex}
+            key={group.id || groupIndex}
             className="bg-system-gray-50 rounded-xl p-4 border border-system-gray-100"
           >
             <div className="flex items-center justify-between mb-3">
               <Heading as="h4" variant="h6" className="text-system-gray-700">
                 Duplicate Set {groupIndex + 1}
               </Heading>
-              <Text variant="small" className="text-system-gray-500">
-                {group.length} files • {formatBytes(group[0]?.size || 0)} each
-              </Text>
+              <div className="flex items-center gap-2">
+                {Number.isFinite(group.averageSimilarity) && group.averageSimilarity < 1 && (
+                  <Text
+                    as="span"
+                    variant="tiny"
+                    className="inline-flex items-center px-2 py-0.5 rounded-md font-medium bg-amber-50 text-amber-700 border border-amber-100"
+                  >
+                    {Math.floor(group.averageSimilarity * 1000) / 10}% similar
+                  </Text>
+                )}
+                <Text variant="small" className="text-system-gray-500">
+                  {group.members.length} files • {formatBytes(group.members[0]?.size || 0)} each
+                </Text>
+              </div>
             </div>
 
             <div className="space-y-2">
-              {group.map((file) => {
+              {group.members.map((file) => {
                 const path = file.path || file.id;
                 const isKept = selections[groupIndex] === path;
 

@@ -11,7 +11,7 @@
  * Source-based weight multipliers
  */
 const sourceWeights = {
-  llm: 1.3, // LLM content analysis is PRIMARY - semantic understanding first
+  llm: 1.5, // LLM content analysis is PRIMARY - semantic understanding first
   user_pattern: 1.2, // User patterns are valuable but don't override content understanding
   semantic: 1.1, // Embedding similarity supports but doesn't dominate
   cluster: 1.1, // Cluster-based suggestions support organization

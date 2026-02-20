@@ -105,9 +105,17 @@ function resolveWorkerPath(name) {
   return null;
 }
 
+let ocrFailCount = 0;
+let ocrBackoffUntil = 0;
+const MAX_POOL_FAILURES = 5;
+
 function getOcrPool() {
   if (!shouldUsePiscina()) return null;
   if (ocrPool) return ocrPool;
+  if (ocrFailCount >= MAX_POOL_FAILURES) return null;
+
+  // Exponential backoff: wait before re-creating after failure
+  if (ocrBackoffUntil > Date.now()) return null;
 
   const maxThreads = Math.max(1, Math.min(2, os.cpus().length - 1));
   const filename = resolveWorkerPath('ocrWorker');
@@ -122,15 +130,23 @@ function getOcrPool() {
     idleTimeout: 60000
   });
   ocrPool.on('error', (error) => {
-    logger.error('[WorkerPools] OCR worker thread error:', { error: error?.message });
-    // FIX: Drain the pool before nulling to prevent orphaned worker threads.
-    // The previous code nulled the reference immediately, leaking the Piscina
-    // threads which kept the process alive during shutdown.
+    ocrFailCount++;
+    // Exponential backoff: 1s, 2s, 4s, 8s, 16s
+    ocrBackoffUntil = Date.now() + Math.min(1000 * Math.pow(2, ocrFailCount - 1), 30000);
+    logger.error('[WorkerPools] OCR worker thread error:', {
+      error: error?.message,
+      failCount: ocrFailCount,
+      maxFailures: MAX_POOL_FAILURES,
+      backoffMs: ocrBackoffUntil - Date.now()
+    });
     const dyingPool = ocrPool;
     ocrPool = null;
     drainPool(dyingPool, 'ocr-error-cleanup')
       .then(() => dyingPool.destroy?.())
       .catch(() => {});
+    if (ocrFailCount >= MAX_POOL_FAILURES) {
+      logger.error('[WorkerPools] OCR pool permanently disabled after repeated failures');
+    }
   });
   logger.info('[WorkerPools] OCR pool initialized', { maxThreads });
   return ocrPool;
@@ -155,14 +171,24 @@ function getEmbeddingPool() {
     minThreads: 1,
     idleTimeout: 60000
   });
+  let embeddingFailCount = 0;
+  const MAX_EMBEDDING_FAILURES = 5;
   embeddingPool.on('error', (error) => {
-    logger.error('[WorkerPools] Embedding worker thread error:', { error: error?.message });
-    // FIX: Drain the pool before nulling to prevent orphaned worker threads.
+    embeddingFailCount++;
+    logger.error('[WorkerPools] Embedding worker thread error:', {
+      error: error?.message,
+      failCount: embeddingFailCount,
+      maxFailures: MAX_EMBEDDING_FAILURES
+    });
     const dyingPool = embeddingPool;
     embeddingPool = null;
     drainPool(dyingPool, 'embedding-error-cleanup')
       .then(() => dyingPool.destroy?.())
       .catch(() => {});
+    if (embeddingFailCount >= MAX_EMBEDDING_FAILURES) {
+      _embeddingWorkerMissing = true;
+      logger.error('[WorkerPools] Embedding pool permanently disabled after repeated failures');
+    }
   });
   logger.info('[WorkerPools] Embedding pool initialized', { maxThreads: 1 });
   return embeddingPool;

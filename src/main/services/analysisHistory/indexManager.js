@@ -8,7 +8,6 @@
  */
 
 const crypto = require('crypto');
-// FIX: Import canonical normalizePathForIndex instead of duplicating
 // The canonical version also converts backslashes to forward slashes for consistent IDs
 const { normalizePathForIndex } = require('../../../shared/pathSanitization');
 
@@ -78,7 +77,6 @@ function updateIndexes(index, entry) {
     index.pathLookup[normalizedPath] = entry.id;
   }
 
-  // FIX: Also index organization.actual for fast lookups after file moves
   if (entry.organization?.actual) {
     index.pathLookup[entry.organization.actual] = entry.id;
     const normalizedActual = normalizePathForIndex(entry.organization.actual);

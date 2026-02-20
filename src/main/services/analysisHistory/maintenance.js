@@ -72,7 +72,6 @@ async function performMaintenanceIfNeeded(
     allRemovedEntries.push(...expired);
   }
 
-  // FIX: Notify caller about removed entries so embeddings can be marked orphaned
   if (onEntriesRemoved && allRemovedEntries.length > 0) {
     try {
       await onEntriesRemoved(allRemovedEntries);
@@ -114,7 +113,6 @@ async function cleanupOldEntries(
   const removedEntries = [];
 
   for (const [id, entry] of toRemove) {
-    // FIX: Capture entry info before deletion for cascade orphan marking
     removedEntries.push({
       id,
       fileHash: entry.fileHash,
@@ -145,7 +143,6 @@ async function cleanupOldEntries(
     });
   }
 
-  // FIX: Guard against missing metadata (e.g., migrated from older format)
   if (analysisHistory.metadata) {
     analysisHistory.metadata.lastCleanup = new Date().toISOString();
   }
@@ -180,7 +177,6 @@ async function removeExpiredEntries(
 
   for (const [id, entry] of entries) {
     if (new Date(entry.timestamp) < cutoffDate) {
-      // FIX: Capture entry info before deletion for cascade orphan marking
       removedEntries.push({
         id,
         fileHash: entry.fileHash,

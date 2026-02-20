@@ -46,7 +46,6 @@ function getFallbackFactory() {
  */
 async function withProcessingState({ filePath, processingState, logger, logPrefix, fn }) {
   let analysisStarted = false;
-  // CRITICAL FIX: Track whether we've already handled state transition to prevent race condition
   let stateHandled = false;
 
   try {
@@ -89,7 +88,6 @@ async function withProcessingState({ filePath, processingState, logger, logPrefi
     }
     throw error;
   } finally {
-    // CRITICAL FIX: Only cleanup if state was NOT already handled by success/error paths
     // This prevents the race condition where cleanup runs after markAnalysisComplete
     if (analysisStarted && processingState && !stateHandled) {
       try {
@@ -224,7 +222,6 @@ async function recordAnalysisResult({
       mimeType: null
     };
 
-    // FIX: Capture comprehensive data for document/image conversations
     // Include all LLM-extracted fields for richer context in chat/queries
     const normalized = {
       subject: normalizeText(result.subject || result.suggestedName || path.basename(filePath), {

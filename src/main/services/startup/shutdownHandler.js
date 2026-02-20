@@ -15,43 +15,46 @@ const logger = createLogger('StartupManager:Shutdown');
 /**
  * Shutdown a single process gracefully
  * @param {string} serviceName - Service name
- * @param {Object} process - Process object
+ * @param {Object} childProcess - Child process object
  * @returns {Promise<void>}
  */
-async function shutdownProcess(serviceName, process) {
+async function shutdownProcess(serviceName, childProcess) {
   try {
     logger.info(`[STARTUP] Stopping ${serviceName}...`);
 
     // Comprehensive null/existence checks
-    if (!process) {
+    if (!childProcess) {
       logger.debug(`[STARTUP] ${serviceName} process is null, nothing to stop`);
       return;
     }
 
-    if (typeof process !== 'object') {
-      logger.warn(`[STARTUP] ${serviceName} process is not an object:`, typeof process);
+    if (typeof childProcess !== 'object') {
+      logger.warn(`[STARTUP] ${serviceName} process is not an object:`, typeof childProcess);
       return;
     }
 
-    if (!process.pid) {
+    if (!childProcess.pid) {
       logger.debug(`[STARTUP] ${serviceName} process has no PID, likely already terminated`);
       return;
     }
 
-    if (process.killed) {
+    if (childProcess.killed) {
       logger.debug(`[STARTUP] ${serviceName} already killed`);
       return;
     }
 
-    if (process.exitCode !== null && process.exitCode !== undefined) {
-      logger.debug(`[STARTUP] ${serviceName} already exited with code ${process.exitCode}`);
+    if (childProcess.exitCode !== null && childProcess.exitCode !== undefined) {
+      logger.debug(`[STARTUP] ${serviceName} already exited with code ${childProcess.exitCode}`);
       return;
     }
 
-    // Remove event listeners
-    if (typeof process.removeAllListeners === 'function') {
+    // which strips Node internal listeners and can cause undefined behavior
+    if (typeof childProcess.removeAllListeners === 'function') {
       try {
-        process.removeAllListeners();
+        const eventsToRemove = ['exit', 'error', 'close', 'disconnect', 'message'];
+        for (const eventName of eventsToRemove) {
+          childProcess.removeAllListeners(eventName);
+        }
       } catch (error) {
         logger.warn(`[STARTUP] Failed to remove listeners for ${serviceName}:`, error.message);
       }
@@ -59,18 +62,18 @@ async function shutdownProcess(serviceName, process) {
       logger.warn(`[STARTUP] ${serviceName} process does not have removeAllListeners method`);
     }
 
-    if (typeof process.kill !== 'function') {
+    if (typeof childProcess.kill !== 'function') {
       logger.error(`[STARTUP] ${serviceName} process does not have kill method`);
       return;
     }
 
     // Try graceful shutdown first
     try {
-      process.kill('SIGTERM');
+      childProcess.kill('SIGTERM');
     } catch (killError) {
       if (killError.code === 'ESRCH') {
         logger.debug(
-          `[STARTUP] ${serviceName} process not found (PID: ${process.pid}), already terminated`
+          `[STARTUP] ${serviceName} process not found (PID: ${childProcess.pid}), already terminated`
         );
         return;
       }
@@ -84,7 +87,7 @@ async function shutdownProcess(serviceName, process) {
         if (!resolved) {
           resolved = true;
 
-          if (!process || process.killed || process.exitCode !== null) {
+          if (!childProcess || childProcess.killed || childProcess.exitCode !== null) {
             logger.debug(`[STARTUP] ${serviceName} already terminated, no force kill needed`);
             resolve();
             return;
@@ -93,19 +96,22 @@ async function shutdownProcess(serviceName, process) {
           logger.warn(`[STARTUP] Force killing ${serviceName}...`);
           try {
             const isWindows = os.platform() === 'win32';
-            if (isWindows && process.pid) {
-              // FIX: Use spawnSync to ensure taskkill completes before continuing
+            if (isWindows && childProcess.pid) {
               // Previously used spawn which returned immediately without waiting
-              const result = spawnSync('taskkill', ['/pid', process.pid.toString(), '/f', '/t'], {
-                windowsHide: true,
-                stdio: 'ignore',
-                timeout: 5000 // 5 second timeout for taskkill
-              });
+              const result = spawnSync(
+                'taskkill',
+                ['/pid', childProcess.pid.toString(), '/f', '/t'],
+                {
+                  windowsHide: true,
+                  stdio: 'ignore',
+                  timeout: 5000 // 5 second timeout for taskkill
+                }
+              );
               if (result.error) {
                 logger.debug(`[STARTUP] taskkill error for ${serviceName}:`, result.error.message);
               }
-            } else if (process.pid && typeof process.kill === 'function') {
-              process.kill('SIGKILL');
+            } else if (childProcess.pid && typeof childProcess.kill === 'function') {
+              childProcess.kill('SIGKILL');
             }
           } catch (e) {
             if (e.code === 'ESRCH') {
@@ -120,7 +126,7 @@ async function shutdownProcess(serviceName, process) {
         }
       }, 5000);
 
-      if (!process || typeof process.once !== 'function') {
+      if (!childProcess || typeof childProcess.once !== 'function') {
         logger.warn(`[STARTUP] ${serviceName} process does not support event listeners`);
         clearTimeout(timeout);
         resolved = true;
@@ -129,7 +135,7 @@ async function shutdownProcess(serviceName, process) {
       }
 
       try {
-        process.once('exit', () => {
+        childProcess.once('exit', () => {
           if (!resolved) {
             resolved = true;
             clearTimeout(timeout);
@@ -142,7 +148,7 @@ async function shutdownProcess(serviceName, process) {
       }
 
       try {
-        process.once('error', (error) => {
+        childProcess.once('error', (error) => {
           if (!resolved) {
             resolved = true;
             clearTimeout(timeout);
@@ -194,8 +200,8 @@ async function shutdown({ serviceProcesses, serviceStatus, healthMonitor, health
 
   // Gracefully stop all service processes
   const shutdownPromises = [];
-  for (const [serviceName, process] of serviceProcesses) {
-    shutdownPromises.push(shutdownProcess(serviceName, process));
+  for (const [serviceName, childProcess] of serviceProcesses) {
+    shutdownPromises.push(shutdownProcess(serviceName, childProcess));
   }
 
   // Wait for all processes to shut down

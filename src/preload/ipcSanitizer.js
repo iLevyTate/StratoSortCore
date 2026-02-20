@@ -119,7 +119,6 @@ function createIpcSanitizer({ log }) {
 
     cleaned = cleaned.replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '');
 
-    // FIX: Do NOT strip generic HTML tags, truncate at '<', or entity-encode < and >.
     // IPC data is rendered through React JSX which auto-escapes, so entity encoding
     // is unnecessary. The previous code corrupted user text like "size < 10MB",
     // search queries with comparison operators, and folder descriptions.

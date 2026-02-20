@@ -38,7 +38,6 @@ export function useDragAndDrop(onFilesDropped) {
       e.stopPropagation();
       setIsDragging(false);
 
-      // FIX: Add null check for dataTransfer to prevent crashes
       if (!e.dataTransfer) {
         return;
       }

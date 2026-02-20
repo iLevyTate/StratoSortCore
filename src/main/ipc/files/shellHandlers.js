@@ -41,7 +41,6 @@ function registerShellHandlers(servicesOrParams) {
       schema: schemaFilePath,
       handler: async (event, filePath) => {
         try {
-          // SECURITY FIX: Validate path before opening
           if (!filePath || typeof filePath !== 'string') {
             return {
               success: false,
@@ -104,7 +103,6 @@ function registerShellHandlers(servicesOrParams) {
       schema: schemaFilePath,
       handler: async (event, filePath) => {
         try {
-          // SECURITY FIX: Validate path before revealing
           if (!filePath || typeof filePath !== 'string') {
             return {
               success: false,

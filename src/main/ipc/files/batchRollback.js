@@ -5,9 +5,19 @@
  */
 
 const path = require('path');
+const crypto = require('crypto');
 const fs = require('fs').promises;
 const { app } = require('electron');
 const { crossDeviceMove } = require('../../../shared/atomicFileOperations');
+
+/**
+ * Write file atomically via write-to-temp-then-rename.
+ */
+async function writeFileAtomic(filePath, data) {
+  const tmpPath = `${filePath}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  await fs.writeFile(tmpPath, data);
+  await fs.rename(tmpPath, filePath);
+}
 
 /**
  * Execute rollback of completed operations
@@ -29,13 +39,14 @@ async function executeRollback(
 
   // Persist recovery manifest before starting rollback
   let recoveryPath = null;
+  let recoveryManifest = null;
   try {
     const userDataPath = app.getPath('userData');
     const recoveryDir = path.join(userDataPath, 'recovery');
     await fs.mkdir(recoveryDir, { recursive: true });
 
     recoveryPath = path.join(recoveryDir, `rollback_${batchId}.json`);
-    const recoveryManifest = {
+    recoveryManifest = {
       batchId,
       timestamp: new Date().toISOString(),
       reason: rollbackReason,
@@ -44,7 +55,7 @@ async function executeRollback(
       results: []
     };
 
-    await fs.writeFile(recoveryPath, JSON.stringify(recoveryManifest, null, 2));
+    await writeFileAtomic(recoveryPath, JSON.stringify(recoveryManifest, null, 2));
     log.info(`[FILE-OPS] Recovery manifest saved to ${recoveryPath}`);
   } catch (err) {
     log.error(`[FILE-OPS] Failed to save recovery manifest: ${err.message}`);
@@ -56,6 +67,8 @@ async function executeRollback(
 
   for (const completedOp of [...completedOperations].reverse()) {
     try {
+      // Ensure source directory exists (may have been removed after move)
+      await fs.mkdir(path.dirname(completedOp.source), { recursive: true });
       try {
         await fs.rename(completedOp.destination, completedOp.source);
       } catch (renameError) {
@@ -88,10 +101,11 @@ async function executeRollback(
         await fs.unlink(recoveryPath);
         log.info('[FILE-OPS] Rollback successful, recovery manifest deleted');
       } else {
-        const recoveryManifest = JSON.parse(await fs.readFile(recoveryPath, 'utf8'));
+        // Use in-memory manifest (already in scope) instead of re-reading from disk,
+        // which would throw if the prior write at L57 failed.
         recoveryManifest.status = 'partial_failure';
         recoveryManifest.results = rollbackResults;
-        await fs.writeFile(recoveryPath, JSON.stringify(recoveryManifest, null, 2));
+        await writeFileAtomic(recoveryPath, JSON.stringify(recoveryManifest, null, 2));
         log.warn(`[FILE-OPS] Rollback had failures, manifest updated at ${recoveryPath}`);
       }
     } catch (err) {

@@ -74,7 +74,6 @@ const WINDOWS_HANDLERS = [
  * @returns {boolean}
  */
 function hasInvokeHandler(channel) {
-  // FIX 87: Use the project's own IPC registry instead of private Electron API.
   // ipcMain._invokeHandlers is undocumented and may not exist in Electron 40+,
   // causing all invoke handlers to appear missing and adding startup delay.
   try {

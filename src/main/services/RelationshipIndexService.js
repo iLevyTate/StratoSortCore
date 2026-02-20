@@ -11,7 +11,8 @@ const DEFAULTS = {
   maxEdges: 2000,
   minWeight: 2,
   maxConceptsPerDoc: 20,
-  maxConceptsPerEdge: 5
+  maxConceptsPerEdge: 5,
+  maxEdgeCandidates: 50000
 };
 
 class RelationshipIndexService {
@@ -42,7 +43,7 @@ class RelationshipIndexService {
   }
 
   async _saveIndex(index) {
-    const tempPath = `${this.indexPath}.tmp.${Date.now()}`;
+    const tempPath = `${this.indexPath}.tmp.${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     try {
       await fs.writeFile(tempPath, JSON.stringify(index, null, 2), 'utf8');
       await fs.rename(tempPath, this.indexPath);
@@ -156,7 +157,6 @@ class RelationshipIndexService {
 
     const edgeCounts = new Map();
     const edgeConcepts = new Map();
-    // FIX: Cap files per concept to prevent O(n²) explosion on popular concepts
     // A concept shared by 1000 files would generate ~500K pairs without this cap
     const MAX_FILES_PER_CONCEPT = 100;
     conceptToFiles.forEach((fileSet, concept) => {
@@ -170,6 +170,8 @@ class RelationshipIndexService {
           const source = files[i];
           const target = files[j];
           const key = source < target ? `${source}|${target}` : `${target}|${source}`;
+          // Cap edge candidates to prevent unbounded memory growth
+          if (edgeCounts.size >= DEFAULTS.maxEdgeCandidates && !edgeCounts.has(key)) continue;
           edgeCounts.set(key, (edgeCounts.get(key) || 0) + 1);
 
           if (!edgeConcepts.has(key)) {

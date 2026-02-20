@@ -131,7 +131,6 @@ class EmbeddingQueue {
    * @private
    */
   async _acquireFlushMutex(timeout = TIMEOUTS.MUTEX_ACQUIRE) {
-    // FIX: Add guard flag to prevent double-release race condition
     // Without this, timeout + normal completion could both call release()
     let released = false;
     let release;
@@ -160,7 +159,6 @@ class EmbeddingQueue {
       await Promise.race([current, timeoutPromise]);
       return release;
     } catch (error) {
-      // FIX MED #18: Force release on any error to prevent deadlock
       // The release() function has a guard flag so it's safe to call multiple times
       if (error.code === ERROR_CODES.TIMEOUT) {
         logger.error('[EmbeddingQueue] Mutex timeout - forcing release to prevent deadlock');
@@ -168,7 +166,6 @@ class EmbeddingQueue {
       release();
       throw error;
     } finally {
-      // FIX MED #18: Always clear timeout in finally block to prevent timer leak
       // Wrap in try-catch as defensive measure (clearTimeout shouldn't throw)
       try {
         if (timeoutId) clearTimeout(timeoutId);
@@ -182,6 +179,11 @@ class EmbeddingQueue {
    * Ensure all pending operations complete (call before app quit)
    */
   async ensurePendingComplete() {
+    // Clear debounce timer to prevent it from firing during shutdown
+    if (this._persistDebounceTimer) {
+      clearTimeout(this._persistDebounceTimer);
+      this._persistDebounceTimer = null;
+    }
     const operations = [];
     if (this._pendingPersistence) operations.push(this._pendingPersistence);
     if (this._pendingFlush) operations.push(this._pendingFlush);
@@ -329,7 +331,6 @@ class EmbeddingQueue {
       return { success: false, reason: 'invalid_item' };
     }
 
-    // HIGH FIX: Validate vector is a non-empty array with numeric values
     if (!Array.isArray(item.vector) || item.vector.length === 0) {
       logger.warn('[EmbeddingQueue] Invalid vector - must be non-empty array', {
         id: item.id,
@@ -341,7 +342,6 @@ class EmbeddingQueue {
       return { success: false, reason: 'invalid_vector_format' };
     }
 
-    // FIX HIGH #6: Validate ALL vector values, not just 3 samples
     // NaN/Infinity in any position will corrupt similarity calculations
     // Performance: Typical embedding vectors are 384-4096 dimensions, checking all is fast
     let vectorSanitized = false;
@@ -535,7 +535,6 @@ class EmbeddingQueue {
       try {
         logger.debug('[EmbeddingQueue] Flushing batch', { count: batch.length });
 
-        // HIGH FIX: Add error handling for container.resolve to prevent crash if vector DB is unavailable
         let vectorDbService;
         try {
           vectorDbService = container.resolve(ServiceIds.ORAMA_VECTOR);
@@ -567,7 +566,9 @@ class EmbeddingQueue {
         const folderItems = [];
 
         // Single pass segregation (Fix: Avoid double filtering)
+        // Also skip items that were marked for removal during flush
         for (const item of batch) {
+          if (this._pendingRemovals?.has(item.id)) continue;
           if (item.id.startsWith('folder:')) {
             folderItems.push(item);
           } else {
@@ -593,7 +594,6 @@ class EmbeddingQueue {
         }
 
         // Process folders
-        // FIX CRITICAL #2: Remove void operator that discards processedCount assignment
         // The void operator was causing folder processing counts to be lost
         if (folderItems.length > 0) {
           // Note: processedCount is used as input via startProcessedCount
@@ -728,7 +728,6 @@ class EmbeddingQueue {
       this.retryCount = 0;
       await this.persistQueue();
 
-      // FIX LOW #19: Notify progress with fatal error phase
       // This allows UI listeners to know the batch failed permanently
       this._notifyProgress({
         phase: 'fatal_error',
@@ -738,7 +737,6 @@ class EmbeddingQueue {
         error: `Database offline after ${this.MAX_RETRY_COUNT} retries`
       });
 
-      // FIX HIGH-4: Removed redundant isFlushing = false - handled by flush() finally block
       return;
     }
 
@@ -752,7 +750,6 @@ class EmbeddingQueue {
     );
     logger.info(`[EmbeddingQueue] Retry in ${backoffDelay / 1000}s`);
     this._scheduleRetry(backoffDelay);
-    // FIX HIGH-4: Removed redundant isFlushing = false - handled by flush() finally block
   }
 
   /**
@@ -1153,7 +1150,6 @@ class EmbeddingQueue {
     // Set shutdown flag first — prevents new enqueues from being accepted
     this._isShuttingDown = true;
 
-    // FIX: Clear debounce timer used by enqueue() persistence coalescing
     if (this._persistDebounceTimer) {
       clearTimeout(this._persistDebounceTimer);
       this._persistDebounceTimer = null;
@@ -1171,12 +1167,10 @@ class EmbeddingQueue {
       this._retryTimers.clear();
     }
 
-    // FIX: Clear progress tracker callbacks to prevent memory leak
     if (this._progressTracker?.clear) {
       this._progressTracker.clear();
     }
 
-    // FIX MED #17: Wait for any pending persistence operations before final persist
     // This prevents race conditions where async persistence from enqueue() is still running
     if (this._pendingPersistence) {
       try {
@@ -1186,7 +1180,6 @@ class EmbeddingQueue {
       }
     }
 
-    // FIX MED #17: Wait for pending flush operations
     if (this._pendingFlush) {
       try {
         await this._pendingFlush;

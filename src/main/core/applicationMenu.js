@@ -10,7 +10,6 @@
 const { Menu, shell, app } = require('electron');
 const { getQuitAccelerator, isMacOS } = require('../../shared/platformUtils');
 const { IPC_EVENTS } = require('../../shared/constants');
-// FIX: Import safeSend for validated IPC event sending
 const { safeSend } = require('../ipc/ipcWrappers');
 
 const isDev = process.env.NODE_ENV === 'development';

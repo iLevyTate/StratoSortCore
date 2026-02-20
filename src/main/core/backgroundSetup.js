@@ -53,7 +53,6 @@ function emitDependencyProgress(payload) {
   try {
     const win = BrowserWindow.getAllWindows()[0];
     if (win && !win.isDestroyed()) {
-      // FIX: Use safeSend for validated IPC event sending
       safeSend(win.webContents, IPC_EVENTS.OPERATION_PROGRESS, {
         type: 'dependency',
         ...(payload || {})

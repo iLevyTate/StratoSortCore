@@ -50,7 +50,6 @@ const VERIFY_BACKOFF_STEP_MS =
   RETRY?.FILE_OPERATION?.initialDelay ?? TIMEOUTS?.DELAY_TINY ?? MOVE_LOCK_BACKOFF_STEP_MS;
 const VERIFY_MAX_DELAY_MS = RETRY?.FILE_OPERATION?.maxDelay ?? 5000;
 
-// FIX: Constants for chunked results and yield points to prevent UI blocking
 const MAX_RESULTS_PER_CHUNK = 100; // Max results per IPC message chunk
 const YIELD_EVERY_N_OPS = 10; // Yield to event loop every N operations
 
@@ -174,7 +173,6 @@ async function handleBatchOrganize(params) {
     // Generate batch ID early for lock acquisition
     const batchId = `batch_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
-    // FIX: Acquire global lock to prevent concurrent batch operations
     const lockAcquired = await acquireBatchLock(batchId);
     if (!lockAcquired) {
       log.warn('[FILE-OPS] Could not acquire batch lock - another batch operation is in progress');
@@ -198,7 +196,6 @@ async function handleBatchOrganize(params) {
       let rollbackReason = null;
       const processedKeys = new Set(); // For idempotency
 
-      // FIX P0-4: AbortController for task cancellation
       // This ensures all concurrent tasks stop immediately when a critical error occurs
       const abortController = new AbortController();
 
@@ -242,28 +239,29 @@ async function handleBatchOrganize(params) {
           totalOperations
         });
 
-        // Fix 8: Parallel execution with concurrency limit
         const limit = pLimit(BATCH?.MAX_CONCURRENT_FILES || 5); // Process files concurrently
 
         const processOperation = async (i) => {
-          // FIX P0-4: Check both shouldRollback flag AND abort signal for immediate cancellation
           // The abort signal is set atomically when a critical error occurs, ensuring
           // concurrent tasks don't continue processing after rollback is triggered
           if (shouldRollback || abortController.signal.aborted) return;
 
           if (Date.now() - batchStartTime > MAX_TOTAL_BATCH_TIME) {
             log.error(`[FILE-OPS] Batch ${batchId} exceeded maximum time limit`);
-            // We can't throw to stop other parallel tasks easily, but we can return error
-            // and let them skip via shouldRollback check or timeout check
+            shouldRollback = true;
+            rollbackReason = `Batch exceeded maximum time limit of ${MAX_TOTAL_BATCH_TIME}ms`;
+            abortController.abort();
             return;
           }
 
-          // FIX: Yield to event loop every N operations to prevent UI blocking
           if (i > 0 && i % YIELD_EVERY_N_OPS === 0) {
             await new Promise((resolve) => setImmediate(resolve));
           }
 
           const op = batch.operations[i];
+
+          // Capture original destination before any path normalization mutations
+          op._originalDestination = op.destination;
 
           // Idempotency check
           // Generate key based on source, destination, and file stats if available (or just paths)
@@ -292,7 +290,6 @@ async function handleBatchOrganize(params) {
             return;
           }
 
-          // FIX: Claim idempotency key immediately after check to prevent TOCTOU race
           // with concurrent pLimit tasks that share the same processedKeys Set
           processedKeys.add(idempotencyKey);
 
@@ -414,7 +411,6 @@ async function handleBatchOrganize(params) {
 
             op.destination = moveResult.destination;
 
-            // FIX: Record operation in tracker to prevent SmartFolderWatcher from re-analyzing
             // This prevents "ghost" files or duplicates appearing in the UI
             try {
               const tracker = getFileOperationTracker();
@@ -437,15 +433,20 @@ async function handleBatchOrganize(params) {
             // Post-move verification: ensure destination exists and source is gone
             await verifyMoveCompletion(op.source, op.destination, log);
 
-            await getServiceIntegration()?.processingState?.markOrganizeOpDone?.(batchId, i, {
-              destination: op.destination
-            });
-
+            // Push to completedOperations IMMEDIATELY after verify so rollback
+            // can restore this file if another concurrent task triggers abort
             completedOperations.push({
               index: i,
               source: op.source,
               destination: op.destination,
-              originalDestination: operation.operations[i].destination
+              originalDestination: op._originalDestination
+            });
+
+            // Check if rollback was triggered while we were verifying
+            if (shouldRollback || abortController.signal.aborted) return;
+
+            await getServiceIntegration()?.processingState?.markOrganizeOpDone?.(batchId, i, {
+              destination: op.destination
             });
 
             const result = {
@@ -470,7 +471,6 @@ async function handleBatchOrganize(params) {
             });
 
             // Send progress to renderer
-            // FIX: Use safeSend for validated IPC event sending
             sendOperationProgress(getMainWindow, {
               type: 'batch_organize',
               current: successCount + failCount + skippedCount,
@@ -491,7 +491,6 @@ async function handleBatchOrganize(params) {
             if (isCriticalError) {
               shouldRollback = true;
               rollbackReason = `Critical error on file ${i + 1}/${batch.operations.length}: ${errorMessage}`;
-              // FIX P0-4: Signal abort to stop all concurrent tasks immediately
               abortController.abort();
               log.error(
                 `[FILE-OPS] Critical error in batch ${batchId}, will rollback ${completedOperations.length} completed operations`,
@@ -587,7 +586,6 @@ async function handleBatchOrganize(params) {
         };
       }
 
-      // FIX: For large result sets, send results in chunks to prevent IPC message overflow
       if (results.length > MAX_RESULTS_PER_CHUNK) {
         const { sent, totalChunks } = await sendChunkedResults(
           getMainWindow,
@@ -660,7 +658,6 @@ function isCriticalFileError(error) {
  * Perform a single file move with collision handling
  */
 async function performFileMove(op, log, checksumFn) {
-  // FIX P2-1: Check for identical content at destination or within destination dir.
   // This prevents creating numbered copies of files that already exist.
   const duplicateResult = await handleDuplicateMove({
     sourcePath: op.source,
@@ -839,7 +836,6 @@ async function recordUndoAndUpdateDatabase(
   getServiceIntegration,
   log
 ) {
-  // FIX: Only record successful operations for undo - failed operations have
   // files still at their original location, not at the destination
   const undoOps = Array.isArray(results)
     ? results
@@ -981,14 +977,12 @@ async function recordUndoAndUpdateDatabase(
       }
     }
 
-    // FIX P1-1: Await the rebuild with timeout to ensure search consistency
     // This ensures search results show new paths immediately (not after 15 min)
     if (successCount > 0) {
       try {
         const { getSearchServiceInstance } = require('../semantic');
         const searchService = getSearchServiceInstance?.();
         if (searchService?.invalidateAndRebuild) {
-          // FIX: Await with timeout to ensure search consistency without blocking too long
           const rebuildPromise = searchService.invalidateAndRebuild({
             immediate: true,
             reason: 'batch-organize'

@@ -8,7 +8,6 @@ const logger = createLogger('DegradationManager');
 class DegradationManager {
   constructor(llamaService) {
     this._llamaService = llamaService;
-    // FIX Bug #32: Use singletons to prevent redundant instances
     this._gpuMonitor = getGPUMonitor();
     this._downloadManager = getModelDownloadManager();
     this._degradationState = {
@@ -23,6 +22,19 @@ class DegradationManager {
    * Check system readiness and determine degradation level
    */
   async checkSystemReadiness() {
+    // Guard against null llamaService (singleton getInstance() may create
+    // the manager before LlamaService is available).
+    if (!this._llamaService) {
+      return {
+        ready: false,
+        issues: [
+          { type: 'no_llama_service', message: 'LlamaService not available', severity: 'error' }
+        ],
+        warnings: [],
+        degradationState: this._degradationState
+      };
+    }
+
     const issues = [];
     const warnings = [];
 
@@ -42,7 +54,6 @@ class DegradationManager {
     const downloadedNames = new Set(downloadedModels.map((m) => m.filename));
 
     const missingRequired = [];
-    // FIX: Guard against null llamaService (singleton getInstance() creates
     // without arguments). Also guard _selectedModels to avoid TypeError.
     const selectedModels = this._llamaService?._selectedModels;
     if (selectedModels) {
@@ -216,7 +227,6 @@ function getInstance(llamaService) {
   if (!instance) {
     instance = new DegradationManager(llamaService);
   } else if (llamaService && !instance._llamaService) {
-    // FIX: Allow late-binding the llamaService if the singleton was created
     // before the LlamaService was available (e.g., during startup).
     instance._llamaService = llamaService;
   }

@@ -7,6 +7,8 @@
  * where appropriate.
  */
 
+const path = require('path');
+
 /**
  * Environment variable helper - safely parse numeric env vars with validation
  * @param {string} envVar - Environment variable name
@@ -57,7 +59,7 @@ const TIMEOUTS = {
   DATABASE_INIT: 15000,
   MODEL_LOAD: 60000,
   MODEL_DISCOVERY: 5000, // Model discovery/list timeout
-  EMBEDDING_REQUEST: 30000, // FIX: Per-request timeout for embedding calls to prevent indefinite hangs
+  EMBEDDING_REQUEST: 30000,
   BATCH_EMBEDDING_MAX: 5 * 60 * 1000, // 5 minutes max for batch embedding operations
   MODEL_LIST: 15000, // Timeout for listing all local models
   DELAY_MICRO: 50, // Very short delays for race condition prevention
@@ -67,7 +69,7 @@ const TIMEOUTS = {
   DELAY_MEDIUM: 500,
   DELAY_BATCH: 100, // Short delay for batch operations
   DELAY_LOCK_RETRY: 400, // Delay before retrying lock acquisition
-  MUTEX_ACQUIRE: 30000, // FIX: Maximum wait time for mutex acquisition to prevent deadlock
+  MUTEX_ACQUIRE: 30000,
   DELAY_NOTIFICATION: 1500,
   SIGKILL_VERIFY: 100, // Delay to verify SIGKILL termination
   CLEANUP_DELAY: 60000, // Delay before cleanup operations (e.g., temp file removal)
@@ -86,7 +88,6 @@ const TIMEOUTS = {
   HEARTBEAT_INTERVAL: 30000, // 30 seconds - progress heartbeat during analysis
   STALE_ACTIVITY: 15 * 60 * 1000, // 15 minutes - activity considered stale
   METRICS_BROADCAST: 30000, // 30 seconds - system metrics broadcast to renderer
-  // FIX: Centralized UI timing constants (previously hardcoded)
   WIDGET_AUTO_SHOW: 1500, // Delay before auto-showing floating widgets
   EMBEDDING_CHECK: 1000, // Delay before checking embeddings status
   STUCK_ANALYSIS_CHECK: 2 * 60 * 1000, // 2 minutes - analysis considered stuck
@@ -288,7 +289,7 @@ const LIMITS = {
   MAX_IPC_REQUESTS_PER_SECOND: 200,
   RATE_LIMIT_CLEANUP_THRESHOLD: 100,
   RATE_LIMIT_STALE_MS: 60000,
-  IPC_INVOKE_TIMEOUT: 30000, // FIX: Maximum wait time for IPC invoke to prevent renderer hangs
+  IPC_INVOKE_TIMEOUT: 330000, // Must be >= max analysis/vision timeout (300s) + margin
   MAX_NUMERIC_RETRIES: 5000,
   MAX_FILENAME_LENGTH: 255, // Standard filesystem limit (NTFS, ext4, HFS+)
   MAX_SETTINGS_BACKUPS: 10,
@@ -325,7 +326,6 @@ const DEBOUNCE = {
   REFRESH_INTERVAL: 60000,
   ERROR_RETRY_INTERVAL: 5000,
   WATCHER_RESTART_BASE: 5000, // Base delay for watcher restart exponential backoff
-  // FIX LOW-10: Centralized learning/feedback throttling constants
   LEARNING_DEDUPE_WINDOW: 5000, // Prevent duplicate learning for same file within 5s
   FEEDBACK_MEMORY_SAVE: 5000, // Throttle feedback memory persistence
   PERSISTENCE_SAVE: 5000 // Throttle pattern persistence saves
@@ -495,7 +495,6 @@ function isTempFile(filename) {
  * @returns {boolean} True if the file appears to be temporary
  */
 function isTemporaryFile(filePath) {
-  const path = require('path');
   return isTempFile(path.basename(filePath));
 }
 

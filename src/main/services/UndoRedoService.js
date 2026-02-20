@@ -122,7 +122,6 @@ class UndoRedoService {
       this.initialized = true;
       logger.info('[UndoRedoService] Initialized successfully');
 
-      // FIX: Automatically cleanup orphaned backups on startup
       this.cleanupOldBackups().catch((error) => {
         logger.warn('[UndoRedoService] Startup backup cleanup failed:', error.message);
       });
@@ -163,7 +162,6 @@ class UndoRedoService {
    */
   _estimateActionSize(action) {
     // Rough estimate: JSON.stringify length * 2 (for UTF-16 encoding)
-    // FIX Bug 24: Use try/catch to handle potential circular references in action objects.
     // Actions may contain service references or error objects with cause chains.
     try {
       return JSON.stringify(action).length * 2;
@@ -191,7 +189,6 @@ class UndoRedoService {
       lastSaved: new Date().toISOString()
     };
     await this.ensureParentDirectory(this.actionsPath);
-    // FIX: Use atomic write (temp + rename) to prevent corruption on crash
     const tempPath = `${this.actionsPath}.tmp.${Date.now()}`;
     try {
       await fs.writeFile(tempPath, JSON.stringify(data, null, 2));
@@ -574,7 +571,6 @@ class UndoRedoService {
         break;
 
       case 'FILE_DELETE': {
-        // CRITICAL FIX (BUG #2): Enhanced backup recovery with detailed error messages
         // Previous code didn't persist backup paths immediately, risking data loss on crashes
         // Now we check multiple backup locations and provide detailed error information
         if (!action.data.backupPath) {
@@ -872,7 +868,6 @@ class UndoRedoService {
         // Non-fatal
       }
 
-      // FIX: Trigger search index rebuild to ensure consistency
       try {
         const searchService = container.tryResolve(ServiceIds.SEARCH_SERVICE);
         if (searchService?.invalidateAndRebuild) {
@@ -932,7 +927,6 @@ class UndoRedoService {
         // Non-fatal
       }
 
-      // FIX: Trigger search index rebuild for batch updates
       try {
         const searchService = container.tryResolve(ServiceIds.SEARCH_SERVICE);
         if (searchService?.invalidateAndRebuild) {

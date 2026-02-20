@@ -35,7 +35,6 @@ export function useSettingsSubscription(onSettingsChanged, options = {}) {
   }, [watchKeysKey, watchKeys]);
 
   useEffect(() => {
-    // FIX: Return empty cleanup function for consistent return
     if (!enabled) return () => {};
 
     const handleSettingsChanged = (payload) => {

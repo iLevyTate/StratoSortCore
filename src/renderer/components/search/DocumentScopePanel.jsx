@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import { X, FileText, Folder, Plus, FolderInput } from 'lucide-react';
-import { Button } from '../ui';
+import { X, FileText, Folder, Plus, FolderInput, ChevronRight } from 'lucide-react';
+import { Button, IconButton } from '../ui';
 import { Text } from '../ui/Typography';
 import { formatDisplayPath } from '../../utils/pathDisplay';
 import { useSelector } from 'react-redux';
@@ -56,6 +56,7 @@ export default function DocumentScopePanel({
   onAddToScope,
   onRemoveFromScope,
   onClearScope,
+  onClose,
   className = ''
 }) {
   const [isOver, setIsOver] = useState(false);
@@ -109,19 +110,32 @@ export default function DocumentScopePanel({
       className={`flex flex-col h-full bg-system-gray-50 border-l border-system-gray-200 ${className}`}
     >
       <div className="p-3 border-b border-system-gray-200 flex items-center justify-between min-w-0">
-        <Text
-          variant="small"
-          className="font-semibold text-system-gray-800 truncate"
-          title="Document Scope"
-        >
-          Document Scope
-        </Text>
+        <div className="flex items-center gap-2 min-w-0">
+          {onClose && (
+            <IconButton
+              onClick={onClose}
+              size="sm"
+              variant="secondary"
+              className="shrink-0 w-8 h-8"
+              title="Collapse document scope sidebar"
+              aria-label="Collapse document scope sidebar"
+              icon={<ChevronRight className="w-4 h-4 text-system-gray-500" />}
+            />
+          )}
+          <Text
+            variant="small"
+            className="font-semibold text-system-gray-800 truncate"
+            title="Document Scope"
+          >
+            Document Scope
+          </Text>
+        </div>
         {scope.length > 0 && (
           <Button
             variant="ghost"
             size="xs"
             onClick={onClearScope}
-            className="text-xs text-system-gray-500"
+            className="text-xs text-system-gray-500 shrink-0"
           >
             Clear
           </Button>

@@ -15,13 +15,13 @@ const logger = createLogger('OcrWorker');
 
 let workerPromise = null;
 let workerLang = null;
-// Track whether worker initialization has permanently failed
-let workerFailed = false;
+// Track init failure count (allow up to 3 retries before permanent failure)
+let workerFailCount = 0;
+const MAX_WORKER_INIT_RETRIES = 3;
 
 async function getWorker() {
-  // If a previous init permanently failed, don't retry inside the same thread
-  if (workerFailed) {
-    throw new Error('OCR worker initialization previously failed in this thread');
+  if (workerFailCount >= MAX_WORKER_INIT_RETRIES) {
+    throw new Error(`OCR worker initialization failed ${workerFailCount} times, giving up`);
   }
   if (workerPromise) return workerPromise;
   workerPromise = (async () => {
@@ -38,14 +38,16 @@ async function getWorker() {
         }
       });
       workerLang = 'eng';
+      workerFailCount = 0;
       return worker;
     } catch (error) {
-      // Mark permanently failed so we don't retry in a tight loop
-      workerFailed = true;
+      workerFailCount++;
       workerPromise = null;
       workerLang = null;
       logger.error('[OcrWorker] Failed to initialize tesseract.js worker', {
-        error: error.message
+        error: error.message,
+        attempt: workerFailCount,
+        maxRetries: MAX_WORKER_INIT_RETRIES
       });
       throw error;
     }

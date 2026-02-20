@@ -37,7 +37,6 @@ function BatchOrganizationSuggestions({
     };
   }, []);
 
-  // FIX: Memoize toggleGroup to prevent unnecessary re-renders
   const toggleGroup = useCallback((groupIndex) => {
     setExpandedGroups((prev) => {
       const newExpanded = new Set(prev);
@@ -53,7 +52,6 @@ function BatchOrganizationSuggestions({
   // Extract values before early return for use in callbacks
   const suggestedStrategy = batchSuggestions?.suggestedStrategy;
 
-  // FIX: Memoize handleStrategyAccept
   const handleStrategyAccept = useCallback(() => {
     if (onAcceptStrategy) {
       onAcceptStrategy(selectedStrategy || suggestedStrategy);

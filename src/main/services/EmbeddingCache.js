@@ -193,7 +193,6 @@ class EmbeddingCache {
     const baseStats = this._cache.getStats();
 
     // Estimate memory usage dynamically based on configured embedding dimension
-    // FIX: Use 4 bytes per float (float32) instead of 8 (embeddings use single precision)
     const embeddingDim = getConfig('ANALYSIS.embeddingDimension', 768);
     const bytesPerEntry = embeddingDim * 4 + 200; // vector float32s + metadata overhead
     const estimatedBytes = this._cache.size * bytesPerEntry;

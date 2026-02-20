@@ -191,7 +191,6 @@ class ModelAccessCoordinator {
     const queue = this._getInferenceQueue(modelType);
     const startTime = Date.now();
 
-    // FIX Bug #38: Check total load (queued + pending) against max limit
     // queue.size only counts waiting items, queue.pending counts active items
     if (queue.size + queue.pending >= MAX_INFERENCE_QUEUE) {
       const error = new Error('Inference queue full');

@@ -232,7 +232,6 @@ class QueryProcessor {
     // Phonetic codes for badly misspelled words
     this.phoneticIndex = this._buildPhoneticIndex();
 
-    // FIX: Use LRUCache to avoid race condition in concurrent async calls
     // The previous Map-based approach had check-then-delete race when cache was full
     this.synonymCache = new LRUCache({
       maxSize: options.synonymCacheMaxSize || 500,
@@ -478,7 +477,6 @@ class QueryProcessor {
    * @returns {Promise<string[]>} Array of variants
    */
   async _getSynonyms(word) {
-    // FIX: Use LRUCache API which handles size limits atomically
     // This prevents race conditions in concurrent async lookups
     const cached = this.synonymCache.get(word);
     if (cached !== null) {

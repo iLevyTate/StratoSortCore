@@ -22,7 +22,6 @@ const {
 const { ALLOWED_APP_PATHS } = require('../../shared/securityConfig');
 const { validateFileOperationPathSync } = require('../../shared/pathSanitization');
 
-// FIX: Import centralized error codes for consistent error handling
 const { ERROR_CODES } = require('../../shared/errorHandlingUtils');
 
 const { isUNCPath } = require('../../shared/crossPlatformUtils');
@@ -365,7 +364,6 @@ function registerSmartFoldersIpc(servicesOrParams) {
             // Embed the query text
             // embedText handles capping, model selection, and caching automatically
 
-            // FIX: Enrich input text if it looks like a filename (has extension)
             // This ensures preview matches align with background analysis
             let queryText = text;
             // Simple extension check: dot followed by 1-5 alphanumeric chars at end of string
@@ -517,7 +515,6 @@ Rules:
               errorCode: ERROR_CODES.INVALID_INPUT
             };
 
-          // FIX: Prevent saving empty array - at minimum Uncategorized must exist
           if (folders.length === 0) {
             logger.warn('[SMART-FOLDERS] Rejecting save of empty folders array');
             return {
@@ -527,7 +524,6 @@ Rules:
             };
           }
 
-          // FIX: Ensure Uncategorized folder is always preserved
           const hasUncategorized = folders.some(
             (f) => f.isDefault && f.name?.toLowerCase() === 'uncategorized'
           );
@@ -540,7 +536,6 @@ Rules:
             };
           }
 
-          // FIX: Sanitize and validate all folder paths before saving
           for (const folder of folders) {
             if (folder.path) {
               try {
@@ -625,7 +620,6 @@ Rules:
               errorCode: ERROR_CODES.INVALID_INPUT
             };
 
-          // FIX: Prevent saving empty array - at minimum Uncategorized must exist
           if (folders.length === 0) {
             logger.warn('[SMART-FOLDERS] Rejecting update with empty folders array');
             return {
@@ -635,7 +629,6 @@ Rules:
             };
           }
 
-          // FIX: Ensure Uncategorized folder is always preserved
           const hasUncategorized = folders.some(
             (f) => f.isDefault && f.name?.toLowerCase() === 'uncategorized'
           );
@@ -648,7 +641,6 @@ Rules:
             };
           }
 
-          // FIX: Sanitize and validate all folder paths before updating
           for (const folder of folders) {
             if (folder.path) {
               try {
@@ -747,7 +739,6 @@ Rules:
               errorCode: ERROR_CODES.FOLDER_NOT_FOUND
             };
           if (updatedFolder.name) {
-            // Fix for issue where " > Subfolder" might be appended
             if (updatedFolder.name.includes(' > ')) {
               updatedFolder.name = updatedFolder.name.split(' > ')[0].trim();
             }
@@ -781,7 +772,6 @@ Rules:
               }
               const parentDir = path.dirname(normalizedPath);
 
-              // FIX: Auto-create parent directory if it doesn't exist (Issue 3.1-A, 3.1-B)
               try {
                 const parentStats = await fs.stat(parentDir);
                 if (!parentStats.isDirectory()) {
@@ -940,7 +930,6 @@ Rules:
               errorCode: ERROR_CODES.FOLDER_NOT_FOUND
             };
 
-          // FIX: Prevent deleting the Uncategorized default folder
           const folderToDelete = customFolders[folderIndex];
           if (folderToDelete.isDefault && folderToDelete.name?.toLowerCase() === 'uncategorized') {
             logger.warn('[SMART-FOLDERS] Rejecting deletion of Uncategorized folder');
@@ -990,7 +979,6 @@ Rules:
     })
   );
 
-  // FIX: Generate description for smart folder using AI (Issue 2.5)
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SMART_FOLDERS.GENERATE_DESCRIPTION,
@@ -1097,7 +1085,6 @@ Now generate a description for "${folderName}":`;
               errorCode: ERROR_CODES.INVALID_FOLDER_PATH
             };
 
-          // CRITICAL FIX: Sanitize folder name to remove any accidental path separators or suffixes
           // This addresses an issue where names like "Work > Project Management Templates" were being created
           let sanitizedName = folder.name.trim();
           if (sanitizedName.includes(' > ')) {
@@ -1138,7 +1125,6 @@ Now generate a description for "${folderName}":`;
               error: `A smart folder with name "${existingFolder.name}" or path "${existingFolder.path}" already exists`,
               errorCode: ERROR_CODES.FOLDER_ALREADY_EXISTS
             };
-          // FIX: Auto-create parent directory if it doesn't exist (Issue 3.1-A, 3.1-B)
           const parentDir = path.dirname(normalizedPath);
           try {
             const parentStats = await fs.stat(parentDir);
@@ -1566,7 +1552,6 @@ Now generate a description for "${folderName}":`;
       schema: schemaVoid,
       handler: async () => {
         try {
-          // FIX: Call getter function to get current watcher instance
           const smartFolderWatcher = getSmartFolderWatcher?.();
           if (!smartFolderWatcher) {
             return {
@@ -1602,7 +1587,6 @@ Now generate a description for "${folderName}":`;
       schema: schemaVoid,
       handler: async () => {
         try {
-          // FIX: Call getter function to get current watcher instance
           const smartFolderWatcher = getSmartFolderWatcher?.();
           if (!smartFolderWatcher) {
             return {
@@ -1647,7 +1631,6 @@ Now generate a description for "${folderName}":`;
       schema: schemaVoid,
       handler: async () => {
         try {
-          // FIX: Call getter function to get current watcher instance
           const smartFolderWatcher = getSmartFolderWatcher?.();
           if (!smartFolderWatcher) {
             return {

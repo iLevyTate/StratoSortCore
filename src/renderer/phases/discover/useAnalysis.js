@@ -22,7 +22,6 @@ import {
 const logger = createLogger('DiscoverPhase:Analysis');
 const BATCH_ANALYSIS_MIN_FILES = 40;
 const BATCH_ANALYSIS_PROGRESS_EVENT = 'operation-progress';
-// FIX Issue 4: Removed module-level pendingAutoAdvanceTimeoutId
 // Auto-advance timeout is now stored in a ref within the hook to prevent
 // cross-component interference when hook unmounts and remounts
 
@@ -214,14 +213,12 @@ function showAnalysisCompletionNotification({
       4000,
       'analysis-complete'
     );
-    // FIX Issue 4: Store timeout ID in ref for proper per-hook cleanup
     clearAutoAdvanceTimeoutRef(autoAdvanceTimeoutRef); // Clear any previous pending timeout
     autoAdvanceTimeoutRef.current = setTimeout(() => {
       autoAdvanceTimeoutRef.current = null;
       // Check if still in DISCOVER phase before auto-advancing
       // This prevents unexpected navigation if user moved away during the delay
       const currentPhase = getCurrentPhase?.();
-      // FIX: Add null check for PHASES to prevent crash if undefined
       if (currentPhase === (PHASES?.DISCOVER ?? 'discover')) {
         actions.advancePhase(PHASES?.ORGANIZE ?? 'organize');
       } else {
@@ -238,13 +235,11 @@ function showAnalysisCompletionNotification({
       4000,
       'analysis-complete'
     );
-    // FIX Issue 4: Store timeout ID in ref for proper per-hook cleanup
     clearAutoAdvanceTimeoutRef(autoAdvanceTimeoutRef); // Clear any previous pending timeout
     autoAdvanceTimeoutRef.current = setTimeout(() => {
       autoAdvanceTimeoutRef.current = null;
       // Check if still in DISCOVER phase before auto-advancing
       const currentPhase = getCurrentPhase?.();
-      // FIX: Add null check for PHASES to prevent crash if undefined
       if (currentPhase === (PHASES?.DISCOVER ?? 'discover')) {
         actions.advancePhase(PHASES?.ORGANIZE ?? 'organize');
       } else {
@@ -320,20 +315,16 @@ export function useAnalysis(options = {}) {
   const pendingResultsRef = useRef([]);
   const lastResultsFlushRef = useRef(0);
   const RESULTS_FLUSH_MS = 200;
-  // FIX Issue 4: Auto-advance timeout stored per-hook instance
   const autoAdvanceTimeoutRef = useRef(null);
   const clearCurrentFileTimeoutRef = useRef(null);
   const pendingFilesTimeoutRef = useRef(null);
-  // FIX CRIT-2: Atomic progress tracking to prevent race conditions with concurrent workers
   // Using a counter ref that workers increment atomically when they complete
   const completedCountRef = useRef(0);
   const lastProgressDispatchRef = useRef(0);
   const PROGRESS_THROTTLE_MS = 50;
-  // FIX: Track mount state to prevent state resets on navigation
   const isMountedRef = useRef(true);
 
   // Refs to track current state values (prevents stale closures in callbacks)
-  // PERF FIX: Update refs synchronously during render instead of using separate useEffect hooks.
   // This is safe because ref assignments are idempotent and don't cause side effects.
   const isAnalyzingRef = useRef(isAnalyzing);
   const globalAnalysisActiveRef = useRef(globalAnalysisActive);
@@ -579,7 +570,6 @@ export function useAnalysis(options = {}) {
   const lastAppliedNamingRef = useRef(null);
 
   useEffect(() => {
-    // FIX: Prevent render loop by checking if settings actually changed
     // Compare by primitive values to detect actual changes (avoids JSON.stringify on every run)
     const key = `${namingSettings?.convention ?? ''}|${namingSettings?.separator ?? ''}|${namingSettings?.dateFormat ?? ''}|${namingSettings?.caseConvention ?? ''}`;
     if (lastAppliedNamingRef.current === key) {
@@ -738,7 +728,6 @@ export function useAnalysis(options = {}) {
       cancelledBatchSnapshotRef.current = null;
       batchCompletedPathsRef.current.clear();
 
-      // FIX Issue-4: Mark as "resumed" ONLY after lock is acquired
       // This prevents the resume useEffect from showing "Resuming..." notification
       // for a brand new analysis. The resume logic should only trigger when isAnalyzing
       // was already true on component mount (e.g., from persisted state after page refresh).
@@ -788,7 +777,6 @@ export function useAnalysis(options = {}) {
       };
       scheduleLockTimeoutCheck();
 
-      // FIX: Filter duplicates upfront to ensure progress tracking matches total
       // This prevents "stuck" progress bars where processed count < total due to internal skipping
       const uniqueFiles = files.filter(
         (file, index, self) => index === self.findIndex((f) => f.path === file.path)
@@ -805,14 +793,11 @@ export function useAnalysis(options = {}) {
       setCurrentAnalysisFile('');
       // Redux is the single source of truth for isAnalyzing.
       // Avoid redundant dispatch via actions.setPhaseData which can reset totals.
-      // FIX: Removed redundant setPhaseData('analysisProgress') - Redux is single source of truth
 
-      // FIX: Use analysisProgressRef (synced from Redux) instead of local ref
       // This ensures heartbeat and progress updates are consistent with Redux state
       const localAnalyzingRef = { current: true };
 
       // Heartbeat interval - just updates lastActivity to keep analysis alive
-      // FIX: Read from analysisProgressRef (Redux state) instead of local ref
       heartbeatIntervalRef.current = setInterval(() => {
         if (!isActiveRun()) {
           if (heartbeatIntervalRef.current) {
@@ -1004,7 +989,6 @@ export function useAnalysis(options = {}) {
 
         const processedFiles = new Set();
         const fileQueue = [...uniqueFiles];
-        // FIX CRIT-2: Reset atomic counter at start of new batch
         completedCountRef.current = 0;
         const fileByPath = new Map(uniqueFiles.map((file) => [file.path, file]));
 
@@ -1184,13 +1168,11 @@ export function useAnalysis(options = {}) {
           processedFiles.add(file.path);
           updateFileState(file.path, 'analyzing', { fileName });
 
-          // FIX: Use flushSync-like approach to ensure file name displays immediately
           // React batches state updates, so we force an immediate update cycle
           // by updating state and flushing phase data synchronously
           setCurrentAnalysisFile(fileName);
           actions.setPhaseData('currentAnalysisFile', fileName);
 
-          // FIX: Update progress BEFORE analysis to show "Processing: filename" immediately
           // This provides visual feedback during long-running analysis (18-40s per image)
           const progressBeforeAnalysis = {
             current: completedCountRef.current,
@@ -1217,11 +1199,9 @@ export function useAnalysis(options = {}) {
               `Analysis for ${fileName}`
             );
 
-            // Fix: Check for abort signal immediately after async operation
             // This prevents state updates if the user cancelled while analysis was in flight
             if (!isActiveRun() || abortSignal.aborted) return;
 
-            // FIX CRIT-2: Atomically increment and capture counter in single expression
             // This prevents race conditions where multiple workers read same value
             const newCompletedCount = ++completedCountRef.current;
             lastProgressAtRef.current = Date.now();
@@ -1246,7 +1226,6 @@ export function useAnalysis(options = {}) {
             }
           } catch (error) {
             if (!isActiveRun() || abortSignal.aborted) return;
-            // FIX CRIT-2: Atomically increment and capture counter on error path too
             const newCompletedCount = ++completedCountRef.current;
             lastProgressAtRef.current = Date.now();
             const progress = {
@@ -1290,7 +1269,6 @@ export function useAnalysis(options = {}) {
             .fill(null)
             .map(() => worker());
 
-          // FIX: Use Promise.allSettled instead of Promise.all to handle partial failures
           // This ensures all workers complete even if some throw unexpectedly
           const workerResults = await Promise.allSettled(workers);
 
@@ -1341,7 +1319,6 @@ export function useAnalysis(options = {}) {
 
         if (!isActiveRun()) return;
 
-        // FIX: Ensure final progress is dispatched (may have been throttled)
         const finalProgress = {
           current: Math.min(completedCountRef.current, uniqueFiles.length),
           total: uniqueFiles.length,
@@ -1371,7 +1348,7 @@ export function useAnalysis(options = {}) {
           addNotification,
           actions,
           getCurrentPhase,
-          autoAdvanceTimeoutRef // FIX Issue 4: Pass ref for per-hook timeout management
+          autoAdvanceTimeoutRef
         });
       } catch (error) {
         if (error.message !== 'Analysis cancelled by user') {
@@ -1403,14 +1380,12 @@ export function useAnalysis(options = {}) {
             requeueInFlightFileStates();
           }
 
-          // CRITICAL FIX: Only preserve Redux state if analysis is still in-flight.
           // If we already completed, clear state even if component unmounted to avoid
           // "analysis continuing in background" banners with 100% progress.
           if (isMountedRef.current || didComplete) {
             isAnalyzingRef.current = false;
             setIsAnalyzing(false);
 
-            // FIX: Delay clearing the current file name to allow UI to show final state
             if (clearCurrentFileTimeoutRef.current) {
               clearTimeout(clearCurrentFileTimeoutRef.current);
             }
@@ -1421,7 +1396,6 @@ export function useAnalysis(options = {}) {
               }
             }, 500);
 
-            // FIX: Include lastActivity in reset to fully clear progress state
             setAnalysisProgress({ current: 0, total: 0, lastActivity: 0 });
             // Redux is the single source of truth for isAnalyzing.
           } else {
@@ -1530,9 +1504,7 @@ export function useAnalysis(options = {}) {
     analysisProgressRef.current = clearedProgress;
     setAnalysisProgress(clearedProgress);
     // Redux is the single source of truth for isAnalyzing.
-    // FIX: Removed redundant setPhaseData('analysisProgress') - already updated via setAnalysisProgress
 
-    // FIX: Delay clearing the file name to allow UI to settle
     // Store timeout in ref so it can be cleared on unmount (Bug 17)
     if (clearCurrentFileTimeoutRef.current) {
       clearTimeout(clearCurrentFileTimeoutRef.current);
@@ -1607,7 +1579,6 @@ export function useAnalysis(options = {}) {
     }
   }, [analysisResults, fileStates, setFileStates, addNotification]);
 
-  // FIX M-1: Consolidated cleanup on unmount (removed duplicate effect below)
   useEffect(() => {
     return () => {
       isMountedRef.current = false;
@@ -1672,8 +1643,6 @@ export function useAnalysis(options = {}) {
       }
     }
   }, [isAnalyzing, selectedFiles, fileStates, addNotification, resetAnalysisState]);
-
-  // FIX M-1: Duplicate cleanup effect removed - consolidated above in single cleanup useEffect
 
   return {
     analyzeFiles,

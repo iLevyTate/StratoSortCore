@@ -156,7 +156,6 @@ function WelcomePhase() {
     );
   }, [addNotification]);
 
-  // FIX: Notify user if their previous session state was expired due to TTL
   useEffect(() => {
     if (window.__STRATOSORT_STATE_EXPIRED__) {
       const ageHours = window.__STRATOSORT_STATE_EXPIRED_AGE_HOURS__ || 24;

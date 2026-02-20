@@ -95,6 +95,7 @@ class ChatService {
 
     if (sessionId) {
       const sessionKey = String(sessionId);
+      let canceledAny = false;
       for (const [key, streamState] of this.activeStreamControllers) {
         if (String(streamState?.sessionId || '') === sessionKey) {
           try {
@@ -103,8 +104,11 @@ class ChatService {
             // Ignore abort errors
           }
           this.activeStreamControllers.delete(key);
-          return { canceled: true, by: 'sessionId' };
+          canceledAny = true;
         }
+      }
+      if (canceledAny) {
+        return { canceled: true, by: 'sessionId' };
       }
     }
 
@@ -200,7 +204,6 @@ Now respond as JSON:`;
       responseMode
     });
 
-    // FIX BUG-007: Abstain when strict scope is on and no sources found
     if (strictScope && (!retrieval.sources || retrieval.sources.length === 0)) {
       const abstention = {
         documentAnswer: [],
@@ -339,6 +342,14 @@ Now respond as JSON:`;
       requestId !== undefined && requestId !== null
         ? `req:${String(requestId)}`
         : `session:${String(sessionId || 'default')}`;
+    const existingStream = this.activeStreamControllers.get(streamKey);
+    if (existingStream?.controller) {
+      try {
+        existingStream.controller.abort();
+      } catch {
+        // Ignore abort errors
+      }
+    }
     const streamController = new AbortController();
     this.activeStreamControllers.set(streamKey, {
       controller: streamController,
@@ -453,7 +464,6 @@ Now respond as JSON:`;
         });
       }
 
-      // FIX BUG-007: Abstain in streaming when strict scope + no sources
       if (strictScope && (!retrieval.sources || retrieval.sources.length === 0)) {
         const abstentionText =
           'I cannot find this information in the selected documents. Try broadening your document scope or rephrasing your question.';
@@ -484,7 +494,6 @@ Now respond as JSON:`;
       }
 
       let fullResponse = '';
-      // FIX BUG-002: Buffer tokens — don't stream raw JSON to the user
       let tokenCount = 0;
       await this.llamaService.generateTextStreaming({
         prompt,
@@ -565,17 +574,18 @@ Now respond as JSON:`;
     } catch (error) {
       logger.error('[ChatService] Streaming query failed:', error);
       const isAbort = error?.name === 'AbortError';
-      // FIX FAULT-003: Save the user's message even on failure so it's not lost
       if (!isAbort) {
         try {
           const memory = await this._getSessionMemory(sessionId);
           if (this.chatHistoryStore && memory?.sessionId) {
             let conv = this.chatHistoryStore.getConversation(memory.sessionId);
             if (!conv) {
+              // Use documentScopeItems from the outer scope instead of memory._documentScope,
+              // which is empty on a fresh _getSessionMemory() call in the error path.
               this.chatHistoryStore.createConversation(
                 (typeof cleanQuery === 'string' ? cleanQuery.slice(0, 50) : '') ||
                   'New Conversation',
-                memory._documentScope || [],
+                documentScopeItems || [],
                 memory.sessionId
               );
             }
@@ -633,6 +643,19 @@ Now respond as JSON:`;
     const comparisonIntent = this._isComparisonQuery(cleanQuery);
     const gapAnalysisIntent = this._isGapAnalysisQuery(cleanQuery);
 
+    // Precompute embedding to share between hybridSearch and _scoreContextFiles
+    // This saves a redundant inference call when context files are present.
+    let precomputedEmbedding = null;
+    if (this.embeddingService && mode !== 'bm25') {
+      try {
+        const normalizedQuery = cleanQuery.trim().replace(/\s+/g, ' ');
+        const res = await this.embeddingService.embedText(normalizedQuery);
+        precomputedEmbedding = res?.vector || null;
+      } catch (e) {
+        logger.warn('[ChatService] Failed to precompute embedding', { error: e.message });
+      }
+    }
+
     const forcedResponseMode =
       (holisticIntent || comparisonIntent || gapAnalysisIntent) && responseMode !== 'deep'
         ? 'deep'
@@ -666,7 +689,8 @@ Now respond as JSON:`;
       contextFileIds,
       expandSynonyms: modeConfig.expandSynonyms,
       correctSpelling: modeConfig.correctSpelling,
-      rerank: effectiveRerank
+      rerank: effectiveRerank,
+      precomputedEmbedding
     });
 
     logger.debug('[ChatService] Retrieval completed', {
@@ -727,7 +751,6 @@ Now respond as JSON:`;
       return session;
     }
 
-    // FIX BUG-021: Evict stale sessions (>24h) before checking capacity
     const STALE_MS = 24 * 60 * 60 * 1000;
     const now = Date.now();
     for (const [sk, sv] of this.sessions) {
@@ -850,7 +873,6 @@ Now respond as JSON:`;
           text: typeof input === 'string' ? input : ''
         });
 
-        // FIX BUG-003: Persist full structured response for citation preservation
         const assistantMessage = {
           role: 'assistant',
           text: typeof output === 'string' ? output : output?.text || ''
@@ -865,7 +887,6 @@ Now respond as JSON:`;
         }
         this.chatHistoryStore.addMessage(memory.sessionId, assistantMessage);
 
-        // FIX FAULT-008: Improve conversation title after first successful exchange.
         // Also fixes legacy conversations stuck with "New Chat" title.
         if (this.chatHistoryStore.updateTitle) {
           const currentTitle = isFirstTurn ? null : conv?.title || '';
@@ -896,7 +917,6 @@ Now respond as JSON:`;
   }
 
   _isConversational(query) {
-    // FIX: Truncate before regex to prevent ReDoS on very long untrusted input.
     // Chat queries shouldn't be conversational if they're over 100 chars.
     if (query.length > 100) return false;
     const clean = query
@@ -1073,7 +1093,17 @@ Now respond as JSON:`;
 
   async _retrieveSources(
     query,
-    { topK, mode, chunkTopK, chunkWeight, contextFileIds, expandSynonyms, correctSpelling, rerank }
+    {
+      topK,
+      mode,
+      chunkTopK,
+      chunkWeight,
+      contextFileIds,
+      expandSynonyms,
+      correctSpelling,
+      rerank,
+      precomputedEmbedding
+    }
   ) {
     const meta = {
       retrievalAvailable: true
@@ -1129,6 +1159,7 @@ Now respond as JSON:`;
         expandSynonyms,
         correctSpelling,
         rerank,
+        precomputedEmbedding,
         ...retrievalSettings
       });
     } catch (error) {
@@ -1159,7 +1190,6 @@ Now respond as JSON:`;
 
     const baseResults = Array.isArray(searchResults.results) ? searchResults.results : [];
 
-    // FIX Bug #28: Wrap chunkSearch in try/catch to prevent chat crash on index failure
     let chunkResults;
     try {
       chunkResults = await this.searchService.chunkSearch(
@@ -1191,7 +1221,11 @@ Now respond as JSON:`;
 
     let finalResults = baseResults.slice(0, topK);
     if (Array.isArray(contextFileIds) && contextFileIds.length > 0) {
-      const contextScores = await this._scoreContextFiles(query, contextFileIds);
+      const contextScores = await this._scoreContextFiles(
+        query,
+        contextFileIds,
+        precomputedEmbedding
+      );
       const contextRanked = contextScores
         .sort((a, b) => (b.score || 0) - (a.score || 0))
         .slice(0, topK);
@@ -1345,7 +1379,7 @@ Now respond as JSON:`;
     };
   }
 
-  async _scoreContextFiles(query, fileIds) {
+  async _scoreContextFiles(query, fileIds, precomputedEmbedding = null) {
     try {
       if (!this.embeddingService || !this.vectorDbService) return [];
       const cleanIds = fileIds
@@ -1354,7 +1388,13 @@ Now respond as JSON:`;
 
       if (cleanIds.length === 0) return [];
 
-      const embedResult = await this.embeddingService.embedText(query);
+      let embedResult;
+      if (precomputedEmbedding) {
+        embedResult = { vector: precomputedEmbedding };
+      } else {
+        embedResult = await this.embeddingService.embedText(query);
+      }
+
       if (!embedResult?.vector?.length) return [];
 
       await this.vectorDbService.initialize();
@@ -1419,7 +1459,6 @@ Now respond as JSON:`;
     }
   }
 
-  // FIX: Use shared padOrTruncateVector from vectorMath.js to eliminate duplication
   _padOrTruncateVector(vector, expectedDim) {
     return padOrTruncateVector(vector, expectedDim);
   }

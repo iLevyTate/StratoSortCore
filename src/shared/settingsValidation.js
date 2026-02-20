@@ -56,7 +56,6 @@ const isSafeWindowsAbsoluteFallback = (value) => {
   if (URL_SCHEME_PATTERN.test(value)) return false;
   if (WINDOWS_DRIVE_ONLY_PATTERN.test(value)) return false;
   if (TRAVERSAL_SEGMENT_PATTERN.test(value)) return false;
-  // FIX 88: Strip drive letter prefix before testing for invalid chars.
   // The colon in "C:" was matching the invalid-char regex, rejecting all Windows paths.
   const pathAfterDrive = value.replace(/^[a-zA-Z]:/, '');
   // eslint-disable-next-line no-control-regex
@@ -493,7 +492,6 @@ function validateSettings(settings) {
   }
 
   // Explicitly detect prototype-pollution keys even if they are not enumerable
-  // FIX M-2: Use hasOwnProperty instead of 'in' operator to avoid false positives
   // The 'in' operator returns true for '__proto__' on ANY object since it's inherited
   const hasUnsafeProto = Object.prototype.hasOwnProperty.call(settings, '__proto__');
   const hasUnsafeCtor =
@@ -568,9 +566,10 @@ function sanitizeSettings(settings) {
 
     const rule = VALIDATION_RULES[key];
 
-    // Keep unknown settings (might be for future use)
+    // Drop unknown settings to prevent untrusted keys from persisting
     if (!rule) {
-      sanitized[key] = value;
+      // eslint-disable-next-line no-console
+      console.warn(`[settingsValidation] Dropping unknown settings key: "${key}"`);
       continue;
     }
 

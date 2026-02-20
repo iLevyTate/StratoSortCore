@@ -229,7 +229,6 @@ function createUncategorizedFolder(baseDir) {
  * Only used when the user explicitly clicks "Reset to Defaults"
  */
 function getDefaultSmartFolders(baseDir) {
-  // FIX (M-8): Use crypto.randomUUID() instead of Date.now() offsets.
   // Two calls in the same millisecond previously produced identical IDs.
   const uid = () => crypto.randomUUID().slice(0, 8);
   return [

@@ -80,7 +80,6 @@ async function replaceFileWithRetry(tempPath, filePath, options = {}) {
   // This is less "atomic" but avoids losing data when Windows denies rename.
   try {
     await fs.copyFile(tempPath, filePath);
-    // FIX BUG-017: Verify copy integrity
     const crypto = require('crypto');
     const srcBuf = await fs.readFile(tempPath);
     const dstBuf = await fs.readFile(filePath);
@@ -216,7 +215,6 @@ async function loadJsonFile(filePath, options = {}) {
  */
 async function persistData(filePath, data, options = {}) {
   try {
-    // FIX: Guard against primitives (string, number, boolean, null, undefined).
     // Object.keys() on these returns [] which incorrectly flags them as "empty"
     // and triggers file deletion instead of persistence.
     if (data === null || data === undefined || typeof data !== 'object') {

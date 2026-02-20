@@ -202,8 +202,7 @@ const IPC_EVENTS = {
   FILE_OPERATION_COMPLETE: 'file-operation-complete',
   NOTIFICATION: 'notification',
   UNDO_REDO_STATE_CHANGED: 'undo-redo:state-changed',
-  BATCH_RESULTS_CHUNK: 'batch-results-chunk',
-  OPERATION_FAILED: 'operation-failed'
+  BATCH_RESULTS_CHUNK: 'batch-results-chunk'
 };
 
 /**

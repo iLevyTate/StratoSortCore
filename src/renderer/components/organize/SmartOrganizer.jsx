@@ -28,7 +28,6 @@ import { GlobalErrorBoundary } from '../ErrorBoundary';
 
 // Set logger context for this component
 const logger = createLogger('SmartOrganizer');
-// FIX: Move steps array outside component to prevent recreation on every render
 const ORGANIZATION_STEPS = [
   { id: 'analyze', label: 'Analyze', Icon: Search },
   { id: 'review', label: 'Review', Icon: Eye },
@@ -61,7 +60,6 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
   const [customGroupFolder, setCustomGroupFolder] = useState('');
   const [memoryRefreshToken, setMemoryRefreshToken] = useState(0);
 
-  // FIX: Track mounted state to prevent state updates after unmount
   const isMountedRef = useRef(true);
   const analyzeRunIdRef = useRef(0);
   useEffect(() => {
@@ -71,7 +69,6 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
     };
   }, []);
 
-  // FIX: Wrap analyzeFiles in useCallback to prevent stale closure issues
   const analyzeFiles = useCallback(async () => {
     if (files.length === 0) return;
 
@@ -114,7 +111,6 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
         error: error.message,
         stack: error.stack
       });
-      // FIX: Notify user about the failure so they're aware analysis didn't work
       if (isLatestRun()) {
         addNotification(
           'Failed to analyze files. Please try again or check your connection.',
@@ -128,7 +124,6 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
     }
   }, [files, addNotification]);
 
-  // FIX: Include analyzeFiles in dependency array
   useEffect(() => {
     if (files.length > 0) {
       analyzeFiles();
@@ -279,7 +274,6 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
     setCustomGroupFolder('');
   };
 
-  // FIX: Memoize step indicator to prevent recreation on every render
   const stepIndicator = useMemo(
     () => (
       <div className="flex items-center justify-center mb-6">

@@ -91,6 +91,29 @@ class PatternPersistence {
     this._pendingSaveWaiters = [];
   }
 
+  async recover() {
+    try {
+      if (await this._fileExists(this.patternsFilePath)) {
+        await fs.copyFile(this.patternsFilePath, this.backupFilePath);
+        logger.info(`[Persistence] Backed up corrupt patterns to ${this.backupFilePath}`);
+      }
+    } catch (error) {
+      logger.warn('[Persistence] Failed to backup corrupt patterns:', error.message);
+    }
+    // Reset internal state
+    this.lastSaveTime = 0;
+    return { success: true };
+  }
+
+  async _fileExists(filePath) {
+    try {
+      await fs.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async _loadFromJson() {
     try {
       const raw = await fs.readFile(this.patternsFilePath, 'utf-8');

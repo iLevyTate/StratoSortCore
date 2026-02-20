@@ -68,6 +68,7 @@ let layoutDebounceTimer = null;
 const LAYOUT_DEBOUNCE_MS = 200; // Increased debounce to let UI settle before heavy layout
 
 // Track pending promise callbacks to prevent memory leaks and handle cancellation
+const MAX_PENDING_CALLBACKS = 100;
 let pendingCallbacks = [];
 
 // Store latest layout request data to prevent stale closure issues
@@ -83,7 +84,6 @@ const NODE_SIZES = {
   queryNode: { width: 180, height: 60 },
   fileNode: { width: 240, height: 120 },
   folderNode: { width: 220, height: 90 },
-  // FIX: Make cluster nodes compact circles/hubs instead of large cards
   clusterNode: { width: 180, height: 180 },
   default: { width: 220, height: 100 }
 };
@@ -288,7 +288,16 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
       clearTimeout(layoutDebounceTimer);
     }
 
-    // Track this resolver
+    // Track this resolver, evicting oldest entries if over the cap
+    if (pendingCallbacks.length >= MAX_PENDING_CALLBACKS) {
+      const evicted = pendingCallbacks.splice(
+        0,
+        pendingCallbacks.length - MAX_PENDING_CALLBACKS + 1
+      );
+      const evictError = new Error('Layout callback evicted (too many pending)');
+      evictError.name = 'AbortError';
+      evicted.forEach((cb) => cb.reject(evictError));
+    }
     pendingCallbacks.push({ resolve, reject });
 
     // Set up debounced execution
@@ -296,7 +305,6 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
       layoutDebounceTimer = null;
 
       // Check if layout was aborted during debounce wait
-      // FIX: If aborted, we need to reject callbacks, not leave them hanging
       if (layoutAborted) {
         // Reject any pending callbacks that haven't been handled
         if (pendingCallbacks.length > 0) {
@@ -315,7 +323,6 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
       // Get the latest data (not stale closure data)
       const { nodes: latestNodes, edges: latestEdges, options: latestOptions } = latestLayoutData;
 
-      // FIX: If there's already a layout in progress, wait for it to complete
       // but then ALWAYS use the latest data for the result instead of reusing
       // the pending promise's result. This prevents stale data issues when
       // new requests come in with different data during a running layout.
@@ -334,7 +341,6 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
 
       try {
         const result = await pendingLayoutPromise;
-        // FIX: If aborted during layout, reject callbacks instead of leaving them hanging
         if (layoutAborted) {
           const error = new Error('Layout cancelled');
           error.name = 'AbortError';
@@ -344,7 +350,6 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
         }
       } catch (error) {
         logger.error('[elkLayout] Debounced layout failed:', error);
-        // FIX: If aborted, reject; otherwise resolve with original nodes
         if (layoutAborted) {
           const abortError = new Error('Layout cancelled');
           abortError.name = 'AbortError';
@@ -770,7 +775,6 @@ function applyClusterRepulsion(nodes, options = {}) {
 
   const positions = nodes.map((n) => ({ ...n.position }));
 
-  // FIX: Use spatial grid for O(n) collision detection instead of O(n²)
   // Grid cell size should be >= minDistance to ensure we only check neighboring cells
   const cellSize = minDistance;
 

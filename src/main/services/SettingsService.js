@@ -1,6 +1,7 @@
 const { app } = require('electron');
 const fs = require('fs').promises;
 const fsSync = require('fs');
+const os = require('os');
 const path = require('path');
 const { backupAndReplace } = require('../../shared/atomicFileOperations');
 const { validateSettings, sanitizeSettings } = require('../../shared/settingsValidation');
@@ -12,7 +13,6 @@ const { LIMITS, DEBOUNCE, TIMEOUTS, RETRY } = require('../../shared/performanceC
 const { delay } = require('../../shared/promiseUtils');
 const { SettingsBackupService } = require('./SettingsBackupService');
 const { IPC_EVENTS } = require('../../shared/constants');
-// FIX: Import safeSend for validated IPC event sending
 const { safeSend } = require('../ipc/ipcWrappers');
 
 const logger = typeof createLogger === 'function' ? createLogger('SettingsService') : baseLogger;
@@ -39,7 +39,7 @@ class SettingsService {
     this.backupDir = path.join(app.getPath('userData'), 'settings-backups');
     // Use centralized constants from performanceConstants.js
     this.maxBackups = LIMITS.MAX_SETTINGS_BACKUPS;
-    this.defaults = DEFAULT_SETTINGS;
+    this.defaults = this._buildRuntimeDefaults();
     this._cache = null;
     this._cacheTimestamp = 0;
     this._cacheTtlMs = 2_000; // short TTL to avoid repeated disk reads
@@ -48,8 +48,8 @@ class SettingsService {
     // PERFORMANCE FIX: Use centralized debounce constant
     this._debounceDelay = DEBOUNCE.SETTINGS_SAVE;
     this._isInternalChange = false; // Flag to ignore changes we made ourselves
-    this._internalChangeTimer = null; // FIX: Track internal change reset timer for cleanup
-    this._isShuttingDown = false; // FIX CRIT-33: Track shutdown state
+    this._internalChangeTimer = null;
+    this._isShuttingDown = false;
 
     // Fixed: Add mutex to prevent concurrent save operations
     this._saveMutex = Promise.resolve();
@@ -57,12 +57,11 @@ class SettingsService {
     this._mutexAcquiredAt = null; // Track when mutex was acquired for deadlock detection
     this._mutexTimeoutMs = TIMEOUTS.SERVICE_STARTUP; // Use centralized timeout
 
-    // CRITICAL FIX: Use centralized constants for watcher restart limits
     this._watcherRestartCount = 0;
     this._maxWatcherRestarts = LIMITS.MAX_WATCHER_RESTARTS;
     this._watcherRestartWindow = LIMITS.WATCHER_RESTART_WINDOW;
     this._watcherRestartWindowStart = Date.now();
-    this._restartTimer = null; // FIX: Track restart timer to prevent unbounded timers
+    this._restartTimer = null;
 
     // Initialize backup service (extracted for better separation of concerns)
     this._backupService = new SettingsBackupService({
@@ -76,13 +75,49 @@ class SettingsService {
     this._startFileWatcher();
     this._migrationChecked = false;
     this._migrationInProgress = false;
-    // FIX 1.4: Track migration attempts to prevent infinite retries
     this._migrationAttempts = 0;
     this._maxMigrationAttempts = RETRY.MAX_ATTEMPTS_MEDIUM;
   }
 
+  _buildRuntimeDefaults() {
+    const resolvedDefaultLocation = this._resolvePlatformDefaultSmartFolderLocation();
+    return {
+      ...DEFAULT_SETTINGS,
+      defaultSmartFolderLocation:
+        resolvedDefaultLocation || DEFAULT_SETTINGS.defaultSmartFolderLocation
+    };
+  }
+
+  _resolvePlatformDefaultSmartFolderLocation() {
+    // Primary source: Electron-provided platform folder location.
+    try {
+      const documentsPath = app.getPath('documents');
+      if (typeof documentsPath === 'string' && documentsPath.trim()) {
+        return documentsPath.trim();
+      }
+    } catch (error) {
+      logger.warn('[SettingsService] Failed to resolve documents path via Electron', {
+        error: error?.message
+      });
+    }
+
+    // Fallback by platform when Electron cannot provide a documents path.
+    const home = typeof os.homedir === 'function' ? os.homedir() : '';
+    if (!home || typeof home !== 'string') {
+      return DEFAULT_SETTINGS.defaultSmartFolderLocation;
+    }
+
+    if (process.platform === 'win32') {
+      return path.join(home, 'Documents');
+    }
+    if (process.platform === 'darwin') {
+      return path.join(home, 'Documents');
+    }
+    // Linux/other Unix-like platforms: use a conventional documents folder.
+    return path.join(home, 'Documents');
+  }
+
   async load() {
-    // FIX CRIT-33: Don't attempt load during shutdown
     if (this._isShuttingDown) {
       logger.debug('[SettingsService] Ignoring load() during shutdown');
       return this._cache || { ...this.defaults };
@@ -94,7 +129,6 @@ class SettingsService {
     }
 
     // Perform migration once per session before first load
-    // FIX 1.4: Limit migration retries to prevent disk thrashing
     if (!this._migrationChecked && this._migrationAttempts < this._maxMigrationAttempts) {
       this._migrationInProgress = true;
       try {
@@ -135,7 +169,6 @@ class SettingsService {
       }
       const raw = await fs.readFile(this.settingsPath, 'utf-8');
 
-      // FIX 1.3: Separate JSON parse error handling for better diagnostics
       let parsed;
       try {
         parsed = JSON.parse(raw);
@@ -154,7 +187,6 @@ class SettingsService {
         throw jsonError;
       }
 
-      // FIX Bug 23: Use mergeWithDefaults to validate types during merge.
       // If a user override has the wrong type (e.g., string where number expected),
       // the default value is preserved instead of the invalid override.
       const merged = mergeWithDefaults(parsed);
@@ -163,9 +195,7 @@ class SettingsService {
       this._cacheTimestamp = now;
       return sanitized;
     } catch (err) {
-      // FIX: Attempt auto-recovery from backup if settings file is corrupted
       if (err && !isNotFoundError(err)) {
-        // FIX 1.3: More descriptive logging based on error type
         const errorType = err.code === 'JSON_PARSE_ERROR' ? 'corrupted' : 'unreadable';
         logger.warn(
           `[SettingsService] Settings file ${errorType}: ${err.message}, attempting recovery from backup`
@@ -199,7 +229,6 @@ class SettingsService {
         return null;
       }
 
-      // FIX 1.1: Limit recovery attempts to prevent slow startup with many corrupted backups
       const MAX_RECOVERY_ATTEMPTS = RETRY.MAX_ATTEMPTS_HIGH;
       const backupsToTry = backups.slice(0, MAX_RECOVERY_ATTEMPTS);
 
@@ -218,10 +247,8 @@ class SettingsService {
             (this._backupService?.backupDir
               ? path.join(this._backupService.backupDir, backup.filename)
               : backup.filename);
-          // FIX HIGH-70: Correct method name is restoreFromBackup, not restoreBackup
           const result = await this._backupService.restoreFromBackup(backupPath, async (merged) => {
             // Save restored settings using backupAndReplace (same as regular restore)
-            const { backupAndReplace } = require('../../shared/atomicFileOperations');
             const saveResult = await backupAndReplace(
               this.settingsPath,
               JSON.stringify(merged, null, 2)
@@ -270,7 +297,6 @@ class SettingsService {
 
   // Fixed: Proper cache invalidation, settings merging, and validation
   async save(settings) {
-    // FIX CRIT-33: Don't attempt save during shutdown
     if (this._isShuttingDown) {
       logger.debug('[SettingsService] Ignoring save() during shutdown');
       return {
@@ -281,7 +307,7 @@ class SettingsService {
     }
 
     // Fixed: Use mutex to prevent race conditions from concurrent saves
-    return this._withMutex(async () => {
+    return this._withMutex(async (cancellation) => {
       // Force confidenceThreshold to a sane number before validation/merge
       const coerceConfidence = (val, fallback) => {
         const num = Number(val);
@@ -307,11 +333,9 @@ class SettingsService {
         });
       }
 
-      // FIX 1.2: Sanitize settings first, then apply single coercion after merge
       // Previously coerced twice (before and after merge) - now only after merge
       const sanitized = sanitizeSettings(settings);
 
-      // FIX Issue 1.3: Force fresh read from disk - bypass cache during critical save
       // This prevents stale cache from causing data loss when external changes occurred
       // IMPORTANT: capture cache state BEFORE clearing so we can rollback on failure.
       // Previously we captured "previousCache" after clearing, making rollback restore null.
@@ -324,7 +348,6 @@ class SettingsService {
       // This is now safe because we're inside the mutex
       const current = await this._loadRaw();
 
-      // FIX 1.2: Single coercion point after merge - ensures final value is valid
       const merged = {
         ...current,
         ...sanitized,
@@ -348,13 +371,11 @@ class SettingsService {
           if (backupResult.success) {
             break; // Success, exit retry loop
           }
-          // CRITICAL FIX: Log when backup returns unsuccessful result (not exception)
           logger.warn(
             `[SettingsService] Backup attempt ${attempt + 1} failed with result:`,
             backupResult
           );
         } catch (error) {
-          // CRITICAL FIX: Log each attempt failure with detailed error information
           logger.error(`[SettingsService] Backup attempt ${attempt + 1} failed with exception:`, {
             error: error.message,
             stack: error.stack,
@@ -389,25 +410,29 @@ class SettingsService {
       // Set flag to ignore our own file change
       this._isInternalChange = true;
 
-      // FIX: Store previous cache state for atomic rollback on failure
       const previousCache = cacheBeforeSave;
       const previousTimestamp = cacheTimestampBeforeSave;
 
       try {
         await fs.mkdir(path.dirname(this.settingsPath), { recursive: true });
 
-        // FIX: Update cache BEFORE disk write for atomic behavior
         // If disk write fails, we rollback to previous state
         this._cache = merged;
         this._cacheTimestamp = Date.now();
 
         // Bug #42: Retry logic for file lock handling with exponential backoff
-        // FIX: Increased retry count and delay for Windows antivirus/indexing
         const maxSaveRetries = RETRY.MAX_ATTEMPTS_HIGH;
         const baseSaveDelay = RETRY.SETTINGS_SAVE.initialDelay;
 
         for (let attempt = 0; attempt < maxSaveRetries; attempt++) {
           try {
+            // If the mutex timed out while we were working, skip disk write
+            // to prevent concurrent writes with the next mutex holder.
+            if (cancellation.timedOut) {
+              this._cache = cacheBeforeSave;
+              this._cacheTimestamp = cacheTimestampBeforeSave;
+              throw new Error('Operation cancelled: mutex timed out, skipping disk write');
+            }
             const result = await backupAndReplace(
               this.settingsPath,
               JSON.stringify(merged, null, 2)
@@ -416,7 +441,25 @@ class SettingsService {
               throw new Error((result && result.error) || 'Failed to save settings');
             }
 
-            // Success - exit retry loop (cache already updated)
+            // Success - reload from disk to ensure cache reflects
+            // what was actually persisted (prevents stale cache if
+            // another process modified the file between our write and
+            // the cache update).
+            try {
+              const rawAfterWrite = await fs.readFile(this.settingsPath, 'utf-8');
+              const parsedAfterWrite = JSON.parse(rawAfterWrite);
+              const mergedAfterWrite = mergeWithDefaults(parsedAfterWrite);
+              const sanitizedAfterWrite = sanitizeSettings(mergedAfterWrite);
+              this._cache = sanitizedAfterWrite;
+              this._cacheTimestamp = Date.now();
+            } catch (reloadErr) {
+              // If reload fails, keep the in-memory merged value
+              logger.warn('[SettingsService] Post-write reload failed, using in-memory value', {
+                error: reloadErr.message
+              });
+              this._cache = merged;
+              this._cacheTimestamp = Date.now();
+            }
             break;
           } catch (saveError) {
             // Bug #42: Check for file lock errors (EBUSY, EPERM, EACCES)
@@ -433,7 +476,6 @@ class SettingsService {
               );
               await delay(retryMs);
             } else if (attempt === maxSaveRetries - 1) {
-              // FIX: Rollback cache on complete failure before throwing
               this._cache = previousCache;
               this._cacheTimestamp = previousTimestamp;
               logger.error('[SettingsService] Save failed, rolled back cache to previous state');
@@ -442,7 +484,6 @@ class SettingsService {
                 { cause: saveError }
               );
             } else {
-              // FIX: Rollback cache on non-lock error before throwing
               this._cache = previousCache;
               this._cacheTimestamp = previousTimestamp;
               logger.error('[SettingsService] Save failed with non-lock error, rolled back cache');
@@ -451,7 +492,6 @@ class SettingsService {
           }
         }
       } catch (err) {
-        // FIX: Rollback cache on any outer error (e.g., mkdir failure)
         this._cache = previousCache;
         this._cacheTimestamp = previousTimestamp;
         logger.error(
@@ -473,7 +513,6 @@ class SettingsService {
         throw err;
       } finally {
         // Reset flag after a short delay to allow file system to settle
-        // FIX: Track timer for cleanup during shutdown
         if (this._internalChangeTimer) {
           clearTimeout(this._internalChangeTimer);
         }
@@ -481,7 +520,6 @@ class SettingsService {
         // This prevents our own atomic save from being misclassified as external change.
         const internalChangeResetDelayMs = this._debounceDelay + 200;
         this._internalChangeTimer = setTimeout(() => {
-          // FIX CRIT-33: Check shutdown state before executing callback
           if (!this._isShuttingDown) {
             this._isInternalChange = false;
           }
@@ -513,19 +551,16 @@ class SettingsService {
       resolveMutex = resolve;
     });
 
-    // FIX (H-2): Declare at function scope so the outer catch can access it.
     // Previously captured inside try, out of scope for catch block.
     let localAcquiredAt = null;
 
     try {
-      // CRITICAL FIX: Add deadlock detection with timeout
       // Wait for previous operation with a timeout to prevent permanent deadlock
       const waitForPrevious = previousMutex.catch(() => {
         // Previous operation failed, but we continue with current operation
         // This prevents error propagation from breaking the mutex chain
       });
 
-      // FIX: Store timeout ID to clear it after mutex acquisition
       let timeoutId;
       const timeoutPromise = new Promise((_, reject) => {
         timeoutId = setTimeout(() => {
@@ -543,13 +578,10 @@ class SettingsService {
       try {
         await Promise.race([waitForPrevious, timeoutPromise]);
       } finally {
-        // FIX: Always clear timeout to prevent memory leak
         if (timeoutId) clearTimeout(timeoutId);
       }
 
-      // CRITICAL FIX: Track when this operation acquires the mutex for deadlock detection
       this._mutexAcquiredAt = Date.now();
-      // FIX (H-2): Capture in local variable — the inner finally clears _mutexAcquiredAt
       // before the outer catch can read it, making timeElapsed always null.
       localAcquiredAt = this._mutexAcquiredAt;
 
@@ -557,9 +589,13 @@ class SettingsService {
       let operationTimeoutId = null;
       try {
         // Add timeout to the actual operation as well
-        const operationPromise = fn();
+        // Cancellation token: when the timeout wins the race, the still-running
+        // fn() checks this flag and skips its disk write to prevent concurrent writes.
+        const cancellation = { timedOut: false };
+        const operationPromise = fn(cancellation);
         const operationTimeout = new Promise((_, reject) => {
           operationTimeoutId = setTimeout(() => {
+            cancellation.timedOut = true;
             reject(
               new MutexTimeoutError(
                 `Operation timeout: Function did not complete within ${this._mutexTimeoutMs}ms. ` +
@@ -585,12 +621,10 @@ class SettingsService {
         resolveMutex();
       }
     } catch (error) {
-      // FIX (H-2): Use local variable captured at acquisition time, not
       // this._mutexAcquiredAt which was already cleared by the inner finally block
       const acquiredAt = localAcquiredAt;
       const timeElapsed = acquiredAt ? Date.now() - acquiredAt : null;
 
-      // CRITICAL FIX: Always release mutex even on deadlock/timeout errors
       this._mutexAcquiredAt = null;
       if (!resolveMutex) {
         logger.error('[SettingsService] Mutex resolver not initialized - this should never happen');
@@ -681,12 +715,10 @@ class SettingsService {
    * @returns {Promise<{success: boolean, settings?: Object, error?: string}>}
    */
   async restoreFromBackup(backupPath) {
-    // FIX: Validate input before calling path.resolve to avoid TypeError
     if (!backupPath || typeof backupPath !== 'string') {
       return { success: false, error: 'Invalid backup path provided' };
     }
 
-    // SECURITY FIX: Validate backup path is within backup directory to prevent path traversal
     let normalizedPath = path.normalize(path.resolve(backupPath));
     let normalizedBackupDir = path.normalize(path.resolve(this.backupDir));
     if (process.platform === 'win32') {
@@ -701,8 +733,11 @@ class SettingsService {
     }
 
     // Use mutex to prevent race conditions during restore
-    return this._withMutex(async () => {
+    return this._withMutex(async (cancellation) => {
       const result = await this._backupService.restoreFromBackup(backupPath, async (merged) => {
+        if (cancellation.timedOut) {
+          throw new Error('Operation cancelled: mutex timed out, skipping disk write');
+        }
         // Save restored settings using backupAndReplace
         const saveResult = await backupAndReplace(
           this.settingsPath,
@@ -789,7 +824,6 @@ class SettingsService {
           error: error.message
         });
 
-        // FIX Issue 1.6: Clear ALL pending timers before restart to prevent stale callbacks
         if (this._debounceTimer) {
           clearTimeout(this._debounceTimer);
           this._debounceTimer = null;
@@ -821,7 +855,6 @@ class SettingsService {
    * @private
    */
   _restartFileWatcher() {
-    // CRITICAL FIX: Implement restart limit with time window to prevent infinite loops
     const now = Date.now();
 
     // Reset counter if window has passed
@@ -872,7 +905,6 @@ class SettingsService {
       this._debounceTimer = null;
     }
 
-    // FIX: Clear restart timer to prevent orphaned timers
     if (this._restartTimer) {
       clearTimeout(this._restartTimer);
       this._restartTimer = null;
@@ -950,7 +982,6 @@ class SettingsService {
       windows.forEach((win) => {
         if (win && !win.isDestroyed() && win.webContents) {
           try {
-            // FIX: Use safeSend for validated IPC event sending
             safeSend(win.webContents, IPC_EVENTS.SETTINGS_CHANGED_EXTERNAL, eventPayload);
           } catch (error) {
             logger.warn(
@@ -969,8 +1000,7 @@ class SettingsService {
    * @returns {Promise<void>}
    */
   async shutdown() {
-    this._isShuttingDown = true; // FIX CRIT-33: Set shutdown flag
-    // FIX: Clear all timers to prevent memory leaks
+    this._isShuttingDown = true;
     if (this._internalChangeTimer) {
       clearTimeout(this._internalChangeTimer);
       this._internalChangeTimer = null;

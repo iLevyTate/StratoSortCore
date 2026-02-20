@@ -208,11 +208,20 @@ async function applySemanticFolderMatching(params) {
                 requiresRebuild: upsertResult?.requiresRebuild === true
               }
             );
-          } else {
+          } else if (upsertCount > 0) {
             rememberSmartFolderUpsert(matcher, fingerprint);
             logger.debug('[FolderMatcher] Upserted folder embeddings', {
               folderCount: validFolders.length,
               persistedCount: upsertCount,
+              skippedCount: skipped.length
+            });
+          } else {
+            // All folders skipped (session-cached) with no hard failure.
+            // Don't cache this result -- the DB may have been wiped and
+            // the session cache stale, so let the next call retry.
+            logger.debug('[FolderMatcher] Upserted folder embeddings', {
+              folderCount: validFolders.length,
+              persistedCount: 0,
               skippedCount: skipped.length
             });
           }
@@ -258,7 +267,6 @@ async function applySemanticFolderMatching(params) {
       TIMEOUTS.EMBEDDING_REQUEST || 30000,
       'folder matcher embedText'
     );
-    // FIX #2: Also check for empty array to prevent downstream failures
     if (
       !embeddingResult ||
       !embeddingResult.vector ||
@@ -297,7 +305,6 @@ async function applySemanticFolderMatching(params) {
 
       const top = candidates[0];
       if (top && typeof top === 'object' && typeof top.score === 'number' && top.name) {
-        // FIX #1: Normalize LLM confidence to 0-1 scale for comparison with embedding score
         // LLM confidence can be 0-100 (percentage) or 0-1 (fraction)
         const rawLlmConfidence = analysis.confidence ?? 70; // Default 70% if missing
         const llmConfidence = rawLlmConfidence > 1 ? rawLlmConfidence / 100 : rawLlmConfidence;
@@ -499,9 +506,22 @@ async function applySemanticFolderMatching(params) {
   return analysis;
 }
 
+/**
+ * Clear the per-matcher upsert cache so the next analysis re-persists
+ * folder embeddings.  Called during reanalysis after the vector DB is wiped.
+ *
+ * @param {Object} matcher - FolderMatchingService instance
+ */
+function clearSmartFolderUpsertCache(matcher) {
+  if (matcher) {
+    matcherFolderUpsertCache.delete(matcher);
+  }
+}
+
 module.exports = {
   applySemanticFolderMatching,
   buildEmbeddingSummary,
+  clearSmartFolderUpsertCache,
   // For testing
   getServices,
   validateMatcher

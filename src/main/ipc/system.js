@@ -201,7 +201,6 @@ function registerSystemIpc(servicesOrParams) {
   );
 
   // Configuration inspection handler for debugging and support
-  // FIX: Use IPC_CHANNELS constant instead of string literal
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SYSTEM.GET_CONFIG,
@@ -232,7 +231,6 @@ function registerSystemIpc(servicesOrParams) {
   );
 
   // Get configuration value by path
-  // FIX: Use IPC_CHANNELS constant instead of string literal
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SYSTEM.GET_CONFIG_VALUE,
@@ -246,7 +244,6 @@ function registerSystemIpc(servicesOrParams) {
           if (pathError) {
             return createErrorResponse({ message: pathError });
           }
-          // FIX 86: Validate input and block access to sensitive config keys
           const { SENSITIVE_KEYS } = require('../../shared/config/configSchema');
           const normalizedPath = configPath.trim();
           const pathLower = normalizedPath.toLowerCase();

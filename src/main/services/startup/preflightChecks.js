@@ -51,7 +51,6 @@ async function runPreflightChecks({ reportProgress, errors }) {
   const checks = [];
   logger.debug('[PREFLIGHT] Starting pre-flight checks...');
 
-  // FIX Issue 3.7: Validate environment variables first
   const envErrors = validateEnvironmentVariables();
   if (envErrors.length > 0) {
     logger.warn('[PREFLIGHT] Environment variable validation failed:', envErrors);
@@ -136,7 +135,6 @@ async function runPreflightChecks({ reportProgress, errors }) {
       const userDataPath = app.getPath('userData');
       logger.debug(`[PREFLIGHT] User data path resolved to: ${userDataPath}`);
 
-      // FIX Bug #25: Implement actual disk space check
       try {
         const { statfs } = require('fs/promises');
         if (statfs) {
@@ -234,7 +232,6 @@ async function runPreflightChecks({ reportProgress, errors }) {
   // Process disk result
   if (diskResult.status === 'fulfilled') {
     const disk = diskResult.value || {};
-    // FIX: Honour the inner warn/ok status instead of always reporting 'ok'.
     // When free space < 10 GB the disk check returns { status: 'warn', message }.
     const diskStatus = disk.status || 'ok';
     const diskEntry = { name: 'Disk Space', status: diskStatus };

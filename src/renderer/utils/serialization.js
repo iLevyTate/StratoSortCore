@@ -14,7 +14,6 @@ export const serializeData = (data, _seen) => {
   }
 
   if (Array.isArray(data)) {
-    // FIX: Track seen objects to prevent infinite recursion on circular references
     const seen = _seen || new WeakSet();
     if (seen.has(data)) return '[Circular]';
     seen.add(data);
@@ -22,7 +21,6 @@ export const serializeData = (data, _seen) => {
   }
 
   if (typeof data === 'object') {
-    // FIX: Track seen objects to prevent infinite recursion on circular references
     const seen = _seen || new WeakSet();
     if (seen.has(data)) return '[Circular]';
     seen.add(data);

@@ -54,7 +54,6 @@ class LLMRequestDeduplicator {
     if (typeof inputs === 'string') {
       hasher.update(inputs);
     } else if (typeof inputs === 'object' && inputs !== null) {
-      // CRITICAL FIX: Recursively sort keys for consistent hashing of nested objects
       const sorted = JSON.stringify(sortObjectKeysDeep(inputs));
       hasher.update(sorted);
     } else {

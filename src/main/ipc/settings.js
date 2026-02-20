@@ -393,6 +393,17 @@ async function handleSettingsSaveCore(settings, deps) {
       logger.debug('[SETTINGS] Could not invalidate notification cache:', notifyErr.message);
     }
 
+    // Invalidate analysis limits cache so file size limits take effect immediately
+    try {
+      const { invalidateCache } = require('../analysis/analysisLimits');
+      if (typeof invalidateCache === 'function') {
+        invalidateCache();
+        logger.debug('[SETTINGS] Analysis limits cache invalidated');
+      }
+    } catch (limitErr) {
+      logger.debug('[SETTINGS] Could not invalidate analysis limits cache:', limitErr?.message);
+    }
+
     // Enhanced settings propagation with error logging
     let propagationSuccess = true;
     try {
@@ -462,7 +473,6 @@ function registerSettingsIpc(servicesOrParams) {
           return loaded;
         } catch (error) {
           logger.error('Failed to get settings:', error);
-          // FIX HIGH-24: Return proper error structure instead of swallowing error
           return { success: false, error: error.message, settings: {} };
         }
       }
@@ -597,7 +607,6 @@ function registerSettingsIpc(servicesOrParams) {
           // Serialize export data with proper error handling
           let jsonContent;
           try {
-            // FIX: Yield to event loop before heavy serialization to prevent UI blocking
             await new Promise((resolve) => setImmediate(resolve));
             jsonContent = JSON.stringify(exportData, null, 2);
           } catch (serializeError) {
@@ -608,7 +617,6 @@ function registerSettingsIpc(servicesOrParams) {
           }
 
           // Write export file
-          // FIX: Use atomic write (temp + rename) to prevent corruption on crash
           const tempPath = `${filePath}.tmp.${Date.now()}`;
           try {
             await fs.writeFile(tempPath, jsonContent, 'utf8');
@@ -666,13 +674,11 @@ function registerSettingsIpc(servicesOrParams) {
             return canceledResponse();
           }
 
-          // FIX MED-9: Add bounds check before accessing filePaths[0]
           if (!result.filePaths || result.filePaths.length === 0) {
             return canceledResponse();
           }
           const filePath = result.filePaths[0];
 
-          // SECURITY FIX: Check file size before reading to prevent DoS
           const MAX_IMPORT_SIZE = 1 * 1024 * 1024; // 1MB limit for settings files
           const fileHandle = await fs.open(filePath, 'r');
           let fileContent;
@@ -716,7 +722,7 @@ function registerSettingsIpc(servicesOrParams) {
             throw new Error('Invalid settings file: missing or invalid settings object');
           }
 
-          // HIGH PRIORITY FIX (HIGH-14): Sanitize and validate imported settings
+          // Sanitize and validate imported settings
           // Prevents prototype pollution, command injection, and data exfiltration
           let sanitizedSettings = validateImportedSettings(importData.settings, logger);
 

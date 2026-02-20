@@ -100,7 +100,6 @@ async function searchAnalysis(analysisHistory, cache, searchCacheTTL, query, opt
   }
 
   // Prevent unbounded growth of in-memory embedding cache
-  // FIX: Use LRU eviction instead of clearing all entries to avoid recomputation storm
   const MAX_ENTRY_EMBEDDINGS = 2000;
   const EVICTION_TARGET = 1600; // Remove ~20% of oldest entries
 
@@ -183,7 +182,6 @@ async function searchAnalysis(analysisHistory, cache, searchCacheTTL, query, opt
       }
     }
 
-    // FIX: Use optional chaining — entry.analysis can be null for malformed entries
     if (entry.analysis?.subject) {
       const subjectLower = entry.analysis.subject.toLowerCase();
       if (subjectLower.includes(queryLower)) {
@@ -211,7 +209,6 @@ async function searchAnalysis(analysisHistory, cache, searchCacheTTL, query, opt
       score += 5;
     }
 
-    // FIX: Search extended document fields for richer conversation context
     if (entry.analysis.entity && entry.analysis.entity.toLowerCase().includes(queryLower)) {
       score += 6; // Entity is important for "documents from X" queries
     }
@@ -257,7 +254,6 @@ async function searchAnalysis(analysisHistory, cache, searchCacheTTL, query, opt
       score += 3;
     }
 
-    // FIX: Include keyword match for tags (keywords) even if they're stored in the 'keywords' field
     if (entry.analysis.keywords && Array.isArray(entry.analysis.keywords)) {
       for (const keyword of entry.analysis.keywords) {
         if (keyword.toLowerCase().includes(queryLower)) {

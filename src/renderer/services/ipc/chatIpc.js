@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 
-const { electronAPI } = window;
+const getElectronAPI = () => window.electronAPI;
 
 class ChatStream extends EventEmitter {
   constructor() {
@@ -9,10 +9,12 @@ class ChatStream extends EventEmitter {
     this.handleEnd = this.handleEnd.bind(this);
     this.cleanupFns = [];
     this.payload = null;
+    this._cancelled = false;
   }
 
   start(payload) {
     this.payload = payload;
+    const electronAPI = getElectronAPI();
     // Register listeners
     if (electronAPI.chat.onStreamChunk) {
       this.cleanupFns.push(electronAPI.chat.onStreamChunk(this.handleChunk));
@@ -52,9 +54,13 @@ class ChatStream extends EventEmitter {
       if (typeof fn === 'function') fn();
     });
     this.cleanupFns = [];
+    this.removeAllListeners();
   }
 
   cancel() {
+    if (this._cancelled) return;
+    this._cancelled = true;
+    const electronAPI = getElectronAPI();
     if (electronAPI.chat.cancelStream) {
       electronAPI.chat
         .cancelStream({
@@ -76,6 +82,7 @@ export function queryStream(payload) {
 }
 
 export async function listConversations(limit = 50, offset = 0) {
+  const electronAPI = getElectronAPI();
   if (!electronAPI.chat.listConversations) return { conversations: [] };
   const result = await electronAPI.chat.listConversations(limit, offset);
   if (!result.success) throw new Error(result.error);
@@ -83,6 +90,7 @@ export async function listConversations(limit = 50, offset = 0) {
 }
 
 export async function getConversation(id) {
+  const electronAPI = getElectronAPI();
   if (!electronAPI.chat.getConversation) return null;
   const result = await electronAPI.chat.getConversation(id);
   if (!result.success) throw new Error(result.error);
@@ -90,12 +98,14 @@ export async function getConversation(id) {
 }
 
 export async function deleteConversation(id) {
+  const electronAPI = getElectronAPI();
   if (!electronAPI.chat.deleteConversation) return;
   const result = await electronAPI.chat.deleteConversation(id);
   if (!result.success) throw new Error(result.error);
 }
 
 export async function searchConversations(query) {
+  const electronAPI = getElectronAPI();
   if (!electronAPI.chat.searchConversations) return [];
   const result = await electronAPI.chat.searchConversations(query);
   if (!result.success) throw new Error(result.error);
@@ -103,6 +113,7 @@ export async function searchConversations(query) {
 }
 
 export async function exportConversation(id) {
+  const electronAPI = getElectronAPI();
   if (!electronAPI.chat.exportConversation) return null;
   const result = await electronAPI.chat.exportConversation(id);
   if (!result.success) throw new Error(result.error);

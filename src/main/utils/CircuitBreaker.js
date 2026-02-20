@@ -176,7 +176,6 @@ class CircuitBreaker extends EventEmitter {
           error: errorMessage
         });
 
-        // FIX Bug 4: Restart reset timer on failures to extend the window
         // This ensures failures near end of reset window don't get "forgotten"
         this._scheduleResetTimer();
 
@@ -188,7 +187,6 @@ class CircuitBreaker extends EventEmitter {
 
       case CircuitState.HALF_OPEN:
         // NOTE: halfOpenInFlight is decremented in execute()'s finally block to avoid double-decrement
-        // FIX Bug 1: Track consecutive HALF_OPEN failures for exponential backoff
         this.halfOpenFailureCount++;
 
         logger.debug(`[CircuitBreaker:${this.serviceName}] Failure in HALF_OPEN`, {
@@ -234,7 +232,6 @@ class CircuitBreaker extends EventEmitter {
       throw error;
     }
 
-    // FIX: Track HALF_OPEN state for proper counter management
     // Decrement is now ONLY done in finally block to prevent double-decrement
     // when recordSuccess/recordFailure were previously decrementing as well
     const wasHalfOpen = this.state === CircuitState.HALF_OPEN;
@@ -257,7 +254,6 @@ class CircuitBreaker extends EventEmitter {
       }
       throw error;
     } finally {
-      // FIX: Single point of decrement for halfOpenInFlight
       // This ensures exactly one decrement per execute() call, regardless of
       // whether recordSuccess/recordFailure succeed or throw
       if (wasHalfOpen) {
@@ -362,7 +358,6 @@ class CircuitBreaker extends EventEmitter {
     switch (newState) {
       case CircuitState.OPEN: {
         this.successCount = 0;
-        // FIX Bug 1: Calculate exponential backoff based on consecutive HALF_OPEN failures
         // Backoff: baseTimeout * 2^halfOpenFailureCount, capped at 8x (2^3)
         const backoffMultiplier = Math.min(
           2 ** this.halfOpenFailureCount,
@@ -388,7 +383,6 @@ class CircuitBreaker extends EventEmitter {
       case CircuitState.CLOSED: {
         this.failureCount = 0;
         this.successCount = 0;
-        // FIX Bug 1: Reset HALF_OPEN failure count when circuit closes successfully
         this.halfOpenFailureCount = 0;
         this._scheduleResetTimer();
         this.emit('close', { serviceName: this.serviceName });

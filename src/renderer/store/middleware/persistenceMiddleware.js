@@ -5,26 +5,23 @@ import { addNotification } from '../slices/systemSlice';
 import { CURRENT_STATE_VERSION } from '../migrations';
 
 const SAVE_DEBOUNCE_MS = DEFAULT_SETTINGS.saveDebounceMs || 1000;
-// FIX #24: Add max wait time to prevent infinite debounce delay
 const MAX_DEBOUNCE_WAIT_MS = 5000;
 const MAX_LOCALSTORAGE_BYTES = 4 * 1024 * 1024;
 let saveTimeout = null;
 let firstPendingRequestTime = 0; // Track when the first unsaved debounce request was made
 let lastSavedPhase = null;
-let lastSavedFilesCount = -1;
-let lastSavedResultsCount = -1;
-let lastSavedOrganizedFilesCount = -1;
-let lastSavedSmartFoldersCount = -1;
-// FIX: Track fileStates changes to ensure file state updates trigger persistence
-let lastSavedFileStatesCount = -1;
-let lastSavedFileStatesRef = null;
-// FIX: Track UI state changes
 let lastSavedSidebarOpen = null;
-// Track namingConvention reference so naming-only changes trigger saves
+// Reference-based change detection: Redux Toolkit (Immer) guarantees new references
+// on state mutations. This catches content changes (e.g., file path updates after
+// moves, re-analyzed results) even when array length is unchanged.
+let lastSavedSelectedFilesRef = null;
+let lastSavedOrganizedFilesRef = null;
+let lastSavedSmartFoldersRef = null;
+let lastSavedResultsRef = null;
+let lastSavedFileStatesRef = null;
 let lastSavedNamingConventionRef = null;
 // NOTE: showSettings is intentionally NOT persisted (transient overlay state).
 
-// FIX: Re-entry guard to prevent infinite loops if save triggers actions
 let isSaving = false;
 
 /**
@@ -107,7 +104,6 @@ function saveWithQuotaHandling(key, stateToSave) {
     };
     localStorage.setItem(key, JSON.stringify(reducedState));
     logger.info('Saved reduced state (50 items per array)');
-    // FIX CRIT-5: Return degradation level for user notification
     return { success: true, degraded: 'reduced' };
   } catch {
     // Continue to next attempt
@@ -135,7 +131,6 @@ function saveWithQuotaHandling(key, stateToSave) {
     };
     localStorage.setItem(key, JSON.stringify(minimalState));
     logger.warn('Saved minimal state (UI + settings only) due to quota limits');
-    // FIX CRIT-5: Return degradation level for user notification
     return { success: true, degraded: 'minimal' };
   } catch {
     // Continue to next attempt
@@ -146,37 +141,17 @@ function saveWithQuotaHandling(key, stateToSave) {
     localStorage.removeItem(key);
     localStorage.removeItem('stratosort_workflow_state'); // Also clear old workflow state
     const emergencyState = {
-      // FIX: Add null check for PHASES to prevent crash during module initialization
       ui: { currentPhase: stateToSave.ui?.currentPhase || (PHASES?.WELCOME ?? 'welcome') },
       timestamp: Date.now(),
       _emergency: true
     };
     localStorage.setItem(key, JSON.stringify(emergencyState));
     logger.error('Emergency save: cleared old data, saved only current phase');
-    // FIX CRIT-5: Return degradation level for user notification
     return { success: true, degraded: 'emergency' };
   } catch (finalError) {
     logger.error('All save attempts failed:', { error: finalError.message });
     return { success: false, degraded: 'failed' };
   }
-}
-
-/**
- * FIX MEDIUM-3: Detect fileStates changes using a cheap reference + count check.
- * The previous implementation computed a full hash over every key and value on
- * every Redux action dispatch (O(n*m) where m = avg key length). This was the
- * single hottest path in the persistence middleware.
- *
- * New approach: track the object reference itself. Redux Toolkit produces a new
- * object reference whenever fileStates actually changes, so a strict equality
- * check is sufficient. The count check is kept as a secondary guard for edge
- * cases where the reference might be reused (e.g., direct mutations).
- *
- * @param {Object} fileStates - Map of file paths to state objects
- * @returns {Object} fileStates reference (used for identity comparison)
- */
-function getFileStatesRef(fileStates) {
-  return fileStates || null;
 }
 
 // Track beforeunload handler for cleanup
@@ -201,7 +176,8 @@ function buildStateSnapshot(freshState, options = {}) {
     _version: CURRENT_STATE_VERSION,
     ui: {
       currentPhase: freshState.ui.currentPhase,
-      sidebarOpen: freshState.ui.sidebarOpen
+      sidebarOpen: freshState.ui.sidebarOpen,
+      settings: freshState.ui.settings
     },
     files: {
       selectedFiles: freshState.files.selectedFiles.slice(0, MAX_FILES),
@@ -262,7 +238,6 @@ const persistenceMiddleware = (store) => {
     const result = next(action);
     const state = store.getState();
 
-    // FIX: Skip if we're currently in a save operation to prevent infinite loops
     if (isSaving) {
       return result;
     }
@@ -272,7 +247,6 @@ const persistenceMiddleware = (store) => {
     const currentSmartFoldersCount = state.files.smartFolders.length;
     const hasDurableData = currentOrganizedFilesCount > 0 || currentSmartFoldersCount > 0;
 
-    // FIX: Never save in WELCOME phase unless there's actual durable data to preserve.
     // This prevents persisting empty/default state when user hasn't done anything yet.
     if (isWelcomePhase && !hasDurableData) {
       return result;
@@ -280,30 +254,17 @@ const persistenceMiddleware = (store) => {
 
     // Only save if not loading action
     if (action.type.indexOf('setLoading') === -1) {
-      // Performance: Skip save if key state hasn't changed
       const { currentPhase, sidebarOpen } = state.ui;
-      const currentFilesCount = state.files.selectedFiles.length;
-      const currentResultsCount = state.analysis.results.length;
-      // FIX: Track fileStates changes
-      const currentFileStatesCount = Object.keys(state.files.fileStates || {}).length;
-      const currentFileStatesRef = getFileStatesRef(state.files.fileStates);
-
-      const currentNamingConventionRef = state.files.namingConvention;
 
       const hasRelevantChange =
         currentPhase !== lastSavedPhase ||
-        currentFilesCount !== lastSavedFilesCount ||
-        currentResultsCount !== lastSavedResultsCount ||
-        // FIX: Check organizedFiles count
-        currentOrganizedFilesCount !== lastSavedOrganizedFilesCount ||
-        currentSmartFoldersCount !== lastSavedSmartFoldersCount ||
-        // FIX: Check fileStates changes by reference and count
-        currentFileStatesCount !== lastSavedFileStatesCount ||
-        currentFileStatesRef !== lastSavedFileStatesRef ||
-        // FIX: Check UI state changes (sidebar only; settings overlay is transient)
         sidebarOpen !== lastSavedSidebarOpen ||
-        // FIX: Track naming convention changes (setNamingConvention creates new ref)
-        currentNamingConventionRef !== lastSavedNamingConventionRef;
+        state.files.selectedFiles !== lastSavedSelectedFilesRef ||
+        state.files.organizedFiles !== lastSavedOrganizedFilesRef ||
+        state.files.smartFolders !== lastSavedSmartFoldersRef ||
+        state.files.fileStates !== lastSavedFileStatesRef ||
+        state.files.namingConvention !== lastSavedNamingConventionRef ||
+        state.analysis.results !== lastSavedResultsRef;
 
       if (!hasRelevantChange) {
         return result;
@@ -313,7 +274,6 @@ const persistenceMiddleware = (store) => {
         clearTimeout(saveTimeout);
       }
 
-      // FIX #24: Force save if we've been debouncing too long
       const now = Date.now();
       // Track when the first pending request was made (reset after each save)
       if (firstPendingRequestTime === 0) {
@@ -324,13 +284,11 @@ const persistenceMiddleware = (store) => {
       const delay = shouldForceImmediate ? 0 : SAVE_DEBOUNCE_MS;
 
       saveTimeout = setTimeout(() => {
-        // FIX: Set re-entry guard before save.
         // Double-check: another timeout may have set this flag if clearTimeout raced
         if (isSaving) return;
         isSaving = true;
 
         try {
-          // FIX: Get fresh state at save time instead of using stale closure reference.
           // The debounce delay (up to 5s) means the state captured at dispatch time
           // may be significantly outdated by the time this callback fires.
           const freshState = store.getState();
@@ -345,10 +303,8 @@ const persistenceMiddleware = (store) => {
 
           const stateToSave = buildStateSnapshot(freshState, { prioritizeFileStates: true });
 
-          // FIX #1: Use graceful quota handling instead of silent data loss
           const saveResult = saveWithQuotaHandling('stratosort_redux_state', stateToSave);
 
-          // FIX CRIT-5: Notify user if data was degraded due to storage limits
           if (saveResult.degraded) {
             const messages = {
               reduced:
@@ -368,23 +324,19 @@ const persistenceMiddleware = (store) => {
             );
           }
 
-          // FIX CRIT-18: Only update tracking variables if save succeeded
           // This prevents state staleness where we think we saved but actually failed
-          // FIX: Recompute tracking values from freshState to match what was actually saved
           if (saveResult.success) {
             lastSavedPhase = freshState.ui.currentPhase;
-            lastSavedFilesCount = freshState.files.selectedFiles.length;
-            lastSavedResultsCount = freshState.analysis.results.length;
-            lastSavedOrganizedFilesCount = freshState.files.organizedFiles.length;
-            lastSavedSmartFoldersCount = freshState.files.smartFolders.length;
-            lastSavedFileStatesCount = Object.keys(freshState.files.fileStates || {}).length;
-            lastSavedFileStatesRef = getFileStatesRef(freshState.files.fileStates);
             lastSavedSidebarOpen = freshState.ui.sidebarOpen;
+            lastSavedSelectedFilesRef = freshState.files.selectedFiles;
+            lastSavedOrganizedFilesRef = freshState.files.organizedFiles;
+            lastSavedSmartFoldersRef = freshState.files.smartFolders;
+            lastSavedFileStatesRef = freshState.files.fileStates;
             lastSavedNamingConventionRef = freshState.files.namingConvention;
-            firstPendingRequestTime = 0; // Reset so next debounce cycle tracks fresh
+            lastSavedResultsRef = freshState.analysis.results;
+            firstPendingRequestTime = 0;
           }
         } finally {
-          // FIX: Clear re-entry guard
           isSaving = false;
         }
       }, delay);
@@ -425,13 +377,12 @@ export const cleanupPersistence = (store) => {
     }
   }
   lastSavedPhase = null;
-  lastSavedFilesCount = -1;
-  lastSavedResultsCount = -1;
-  lastSavedOrganizedFilesCount = -1;
-  lastSavedSmartFoldersCount = -1;
-  lastSavedFileStatesCount = -1;
-  lastSavedFileStatesRef = null;
   lastSavedSidebarOpen = null;
+  lastSavedSelectedFilesRef = null;
+  lastSavedOrganizedFilesRef = null;
+  lastSavedSmartFoldersRef = null;
+  lastSavedResultsRef = null;
+  lastSavedFileStatesRef = null;
   lastSavedNamingConventionRef = null;
   firstPendingRequestTime = 0;
 };

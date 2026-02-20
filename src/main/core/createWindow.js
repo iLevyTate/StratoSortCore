@@ -215,6 +215,7 @@ function startLocalRendererServer(rendererRootPath) {
     });
 
     server.once('error', reject);
+    server.unref(); // Don't keep process alive just for dev server
     server.listen(0, '127.0.0.1', () => {
       const address = server.address();
       if (!address || typeof address !== 'object' || typeof address.port !== 'number') {
@@ -255,7 +256,6 @@ function createMainWindow() {
     isFullScreen: mainWindowState.isFullScreen
   });
 
-  // FIX: Check if saved bounds are near-maximized and reset to defaults (Issue 3.2)
   // This prevents the maximize button from only changing size by ~1px
   // Improved threshold: Only reset if VERY close to maximized (within 20px) to avoid
   // resetting users who intentionally want large windows.
@@ -348,9 +348,7 @@ function createMainWindow() {
       hardwareAcceleration: true,
       enableWebGL: true,
       safeDialogs: true,
-      // CRITICAL FIX: Add offscreen to prevent Mojo interface errors
       offscreen: false,
-      // CRITICAL FIX: Disable features that can cause Mojo errors
       webviewTag: false,
       nodeIntegrationInWorker: false,
       nodeIntegrationInSubFrames: false
@@ -380,7 +378,6 @@ function createMainWindow() {
     win.maximize();
   }
 
-  // FIX: Force electron-window-state to save immediately on close
   // The library uses debounced saves which may not complete if window closes quickly
   // We call saveState() directly to ensure state is persisted synchronously
   win.on('close', () => {
@@ -411,7 +408,6 @@ function createMainWindow() {
     }
   });
 
-  // CRITICAL FIX: Add longer delay and webContents readiness check to prevent Mojo errors
   // Wait for webContents to be fully ready before loading content
   let rendererStaticServer = null;
   let isWindowClosed = false;
@@ -488,8 +484,6 @@ function createMainWindow() {
     }
   };
 
-  // CRITICAL FIX: Ensure webContents is ready before loading
-  // FIX: Store timer ID so it can be cleared if window is destroyed before it fires
   let _loadTimerId = null;
   const scheduleLoad = () => {
     _loadTimerId = setTimeout(loadContent, TIMEOUTS.WINDOW_LOAD_DELAY);
@@ -537,7 +531,6 @@ function createMainWindow() {
   });
 
   win.once('ready-to-show', () => {
-    // FIX: Track all nested timer IDs so they can be cleared on window close
     const pendingTimers = [];
     const track = (id) => {
       pendingTimers.push(id);
@@ -547,7 +540,6 @@ function createMainWindow() {
     win.once('closed', clearPendingTimers);
     win.once('destroy', clearPendingTimers);
 
-    // CRITICAL FIX: Add delay before showing window to prevent Mojo interface errors
     track(
       setTimeout(() => {
         if (!win.isDestroyed()) {
@@ -568,7 +560,6 @@ function createMainWindow() {
                 // Auto-open DevTools in development mode or when forced via env var
                 // Opened after window is ready to ensure detached window displays properly
                 if (isDev || getEnvBool('FORCE_DEV_TOOLS')) {
-                  // FIX: Listen for devtools-opened event to bring main window to foreground
                   // This ensures we act after DevTools has fully opened and stolen focus
                   win.webContents.once('devtools-opened', () => {
                     // Small delay to let DevTools finish rendering
@@ -662,7 +653,6 @@ function createMainWindow() {
       .catch(() => {});
 
     // Delayed health check: verify the app fully rendered after 5s
-    // FIX: Store timer ID for cleanup on window close
     const _healthCheckTimerId = setTimeout(() => {
       if (win.isDestroyed()) return;
       win.webContents
@@ -713,7 +703,6 @@ function createMainWindow() {
   // Deny all permission requests by default, but allow clipboard access
   try {
     win.webContents.session.setPermissionRequestHandler((_wc, permission, callback) => {
-      // FIX: Allow clipboard read/write permissions for features like "Copy Path"
       if (permission === 'clipboard-read' || permission === 'clipboard-sanitized-write') {
         callback(true);
         return;

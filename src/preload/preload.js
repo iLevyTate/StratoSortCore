@@ -214,6 +214,20 @@ const IPC_CHANNELS = {
     GET_RELATIONSHIP_STATS: 'knowledge:get-relationship-stats'
   }
 };
+
+const IPC_EVENTS = {
+  SYSTEM_METRICS: 'system-metrics',
+  OPERATION_PROGRESS: 'operation-progress',
+  APP_ERROR: 'app:error',
+  APP_UPDATE: 'app:update',
+  MENU_ACTION: 'menu-action',
+  OPEN_SEMANTIC_SEARCH: 'open-semantic-search',
+  SETTINGS_CHANGED_EXTERNAL: 'settings-changed-external',
+  FILE_OPERATION_COMPLETE: 'file-operation-complete',
+  NOTIFICATION: 'notification',
+  UNDO_REDO_STATE_CHANGED: 'undo-redo:state-changed',
+  BATCH_RESULTS_CHUNK: 'batch-results-chunk'
+};
 // === END GENERATED IPC_CHANNELS ===
 
 const isPreloadDevMode = process?.env?.NODE_ENV === 'development';
@@ -350,8 +364,6 @@ const ALLOWED_CHANNELS = {
   KNOWLEDGE: Object.values(IPC_CHANNELS.KNOWLEDGE || {})
 };
 
-// FIX: Use centralized security config to prevent drift between preload and main process
-// FIX: Use IPC_CHANNELS constant instead of hardcoded string
 const ALLOWED_RECEIVE_CHANNELS = [...SECURITY_RECEIVE_CHANNELS];
 
 // Flatten allowed send channels for validation (Set for O(1) lookup and no coercion edge cases)
@@ -571,7 +583,6 @@ class SecureIPCManager {
     };
   }
 
-  // FIX CRIT-35: Remove async to ensure synchronous execution up to return
   enqueueThrottled(channel, task) {
     const STALE_QUEUE_TIMEOUT_MS = 30000;
 
@@ -698,7 +709,6 @@ class SecureIPCManager {
     }
 
     const createdAt = Date.now();
-    // FIX: Use timestamp (not counter) in key so audit can determine listener age.
     const listenerKey = `${channel}_${++this._listenerCounter}_${createdAt}`;
 
     const wrappedCallback = (event, ...args) => {
@@ -1144,7 +1154,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         normalizeSystemLogPayload(level, message, data)
       ),
     exportLogs: () => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.EXPORT_LOGS),
-    onOpenSemanticSearch: (callback) => secureIPC.safeOn('open-semantic-search', callback)
+    onOpenSemanticSearch: (callback) => secureIPC.safeOn(IPC_EVENTS.OPEN_SEMANTIC_SEARCH, callback)
   },
 
   // Window
@@ -1195,34 +1205,51 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Event Listeners
   events: {
-    onOperationProgress: (callback) => secureIPC.safeOn('operation-progress', callback),
-    onAppError: (callback) => secureIPC.safeOn('app:error', callback),
-    onAppUpdate: (callback) => secureIPC.safeOn('app:update', callback),
-    onSystemMetrics: (callback) => secureIPC.safeOn('system-metrics', callback),
-    onMenuAction: (callback) => secureIPC.safeOn('menu-action', callback),
-    onSettingsChanged: (callback) => secureIPC.safeOn('settings-changed-external', callback),
-    onFileOperationComplete: (callback) => secureIPC.safeOn('file-operation-complete', callback),
-    onNotification: (callback) => secureIPC.safeOn('notification', callback),
-    onBatchResultsChunk: (callback) => secureIPC.safeOn('batch-results-chunk', callback),
-    sendError: (errorData) => {
-      try {
-        if (!errorData || typeof errorData !== 'object' || !errorData.message) return;
-        const channel = IPC_CHANNELS.SYSTEM.RENDERER_ERROR_REPORT;
-        if (!ALL_SEND_CHANNELS.has(channel)) return;
-        const sanitized = {
-          ...(typeof errorData.message === 'string' && {
-            message: errorData.message.slice(0, 2048)
-          }),
-          ...(typeof errorData.stack === 'string' && { stack: errorData.stack.slice(0, 4096) }),
-          ...(typeof errorData.componentStack === 'string' && {
-            componentStack: errorData.componentStack.slice(0, 4096)
-          })
-        };
-        ipcRenderer.send(channel, sanitized);
-      } catch (error) {
-        log.error('[events.sendError] Failed to send error report:', error);
-      }
-    }
+    onOperationProgress: (callback) => secureIPC.safeOn(IPC_EVENTS.OPERATION_PROGRESS, callback),
+    onAppError: (callback) => secureIPC.safeOn(IPC_EVENTS.APP_ERROR, callback),
+    onAppUpdate: (callback) => secureIPC.safeOn(IPC_EVENTS.APP_UPDATE, callback),
+    onSystemMetrics: (callback) => secureIPC.safeOn(IPC_EVENTS.SYSTEM_METRICS, callback),
+    onMenuAction: (callback) => secureIPC.safeOn(IPC_EVENTS.MENU_ACTION, callback),
+    onSettingsChanged: (callback) =>
+      secureIPC.safeOn(IPC_EVENTS.SETTINGS_CHANGED_EXTERNAL, callback),
+    onFileOperationComplete: (callback) =>
+      secureIPC.safeOn(IPC_EVENTS.FILE_OPERATION_COMPLETE, callback),
+    onNotification: (callback) => secureIPC.safeOn(IPC_EVENTS.NOTIFICATION, callback),
+    onBatchResultsChunk: (callback) => secureIPC.safeOn(IPC_EVENTS.BATCH_RESULTS_CHUNK, callback),
+    sendError: (() => {
+      let _sendErrorCount = 0;
+      let _sendErrorWindowStart = Date.now();
+      const SEND_ERROR_MAX_PER_SEC = 10;
+
+      return (errorData) => {
+        try {
+          if (!errorData || typeof errorData !== 'object' || !errorData.message) return;
+
+          // Rate limit: max 10 error reports per second
+          const now = Date.now();
+          if (now - _sendErrorWindowStart > 1000) {
+            _sendErrorCount = 0;
+            _sendErrorWindowStart = now;
+          }
+          if (++_sendErrorCount > SEND_ERROR_MAX_PER_SEC) return;
+
+          const channel = IPC_CHANNELS.SYSTEM.RENDERER_ERROR_REPORT;
+          if (!ALL_SEND_CHANNELS.has(channel)) return;
+          const sanitized = {
+            ...(typeof errorData.message === 'string' && {
+              message: errorData.message.slice(0, 2048)
+            }),
+            ...(typeof errorData.stack === 'string' && { stack: errorData.stack.slice(0, 4096) }),
+            ...(typeof errorData.componentStack === 'string' && {
+              componentStack: errorData.componentStack.slice(0, 4096)
+            })
+          };
+          ipcRenderer.send(channel, sanitized);
+        } catch (error) {
+          log.error('[events.sendError] Failed to send error report:', error);
+        }
+      };
+    })()
   },
 
   // Settings

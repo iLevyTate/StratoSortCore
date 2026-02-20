@@ -230,13 +230,11 @@ class ClusteringService {
       const embeddings = result.embeddings || [];
       const metadatas = result.metadatas || [];
 
-      // FIX: Track expected dimension to detect mismatches from mixed embedding models
       let expectedDim = null;
       let skippedCount = 0;
 
       for (let i = 0; i < ids.length; i++) {
         if (embeddings[i] && embeddings[i].length > 0) {
-          // FIX: Validate dimension consistency
           if (expectedDim === null) {
             expectedDim = embeddings[i].length;
           } else if (!validateEmbeddingDimensions(embeddings[i], expectedDim)) {
@@ -395,7 +393,6 @@ class ClusteringService {
       }
     }
 
-    // FIX H-1: Track used points to prevent infinite loop in reinitialization
     const usedForReinit = new Set();
 
     for (let c = 0; c < centroids.length; c++) {
@@ -411,7 +408,6 @@ class ClusteringService {
         let farthestIdx = -1;
 
         for (let i = 0; i < files.length; i++) {
-          // FIX H-1: Skip points already used for reinitialization to prevent cycles
           if (usedForReinit.has(i)) continue;
 
           const assignedCentroid = centroids[assignments[i]];
@@ -429,7 +425,6 @@ class ClusteringService {
           }
           logger.debug(`[ClusteringService] Reinitialized empty cluster ${c} with farthest point`);
         } else {
-          // FIX H-1: All points exhausted, log warning and skip
           logger.warn(`[ClusteringService] Cannot reinitialize cluster ${c}, no available points`);
         }
       }
@@ -577,7 +572,6 @@ class ClusteringService {
         };
       }
 
-      // FIX M-2: Add upper bound on cluster count to prevent performance degradation
       let numClusters;
       if (k === 'auto') {
         numClusters = this.estimateOptimalK(files);
@@ -1538,7 +1532,6 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
    * @returns {Promise<Object>} Object with duplicate groups and metadata
    */
   async findNearDuplicates(options = {}) {
-    // FIX: HIGH - Enforce minimum threshold to prevent resource exhaustion
     // Low thresholds (e.g., 0.1) would match nearly all files, causing OOM
     const MIN_SAFE_THRESHOLD = 0.7;
     const MAX_PAIRS_LIMIT = 10000; // Prevent memory exhaustion from unbounded pairs
@@ -1588,7 +1581,6 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
       const ids = Array.from(embeddings.keys());
       let pairsLimitReached = false;
 
-      // FIX: HIGH - Add early exit when max pairs limit is reached
       outerLoop: for (let i = 0; i < ids.length; i++) {
         for (let j = i + 1; j < ids.length; j++) {
           // Check pairs limit before processing
@@ -1703,7 +1695,6 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
         groups: limitedGroups,
         totalDuplicates,
         threshold,
-        // FIX: Include warning if results were truncated
         truncated: pairsLimitReached,
         warning: pairsLimitReached
           ? `Results truncated: exceeded ${MAX_PAIRS_LIMIT} pairs limit. Consider increasing threshold.`

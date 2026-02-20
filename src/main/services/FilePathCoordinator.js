@@ -68,6 +68,9 @@ class FilePathCoordinator extends EventEmitter {
     this._pendingOperations = new Map();
     this._operationIdCounter = 0;
 
+    // Per-path mutex locks to prevent concurrent updates on the same file
+    this._pathLocks = new Map();
+
     // Configuration
     this._batchSize = options.batchSize || 50;
 
@@ -112,6 +115,35 @@ class FilePathCoordinator extends EventEmitter {
    * @returns {Promise<{success: boolean, errors: Array, updated: Object}>}
    */
   async atomicPathUpdate(oldPath, newPath, options = {}) {
+    // Per-path concurrency guard: queue concurrent updates for the same file
+    const lockKey = path.resolve(oldPath).toLowerCase();
+
+    // Use a while loop to ensure re-verification if multiple waiters awaken
+    while (this._pathLocks.has(lockKey)) {
+      await this._pathLocks.get(lockKey);
+    }
+
+    let resolveLock;
+    const lockPromise = new Promise((resolve) => {
+      resolveLock = resolve;
+    });
+    this._pathLocks.set(lockKey, lockPromise);
+
+    try {
+      return await this._executeAtomicPathUpdate(oldPath, newPath, options);
+    } finally {
+      if (this._pathLocks.get(lockKey) === lockPromise) {
+        this._pathLocks.delete(lockKey);
+      }
+      resolveLock();
+    }
+  }
+
+  /**
+   * Internal implementation of atomic path update with compensating rollback
+   * @private
+   */
+  async _executeAtomicPathUpdate(oldPath, newPath, options = {}) {
     const operationId = ++this._operationIdCounter;
     const startTime = Date.now();
 
@@ -135,7 +167,6 @@ class FilePathCoordinator extends EventEmitter {
     };
 
     try {
-      // FIX: Move inside try block so finally always cleans up the entry
       this._pendingOperations.set(operationId, {
         oldPath,
         newPath,
@@ -174,6 +205,26 @@ class FilePathCoordinator extends EventEmitter {
           });
           // PATH-TRACE: Log analysis history update failure
           traceDbUpdate('history', oldPath, newPath, false, err.message);
+
+          // Compensating rollback: revert vectorDb if it succeeded
+          if (updated.vectorDb) {
+            try {
+              await this._updateVectorDbPath(newPath, oldPath);
+              updated.vectorDb = false;
+              logger.info(
+                '[FilePathCoordinator] Rolled back vectorDb after analysisHistory failure'
+              );
+            } catch (rollbackErr) {
+              logger.error(
+                '[FilePathCoordinator] IRRECOVERABLE: Failed to rollback vectorDb after analysisHistory failure',
+                {
+                  rollbackError: rollbackErr.message,
+                  oldPath: path.basename(oldPath),
+                  newPath: path.basename(newPath)
+                }
+              );
+            }
+          }
         }
       } else if (!options.skipAnalysisHistory) {
         errors.push({ system: 'analysisHistory', error: 'Analysis history service unavailable' });
@@ -194,6 +245,44 @@ class FilePathCoordinator extends EventEmitter {
           });
           // PATH-TRACE: Log embedding queue update failure
           traceDbUpdate('queue', oldPath, newPath, false, err.message);
+
+          // Compensating rollback: revert prior successful updates
+          if (updated.vectorDb) {
+            try {
+              await this._updateVectorDbPath(newPath, oldPath);
+              updated.vectorDb = false;
+              logger.info(
+                '[FilePathCoordinator] Rolled back vectorDb after embeddingQueue failure'
+              );
+            } catch (rollbackErr) {
+              logger.error(
+                '[FilePathCoordinator] IRRECOVERABLE: Failed to rollback vectorDb after embeddingQueue failure',
+                {
+                  rollbackError: rollbackErr.message,
+                  oldPath: path.basename(oldPath),
+                  newPath: path.basename(newPath)
+                }
+              );
+            }
+          }
+          if (updated.analysisHistory) {
+            try {
+              await this._updateAnalysisHistoryPath(newPath, oldPath);
+              updated.analysisHistory = false;
+              logger.info(
+                '[FilePathCoordinator] Rolled back analysisHistory after embeddingQueue failure'
+              );
+            } catch (rollbackErr) {
+              logger.error(
+                '[FilePathCoordinator] IRRECOVERABLE: Failed to rollback analysisHistory after embeddingQueue failure',
+                {
+                  rollbackError: rollbackErr.message,
+                  oldPath: path.basename(oldPath),
+                  newPath: path.basename(newPath)
+                }
+              );
+            }
+          }
         }
       } else if (!options.skipEmbeddingQueue) {
         errors.push({ system: 'embeddingQueue', error: 'Embedding queue unavailable' });
@@ -214,6 +303,62 @@ class FilePathCoordinator extends EventEmitter {
           });
           // PATH-TRACE: Log processing state update failure
           traceDbUpdate('processingState', oldPath, newPath, false, err.message);
+
+          // Compensating rollback: revert prior successful updates
+          if (updated.vectorDb) {
+            try {
+              await this._updateVectorDbPath(newPath, oldPath);
+              updated.vectorDb = false;
+              logger.info(
+                '[FilePathCoordinator] Rolled back vectorDb after processingState failure'
+              );
+            } catch (rollbackErr) {
+              logger.error(
+                '[FilePathCoordinator] IRRECOVERABLE: Failed to rollback vectorDb after processingState failure',
+                {
+                  rollbackError: rollbackErr.message,
+                  oldPath: path.basename(oldPath),
+                  newPath: path.basename(newPath)
+                }
+              );
+            }
+          }
+          if (updated.analysisHistory) {
+            try {
+              await this._updateAnalysisHistoryPath(newPath, oldPath);
+              updated.analysisHistory = false;
+              logger.info(
+                '[FilePathCoordinator] Rolled back analysisHistory after processingState failure'
+              );
+            } catch (rollbackErr) {
+              logger.error(
+                '[FilePathCoordinator] IRRECOVERABLE: Failed to rollback analysisHistory after processingState failure',
+                {
+                  rollbackError: rollbackErr.message,
+                  oldPath: path.basename(oldPath),
+                  newPath: path.basename(newPath)
+                }
+              );
+            }
+          }
+          if (updated.embeddingQueue) {
+            try {
+              this._updateEmbeddingQueuePath(newPath, oldPath);
+              updated.embeddingQueue = false;
+              logger.info(
+                '[FilePathCoordinator] Rolled back embeddingQueue after processingState failure'
+              );
+            } catch (rollbackErr) {
+              logger.error(
+                '[FilePathCoordinator] IRRECOVERABLE: Failed to rollback embeddingQueue after processingState failure',
+                {
+                  rollbackError: rollbackErr.message,
+                  oldPath: path.basename(oldPath),
+                  newPath: path.basename(newPath)
+                }
+              );
+            }
+          }
         }
       } else if (!options.skipProcessingState) {
         errors.push({ system: 'processingState', error: 'Processing state service unavailable' });
@@ -349,7 +494,6 @@ class FilePathCoordinator extends EventEmitter {
 
       // Track results for each path change
       batch.forEach((change) => {
-        // FIX Bug #31: Track per-file success based on system failures
         // If a system failed, check if it was critical for this file
         // For now, we mark partial success if at least one system succeeded
         results.push({
@@ -780,7 +924,6 @@ class FilePathCoordinator extends EventEmitter {
    * @private
    */
   async _updateProcessingStatePath(oldPath, newPath) {
-    // FIX (C-4): Use ProcessingStateService's public moveJob() method instead of
     // directly mutating state.analysis.jobs, which bypassed the _writeLock mutex
     // and created TOCTOU race conditions with concurrent markAnalysis* calls.
     if (typeof this._processingStateService.moveJob !== 'function') {
@@ -821,6 +964,7 @@ class FilePathCoordinator extends EventEmitter {
   shutdown() {
     this.removeAllListeners();
     this._pendingOperations.clear();
+    this._pathLocks.clear();
     logger.info('[FilePathCoordinator] Shutdown complete');
   }
 }

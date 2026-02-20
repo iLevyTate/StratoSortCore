@@ -65,7 +65,6 @@ class ReRankerService {
     this.textModel = options.textModel || null; // Will use AI service default
     this.config = { ...DEFAULT_CONFIG, ...options };
 
-    // FIX: Use LRUCache with periodic cleanup instead of plain Map
     // This prevents stale entries from accumulating between queries
     this.scoreCache = new LRUCache({
       maxSize: this.config.cacheMaxSize,
@@ -76,7 +75,6 @@ class ReRankerService {
     // Initialize with 1-minute cleanup interval for expired entries
     this.scoreCache.initialize(60000);
 
-    // FIX MED #13: In-flight request tracking to prevent duplicate LLM calls
     // When concurrent requests have the same cache key, they share the same promise
     this._inFlightRequests = new Map();
 
@@ -145,7 +143,6 @@ class ReRankerService {
 
     // Score cache keys are in format: "query::fileId"
     // We need to invalidate any entry where the fileId contains the path
-    // FIX: Use LRUCache.invalidateWhere() instead of non-existent keys() method
     const invalidated = this.scoreCache.invalidateWhere((key) => key.includes(filePath));
 
     if (invalidated > 0) {
@@ -264,7 +261,6 @@ class ReRankerService {
       return { ...candidate, llmScore: cached, fromCache: true };
     }
 
-    // FIX MED #13: Check for in-flight request with same key to prevent duplicate LLM calls
     // If another request is already fetching this score, wait for it instead of making duplicate call
     if (this._inFlightRequests.has(cacheKey)) {
       try {
@@ -293,7 +289,6 @@ class ReRankerService {
       logger.debug('[ReRankerService] Scoring failed for:', fileId, error.message);
       return { ...candidate, llmScore: this.config.fallbackScore, error: error.message };
     } finally {
-      // FIX MED #13: Always remove from in-flight tracking when done
       this._inFlightRequests.delete(cacheKey);
     }
   }
@@ -496,7 +491,6 @@ const {
  */
 function getInstance(options = {}) {
   const instance = _getInstance(options);
-  // FIX: Handle llamaService injection after singleton is created
   // This is safe because we're setting a property, not creating a new instance
   if (options.llamaService && instance && !instance.llamaService) {
     instance.llamaService = options.llamaService;

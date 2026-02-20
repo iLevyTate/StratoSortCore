@@ -15,7 +15,6 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
   const [expandedAlternatives, setExpandedAlternatives] = useState(false);
   const [feedbackNote, setFeedbackNote] = useState('');
 
-  // FIX: Move useCallback before early return to follow React hooks rules
   const handleStrategySelect = useCallback(
     (strategyId) => {
       setSelectedStrategy(strategyId);
@@ -43,7 +42,6 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
   const confidencePercent = Math.round(confidenceFraction * 100);
   const safeConfidence = confidenceFraction;
 
-  // SECURITY FIX #7: Comprehensive XSS prevention in folder names
   // React automatically escapes text content when using {}, but we add defense-in-depth:
   // 1. Type validation to prevent object injection
   // 2. Remove script-injection characters and control characters

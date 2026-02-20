@@ -86,6 +86,7 @@ const MAX_GRAPH_NODES = 300;
 const GRAPH_LAYOUT_SPACING = 300; // Increased from 180 to reduce clutter
 const GRAPH_LAYER_SPACING = 400; // Increased from 280 to reduce clutter
 const ZOOM_LABEL_HIDE_THRESHOLD = 0.6;
+const MAX_CHAT_MESSAGES = 200;
 const GRAPH_SIDEBAR_CARD = 'rounded-lg border border-system-gray-200 bg-white/90 p-3 shadow-sm';
 const GRAPH_SIDEBAR_SECTION_TITLE =
   'text-xs font-semibold text-system-gray-500 uppercase tracking-wider flex items-center gap-2';
@@ -118,7 +119,6 @@ const getErrorMessage = (error, context = 'Operation') => {
     return `${context} failed: Knowledge OS is initializing. Please wait a moment and try again.`;
   }
 
-  // FIX C-1: Embedding dimension mismatch (model changed)
   if (msg.includes('Embedding model changed') || msg.includes('dimension mismatch')) {
     return 'Embedding model changed. Please rebuild your index in Settings > Embeddings maintenance to use the new model.';
   }
@@ -1504,7 +1504,22 @@ export default function UnifiedSearchModal({
         }
 
         if (!skipAddUserMessage) {
-          setChatMessages((prev) => [...prev, { role: 'user', text: trimmed }]);
+          setChatMessages((prev) => {
+            const next = [...prev, { role: 'user', text: trimmed }];
+            if (next.length > MAX_CHAT_MESSAGES) {
+              let toRemove = next.length - MAX_CHAT_MESSAGES;
+              const pruned = [];
+              for (const m of next) {
+                if (m.role !== 'system' && toRemove > 0) {
+                  toRemove--;
+                } else {
+                  pruned.push(m);
+                }
+              }
+              return pruned;
+            }
+            return next;
+          });
         }
 
         logger.info('[KnowledgeOS] Chat query', {
@@ -1541,12 +1556,15 @@ export default function UnifiedSearchModal({
               const newMessages = [...prev];
               const lastMsg = newMessages[newMessages.length - 1];
               if (lastMsg && lastMsg.role === 'assistant' && lastMsg.isStreaming) {
-                lastMsg.text = (lastMsg.text || '') + data.text;
+                // Clone message object to avoid mutating Redux/React state in-place
+                newMessages[newMessages.length - 1] = {
+                  ...lastMsg,
+                  text: (lastMsg.text || '') + data.text
+                };
               }
               return newMessages;
             });
           } else if (data.type === 'error') {
-            // FIX BUG-001: Handle error events relayed via STREAM_CHUNK
             logger.warn('[KnowledgeOS] Chat error via stream', { error: data.error });
             const { message } = mapErrorToNotification({ error: data.error || 'Chat failed' });
             setChatError(message);
@@ -1568,18 +1586,22 @@ export default function UnifiedSearchModal({
               const newMessages = [...prev];
               const lastMsg = newMessages[newMessages.length - 1];
               if (lastMsg && lastMsg.role === 'assistant' && lastMsg.isStreaming) {
-                lastMsg.text = ''; // Clear text, use structured fields
-                lastMsg.documentAnswer = response.documentAnswer || [];
-                lastMsg.modelAnswer = response.modelAnswer || [];
-                lastMsg.followUps = response.followUps || [];
-                lastMsg.sources = data.sources || [];
-                lastMsg.meta = {
-                  contradictions: data.meta?.contradictions || [],
-                  comparisonIntent: Boolean(data.meta?.comparisonIntent),
-                  gapAnalysisIntent: Boolean(data.meta?.gapAnalysisIntent),
-                  holisticIntent: Boolean(data.meta?.holisticIntent)
+                // Clone message to avoid in-place mutation
+                newMessages[newMessages.length - 1] = {
+                  ...lastMsg,
+                  text: '', // Clear text, use structured fields
+                  documentAnswer: response.documentAnswer || [],
+                  modelAnswer: response.modelAnswer || [],
+                  followUps: response.followUps || [],
+                  sources: data.sources || [],
+                  meta: {
+                    contradictions: data.meta?.contradictions || [],
+                    comparisonIntent: Boolean(data.meta?.comparisonIntent),
+                    gapAnalysisIntent: Boolean(data.meta?.gapAnalysisIntent),
+                    holisticIntent: Boolean(data.meta?.holisticIntent)
+                  },
+                  isStreaming: false
                 };
-                lastMsg.isStreaming = false;
               }
               return newMessages;
             });
@@ -1598,7 +1620,6 @@ export default function UnifiedSearchModal({
           }
         });
 
-        // FIX BUG-004: Listen for 'end' to ensure IPC listeners are cleaned up
         stream.on('end', () => {
           if (chatInFlightRef.current) {
             setIsChatting(false);
@@ -1744,7 +1765,6 @@ export default function UnifiedSearchModal({
           new Map(newItems.map((item) => [item.id, item])).values()
         );
 
-        // FIX BUG-010: Warn about files not in index
         const resolvedPaths = new Set(dedupedNewItems.map((i) => i.path));
         const droppedPaths = allPaths.filter((p) => !resolvedPaths.has(p));
         const unresolvedFoundByName = new Set(
@@ -1829,8 +1849,7 @@ export default function UnifiedSearchModal({
   }, []);
 
   const handleStopGenerating = useCallback(() => {
-    chatStreamRef.current?.cancel?.();
-    chatStreamRef.current?.cleanup?.();
+    chatStreamRef.current?.cancel?.(); // cancel() already calls cleanup()
     chatStreamRef.current = null;
     invalidateRequests(chatRequestCounterRef);
     chatInFlightRef.current = false;
@@ -2107,7 +2126,6 @@ export default function UnifiedSearchModal({
     logger.info('[KnowledgeOS] Tab changed', { tab: activeTab });
   }, [activeTab, isOpen]);
 
-  // FIX P2-14: Reset focusedResultIndex when switching tabs
   // Prevents stale focus state when returning to search tab
   useEffect(() => {
     setFocusedResultIndex(-1);
@@ -2329,7 +2347,6 @@ export default function UnifiedSearchModal({
     // Apply layout
     if (autoLayout) {
       try {
-        // FIX: Use refs to get current nodes/edges to avoid stale closure issues
         // If nodes/edges change during the async layout, we want to merge with
         // the CURRENT state, not the state at the time this function was created
         const currentNodes = nodesRef.current || [];
@@ -3837,7 +3854,6 @@ export default function UnifiedSearchModal({
         if (cancelled) return;
         if (lastSearchRef.current !== requestId) return;
 
-        // FIX: Use proper validation to ensure response structure is valid
         const validation = validateSearchResponse(response, 'Search');
         if (!validation.valid) {
           setSearchResults([]);
@@ -5643,7 +5659,6 @@ export default function UnifiedSearchModal({
         return changed ? updated : prev;
       });
 
-      // FIX: Also hide edges connected to hidden nodes to prevent orphaned edges
       // This ensures edges don't point to non-existent visual nodes
       // Build set of hidden node IDs based on current filter state
       const hiddenNodeIds = new Set();
@@ -5800,7 +5815,6 @@ export default function UnifiedSearchModal({
   // Avoid recreating ReactFlow props on every render; unstable refs can trigger StoreUpdater loops.
   // CRITICAL: Only create new objects when selection or node data actually changes
   const rfNodes = useMemo(() => {
-    // FIX: Progressive disclosure - hide clusters if not enabled
     // This allows toggling visibility without losing data
     const visibleNodes = showClusters ? nodes : nodes.filter((n) => n.data?.kind !== 'cluster');
 
@@ -5822,7 +5836,6 @@ export default function UnifiedSearchModal({
     });
   }, [nodes, selectedNodeId, showClusters]);
 
-  // FIX: Filter edges based on visible nodes to prevent "dangling" edges
   // Split into baseEdges (expensive, no hover deps) and rfEdges (lightweight hover overlay)
   const baseEdges = useMemo(() => {
     const filtered = showClusters
@@ -5854,7 +5867,6 @@ export default function UnifiedSearchModal({
   }, [edges, rfNodes, showClusters, bridgeOverlayEnabled]);
 
   const rfEdges = useMemo(() => {
-    // FIX: Use hoveredClusterId as single source of truth instead of dual
     // hoveredClusterId + hasHoveredCluster which could desync and permanently
     // hide cross-cluster edges.
     if (!hoveredClusterId) return baseEdges;

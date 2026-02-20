@@ -146,7 +146,6 @@ export function NotificationProvider({ children }) {
     return () => window.removeEventListener('app:notification', handleNotification);
   }, [showSuccess, showError, showWarning, showInfo, reconcileEvictedToasts]);
 
-  // FIX H15: Memoize the context value WITHOUT toasts in the dependency array.
   // All consumers only use action functions (addNotification, showSuccess, etc.)
   // and never read `notifications` directly. The ToastContainer receives `toasts`
   // as a direct prop below, so toast rendering is unaffected. By excluding `toasts`

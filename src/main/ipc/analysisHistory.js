@@ -11,7 +11,6 @@ const { normalizeText } = require('../../shared/normalization');
 const { getSemanticFileId } = require('../../shared/fileIdUtils');
 const { container: diContainer, ServiceIds } = require('../services/ServiceContainer');
 
-// FIX: Safety cap for "get all" requests to prevent memory exhaustion
 // This limits the maximum number of history entries that can be retrieved at once
 const MAX_HISTORY_EXPORT_LIMIT = 50000;
 
@@ -81,9 +80,7 @@ function registerAnalysisHistoryIpc(servicesOrParams) {
 
           // Handle "get all" request with safety cap to prevent memory exhaustion
           if (all || limit === 'all') {
-            // FIX: Use safety cap instead of Number.MAX_SAFE_INTEGER
             const full = (await service.getRecentAnalysis(MAX_HISTORY_EXPORT_LIMIT)) || [];
-            // FIX H1: Ensure result is always an array
             const result = Array.isArray(full) ? full : [];
 
             // Log warning if we hit the safety cap
@@ -102,13 +99,11 @@ function registerAnalysisHistoryIpc(servicesOrParams) {
 
           if (offset > 0) {
             const interim = (await service.getRecentAnalysis(effLimit + offset)) || [];
-            // FIX H1: Ensure result is always an array
             const result = Array.isArray(interim) ? interim : [];
             return result.slice(offset, offset + effLimit);
           }
 
           const result = (await service.getRecentAnalysis(effLimit)) || [];
-          // FIX H1: Ensure result is always an array
           return Array.isArray(result) ? result : [];
         } catch (error) {
           logger.error('Failed to get analysis history:', error);
@@ -260,7 +255,6 @@ function registerAnalysisHistoryIpc(servicesOrParams) {
       fallbackResponse: { success: false, error: 'Service unavailable' },
       handler: async (event, format = 'json', service) => {
         try {
-          // FIX: Use safety cap for export to prevent memory exhaustion
           const history = (await service.getRecentAnalysis(MAX_HISTORY_EXPORT_LIMIT)) || [];
 
           if (format === 'json') {
@@ -273,7 +267,6 @@ function registerAnalysisHistoryIpc(servicesOrParams) {
           }
 
           if (format === 'csv') {
-            // FIX NEW-10: Include keywords and subject in CSV export
             const headers = [
               'fileName',
               'originalPath',

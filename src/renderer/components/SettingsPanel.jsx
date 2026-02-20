@@ -19,7 +19,7 @@ import { DEFAULT_AI_MODELS } from '../../shared/constants';
 import { DEFAULT_SETTINGS } from '../../shared/defaultSettings';
 import { DEBOUNCE } from '../../shared/performanceConstants';
 import { useNotification } from '../contexts/NotificationContext';
-import { getElectronAPI, eventsIpc, llamaIpc, settingsIpc } from '../services/ipc';
+import { getElectronAPI, eventsIpc, filesIpc, llamaIpc, settingsIpc } from '../services/ipc';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { toggleSettings, updateSettings } from '../store/slices/uiSlice';
 import { useDebouncedCallback } from '../hooks/usePerformance';
@@ -43,6 +43,7 @@ import EmbeddingBehaviorSection from './settings/EmbeddingBehaviorSection';
 import DefaultLocationsSection from './settings/DefaultLocationsSection';
 import NamingSettingsSection from './settings/NamingSettingsSection';
 import GraphRetrievalSection from './settings/GraphRetrievalSection';
+import ProcessingLimitsSection from './settings/ProcessingLimitsSection';
 import ApplicationSection from './settings/ApplicationSection';
 import APITestSection from './settings/APITestSection';
 import SettingsBackupSection from './settings/SettingsBackupSection';
@@ -89,7 +90,13 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const isApiAvailable = isElectronAPIAvailable();
   const isDevBuild = process.env.NODE_ENV === 'development';
 
+  const saveFlushRef = useRef(null);
+
   const handleToggleSettings = useCallback(() => {
+    // Flush any pending auto-save before closing so model/settings changes persist
+    if (typeof saveFlushRef.current === 'function') {
+      saveFlushRef.current();
+    }
     dispatch(toggleSettings());
   }, [dispatch]);
 
@@ -148,7 +155,6 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const skipAutoSaveRef = useRef(0);
   const cancelAutoSaveRef = useRef(null);
   const settingsRef = useRef(null);
-  const uiSettingsRef = useRef(uiSettings);
   const settingsLoadedRef = useRef(false);
   const modelLoadRequestRef = useRef(0);
   const lastSavedSnapshotRef = useRef(stableStringify(sanitizeSettings(DEFAULT_SETTINGS)));
@@ -171,10 +177,6 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const updateLastSavedSnapshot = useCallback((nextSettings) => {
     lastSavedSnapshotRef.current = stableStringify(sanitizeSettings(nextSettings || {}));
   }, []);
-
-  useEffect(() => {
-    uiSettingsRef.current = uiSettings;
-  }, [uiSettings]);
 
   useEffect(() => {
     settingsLoadedRef.current = settingsLoaded;
@@ -203,15 +205,34 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const loadSettings = useCallback(async () => {
     try {
       if (settingsLoadedRef.current) return;
-      const hasCachedSettings =
-        uiSettingsRef.current &&
-        typeof uiSettingsRef.current === 'object' &&
-        Object.keys(uiSettingsRef.current).length > 0;
-      const savedSettings = hasCachedSettings ? uiSettingsRef.current : await settingsIpc.get();
+      // Always fetch authoritative settings from main-process persistence.
+      // Relying on cached Redux ui.settings can replay stale/default values and
+      // accidentally overwrite user-selected locations during auto-save.
+      const savedSettings = await settingsIpc.get();
       const mergedSettings = {
         ...DEFAULT_SETTINGS,
         ...(savedSettings || {})
       };
+      const defaultLocation =
+        typeof mergedSettings.defaultSmartFolderLocation === 'string'
+          ? mergedSettings.defaultSmartFolderLocation.trim()
+          : '';
+      const shouldResolveDocumentsLocation =
+        !defaultLocation || defaultLocation.toLowerCase() === 'documents';
+      if (shouldResolveDocumentsLocation) {
+        try {
+          const documentsPathResponse = await filesIpc.getDocumentsPath();
+          const documentsPath =
+            typeof documentsPathResponse === 'string'
+              ? documentsPathResponse
+              : documentsPathResponse?.path;
+          if (typeof documentsPath === 'string' && documentsPath.trim()) {
+            mergedSettings.defaultSmartFolderLocation = documentsPath.trim();
+          }
+        } catch {
+          // Keep the existing fallback value if documents path lookup fails.
+        }
+      }
       skipAutoSaveRef.current += 1;
       applySettingsUpdate(mergedSettings);
       dispatch(updateSettings(mergedSettings));
@@ -412,7 +433,14 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       const savedSettings = res?.settings || normalizedSettings;
       dispatch(updateSettings(savedSettings));
       updateLastSavedSnapshot(savedSettings);
-      if (Array.isArray(res?.validationWarnings) && res.validationWarnings.length > 0) {
+      if (res?.modelUpdate?.modelDowngraded) {
+        addNotification(
+          'One or more model selections were adjusted. Check AI model settings.',
+          'warning',
+          5000,
+          'model-downgrade'
+        );
+      } else if (Array.isArray(res?.validationWarnings) && res.validationWarnings.length > 0) {
         addNotification(`Saved with warnings: ${res.validationWarnings.join('; ')}`, 'warning');
       } else {
         addNotification('Settings saved successfully!', 'success');
@@ -452,9 +480,26 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         return;
       }
       const res = await settingsIpc.save(normalizedSettings);
+      if (res?.success === false) {
+        logger.error('Auto-save settings rejected by backend', {
+          error: res?.error,
+          validationErrors: res?.validationErrors
+        });
+        return;
+      }
       const savedSettings = res?.settings || normalizedSettings;
       dispatch(updateSettings(savedSettings));
       updateLastSavedSnapshot(savedSettings);
+
+      if (res?.modelUpdate?.modelDowngraded) {
+        logger.warn('Model selection was adjusted by the backend', res.modelUpdate);
+        addNotification(
+          'One or more model selections were adjusted. Check AI model settings.',
+          'warning',
+          5000,
+          'model-downgrade'
+        );
+      }
     } catch (error) {
       logger.error('Auto-save settings failed', {
         error: error.message,
@@ -465,6 +510,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
   useEffect(() => {
     cancelAutoSaveRef.current = autoSaveSettings?.cancel || null;
+    saveFlushRef.current = autoSaveSettings?.flush || null;
   }, [autoSaveSettings]);
 
   useEffect(() => {
@@ -853,6 +899,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 <Stack gap="spacious">
                   <AutoOrganizeSection settings={settings} setSettings={applySettingsUpdate} />
                   <BackgroundModeSection settings={settings} setSettings={applySettingsUpdate} />
+                  <ProcessingLimitsSection settings={settings} setSettings={applySettingsUpdate} />
                   <GraphRetrievalSection settings={settings} setSettings={applySettingsUpdate} />
                 </Stack>
               </Collapsible>

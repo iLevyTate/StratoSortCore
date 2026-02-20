@@ -327,7 +327,6 @@ export function generateSuggestedNameFromAnalysis({
   const project = sanitizeToken(rawProject) || 'Project';
   const category = sanitizeToken(rawCategory) || 'Category';
 
-  // FIX: Consolidated switch -- date-based cases were previously empty with logic
   // duplicated as if-checks after the switch. Now all cases set `base` directly.
   let base;
   switch (convention) {

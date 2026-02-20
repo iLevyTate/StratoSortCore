@@ -69,7 +69,6 @@ function PhaseRenderer() {
   }, [currentPhase]);
 
   // Fixed: Wrap each phase with PhaseErrorBoundary for isolated error handling
-  // FIX: Add null checks for PHASES to prevent crash if undefined
   const renderCurrentPhase = () => {
     switch (currentPhase) {
       case PHASES?.WELCOME ?? 'welcome':

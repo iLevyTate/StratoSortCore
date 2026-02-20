@@ -26,16 +26,13 @@ export function useProgressTracking() {
   });
   const [organizePreview, setOrganizePreview] = useState([]);
   const [isOrganizing, setIsOrganizing] = useState(false);
-  // FIX M-4: Track destination conflicts
   const [organizeConflicts, setOrganizeConflicts] = useState([]);
 
-  // FIX CRIT-2: Track chunked results for large batches (>100 files)
   const [chunkedResults, setChunkedResults] = useState([]);
   const chunkedResultsRef = useRef([]);
 
   // Ref for cleanup
   const progressUnsubscribeRef = useRef(null);
-  // FIX CRIT-2: Ref for chunk listener cleanup
   const chunkEventCleanupRef = useRef(null);
 
   // Progress listener setup
@@ -69,7 +66,6 @@ export function useProgressTracking() {
                 return;
               }
 
-              // FIX HIGH-5: Add bounds check to prevent malformed progress data from causing UI issues
               // Reasonable bounds: current >= 0, total >= 0, current <= total, total < 100000
               const MAX_REASONABLE_TOTAL = 100000;
               if (current < 0 || total < 0 || current > total || total > MAX_REASONABLE_TOTAL) {
@@ -111,7 +107,6 @@ export function useProgressTracking() {
 
     setupProgressListener();
 
-    // FIX CRIT-2: Setup chunk listener for large batch results (>100 files)
     const setupChunkListener = () => {
       if (abortController.signal.aborted) return;
 
@@ -176,7 +171,6 @@ export function useProgressTracking() {
         }
       }
 
-      // FIX CRIT-2: Cleanup chunk listener
       if (typeof chunkEventCleanupRef.current === 'function') {
         try {
           chunkEventCleanupRef.current();
@@ -190,7 +184,6 @@ export function useProgressTracking() {
     };
   }, []);
 
-  // FIX CRIT-2: Helper to reset chunked results for new batch
   const resetChunkedResults = useCallback(() => {
     chunkedResultsRef.current = [];
     setChunkedResults([]);
@@ -203,10 +196,8 @@ export function useProgressTracking() {
     setOrganizePreview,
     isOrganizing,
     setIsOrganizing,
-    // FIX M-4: Expose conflict tracking
     organizeConflicts,
     setOrganizeConflicts,
-    // FIX CRIT-2: Expose chunked results handling
     chunkedResults,
     chunkedResultsRef,
     resetChunkedResults
@@ -227,7 +218,6 @@ export function useProgressTracking() {
  * @returns {Object} Processed file info with newName, normalized destination, and categoryChanged flag
  */
 // Helper to normalize paths for comparison (handles mixed / and \)
-// FIX HIGH-6: Only lowercase on Windows - Linux/macOS filesystems are case-sensitive
 const isWindowsPath = (p) => p && (p.includes('\\') || /^[A-Za-z]:/.test(p));
 const normalizeForComparison = (path) => {
   if (!path) return '';
@@ -290,7 +280,6 @@ function processFileForOrganization({
   const originalCategory = currentCategory;
   let categoryChanged = false;
 
-  // FIX: Validate ALL categories against existing smart folders, not just
   // "document"/"image". The LLM can hallucinate any category name (e.g.
   // "documents", "Documents", "financial") that doesn't match a smart folder.
   // When no match is found, fall back to Uncategorized to prevent creating
@@ -302,7 +291,6 @@ function processFileForOrganization({
     categoryChanged = true;
   }
 
-  // FIX: Use platform-aware path joining instead of hardcoded slashes
   // Always use a validated smart folder path; never build a path from a raw category.
   const resolvedFolder = smartFolder || findSmartFolderForCategory('Uncategorized');
   const destinationDir = resolvedFolder
@@ -405,7 +393,6 @@ function buildPreview({
     return { fileName: newName, destination: normalized, sourcePath: file.path };
   });
 
-  // FIX M-4: Detect destination conflicts (multiple files going to same destination)
   const destinationMap = new Map();
   preview.forEach((item) => {
     const normalizedDest = normalizeForComparison(item.destination);
@@ -462,10 +449,8 @@ export function useOrganization({
     setOrganizePreview,
     isOrganizing,
     setIsOrganizing,
-    // FIX M-4: Get conflict tracking from progress hook
     organizeConflicts,
     setOrganizeConflicts,
-    // FIX CRIT-2: Get chunked results handling from progress hook
     chunkedResultsRef,
     resetChunkedResults
   } = useProgressTracking();
@@ -474,7 +459,6 @@ export function useOrganization({
     currentPhaseRef.current = currentPhase;
   }, [currentPhase]);
 
-  // FIX H-3: Use ref to track latest organizedFiles to avoid stale closure in async callbacks
   // Sync ref in useEffect instead of during render to prevent race conditions
   const organizedFilesRef = useRef(phaseData?.organizedFiles || []);
   const isMountedRef = useRef(true);
@@ -490,7 +474,6 @@ export function useOrganization({
 
   const handleOrganizeFiles = useCallback(
     async (filesToOrganize = null) => {
-      // FIX: Ensure filesToOrganize is actually an array, not a React event
       const actualFilesToOrganize = Array.isArray(filesToOrganize) ? filesToOrganize : null;
 
       logger.info('[ORGANIZE] handleOrganizeFiles called', {
@@ -501,9 +484,7 @@ export function useOrganization({
       try {
         setIsOrganizing(true);
         setOrganizingState(true);
-        // FIX M-4: Clear previous conflicts at start of organize attempt
         setOrganizeConflicts([]);
-        // FIX CRIT-2: Reset chunked results for new batch operation
         resetChunkedResults();
 
         const filesToProcess = actualFilesToOrganize || unprocessedFiles.filter((f) => f.analysis);
@@ -567,7 +548,6 @@ export function useOrganization({
           return;
         }
 
-        // FIX: Notify user when categories were changed due to missing smart folders
         if (categoryChanges && categoryChanges.length > 0) {
           const changedCount = categoryChanges.length;
           if (changedCount === 1) {
@@ -614,7 +594,6 @@ export function useOrganization({
           setOrganizePreview(preview);
           setOrganizeConflicts(conflicts);
 
-          // FIX M-4: Block organization if conflicts exist
           if (conflicts.length > 0) {
             const conflictCount = conflicts.reduce((sum, c) => sum + c.files.length, 0);
             addNotification(
@@ -639,7 +618,6 @@ export function useOrganization({
           onExecute: (result) => {
             if (!isMountedRef.current) return;
             try {
-              // FIX CRIT-2: Handle chunked results for large batches (>100 files)
               // When chunkedResults is true, the actual results were sent via IPC events
               // and accumulated in chunkedResultsRef, not in result.results
               let resArray;
@@ -658,7 +636,6 @@ export function useOrganization({
                 .filter((r) => r.success)
                 .map((r) => {
                   const original = analysisResults.find((a) => a.path === r.source) || {};
-                  // FIX: Extract actual destination folder name from path instead of hardcoding "Organized"
                   // This ensures notifications show the correct folder (e.g., "Uncategorized" not "3D Print")
                   let actualSmartFolder = 'Organized'; // fallback
                   if (r.destination) {
@@ -695,7 +672,6 @@ export function useOrganization({
                 dispatch(updateFilePathsAfterMove({ oldPaths, newPaths }));
               }
               if (uiResults.length > 0) {
-                // FIX H-3: Use addOrganizedFiles to append to current state safely (avoids stale closures)
                 addOrganizedFiles(uiResults);
 
                 // Keep ref in sync for other local logic if needed (though Redux is source of truth)
@@ -703,7 +679,6 @@ export function useOrganization({
 
                 markFilesAsProcessed(uiResults.map((r) => r.originalPath));
 
-                // FIX HIGH-4: Surface partialFailure to user instead of silently showing success
                 // When some files fail during batch operation, warn user about partial completion
                 const failedCount = resArray.filter((r) => !r.success).length;
                 if (result?.partialFailure || failedCount > 0) {
@@ -761,7 +736,6 @@ export function useOrganization({
 
               const undoPathsSet = new Set(successfulUndos.map(normalizeForComparison));
 
-              // FIX H-3: Use removeOrganizedFiles to update current state safely
               removeOrganizedFiles(successfulUndos);
 
               // Sync ref locally
@@ -775,7 +749,6 @@ export function useOrganization({
               const successCount = result?.successCount ?? successfulUndos.length;
               const failCount = result?.failCount ?? 0;
 
-              // FIX: Update Redux state to reflect restored paths so analysis results remain valid
               // Source = Organized Path (stale), Destination = Original/Restored Path (active)
               if (dispatch && result?.results) {
                 const successfulOps = result.results.filter((r) => r.success);
@@ -831,7 +804,6 @@ export function useOrganization({
               const uiResults =
                 successfulResults.length > 0
                   ? successfulResults.map((r) => {
-                      // FIX: Extract actual destination folder name
                       let actualSmartFolder = 'Organized';
                       if (r.destination) {
                         const pathParts = r.destination.split(/[\\/]/);
@@ -852,7 +824,6 @@ export function useOrganization({
                       };
                     })
                   : operations.map((op) => {
-                      // FIX: Extract actual destination folder name
                       let actualSmartFolder = 'Organized';
                       if (op.destination) {
                         const pathParts = op.destination.split(/[\\/]/);
@@ -887,7 +858,6 @@ export function useOrganization({
               }
 
               if (uiResults.length > 0) {
-                // FIX H-3: Filter out duplicates, but use latest ref data (synced in onUndo)
                 const existingPaths = new Set(
                   organizedFilesRef.current.map((f) => normalizeForComparison(f.originalPath))
                 );
@@ -908,7 +878,6 @@ export function useOrganization({
                     uniqueResultsCount: uniqueResults.length
                   });
 
-                  // FIX H-3: Use addOrganizedFiles to update current state safely
                   addOrganizedFiles(uniqueResults);
 
                   // Sync ref locally
@@ -1023,7 +992,6 @@ export function useOrganization({
       markFilesAsProcessed,
       unmarkFilesAsProcessed,
       actions,
-      // FIX: Removed phaseData from deps - using organizedFilesRef instead to avoid stale closure
       addNotification,
       executeAction,
       dispatch,
@@ -1034,7 +1002,6 @@ export function useOrganization({
       setIsOrganizing,
       setOrganizePreview,
       setOrganizeConflicts,
-      // FIX CRIT-2: Add chunked results reset to deps
       resetChunkedResults,
       chunkedResultsRef
     ]
@@ -1046,7 +1013,6 @@ export function useOrganization({
     organizePreview,
     handleOrganizeFiles,
     setBatchProgress,
-    // FIX M-4: Expose conflicts for UI warning
     organizeConflicts
   };
 }

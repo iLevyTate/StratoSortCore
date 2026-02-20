@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const { createLogger } = require('../../shared/logger');
 const { MODEL_CATALOG, getModel } = require('../../shared/modelRegistry');
 const { ensureResolvedModelsPath } = require('./modelPathResolver');
+const { delay } = require('../../shared/promiseUtils');
 
 const logger = createLogger('ModelDownloadManager');
 const DEFAULT_DOWNLOAD_MAX_RETRIES = 2;
@@ -85,7 +86,6 @@ class ModelDownloadManager {
   async checkDiskSpace(requiredBytes) {
     try {
       const modelPath = await this._ensureModelPath();
-      // FIX Bug #29: Use fs.statfs instead of execSync to prevent shell injection
       // and support modern Windows environments where wmic is deprecated.
       // fs.statfs is available since Node 18.15.0.
       if (fs.statfs) {
@@ -250,7 +250,7 @@ class ModelDownloadManager {
               }
             );
             if (retryDelayMs > 0) {
-              await new Promise((r) => setTimeout(r, retryDelayMs));
+              await delay(retryDelayMs);
             }
             this.downloadModel(filename, {
               ...options,
@@ -289,7 +289,6 @@ class ModelDownloadManager {
             return;
           }
 
-          // FIX Bug #33: Update state instead of deleting it to prevent cancellation race condition
           const redirectLocation = response.headers.location;
           if (!redirectLocation) {
             finalizeFailure(new Error('Redirect response missing Location header'));
@@ -300,7 +299,6 @@ class ModelDownloadManager {
           downloadState.status = 'redirecting';
           downloadState.url = resolvedRedirectUrl;
 
-          // FIX: Clean up abort listeners from this request before recursing.
           // The recursive call creates a new internalAbortController, so the
           // listener on the old one would be a leak.
           request.removeAllListeners('error');
@@ -322,7 +320,6 @@ class ModelDownloadManager {
           return;
         }
 
-        // Fix: If server ignores Range header (returns 200 instead of 206), restart from 0
         let isResume = startByte > 0 && response.statusCode === 206;
         if (startByte > 0 && response.statusCode === 200) {
           logger.info('[Download] Server ignored range request, restarting from beginning');
@@ -437,12 +434,10 @@ class ModelDownloadManager {
 
         // Handle abort signals: internal (from cancelDownload) + external (from caller)
         const onAbort = () => {
-          // FIX: Remove listeners before destroying to prevent double-fire
           internalAbortController.signal.removeEventListener('abort', onAbort);
           if (signal) signal.removeEventListener('abort', onAbort);
 
           request.destroy();
-          // FIX: Use destroy() instead of close() for immediate cleanup of write stream
           // close() waits for pending writes; destroy() discards buffered data and frees resources
           writeStream.destroy();
           finalizeFailure(new Error('Download cancelled'), 'cancelled');
@@ -452,7 +447,6 @@ class ModelDownloadManager {
           signal.addEventListener('abort', onAbort);
         }
 
-        // FIX: Clean up abort listeners when download completes normally.
         // Without this, the listeners on the AbortSignal objects persist
         // even after the promise resolves, leaking closures and references.
         const cleanupAbortListeners = () => {

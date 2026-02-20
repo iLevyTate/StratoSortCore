@@ -1,7 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { useSelector } from 'react-redux';
-import { Send, RefreshCw, FileText, AlertTriangle, RotateCcw, Square } from 'lucide-react';
+import {
+  Send,
+  RefreshCw,
+  FileText,
+  AlertTriangle,
+  RotateCcw,
+  Square,
+  Settings2
+} from 'lucide-react';
 import { AlertBox, Button, Textarea, Switch, StateMessage, Select } from '../ui';
 import { Text } from '../ui/Typography';
 import { formatDisplayPath } from '../../utils/pathDisplay';
@@ -358,6 +366,7 @@ export default function ChatPanel({
   onChatPersonaChange = () => {}
 }) {
   const [input, setInput] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
   const threadRef = useRef(null);
   const showSearchStatus = useSearchContext && (isSearching || isLoadingStats);
 
@@ -391,7 +400,11 @@ export default function ChatPanel({
   const handleQuickSend = async (text) => {
     const trimmed = typeof text === 'string' ? text.trim() : '';
     if (!trimmed || isSending) return;
-    await onSend(trimmed);
+    try {
+      await onSend(trimmed);
+    } catch {
+      // Keep UI stable; errors surface through parent state.
+    }
   };
 
   return (
@@ -417,28 +430,63 @@ export default function ChatPanel({
               </Text>
             </div>
           )}
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="flex items-center gap-2 shrink-0">
-              <Text as="span" variant="tiny" className="text-system-gray-500 whitespace-nowrap">
-                Strict
-              </Text>
-              <Switch
-                checked={strictScope}
-                onChange={onToggleStrictScope}
-                title="Only answer from selected documents"
-              />
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Text as="span" variant="tiny" className="text-system-gray-500 whitespace-nowrap">
-                Context
-              </Text>
-              <Switch checked={useSearchContext} onChange={onToggleSearchContext} />
-            </div>
-            <ChatModeToggle value={responseMode} onChange={onResponseModeChange} />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowSettings(!showSettings)}
+            title="Chat settings"
+            className={
+              showSettings ? 'bg-system-gray-100 text-stratosort-blue' : 'text-system-gray-500'
+            }
+          >
+            <Settings2 className="w-4 h-4" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onReset} title="Reset chat">
+            <RefreshCw className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
+
+      {showSettings && (
+        <div className="px-4 py-3 bg-system-gray-50/50 border-b border-system-gray-200 flex items-center gap-6 flex-wrap animate-in slide-in-from-top-1 duration-200">
+          <div className="flex items-center gap-2 shrink-0">
+            <Text
+              as="span"
+              variant="tiny"
+              className="font-medium text-system-gray-600 whitespace-nowrap"
+            >
+              Strict Scope
+            </Text>
+            <Switch
+              checked={strictScope}
+              onChange={onToggleStrictScope}
+              title="Only answer from selected documents"
+            />
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Text
+              as="span"
+              variant="tiny"
+              className="font-medium text-system-gray-600 whitespace-nowrap"
+            >
+              Search Context
+            </Text>
+            <Switch checked={useSearchContext} onChange={onToggleSearchContext} />
+          </div>
+          <div className="h-4 w-px bg-system-gray-200 mx-2 hidden sm:block" />
+          <ChatModeToggle value={responseMode} onChange={onResponseModeChange} />
+          <div className="flex items-center gap-2 ml-auto">
+            <Text
+              as="span"
+              variant="tiny"
+              className="font-medium text-system-gray-600 whitespace-nowrap"
+            >
+              Persona
+            </Text>
             <Select
               value={chatPersona}
               onChange={(event) => onChatPersonaChange(event.target.value)}
-              className="h-7 text-xs w-32"
+              className="h-7 text-xs w-40"
               title="Choose chat persona"
             >
               {CHAT_PERSONAS.map((persona) => (
@@ -448,11 +496,8 @@ export default function ChatPanel({
               ))}
             </Select>
           </div>
-          <Button variant="ghost" size="sm" onClick={onReset} title="Reset chat">
-            <RefreshCw className="w-4 h-4" />
-          </Button>
         </div>
-      </div>
+      )}
 
       {warning ? (
         <div className="px-4 pt-3">
@@ -524,9 +569,17 @@ export default function ChatPanel({
                           {!message.text &&
                             (!message.documentAnswer || message.documentAnswer.length === 0) &&
                             (!message.modelAnswer || message.modelAnswer.length === 0) &&
-                            (isSending
-                              ? 'Thinking...'
-                              : 'I could not find an answer in the selected documents.')}
+                            (isSending ? (
+                              idx === messages.length - 1 ? (
+                                <>
+                                  {statusMessage || 'Thinking...'} <ThinkingDots />
+                                </>
+                              ) : (
+                                'Thinking...'
+                              )
+                            ) : (
+                              'I could not find an answer in the selected documents.'
+                            ))}
                         </>
                       )}
                     </div>
@@ -653,7 +706,7 @@ export default function ChatPanel({
             </div>
           );
         })}
-        {isSending && (
+        {isSending && (!messages.length || messages[messages.length - 1].role !== 'assistant') && (
           <div className="chat-message chat-message-assistant">
             <div className="chat-message-meta">
               <Text as="div" variant="tiny" className="chat-message-label">

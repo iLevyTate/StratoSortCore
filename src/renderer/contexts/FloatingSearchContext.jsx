@@ -39,7 +39,6 @@ export function FloatingSearchProvider({ children }) {
     autoShowChecked.current = true;
 
     // Check if already shown this session
-    // FIX: Use localStorage instead of sessionStorage to prevent widget from popping up
     // every time the app restarts (better user experience)
     let alreadyShown = false;
     try {
@@ -74,7 +73,6 @@ export function FloatingSearchProvider({ children }) {
       }
     };
 
-    // FIX: Use centralized timeout constant
     const timer = setTimeout(checkAndShow, TIMEOUTS.WIDGET_AUTO_SHOW);
     return () => {
       isMounted = false;
@@ -130,7 +128,6 @@ export function FloatingSearchProvider({ children }) {
     setIsModalOpen(false);
   }, []);
 
-  // FIX M-2: Memoize context value to prevent unnecessary re-renders in consumers
   const contextValue = useMemo(
     () => ({
       isWidgetOpen,
@@ -142,7 +139,6 @@ export function FloatingSearchProvider({ children }) {
     [isWidgetOpen, openWidget, closeWidget, openSearchModal, closeSearchModal]
   );
 
-  // FIX: Handle errors from the search modal to prevent crashes
   const handleSearchError = useCallback((error, errorInfo) => {
     logger.error('[FloatingSearchProvider] Search modal error caught by boundary', {
       error: error?.message,

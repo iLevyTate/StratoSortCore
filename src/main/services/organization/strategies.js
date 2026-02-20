@@ -90,7 +90,6 @@ function matchesStrategyPattern(filename, pattern) {
   const patternParts = pattern.toLowerCase().split('/');
   const nameParts = filename.toLowerCase().split(/[_\-\s.]/);
 
-  // FIX: Skip template placeholders like {project_name}, {file_type}, etc.
   // These contain common words that would falsely match most filenames.
   const literalParts = patternParts.filter((part) => !part.includes('{'));
 
@@ -231,7 +230,6 @@ function selectBestStrategy(patterns, files = []) {
     name: 'Adaptive Categorization',
     description: 'AI-assisted categorization based on detected patterns',
     pattern: 'Adaptive/{category}/{file_type}',
-    // FIX: Include priority array so scoreFileForStrategy() doesn't throw TypeError
     priority: ['category', 'purpose', 'file_type'],
     score: 0.75 + fileBoost
   };
@@ -252,7 +250,6 @@ function getFallbackSuggestion(file, smartFolders) {
 
   return {
     folder: matchingFolder?.name || category,
-    // FIX: Don't hardcode 'Documents/' prefix as it causes double nesting when joined with defaultLocation
     path: matchingFolder?.path || category,
     confidence: 0.3,
     method: 'fallback'

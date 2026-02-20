@@ -254,7 +254,6 @@ class ConfigurationManager {
         if (validation.valid) {
           value = validation.value;
         } else {
-          // FIX: Don't write invalid values — previously validation failure
           // was silently ignored and the invalid value was written to config
           this._validationErrors.push({ path, value, reason: 'validation_failed' });
           return;

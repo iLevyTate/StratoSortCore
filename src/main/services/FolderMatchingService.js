@@ -10,6 +10,7 @@ const { enrichFolderTextForEmbedding } = require('../analysis/semanticExtensionM
 const { validateEmbeddingDimensions } = require('../../shared/vectorMath');
 const { capEmbeddingInput } = require('../utils/embeddingInput');
 const { chunkText } = require('../utils/textChunking');
+const { AI_DEFAULTS } = require('../../shared/constants');
 
 const {
   resolveEmbeddingDimension,
@@ -85,18 +86,15 @@ class FolderMatchingService {
     this.vectorDbService = vectorDbService;
     this.modelName = '';
     this._upsertedFolderIds = new Set();
-    // FIX: Maximum size for upsertedFolderIds to prevent unbounded memory growth
     this._maxUpsertedFolderIds = 10000;
 
     // Initialize embedding cache - use injected or create new
     this.embeddingCache = options.embeddingCache || new EmbeddingCache(cacheOptions);
 
-    // FIX: Allow concurrency limit to be overridden via options
     // Priority: options.concurrencyLimit > config value > default (5)
     const concurrencyLimit = options.concurrencyLimit ?? getConfig('ANALYSIS.maxConcurrency', 5);
     const maxRetries = options.maxRetries ?? getConfig('ANALYSIS.retryAttempts', 3);
 
-    // FIX: If a parallelEmbeddingService is explicitly injected, use it directly.
     // Otherwise, access the live singleton via getter to avoid holding a stale
     // reference if the service is reset/recreated (same pattern as BatchAnalysisService).
     this._injectedEmbeddingService = options.parallelEmbeddingService || null;
@@ -109,12 +107,10 @@ class FolderMatchingService {
     this._concurrencyLimit = concurrencyLimit;
     this._maxRetries = maxRetries;
 
-    // FIX: Subscribe to embedding model changes to invalidate cache
     // This prevents stale embeddings with wrong dimensions after model switch
     this._modelChangeUnsubscribe = null;
     this._subscribeToModelChanges();
 
-    // FIX: Subscribe to cache invalidation bus for coordinated cleanup
     this._invalidationUnsubscribe = null;
     this._subscribeToInvalidationBus();
   }
@@ -171,7 +167,6 @@ class FolderMatchingService {
         this._modelChangeUnsubscribe = llamaService.onModelChange(
           async ({ type, previousModel, newModel }) => {
             if (type === 'embedding') {
-              // FIX: Invalidate in-memory embedding cache
               if (this.embeddingCache) {
                 const wasInvalidated = this.embeddingCache.invalidateOnModelChange(
                   newModel,
@@ -188,7 +183,6 @@ class FolderMatchingService {
                 }
               }
 
-              // FIX: CRITICAL - Also clear vector DB collections when embedding model changes
               // Previously, only the in-memory cache was cleared, but the vector DB still contained
               // vectors with the old dimension. This caused query failures or incorrect similarity
               // calculations when new embeddings (with different dimensions) were added.
@@ -239,7 +233,6 @@ class FolderMatchingService {
    * @returns {Promise<void>} Resolves when initialization is complete
    */
   initialize() {
-    // FIX: Return existing initialization promise if already in progress
     if (this._initPromise) {
       return this._initPromise;
     }
@@ -254,7 +247,6 @@ class FolderMatchingService {
       return Promise.resolve();
     }
 
-    // FIX: Atomic check-and-set pattern to prevent race conditions
     // Create promise IMMEDIATELY and SYNCHRONOUSLY before any async work
     // This ensures concurrent calls see the promise before we start initialization
     this._initializing = true;
@@ -313,13 +305,14 @@ class FolderMatchingService {
 
     try {
       const llamaService = getLlamaService();
-      // FIX: Add fallback to default embedding model when none configured
-      const { AI_DEFAULTS } = require('../../shared/constants');
       const cfg = await llamaService.getConfig();
       const model = cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
-      // Legacy perf options omitted; not needed for LlamaService
       const originalText = String(text || '');
-      const capped = capEmbeddingInput(originalText, { modelName: model });
+      const capOptions = { modelName: model };
+      if (Number.isFinite(cfg.embeddingContextSize) && cfg.embeddingContextSize > 0) {
+        capOptions.maxTokens = cfg.embeddingContextSize;
+      }
+      const capped = capEmbeddingInput(originalText, capOptions);
       let embeddingInput = capped.text;
 
       if (capped.wasTruncated) {
@@ -457,7 +450,6 @@ class FolderMatchingService {
       return result;
     } catch (error) {
       logger.error('[FolderMatchingService] Failed to generate embedding:', error);
-      // FIX: Throw error instead of returning zero vector
       // Zero vectors are useless for semantic search and pollute the database
       // Callers should handle the error and skip this item rather than storing garbage
       const errorMessage = error.message || 'Unknown embedding error';
@@ -518,7 +510,6 @@ class FolderMatchingService {
 
   async upsertFolderEmbedding(folder) {
     try {
-      // CRITICAL FIX: Ensure vector DB is initialized before upserting
       if (!this.vectorDbService) {
         throw new Error('Vector DB service not available');
       }
@@ -582,7 +573,6 @@ class FolderMatchingService {
         return { count: 0, skipped: [], stats: null };
       }
 
-      // CRITICAL FIX: Ensure vector DB is initialized before upserting
       if (!this.vectorDbService) {
         throw new Error('Vector DB service not available');
       }
@@ -627,11 +617,9 @@ class FolderMatchingService {
       const payloads = [];
       const folderById = new Map(folders.map((f) => [f.id || this.generateFolderId(f), f]));
 
-      const { AI_DEFAULTS } = require('../../shared/constants');
       const cfg = await getLlamaService().getConfig();
       const model = cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
 
-      // FIX: Check cache first and separate cached vs uncached folders
       const uncachedFolders = [];
       const cachedPayloads = [];
 
@@ -678,7 +666,6 @@ class FolderMatchingService {
       // Add cached payloads to results
       payloads.push(...cachedPayloads);
 
-      // FIX: Use ParallelEmbeddingService for uncached folders
       if (uncachedFolders.length > 0) {
         const { results, errors, stats } = await this._getEmbeddingService().batchEmbedFolders(
           uncachedFolders.map((folder) => ({
@@ -700,7 +687,6 @@ class FolderMatchingService {
           }
         );
 
-        // FIX: Process results by matching on ID instead of index
         // This prevents misalignment when some embeddings fail and results array has gaps
         const folderById = new Map(
           uncachedFolders.map((f) => [f.id || this.generateFolderId(f), f])
@@ -716,7 +702,6 @@ class FolderMatchingService {
               continue;
             }
 
-            // FIX Bug 20: Use enrichFolderTextForEmbedding for cache key consistency.
             // Previously this used a plain join which produced a different key than the
             // enriched text used in cache get(), causing permanent cache misses.
             const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
@@ -903,14 +888,12 @@ class FolderMatchingService {
 
   async upsertFileEmbedding(fileId, contentSummary, fileMeta = {}, options = {}) {
     try {
-      // CRITICAL FIX: Ensure vector DB is initialized before upserting
       if (!this.vectorDbService) {
         throw new Error('Vector DB service not available');
       }
 
       await this.vectorDbService.initialize();
 
-      // FIX: Check if existing embedding is better before overwriting
       // This prevents OrganizationSuggestionService (metadata-only) from overwriting
       // high-quality embeddings generated by document analysis (full text)
       if (options.checkExisting) {
@@ -1012,12 +995,9 @@ class FolderMatchingService {
       await this.vectorDbService.initialize();
 
       const { onProgress = null } = options;
-      // FIX: Add fallback to default embedding model when none configured
-      const { AI_DEFAULTS } = require('../../shared/constants');
       const cfg = await getLlamaService().getConfig();
       const model = cfg.embeddingModel || AI_DEFAULTS.EMBEDDING.MODEL;
 
-      // FIX: Check cache first and separate cached vs uncached files
       const uncachedFiles = [];
       const cachedResults = [];
 
@@ -1052,7 +1032,6 @@ class FolderMatchingService {
       const results = [...cachedResults];
       const skipped = [];
 
-      // FIX: Use ParallelEmbeddingService for uncached files
       if (uncachedFiles.length > 0) {
         const {
           results: embedResults,
@@ -1083,7 +1062,6 @@ class FolderMatchingService {
           if (result && result.success) {
             const originalItem = uncachedFiles.find((f) => f.fileId === result.id);
 
-            // FIX: Validate dimensions of batch results
             const expectedDim = getEmbeddingDimensionForModel(result.model);
             if (!validateEmbeddingDimensions(result.vector, expectedDim)) {
               logger.warn('[FolderMatchingService] Batch embedding dimension mismatch, skipping', {
@@ -1149,13 +1127,11 @@ class FolderMatchingService {
 
   async matchFileToFolders(fileId, topK = 5) {
     try {
-      // CRITICAL FIX: Ensure vector DB is initialized before querying
       if (!this.vectorDbService) {
         logger.error('[FolderMatchingService] Vector DB service not available');
         return [];
       }
 
-      // FIX: Validate topK parameter to prevent performance issues
       const MAX_TOP_K = 100;
       const validTopK = Math.max(1, Math.min(Number.isInteger(topK) ? topK : 5, MAX_TOP_K));
 
@@ -1316,7 +1292,6 @@ class FolderMatchingService {
    */
   async findSimilarFiles(fileId, topK = 10) {
     try {
-      // CRITICAL FIX: Ensure vector DB is initialized before accessing collections
       if (!this.vectorDbService) {
         logger.error('[FolderMatchingService] Vector DB service not available');
         return [];
@@ -1326,7 +1301,6 @@ class FolderMatchingService {
       // Get the file's embedding first
       const fileResult = await this.vectorDbService.getFile(fileId);
 
-      // FIX: Add explicit array check for embeddings
       if (!fileResult || !fileResult.embedding) {
         logger.warn(
           '[FolderMatchingService] File not found or invalid embeddings for similarity search:',
@@ -1368,7 +1342,6 @@ class FolderMatchingService {
     const clampedDecay = Math.min(0.9, Math.max(0.5, decayFactor));
 
     try {
-      // CRITICAL FIX: Ensure vector DB is initialized
       if (!this.vectorDbService) {
         logger.error('[FolderMatchingService] Vector DB service not available');
         return [];
@@ -1412,12 +1385,9 @@ class FolderMatchingService {
 
               // Calculate decayed score
               // DOI formula: parentScore * neighborScore * decay^hop
-              // FIX: Use nullish coalescing to handle score=0 correctly (0 is falsy but valid)
-              // FIX: Use /2 for cosine distance range [0,2] -> similarity [0,1]
               const neighborScore = neighbor.score ?? 1 - (neighbor.distance ?? 0) / 2;
               const decayedScore = node.score * neighborScore * clampedDecay ** hop;
 
-              // FIX: Check if already found via different path - update only if better score
               // This ensures multi-seed queries preserve the best path to each node
               const existing = allResults.get(neighbor.id);
               if (existing && existing.score >= decayedScore) {
@@ -1486,7 +1456,6 @@ class FolderMatchingService {
    */
   async getStats() {
     try {
-      // CRITICAL FIX: Check service availability
       if (!this.vectorDbService) {
         logger.warn('[FolderMatchingService] Vector DB service not available for stats');
         return {
@@ -1517,19 +1486,29 @@ class FolderMatchingService {
   }
 
   /**
+   * Reset caches for reanalysis. Call when the vector DB has been
+   * cleared so folder embeddings will be re-persisted on next upsert.
+   */
+  resetForReanalysis() {
+    this._upsertedFolderIds.clear();
+    if (this.embeddingCache?.clear) {
+      this.embeddingCache.clear();
+    }
+    logger.info('[FolderMatchingService] Reset caches for reanalysis');
+  }
+
+  /**
    * Shutdown service and cleanup resources
    * Should be called when the application is closing
    * @returns {Promise<void>}
    */
   async shutdown() {
-    // FIX: Unsubscribe from model change events
     if (this._modelChangeUnsubscribe) {
       this._modelChangeUnsubscribe();
       this._modelChangeUnsubscribe = null;
       logger.debug('[FolderMatchingService] Unsubscribed from model changes');
     }
 
-    // FIX: Unsubscribe from invalidation bus
     if (this._invalidationUnsubscribe) {
       this._invalidationUnsubscribe();
       this._invalidationUnsubscribe = null;
@@ -1592,7 +1571,6 @@ class FolderMatchingService {
    */
   static matchCategoryToFolder(category, smartFolders) {
     const folders = Array.isArray(smartFolders) ? smartFolders : [];
-    // FIX: Never return a raw LLM category when there are no folders to validate
     // against. Returning the raw string caused non-existent folder names like
     // "documents" to propagate through the pipeline.
     if (folders.length === 0) return 'Uncategorized';
@@ -1690,8 +1668,8 @@ class FolderMatchingService {
       });
       return best;
     }
-    const fallbackFolder = uncategorized?.name || folders[0].name;
-    if (raw && raw.toLowerCase() !== fallbackFolder.toLowerCase()) {
+    const fallbackFolder = uncategorized?.name || null;
+    if (raw && fallbackFolder && raw.toLowerCase() !== fallbackFolder.toLowerCase()) {
       logger.debug('[FolderMatching] No match found, using fallback', {
         rawCategory: raw,
         fallbackFolder

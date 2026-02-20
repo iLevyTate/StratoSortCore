@@ -69,7 +69,6 @@ class ChatHistoryStore {
       CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at DESC);
     `);
 
-    // FIX FAULT-001: Add meta column if not exists for comparisonIntent, gapAnalysisIntent, etc.
     try {
       const columns = db.pragma('table_info(messages)');
       this._hasMetaColumn = columns.some((col) => col.name === 'meta');

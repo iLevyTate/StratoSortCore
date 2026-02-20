@@ -29,7 +29,6 @@ import './styles.css';
 // Fetch commonly-used data early so it's cached before components need it
 store.dispatch(fetchDocumentsPath());
 store.dispatch(fetchRedactPaths());
-// FIX: Force refresh on startup to ensure we have latest data from disk
 // This overrides potentially stale data from localStorage
 store.dispatch(fetchSmartFolders(true));
 store.dispatch(fetchSettings(true));
@@ -128,7 +127,6 @@ function applyFlexGapSupportClass() {
 
 applyFlexGapSupportClass();
 
-// FIX: Use named functions and track handler references for proper HMR cleanup
 // Store handlers in a module-level object for reliable cleanup
 const eventHandlers = {
   click: null,
@@ -273,7 +271,6 @@ function updateSplashStatus(message) {
   }
 }
 
-// FIX: Guard against multiple initializations (prevents double splash screen)
 // These flags prevent race conditions during HMR, StrictMode double-render, and rapid reloads
 let isAppInitialized = false;
 let splashRemovalInProgress = false;
@@ -337,7 +334,6 @@ function removeSplashScreen() {
 
 // Wait for DOM to be ready before initializing React
 function initializeApp() {
-  // FIX: Prevent multiple initializations which can cause double splash screens
   if (isAppInitialized) {
     logger.debug('[initializeApp] Already initialized, skipping duplicate call');
     return;
@@ -373,7 +369,6 @@ function initializeApp() {
       logger.debug('Root container found, creating React root');
     }
 
-    // FIX: Reuse existing root during HMR to prevent duplicate renders
     if (!reactRoot) {
       reactRoot = createRoot(container);
     }
@@ -391,9 +386,7 @@ function initializeApp() {
       </React.StrictMode>
     );
 
-    // FIX: Remove initial loading after first paint with proper guards
     // Using requestAnimationFrame ensures we wait for the first paint
-    // FIX: Increased delay from 50ms to 150ms to prevent double splash screen effect (Issue 3.1)
     requestAnimationFrame(() => {
       // Add delay to ensure React has fully rendered
       // This prevents flash-of-content issues on slower machines

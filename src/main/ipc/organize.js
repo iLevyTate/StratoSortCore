@@ -104,7 +104,7 @@ function registerOrganizeIpc(servicesOrParams) {
       handler: async (event, { files, smartFolders, options = {} }, service) => {
         const path = require('path');
 
-        // HIGH-11: Validate all source files exist before processing
+        // Validate all source files exist before processing
         const { valid: validFiles, invalid: invalidFiles } = await validateSourceFiles(files);
 
         if (invalidFiles.length > 0) {
@@ -127,7 +127,6 @@ function registerOrganizeIpc(servicesOrParams) {
           };
         }
 
-        // FIX: Ensure extension property exists on all files (compute from path if missing)
         const filesWithExtension = validFiles.map((file) => {
           if (!file.extension && file.path) {
             const ext = path.extname(file.path).toLowerCase();
@@ -256,7 +255,6 @@ function registerOrganizeIpc(servicesOrParams) {
       },
       handler: async (event, { filePath, options = {} }, service) => {
         try {
-          // FIX: Validate file path before processing (IPC boundary security)
           const cleanPath = safeFilePath(filePath);
           if (!cleanPath) {
             return createErrorResponse({ message: 'Invalid file path provided' });

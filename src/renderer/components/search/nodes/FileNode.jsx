@@ -1,4 +1,4 @@
-import React, { memo, useState, useCallback, useMemo } from 'react';
+import React, { memo, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { Handle, Position, NodeToolbar } from 'reactflow';
 import { ExternalLink, FolderOpen, Copy, GitBranch, Focus } from 'lucide-react';
@@ -74,7 +74,6 @@ const CATEGORY_STYLES = {
 };
 
 const FileNode = memo(({ data, selected }) => {
-  const [showActions, setShowActions] = useState(false);
   const { showError } = useNotification();
   const redactPaths = useAppSelector((state) => Boolean(state?.system?.redactPaths));
   const filePath = data?.path || '';
@@ -173,8 +172,6 @@ const FileNode = memo(({ data, selected }) => {
         }
       `}
       style={{ opacity: data?.style?.opacity ?? 1 }}
-      onMouseEnter={() => setShowActions(true)}
-      onMouseLeave={() => setShowActions(false)}
       onDoubleClick={handleOpen}
       title="Double-click to open file"
     >
@@ -234,9 +231,9 @@ const FileNode = memo(({ data, selected }) => {
         className="!bg-[var(--color-stratosort-blue)] !w-2 !h-2"
       />
 
-      {/* Quick actions on hover */}
-      {showActions && filePath && !selected && (
-        <div className="absolute -top-8 left-1/2 -translate-x-1/2 flex gap-1 bg-white shadow-md rounded-lg px-2 py-1.5 border border-[var(--color-border-soft)] z-20">
+      {/* Quick actions on hover - using CSS group-hover for performance */}
+      {filePath && !selected && (
+        <div className="hidden group-hover:flex absolute -top-8 left-1/2 -translate-x-1/2 gap-1 bg-white shadow-md rounded-lg px-2 py-1.5 border border-[var(--color-border-soft)] z-20 animate-in fade-in zoom-in-95 duration-200">
           <IconButton
             onClick={handleOpen}
             icon={<ExternalLink className="w-3.5 h-3.5 text-[var(--color-stratosort-blue)]" />}

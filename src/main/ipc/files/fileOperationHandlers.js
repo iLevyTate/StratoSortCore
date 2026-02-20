@@ -9,7 +9,6 @@
 const path = require('path');
 const fs = require('fs').promises;
 const { ACTION_TYPES, IPC_EVENTS } = require('../../../shared/constants');
-// FIX: Added safeSend import for validated IPC event sending
 const { createHandler, safeHandle, safeSend, z } = require('../ipcWrappers');
 const { logger: baseLogger, createLogger } = require('../../../shared/logger');
 const { handleBatchOrganize } = require('./batchOrganizeHandler');
@@ -54,6 +53,24 @@ const logger =
   typeof createLogger === 'function' ? createLogger('IPC:Files:Operations') : baseLogger;
 if (typeof createLogger !== 'function' && logger?.setContext) {
   logger.setContext('IPC:Files:Operations');
+}
+
+/**
+ * Invalidate clustering cache after file operations.
+ * Extracted from 6 identical inline blocks.
+ */
+function invalidateClustersIfAvailable(log) {
+  try {
+    const { getClusteringServiceInstance } = require('../semantic');
+    const clusteringService = getClusteringServiceInstance?.();
+    if (clusteringService) {
+      clusteringService.invalidateClusters();
+    }
+  } catch (invalidateErr) {
+    log.warn('[FILE-OPS] Failed to invalidate clustering cache', {
+      error: invalidateErr.message
+    });
+  }
 }
 
 /**
@@ -119,7 +136,6 @@ function getFilePathCoordinator() {
       return container.resolve(ServiceIds.FILE_PATH_COORDINATOR);
     }
   } catch (error) {
-    // FIX #14: Log error instead of silent swallowing for debugging purposes
     logger.debug('[FILE-OPS] FilePathCoordinator unavailable:', error?.message);
   }
   return null;
@@ -284,7 +300,6 @@ async function deleteFromDatabase(filePath, log) {
  */
 function createPerformOperationHandler({ logger: log, getServiceIntegration, getMainWindow }) {
   return async (event, operation) => {
-    // FIX: Validate operation object before processing
     if (!operation || typeof operation !== 'object') {
       return {
         success: false,
@@ -310,7 +325,6 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
 
       switch (operation.type) {
         case 'move': {
-          // SECURITY FIX: Validate paths before file operation
           const moveValidation = await validateOperationPaths(
             operation.source,
             operation.destination,
@@ -384,7 +398,6 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
               newPath: moveValidation.destination
             });
           } catch (undoErr) {
-            // FIX: Log undo/redo record failures for debugging
             // Non-fatal: file move succeeded, undo history may be incomplete
             log.debug('[FILE-OPS] Failed to record undo action', { error: undoErr?.message });
           }
@@ -417,7 +430,6 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
             log
           );
 
-          // FIX HIGH-75: Removed duplicate vector DB path update block
           // updateDatabasePath already handles this, including both file: and image: prefixes
 
           // NOTE: Analysis history updates are now handled by FilePathCoordinator
@@ -429,7 +441,6 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
           try {
             const mainWindow = getMainWindow();
             if (mainWindow && !mainWindow.isDestroyed()) {
-              // FIX: Use safeSend for validated IPC event sending
               safeSend(mainWindow.webContents, IPC_EVENTS.FILE_OPERATION_COMPLETE, {
                 operation: 'move',
                 oldPath: moveValidation.source,
@@ -466,18 +477,7 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
             });
           }
 
-          // Invalidate clustering cache after file move
-          try {
-            const { getClusteringServiceInstance } = require('../semantic');
-            const clusteringService = getClusteringServiceInstance?.();
-            if (clusteringService) {
-              clusteringService.invalidateClusters();
-            }
-          } catch (invalidateErr) {
-            log.warn('[FILE-OPS] Failed to invalidate clustering cache', {
-              error: invalidateErr.message
-            });
-          }
+          invalidateClustersIfAvailable(log);
 
           // Record learning feedback if file was moved to a smart folder
           // This teaches the system from user's manual organization decisions
@@ -515,7 +515,6 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
         }
 
         case 'copy': {
-          // SECURITY FIX: Validate paths before file operation
           const copyValidation = await validateOperationPaths(
             operation.source,
             operation.destination,
@@ -589,19 +588,7 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
             });
           }
 
-          // FIX: Invalidate clustering cache after file copy
-          // This ensures copied files are included in cluster analysis
-          try {
-            const { getClusteringServiceInstance } = require('../semantic');
-            const clusteringService = getClusteringServiceInstance?.();
-            if (clusteringService) {
-              clusteringService.invalidateClusters();
-            }
-          } catch (invalidateErr) {
-            log.warn('[FILE-OPS] Failed to invalidate clustering cache after copy', {
-              error: invalidateErr.message
-            });
-          }
+          invalidateClustersIfAvailable(log);
 
           // Ensure embeddings reflect the final smart folder destination (best effort)
           await syncEmbeddingsBestEffort({
@@ -618,7 +605,6 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
         }
 
         case 'delete': {
-          // SECURITY FIX: Validate path before file operation
           const deleteValidation = await validateOperationPaths(operation.source, null, log);
           if (!deleteValidation.valid) {
             return {
@@ -647,7 +633,6 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
           try {
             const mainWindow = getMainWindow();
             if (mainWindow && !mainWindow.isDestroyed()) {
-              // FIX: Use safeSend for validated IPC event sending
               safeSend(mainWindow.webContents, IPC_EVENTS.FILE_OPERATION_COMPLETE, {
                 operation: 'delete',
                 oldPath: deleteValidation.source
@@ -683,18 +668,7 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
             });
           }
 
-          // Invalidate clustering cache after file delete
-          try {
-            const { getClusteringServiceInstance } = require('../semantic');
-            const clusteringService = getClusteringServiceInstance?.();
-            if (clusteringService) {
-              clusteringService.invalidateClusters();
-            }
-          } catch (invalidateErr) {
-            log.warn('[FILE-OPS] Failed to invalidate clustering cache', {
-              error: invalidateErr.message
-            });
-          }
+          invalidateClustersIfAvailable(log);
 
           return {
             success: true,
@@ -777,7 +751,6 @@ function registerFileOperationHandlers(servicesOrParams) {
             };
           }
 
-          // SECURITY FIX: Validate path before any operations
           const validation = await validateFileOperationPath(filePath, {
             checkSymlinks: true
           });
@@ -881,7 +854,6 @@ function registerFileOperationHandlers(servicesOrParams) {
             };
           }
 
-          // SECURITY FIX: Validate both paths before any operations
           const validation = await validateOperationPaths(sourcePath, destinationPath, log);
 
           if (!validation.valid) {
@@ -971,18 +943,7 @@ function registerFileOperationHandlers(servicesOrParams) {
             });
           }
 
-          // Invalidate clustering cache after file copy
-          try {
-            const { getClusteringServiceInstance } = require('../semantic');
-            const clusteringService = getClusteringServiceInstance?.();
-            if (clusteringService) {
-              clusteringService.invalidateClusters();
-            }
-          } catch (invalidateErr) {
-            log.warn('[FILE-OPS] Failed to invalidate clustering cache after copy', {
-              error: invalidateErr.message
-            });
-          }
+          invalidateClustersIfAvailable(log);
 
           // Ensure embeddings reflect the final smart folder destination (best effort)
           // Required to update metadata (smartFolder field)
@@ -1052,7 +1013,6 @@ function registerFileOperationHandlers(servicesOrParams) {
             };
           }
 
-          // SECURITY FIX: Validate path before cleanup
           const validation = await validateFileOperationPath(filePath, {
             checkSymlinks: false
           });
@@ -1122,17 +1082,7 @@ function registerFileOperationHandlers(servicesOrParams) {
                       });
                     }
 
-                    try {
-                      const { getClusteringServiceInstance } = require('../semantic');
-                      const clusteringService = getClusteringServiceInstance?.();
-                      if (clusteringService) {
-                        clusteringService.invalidateClusters();
-                      }
-                    } catch (invalidateErr) {
-                      log.warn('[FILE-OPS] Failed to invalidate clustering cache', {
-                        error: invalidateErr.message
-                      });
-                    }
+                    invalidateClustersIfAvailable(log);
 
                     // Notify renderer about move alignment (best effort)
                     try {
@@ -1223,18 +1173,7 @@ function registerFileOperationHandlers(servicesOrParams) {
             });
           }
 
-          // Invalidate clustering cache after cleanup
-          try {
-            const { getClusteringServiceInstance } = require('../semantic');
-            const clusteringService = getClusteringServiceInstance?.();
-            if (clusteringService) {
-              clusteringService.invalidateClusters();
-            }
-          } catch (invalidateErr) {
-            log.warn('[FILE-OPS] Failed to invalidate clustering cache', {
-              error: invalidateErr.message
-            });
-          }
+          invalidateClustersIfAvailable(log);
 
           return {
             success: !cleanupWarning,

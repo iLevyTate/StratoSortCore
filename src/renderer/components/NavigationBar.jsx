@@ -57,7 +57,6 @@ const SpinnerIcon = memo(function SpinnerIcon({ className = '' }) {
 });
 SpinnerIcon.propTypes = { className: PropTypes.string };
 
-// FIX: Add null check for PHASES to prevent crash during module initialization
 const PHASE_ICONS = PHASES
   ? {
       [PHASES.WELCOME]: HomeIcon,

@@ -20,6 +20,8 @@ import { selectFilesWithAnalysis, selectFileStats } from '../../store/selectors'
 import { setPhase, setOrganizing } from '../../store/slices/uiSlice';
 import { fetchDocumentsPath } from '../../store/slices/systemSlice';
 import { createLogger } from '../../../shared/logger';
+import { isAbsolutePath } from '../../utils/pathNormalization';
+import { joinPath } from '../../utils/platform';
 
 const logger = createLogger('OrganizePhase-State');
 /**
@@ -39,8 +41,30 @@ export function useOrganizeState() {
   const smartFolders = useAppSelector((state) => state.files.smartFolders);
   const fileStates = useAppSelector((state) => state.files.fileStates);
   const documentsPath = useAppSelector((state) => state.system.documentsPath);
+  const defaultSmartFolderLocation = useAppSelector(
+    (state) => state.ui.settings?.defaultSmartFolderLocation
+  );
 
-  const defaultLocation = documentsPath || 'Documents';
+  // Use user-configured default from Settings when available; otherwise fall back to system Documents
+  const defaultLocation = useMemo(() => {
+    if (
+      typeof defaultSmartFolderLocation === 'string' &&
+      defaultSmartFolderLocation.trim().length > 0
+    ) {
+      const trimmed = defaultSmartFolderLocation.trim();
+      if (isAbsolutePath(trimmed)) {
+        return trimmed;
+      }
+      // "Documents" means system Documents folder: use documentsPath when available
+      if (trimmed === 'Documents') {
+        return documentsPath || 'Documents';
+      }
+      // Other relative/simple folder name: resolve against documents path
+      const base = documentsPath || 'Documents';
+      return base && base !== 'Documents' ? joinPath(base, trimmed) : trimmed;
+    }
+    return documentsPath || 'Documents';
+  }, [defaultSmartFolderLocation, documentsPath]);
 
   // Refs for avoiding stale closures
   const smartFoldersRef = useRef(smartFolders);
@@ -61,7 +85,6 @@ export function useOrganizeState() {
   }, [organizedFiles]);
 
   // Action dispatchers
-  // FIX H-1: Use ref to avoid stale closure when functional update is called rapidly
   const setOrganizedFiles = useCallback(
     (value) => {
       const nextValue = typeof value === 'function' ? value(organizedFilesRef.current) : value;
@@ -86,7 +109,6 @@ export function useOrganizeState() {
     fileStatesRef.current = fileStates;
   }, [fileStates]);
 
-  // FIX H-1: Use ref to avoid stale closure when functional update is called rapidly
   const setFileStates = useCallback(
     (states) => {
       if (typeof states === 'function') {

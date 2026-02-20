@@ -22,13 +22,13 @@ const LOG_LEVEL_NAMES = ['ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE'];
 // The preload (target: 'web') and renderer use pino/browser.js which lacks it.
 const _hasPinoTransport = typeof pino.transport === 'function';
 
-// FIX: Share a single pino-pretty transport across all Logger instances.
 // Previously, every createLogger() call spawned a new pino transport worker,
 // each registering its own process.on('exit') handler. With 100+ loggers in
 // the main process, this caused MaxListenersExceededWarning at startup.
 let _sharedDevTransport = null;
 let _transportDead = false;
 const _activeLoggers = new Set();
+const MAX_ACTIVE_LOGGERS = 200;
 const _globalLogConfig = {
   enableFile: false,
   logFile: null,
@@ -86,14 +86,13 @@ function sanitizeLogData(data) {
       (_match, filename) => `[REDACTED_PATH]\\${filename}`
     );
     sanitized = sanitized.replace(
-      /\/(?:[^/\s]+\/)+([^/\s]+)/g,
+      /(?<!:)\/(?:[^/\s]+\/)+([^/\s]+)/g,
       (_match, filename) => `[REDACTED_PATH]/${filename}`
     );
     return sanitized;
   }
 
   if (typeof data === 'object' && data !== null) {
-    // FIX: Error objects have non-enumerable properties — convert to plain object
     // so message, stack, and code are preserved in log output
     if (data instanceof Error) {
       return sanitizeLogData({
@@ -138,9 +137,22 @@ class Logger {
     this.level = process.env.NODE_ENV === 'development' ? 'debug' : 'info';
 
     // Initialize Pino instance
+    // Cap _activeLoggers to prevent unbounded growth; evict oldest entries first
+    if (_activeLoggers.size >= MAX_ACTIVE_LOGGERS) {
+      const iter = _activeLoggers.values();
+      const toRemove = _activeLoggers.size - MAX_ACTIVE_LOGGERS + 1;
+      for (let i = 0; i < toRemove; i++) {
+        const oldest = iter.next().value;
+        if (oldest) _activeLoggers.delete(oldest);
+      }
+    }
     _activeLoggers.add(this);
     this._applyGlobalConfig();
-    this._initPino(options);
+    // Allow deferring _initPino when the caller (e.g. createLogger) will
+    // override properties and call _initPino itself, avoiding a wasted init.
+    if (!options.deferInit) {
+      this._initPino(options);
+    }
   }
 
   _applyGlobalConfig() {
@@ -252,7 +264,6 @@ class Logger {
       if (streams && streams.length > 0 && typeof pino.multistream === 'function') {
         this.pino = pino(pinoOptions, pino.multistream(streams));
       } else {
-        // FIX: Use the shared transport for the common dev-console-only case
         // to avoid spawning a separate pino worker per logger instance.
         // Only custom transports (e.g. file logging) get their own stream.
         this.pino = pino(pinoOptions, transport || undefined);
@@ -384,18 +395,15 @@ const logger = new Logger();
 
 // Factory functions
 function createLogger(context) {
-  const contextLogger = new Logger(context);
+  // Defer init in constructor — we override properties below and init once.
+  const contextLogger = new Logger(context, { deferInit: true });
   // Inherit settings from singleton
   contextLogger.level = logger.level;
   contextLogger.enableFile = logger.enableFile;
   contextLogger.logFile = logger.logFile;
   contextLogger.enableConsole = logger.enableConsole;
-  contextLogger._initPino(); // Re-init with inherited settings
+  contextLogger._initPino(); // Single init with inherited settings
   return contextLogger;
-}
-
-function getLogger(context) {
-  return createLogger(context);
 }
 
 function configureFileLogging(logFilePath, options = {}) {
@@ -434,13 +442,29 @@ function configureConsoleLogging(enableConsole) {
   }
 }
 
+/**
+ * Safe logger factory with console fallback for cross-process safety.
+ * Use in shared modules that may be loaded before the logger is fully initialized.
+ */
+function createSafeLogger(name) {
+  try {
+    return createLogger(name);
+  } catch {
+    return {
+      debug: () => {},
+      info: () => {},
+      warn: console.warn.bind(console, `[${name}]`),
+      error: console.error.bind(console, `[${name}]`)
+    };
+  }
+}
+
 module.exports = {
   Logger,
   logger,
   LOG_LEVELS,
-  LOG_LEVEL_NAMES,
   createLogger,
-  getLogger,
+  createSafeLogger,
   sanitizeLogData,
   configureFileLogging,
   configureConsoleLogging

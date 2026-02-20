@@ -219,7 +219,6 @@ export function useFileHandlers({
           if (result?.error) {
             const filePath = batch[index];
             const fileName = extractFileName(filePath);
-            // FIX: Handle both string errors (from worker catch) and Error objects (from mapWithConcurrency catch)
             const errorMessage =
               typeof result.error === 'string'
                 ? result.error
@@ -453,7 +452,6 @@ export function useFileHandlers({
           source: 'file_selection'
         }));
 
-        // FIX: Use functional updater to avoid stale closure over selectedFiles
         setSelectedFiles((prev) => {
           const existing = Array.isArray(prev) ? prev : [];
           const allFiles = [...existing, ...baseFiles];
@@ -515,7 +513,6 @@ export function useFileHandlers({
       }
       const result = await window.electronAPI.files.selectDirectory();
 
-      // FIX: Handler returns 'path' not 'folder'
       if (result?.success && result?.path) {
         let scanTimeoutId;
 
@@ -574,7 +571,6 @@ export function useFileHandlers({
             source: 'folder_scan'
           }));
 
-          // FIX: Use functional updater to avoid stale closure over selectedFiles
           setSelectedFiles((prev) => {
             const existing = Array.isArray(prev) ? prev : [];
             const allFiles = [...existing, ...baseFiles];
@@ -711,7 +707,6 @@ export function useFileHandlers({
         // Update file states
         enhancedFiles.forEach((file) => updateFileState(file.path, 'pending'));
 
-        // FIX: Use functional updater to avoid stale closure over selectedFiles
         setSelectedFiles((prev) => {
           const existing = Array.isArray(prev) ? prev : [];
           const allFiles = [...existing, ...enhancedFiles];
@@ -731,7 +726,6 @@ export function useFileHandlers({
           await analyzeFiles(enhancedFiles);
         }
       } catch (error) {
-        // FIX H-2: Consistent error handling with handleFileSelection and handleFolderSelection
         logger.error('[DiscoverPhase] Error handling file drop', {
           error: error.message,
           stack: error.stack

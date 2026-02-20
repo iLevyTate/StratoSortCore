@@ -42,7 +42,6 @@ function formatDate(date, format) {
 function applyCaseConvention(text, convention) {
   switch (convention) {
     case 'kebab-case':
-      // FIX (MED-8): Use Unicode-aware regex \p{L}\p{N} to preserve non-Latin
       // characters (Chinese, Arabic, Cyrillic, etc). The old [^a-z0-9] stripped
       // everything non-ASCII, producing empty filenames like '.pdf'.
       return text

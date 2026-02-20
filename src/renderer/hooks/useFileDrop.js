@@ -44,7 +44,6 @@ export function useFileDrop(onFilesDropped) {
       e.stopPropagation();
       setIsDragging(false);
 
-      // FIX: Use optional chaining consistently for defensive null checks
       if (!e.dataTransfer) return;
 
       const { paths, unresolvedNames = [] } = extractDroppedFiles(e.dataTransfer);

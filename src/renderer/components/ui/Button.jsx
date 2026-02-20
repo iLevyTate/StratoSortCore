@@ -59,7 +59,6 @@ const Button = memo(function Button({
   const classes = useMemo(() => {
     const variantClass = VARIANT_TO_CLASS[variant] || VARIANT_TO_CLASS.primary;
     const sizeClass = SIZE_TO_CLASS[size] || SIZE_TO_CLASS.md;
-    // FIX: Loading state keeps full opacity (shows spinner), disabled state uses opacity-50
     const stateClass = disabled ? 'opacity-50 cursor-not-allowed' : isLoading ? 'cursor-wait' : '';
     // Accessibility: Add focus-visible ring for keyboard navigation
     const focusClass =

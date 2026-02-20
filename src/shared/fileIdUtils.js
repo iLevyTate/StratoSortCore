@@ -34,7 +34,12 @@ function getSemanticFileId(filePath) {
  * @returns {string} File path without prefix
  */
 function stripSemanticPrefix(fileId) {
-  return typeof fileId === 'string' ? fileId.replace(/^(file|image):/, '') : '';
+  if (typeof fileId !== 'string') return '';
+  let result = fileId;
+  while (/^(file|image|doc|img):/.test(result)) {
+    result = result.replace(/^(file|image|doc|img):/, '');
+  }
+  return result;
 }
 
 /**

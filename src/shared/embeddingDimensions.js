@@ -61,6 +61,12 @@ function resolveEmbeddingDimension(modelName, options = {}) {
   }
 
   const fallback = getFallbackDimension(modelName);
+  if (!fallback) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[embeddingDimensions] Unknown embedding model "${modelName}", falling back to default dimension ${defaultDimension}`
+    );
+  }
   return fallback || defaultDimension;
 }
 

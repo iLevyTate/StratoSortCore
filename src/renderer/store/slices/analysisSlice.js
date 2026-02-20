@@ -159,7 +159,6 @@ const analysisSlice = createSlice({
     resetAnalysisState: () => {
       return initialState;
     },
-    // FIX Issue 5: Reset to safe state on error boundary recovery
     // Clears in-progress state but preserves existing results
     resetToSafeState: (state) => {
       state.isAnalyzing = false;
@@ -167,7 +166,6 @@ const analysisSlice = createSlice({
       state.analysisProgress = { current: 0, total: 0, lastActivity: 0 };
       // Keep results - user may want to see what was analyzed before the error
     },
-    // FIX: Clean up analysis results when files are removed from selectedFiles
     // This prevents orphaned analysis results that consume memory
     removeAnalysisResultsByPaths: (state, action) => {
       if (!Array.isArray(action.payload)) return;
@@ -180,7 +178,6 @@ const analysisSlice = createSlice({
       if (!pathToRemove) return;
       state.results = state.results.filter((r) => r.path !== pathToRemove);
     },
-    // FIX: Update result paths after file move/organize operations
     // Keeps analysis results in sync with actual file locations
     updateResultPathsAfterMove: (state, action) => {
       const { oldPaths, newPaths } = action.payload;

@@ -40,7 +40,6 @@ const QueryMatchEdge = memo(
     const score = data?.score ?? 0;
     const scorePercent = Math.round(score * 100);
     const matchDetails = useMemo(() => data?.matchDetails || {}, [data?.matchDetails]);
-    // Fix: Depend on matchDetails object to ensure updates when parent changes
     const sources = useMemo(() => matchDetails.sources || [], [matchDetails]);
     const tooltipsEnabled = data?.showEdgeTooltips !== false;
 

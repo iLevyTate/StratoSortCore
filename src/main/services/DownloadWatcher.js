@@ -51,7 +51,6 @@ class DownloadWatcher {
     this.settingsService = settingsService;
     this.notificationService = notificationService;
     this.analysisHistoryService = analysisHistoryService;
-    // FIX: Add vectorDbService and folderMatcher for embedding support
     this.vectorDbService = vectorDbService;
     this.folderMatcher = folderMatcher;
     this.watcher = null;
@@ -65,7 +64,6 @@ class DownloadWatcher {
     this.debounceTimers = new Map(); // Debounce timers for each file
     this.debounceDelay = 500; // 500ms debounce for rapid events
     this.restartTimer = null; // Track restart timer for cleanup
-    // FIX H-3: Track stopped state to prevent timer callbacks after stop()
     this._stopped = false;
   }
 
@@ -102,7 +100,6 @@ class DownloadWatcher {
       return;
     }
 
-    // FIX: Use start promise to prevent double-entry — concurrent callers
     // await the same promise instead of both proceeding past the flag check.
     if (this._startPromise) {
       logger.debug('[DOWNLOAD-WATCHER] Watcher is already starting, awaiting existing start');
@@ -110,7 +107,6 @@ class DownloadWatcher {
     }
 
     this.isStarting = true;
-    // FIX H-3: Reset stopped flag on start
     this._stopped = false;
 
     this._startPromise = this._doStart();
@@ -180,7 +176,6 @@ class DownloadWatcher {
         depth: 0 // Only watch immediate directory, not subdirectories
       });
 
-      // FIX #32: Validate watcher was created successfully before registering listeners
       if (!this.watcher) {
         logger.error('[DOWNLOAD-WATCHER] Failed to create file watcher');
         this.isStarting = false;
@@ -193,7 +188,6 @@ class DownloadWatcher {
       });
 
       // Handle deleted files (external deletion via File Explorer)
-      // FIX: Prevents ghost entries when files are deleted outside the app
       this.watcher.on('unlink', (filePath) => {
         this._handleFileDeletion(filePath);
       });
@@ -255,7 +249,6 @@ class DownloadWatcher {
    * @param {string} filePath - Path to the file
    */
   _debouncedHandleFile(filePath) {
-    // FIX: Skip files recently operated on by any watcher (prevents infinite loops)
     const tracker = getFileOperationTracker();
     if (tracker.wasRecentlyOperated(filePath)) {
       logger.debug('[DOWNLOAD-WATCHER] Skipping recently-operated file:', filePath);
@@ -269,7 +262,6 @@ class DownloadWatcher {
 
     // Set new timer
     const timer = setTimeout(async () => {
-      // FIX H-3: Check if watcher was stopped during debounce
       if (this._stopped) {
         this.debounceTimers.delete(filePath);
         return;
@@ -277,7 +269,6 @@ class DownloadWatcher {
 
       this.debounceTimers.delete(filePath);
 
-      // FIX: Verify file still exists after debounce (race condition prevention)
       try {
         await fs.stat(filePath);
       } catch (statError) {
@@ -294,7 +285,6 @@ class DownloadWatcher {
         return;
       }
 
-      // FIX: Double-check recently-operated after debounce (another watcher may have processed it)
       if (tracker.wasRecentlyOperated(filePath)) {
         logger.debug('[DOWNLOAD-WATCHER] File became recently-operated during debounce:', filePath);
         return;
@@ -364,7 +354,6 @@ class DownloadWatcher {
   }
 
   async stop() {
-    // FIX H-3: Set stopped flag to prevent timer callbacks
     this._stopped = true;
 
     // Clear pending restart timer
@@ -520,7 +509,6 @@ class DownloadWatcher {
     logger.info('[DOWNLOAD-WATCHER] Fallback processing for:', filePath);
 
     try {
-      // FIX C-3: Use stat for atomic existence check (avoids TOCTOU race with access+stat)
       try {
         await fs.stat(filePath);
       } catch (error) {
@@ -648,7 +636,6 @@ class DownloadWatcher {
     const basename = path.basename(filePath);
 
     // Enhanced temporary file detection using comprehensive patterns
-    // FIX: Use precise path segment matching instead of substring matching
     // to avoid false positives like 'project.gitignore' being skipped
     const pathSegments = filePath.split(path.sep);
     const hasGitDir = pathSegments.includes('.git');
@@ -665,7 +652,6 @@ class DownloadWatcher {
       return false;
     }
 
-    // FIX C-3: Use single stat() call instead of access() + stat() to avoid TOCTOU race
     // Files may be deleted quickly (e.g., git lock files)
     try {
       // Single atomic operation - stat provides both existence check and size
@@ -778,7 +764,6 @@ class DownloadWatcher {
         }
 
         const confidencePercent = deriveWatcherConfidencePercent(result);
-        // FIX: Use renamed filename from destination, not original filename
         // This ensures notifications show the actual filename the user will see
         const fileName = path.basename(result.destination);
         const destFolder = path.basename(path.dirname(result.destination));
@@ -808,7 +793,6 @@ class DownloadWatcher {
             const analysisForHistory = {
               suggestedName: path.basename(result.destination),
               category: result.category || result.folder || destFolder || 'organized',
-              // FIX NEW-10: Include keywords from analysis for history display
               keywords: result.keywords || analysis.keywords || [],
               // UI expects percentage, not fraction
               confidence: confidencePercent,
@@ -844,7 +828,6 @@ class DownloadWatcher {
               logger
             });
 
-            // FIX: Embed the file into the vector DB for semantic search
             // This ensures DownloadWatcher-organized files are searchable
             await this._embedAnalyzedFile(result.destination, result);
           } catch (historyErr) {
@@ -900,7 +883,6 @@ class DownloadWatcher {
       }
 
       await fs.rename(source, destination);
-      // FIX: Record operation to prevent other watchers from re-processing this file
       getFileOperationTracker().recordOperation(destination, 'move', 'downloadWatcher');
       getFileOperationTracker().recordOperation(source, 'move', 'downloadWatcher');
     } catch (renameError) {
@@ -911,7 +893,6 @@ class DownloadWatcher {
         );
         try {
           await crossDeviceMove(source, destination, { verify: true });
-          // FIX: Record operation to prevent other watchers from re-processing this file
           getFileOperationTracker().recordOperation(destination, 'move', 'downloadWatcher');
           getFileOperationTracker().recordOperation(source, 'move', 'downloadWatcher');
         } catch (copyError) {
@@ -926,7 +907,6 @@ class DownloadWatcher {
           throw fsError;
         }
       } else {
-        // FIX: Retry FILE_IN_USE errors - file may be released after a short delay
         const errorCategory = getErrorCategory(renameError);
         const isFileInUse = errorCategory === ErrorCategory.FILE_IN_USE;
 
@@ -942,7 +922,6 @@ class DownloadWatcher {
           // Wait before retrying
           await delay(RETRY_DELAY_MS);
 
-          // FIX C-3: Use stat for atomic existence check before retry
           try {
             await fs.stat(source);
           } catch (statError) {
@@ -950,7 +929,6 @@ class DownloadWatcher {
               logger.debug('[DOWNLOAD-WATCHER] File no longer exists, skipping retry:', source);
               return; // File was moved/deleted by user
             }
-            // FIX: Treat other stat errors (e.g. EACCES, EBUSY) as transient during retry loop
             // Log and continue to next retry instead of aborting
             logger.warn(
               '[DOWNLOAD-WATCHER] Transient error checking file existence during retry:',
@@ -1115,7 +1093,6 @@ class DownloadWatcher {
       return;
     }
 
-    // FIX: Verify file still exists before embedding (prevents ghost embeddings)
     try {
       await fs.stat(filePath);
     } catch (statError) {
@@ -1133,7 +1110,6 @@ class DownloadWatcher {
       const category = analysis.category || analysis.folder || 'Uncategorized';
       const keywords = analysis.keywords || analysis.tags || [];
       const subject = analysis.subject || analysis.suggestedName || '';
-      // FIX: Extract confidence score - normalize to 0-100 integer
       const rawConfidence = analysis.confidence ?? analysisResult.confidence ?? 0;
       const confidence =
         typeof rawConfidence === 'number'
@@ -1155,7 +1131,6 @@ class DownloadWatcher {
         return;
       }
 
-      // FIX: Include more context for richer embeddings and conversations
       const purpose = analysis.purpose || '';
       const entity = analysis.entity || '';
       const project = analysis.project || '';
@@ -1252,7 +1227,6 @@ class DownloadWatcher {
    * @param {string} filePath - Path to the deleted file
    */
   async _handleFileDeletion(filePath) {
-    // FIX: Guard against processing after watcher has been stopped
     if (this._stopped) return;
     // Skip temp files
     if (isTemporaryFile(filePath)) {
@@ -1297,7 +1271,6 @@ class DownloadWatcher {
         logger.debug('[DOWNLOAD-WATCHER] Removed history for deleted file:', filePath);
       }
     } catch (error) {
-      // FIX: Use object format for structured logging
       logger.warn('[DOWNLOAD-WATCHER] Error cleaning up deleted file:', {
         filePath,
         error: error.message

@@ -198,15 +198,17 @@ function OrganizePhase() {
 
   useEffect(() => {
     const handleBatchResultsChunk = (event) => {
-      const { results, chunk, total } = event.detail || {};
-      if (results && Array.isArray(results)) {
+      const { results, chunk } = event.detail || {};
+      // Main sends 'chunk'; ipcMiddleware normalizes to chunk; support both for compatibility
+      const items = Array.isArray(chunk) ? chunk : Array.isArray(results) ? results : [];
+      if (items.length > 0) {
         logger.debug('[OrganizePhase] Received batch results chunk', {
-          chunk,
-          total,
-          resultCount: results.length
+          chunkIndex: event.detail?.chunkIndex,
+          totalChunks: event.detail?.totalChunks,
+          resultCount: items.length
         });
-        results.forEach((result) => {
-          if (result.success && result.path) {
+        items.forEach((result) => {
+          if (result?.success && result.path) {
             markFilesAsProcessed([result.originalPath || result.path]);
           }
         });

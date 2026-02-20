@@ -13,7 +13,6 @@ const path = require('path');
 const { isWindows, isMacOS } = require('../../shared/platformUtils');
 const { IPC_EVENTS } = require('../../shared/constants');
 const { createLogger } = require('../../shared/logger');
-// FIX: Import safeSend for validated IPC event sending
 const { safeSend } = require('../ipc/ipcWrappers');
 
 const logger = createLogger('Tray');
@@ -122,7 +121,6 @@ async function openSemanticSearch() {
 
   if (!win) {
     // Create window if it doesn't exist
-    // FIX: createWindow() returns a Promise, so we must await it
     // before trying to use the window reference
     if (trayConfig.createWindow) {
       await trayConfig.createWindow();
@@ -137,8 +135,6 @@ async function openSemanticSearch() {
 
     // Send message to renderer to open semantic search
     // Small delay to ensure window is ready
-    // FIX: Use safeSend for validated IPC event sending
-    // FIX: Store timer ID and clear on window close to prevent stale callback
     const searchTimerId = setTimeout(() => {
       if (!win.isDestroyed()) {
         safeSend(win.webContents, IPC_EVENTS.OPEN_SEMANTIC_SEARCH);
@@ -160,7 +156,6 @@ function registerGlobalShortcut() {
 
     if (success) {
       logger.info(`[TRAY] Registered global shortcut: ${SEARCH_SHORTCUT}`);
-      // FIX CRIT-27: Ensure global shortcuts are unregistered on app quit/crash.
       // Use a dedicated flag instead of listenerCount (which includes unrelated listeners).
       if (!registerGlobalShortcut._willQuitRegistered) {
         app.on('will-quit', unregisterGlobalShortcuts);

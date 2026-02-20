@@ -1,4 +1,3 @@
-// FIX: Load environment variables from .env file before anything else
 // dotenv is a devDependency and will not be available in packaged production builds
 try {
   require('dotenv').config();
@@ -122,7 +121,10 @@ let serviceIntegration;
 let settingsService;
 let downloadWatcher;
 let currentSettings = {};
-// FIX 2.4: Consolidated shutdown state to prevent race conditions
+let downloadWatcherStartInProgress = false;
+let downloadWatcherRetryTimer = null;
+let downloadWatcherRetryDelayMs = 250;
+const DOWNLOAD_WATCHER_RETRY_MAX_MS = 5000;
 // Previously had separate isQuitting and _forceQuit flags that could get out of sync
 const _shutdownState = {
   isQuitting: false, // Set by lifecycle during async cleanup
@@ -171,17 +173,17 @@ eventListeners.push(() => {
 
 const trackedTimers = new Map();
 const trackTimeout = (handler, delay) => {
-  const id = setTimeout(() => {
-    trackedTimers.delete(id);
+  const timeout = setTimeout(() => {
+    trackedTimers.delete(timeout);
     handler();
   }, delay);
-  trackedTimers.set(id, 'timeout');
-  return id;
+  trackedTimers.set(timeout, 'timeout');
+  return timeout;
 };
 const trackInterval = (handler, delay) => {
-  const id = setInterval(handler, delay);
-  trackedTimers.set(id, 'interval');
-  return id;
+  const interval = setInterval(handler, delay);
+  trackedTimers.set(interval, 'interval');
+  return interval;
 };
 const clearTrackedTimer = (id) => {
   if (!id) return;
@@ -227,7 +229,6 @@ const createMainWindow = require('./core/createWindow');
 // Application menu is now handled by ./core/applicationMenu
 // createApplicationMenu is imported and called with getMainWindow callback
 
-// FIX: Mutex to prevent concurrent window creation (race condition fix)
 let _windowCreationPromise = null;
 
 function createWindow() {
@@ -235,7 +236,6 @@ function createWindow() {
     logger.warn('[WINDOW] Ignoring createWindow() during shutdown');
     return Promise.resolve();
   }
-  // FIX: If window creation is already in progress, return the existing promise
   if (_windowCreationPromise) {
     logger.debug('[WINDOW] createWindow() already in progress, waiting...');
     return _windowCreationPromise;
@@ -243,10 +243,9 @@ function createWindow() {
 
   logger.debug('[WINDOW] createWindow() called');
 
-  // HIGH-2 FIX: Use event-driven window state manager instead of nested setTimeout
+  // Use event-driven window state manager instead of nested setTimeout
   const { restoreWindow, ensureWindowOnScreen } = require('./core/windowState');
 
-  // FIX: Check for existing window BEFORE setting mutex to avoid holding lock unnecessarily
   if (mainWindow && !mainWindow.isDestroyed()) {
     logger.debug('[WINDOW] Window already exists, restoring state...');
 
@@ -261,8 +260,6 @@ function createWindow() {
     return Promise.resolve();
   }
 
-  // FIX: Set mutex for window creation - will be cleared once window is ready or on error
-  // FIX: Capture the promise in a local variable before returning, because the executor
   // runs synchronously and may set _windowCreationPromise = null before the return statement
   const promise = new Promise((resolve) => {
     try {
@@ -364,7 +361,6 @@ function _createWindowInternal() {
   windowEventHandlers.set('blur', blurHandler);
   mainWindow.on('blur', blurHandler);
 
-  // FIX 2.4: Use consolidated shutdown state getter for cleaner shutdown handling
   const closeHandler = (e) => {
     if (!_shutdownState.shouldClose && currentSettings?.backgroundMode) {
       e.preventDefault();
@@ -375,7 +371,6 @@ function _createWindowInternal() {
   mainWindow.on('close', closeHandler);
 
   const closedHandler = () => {
-    // CRITICAL FIX: Enhanced cleanup with proper error handling and null checks
     if (windowEventHandlers.size > 0) {
       for (const [event, handler] of windowEventHandlers) {
         try {
@@ -394,7 +389,6 @@ function _createWindowInternal() {
   windowEventHandlers.set('closed', closedHandler);
   mainWindow.on('closed', closedHandler);
 
-  // CRITICAL FIX: Also register cleanup on 'destroy' event to catch cases where window
   // is destroyed without triggering 'closed' event
   const destroyHandler = () => {
     logger.warn('[WINDOW] Window destroyed - forcing cleanup');
@@ -414,22 +408,64 @@ function _createWindowInternal() {
 
 function updateDownloadWatcher(settings) {
   const enabled = settings?.autoOrganize;
+  const clearDownloadWatcherRetry = () => {
+    if (downloadWatcherRetryTimer) {
+      clearTrackedTimer(downloadWatcherRetryTimer);
+      downloadWatcherRetryTimer = null;
+    }
+    downloadWatcherRetryDelayMs = 250;
+  };
+  const scheduleDownloadWatcherRetry = (reason) => {
+    if (!enabled) return;
+    if (downloadWatcher || downloadWatcherStartInProgress || downloadWatcherRetryTimer) return;
+    const delayMs = downloadWatcherRetryDelayMs;
+    downloadWatcherRetryDelayMs = Math.min(
+      downloadWatcherRetryDelayMs * 2,
+      DOWNLOAD_WATCHER_RETRY_MAX_MS
+    );
+    logger.debug('[AUTO-ORGANIZE] Scheduling watcher start retry', {
+      reason,
+      delayMs
+    });
+    downloadWatcherRetryTimer = trackTimeout(() => {
+      downloadWatcherRetryTimer = null;
+      updateDownloadWatcher(currentSettings || settings);
+    }, delayMs);
+  };
+
   if (enabled) {
-    // FIX C-2: Ensure services are fully initialized before starting watcher
+    if (downloadWatcher) {
+      clearDownloadWatcherRetry();
+      return;
+    }
+    if (downloadWatcherStartInProgress) {
+      return;
+    }
     // This prevents race condition where watcher starts with null service references
     if (!serviceIntegration?.initialized) {
       logger.warn('[AUTO-ORGANIZE] Cannot start watcher - services not yet initialized');
+      scheduleDownloadWatcherRetry('service-integration-not-initialized');
       return;
     }
     if (!serviceIntegration?.autoOrganizeService) {
       logger.warn('[AUTO-ORGANIZE] Cannot start watcher - autoOrganizeService not available');
+      scheduleDownloadWatcherRetry('auto-organize-service-unavailable');
       return;
     }
     if (!downloadWatcher) {
+      downloadWatcherStartInProgress = true;
+      const finalizeStart = (success) => {
+        downloadWatcherStartInProgress = false;
+        if (success) {
+          clearDownloadWatcherRetry();
+        }
+      };
       const { container, ServiceIds } = require('./services/ServiceContainer');
       downloadWatcher = container.tryResolve(ServiceIds.DOWNLOAD_WATCHER);
       if (!downloadWatcher) {
         logger.warn('[AUTO-ORGANIZE] Download watcher not available');
+        finalizeStart(false);
+        scheduleDownloadWatcherRetry('download-watcher-not-available');
         return;
       }
 
@@ -440,13 +476,44 @@ function updateDownloadWatcher(settings) {
         analyzeImageFile
       });
 
-      downloadWatcher.start();
-      logger.info('[AUTO-ORGANIZE] Download watcher started successfully');
+      try {
+        const started = downloadWatcher.start?.();
+        if (started && typeof started.then === 'function') {
+          started
+            .then(() => {
+              logger.info('[AUTO-ORGANIZE] Download watcher started successfully');
+              finalizeStart(true);
+            })
+            .catch((error) => {
+              logger.warn('[AUTO-ORGANIZE] Download watcher failed to start', {
+                error: error?.message
+              });
+              downloadWatcher = null;
+              finalizeStart(false);
+              scheduleDownloadWatcherRetry('download-watcher-start-failed');
+            });
+          return;
+        }
+        logger.info('[AUTO-ORGANIZE] Download watcher started successfully');
+        finalizeStart(true);
+      } catch (error) {
+        logger.warn('[AUTO-ORGANIZE] Download watcher failed to start', {
+          error: error?.message
+        });
+        downloadWatcher = null;
+        finalizeStart(false);
+        scheduleDownloadWatcherRetry('download-watcher-start-threw');
+      }
     }
   } else if (downloadWatcher) {
+    clearDownloadWatcherRetry();
+    downloadWatcherStartInProgress = false;
     downloadWatcher.stop();
     downloadWatcher = null;
     logger.info('[AUTO-ORGANIZE] Download watcher stopped');
+  } else {
+    clearDownloadWatcherRetry();
+    downloadWatcherStartInProgress = false;
   }
 }
 
@@ -454,7 +521,7 @@ function updateDownloadWatcher(settings) {
 // The watcher is started automatically during service initialization in ServiceIntegration.js
 
 function handleSettingsChanged(settings) {
-  // MEDIUM PRIORITY FIX (MED-1): Validate settings structure before use
+  // Validate settings structure before use
   if (!settings || typeof settings !== 'object') {
     logger.warn('[SETTINGS] Invalid settings received, using defaults');
     currentSettings = {};
@@ -471,6 +538,11 @@ function handleSettingsChanged(settings) {
     logger.warn('[SETTINGS] Failed to apply settings to auto-organize service:', error?.message);
   }
   try {
+    serviceIntegration?.smartFolderWatcher?.applySettings?.(settings);
+  } catch (error) {
+    logger.warn('[SETTINGS] Failed to apply settings to smart folder watcher:', error?.message);
+  }
+  try {
     updateTrayMenu();
   } catch (error) {
     logger.warn('[SETTINGS] Failed to update tray menu:', error);
@@ -481,7 +553,6 @@ function handleSettingsChanged(settings) {
 const { registerAllIpc, IpcServiceContext } = require('./ipc');
 
 // Prevent multiple instances
-// FIX: If the lock fails AND the env var STRATOSORT_FORCE_LAUNCH is set,
 // proceed anyway. This provides an escape hatch when a zombie process
 // holds the lock and the user cannot start the app.
 const gotTheLock = app.requestSingleInstanceLock();
@@ -504,7 +575,7 @@ if (!gotTheLock) {
 if (gotTheLock || process.env.STRATOSORT_FORCE_LAUNCH === '1') {
   const secondInstanceHandler = (_event, argv) => {
     // Someone tried to run a second instance, restore and focus our window
-    // HIGH-2 FIX: Use event-driven window state manager
+    // Use event-driven window state manager
     const { restoreWindow } = require('./core/windowState');
 
     // Windows: Jump List tasks are passed via argv when the app is already running.
@@ -577,7 +648,6 @@ app.whenReady().then(async () => {
     }
   }
 
-  // FIX: Create a referenced interval to keep the event loop alive during startup
   // This prevents premature exit when async operations use unreferenced timeouts
   const startupKeepalive = trackInterval(() => {}, 1000);
 
@@ -648,7 +718,6 @@ app.whenReady().then(async () => {
         }
 
         // Phase 2: Initialize DI container and internal services
-        // FIX: Pass startup result to skip redundant vector DB readiness check (saves 2-4s)
         logger.info('[STARTUP] Phase 2: Initializing service integration...');
         await serviceIntegration.initialize({
           startupResult: servicesResult,
@@ -708,7 +777,7 @@ app.whenReady().then(async () => {
     }
 
     // Load custom folders
-    // MEDIUM PRIORITY FIX (MED-3): Validate custom folders structure
+    // Validate custom folders structure
     try {
       const loadedFolders = await loadCustomFolders();
 
@@ -757,7 +826,6 @@ app.whenReady().then(async () => {
     }
 
     // Ensure default "Uncategorized" folder exists
-    // CRITICAL FIX: Add null checks with optional chaining to prevent NULL dereference
     const hasDefaultFolder =
       customFolders?.some((f) => f?.isDefault || f?.name?.toLowerCase() === 'uncategorized') ??
       false;
@@ -842,7 +910,6 @@ app.whenReady().then(async () => {
       // Use ModelManager singleton which is now the single source of truth for model verification
       const { getInstance: getModelManager } = require('./services/ModelManager');
       const modelManager = getModelManager();
-      // FIX 2.3: Add timeout to model verification to prevent indefinite hangs
       try {
         await withTimeout(
           modelManager.ensureWorkingModel(),
@@ -851,7 +918,6 @@ app.whenReady().then(async () => {
         );
         logger.info('[STARTUP] ✅ AI models verified and ready');
       } catch (err) {
-        // FIX 2.3: Distinguish between timeout and other errors
         if (err.message?.includes('timed out')) {
           logger.warn('[STARTUP] Model verification timed out - will retry on first use');
         } else {
@@ -939,7 +1005,6 @@ app.whenReady().then(async () => {
     createApplicationMenu(() => mainWindow);
 
     // Register IPC event listeners (not handlers) for renderer-to-main communication
-    // FIX: Store handler reference for proper cleanup tracking
     const rendererErrorReportHandler = (event, errorData) => {
       try {
         logger.error('[RENDERER ERROR]', {
@@ -955,12 +1020,11 @@ app.whenReady().then(async () => {
     };
     ipcMain.on(IPC_CHANNELS.SYSTEM.RENDERER_ERROR_REPORT, rendererErrorReportHandler);
 
-    // FIX: Track renderer-error-report listener for explicit cleanup
     eventListeners.push(() => {
       ipcMain.removeListener(IPC_CHANNELS.SYSTEM.RENDERER_ERROR_REPORT, rendererErrorReportHandler);
     });
 
-    // HIGH PRIORITY FIX (HIGH-1): Removed unreliable setImmediate delay
+    // Removed unreliable setImmediate delay
     // The verifyIpcHandlersRegistered() function has robust retry logic with
     // exponential backoff and timeout, so no pre-delay is needed
 
@@ -984,7 +1048,6 @@ app.whenReady().then(async () => {
     }
 
     createWindow();
-    // FIX: Clear keepalive now that window is created and keeping event loop alive
     clearTrackedTimer(startupKeepalive);
     handleSettingsChanged(initialSettings);
 
@@ -1029,7 +1092,7 @@ app.whenReady().then(async () => {
         getSettingsService: () => settingsService,
         handleSettingsChanged,
         createWindow,
-        setIsQuitting // FIX 2.4: Use consolidated setter
+        setIsQuitting
       });
       createSystemTray();
       // Register global shortcut for quick semantic search
@@ -1062,7 +1125,7 @@ app.whenReady().then(async () => {
       setGlobalProcessListeners: (val) => {
         globalProcessListeners = val;
       },
-      setIsQuitting // FIX 2.4: Use consolidated setter
+      setIsQuitting
     });
 
     // Register lifecycle handlers (replaces inline before-quit, window-all-closed, etc.)
@@ -1070,7 +1133,6 @@ app.whenReady().then(async () => {
     eventListeners.push(lifecycleCleanup.cleanupAppListeners);
     globalProcessListeners.push(lifecycleCleanup.cleanupProcessListeners);
 
-    // FIX 2.4: Add synchronous pre-quit listener to set forceQuit flag BEFORE async cleanup
     // This prevents the race condition where window close handler hides window during quit
     app.prependListener('before-quit', () => {
       setForceQuit(true);
@@ -1080,7 +1142,6 @@ app.whenReady().then(async () => {
     // Handled by ./core/jumpList module
     initializeJumpList();
     // Fire-and-forget resume of incomplete batches shortly after window is ready
-    // FIX: Track timeout for cleanup to prevent execution during shutdown
     let resumeTimeoutCleared = false;
     const resumeTimeout = trackTimeout(() => {
       if (resumeTimeoutCleared) return; // Guard against execution during shutdown
@@ -1096,7 +1157,6 @@ app.whenReady().then(async () => {
     } catch (error) {
       logger.warn('[RESUME] Failed to unref timeout:', error.message);
     }
-    // FIX: Add cleanup function to clear the timeout on app quit
     eventListeners.push(() => {
       resumeTimeoutCleared = true;
       clearTrackedTimer(resumeTimeout);
@@ -1145,7 +1205,6 @@ app.whenReady().then(async () => {
     // Still create window even if startup fails - allow degraded mode
     logger.warn('[STARTUP] Creating window in degraded mode due to startup errors');
     createWindow();
-    // FIX: Clear keepalive now that window is created and keeping event loop alive
     clearTrackedTimer(startupKeepalive);
   }
 });

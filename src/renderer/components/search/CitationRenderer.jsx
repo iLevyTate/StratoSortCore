@@ -15,7 +15,6 @@ export default function CitationRenderer({ text, sources, onOpenSource }) {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
     const rect = e.currentTarget.getBoundingClientRect();
-    // FIX BUG-005: Portal uses position:fixed (viewport-relative), don't add scroll offsets
     setPreviewPos({
       top: rect.top - 10,
       left: rect.left

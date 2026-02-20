@@ -28,14 +28,12 @@ try {
   z = require('zod');
 } catch (error) {
   if (process.env.NODE_ENV === 'test') {
-    // FIX: Use logger instead of console.warn for consistency
     logger.warn('zod import failed in validationSchemas', { error: error.message });
   }
   zodLoadError = error;
   z = null;
 }
 
-// FIX: Provide fallback validation when Zod is not available
 // This ensures basic type checking even without Zod, preventing security bypasses
 if (!z) {
   // Create simple fallback validators that provide basic type safety
@@ -344,36 +342,40 @@ if (!z) {
       caseConvention: z.enum(CASE_CONVENTIONS).nullish(),
       separator: z.string().regex(SEPARATOR_PATTERN).nullish(),
 
-      // File size limits
+      // File size limits (must match settingsValidation.js VALIDATION_RULES)
       maxFileSize: z
         .number()
         .int()
         .min(1024 * 1024)
+        .max(1024 * 1024 * 1024)
         .nullish(),
       maxImageFileSize: z
         .number()
         .int()
         .min(1024 * 1024)
+        .max(500 * 1024 * 1024)
         .nullish(),
       maxDocumentFileSize: z
         .number()
         .int()
         .min(1024 * 1024)
+        .max(500 * 1024 * 1024)
         .nullish(),
       maxTextFileSize: z
         .number()
         .int()
         .min(1024 * 1024)
+        .max(200 * 1024 * 1024)
         .nullish(),
 
       // Processing limits
-      analysisTimeout: z.number().int().min(10000).nullish(),
-      fileOperationTimeout: z.number().int().min(1000).nullish(),
-      retryAttempts: z.number().int().min(0).nullish(),
+      analysisTimeout: z.number().int().min(10000).max(3600000).nullish(),
+      fileOperationTimeout: z.number().int().min(1000).max(3600000).nullish(),
+      retryAttempts: z.number().int().min(0).max(10).nullish(),
 
       // UI limits
-      workflowRestoreMaxAge: z.number().int().min(60000).nullish(),
-      saveDebounceMs: z.number().int().min(100).nullish(),
+      workflowRestoreMaxAge: z.number().int().min(60000).max(86400000).nullish(),
+      saveDebounceMs: z.number().int().min(100).max(10000).nullish(),
 
       // Graph-aware retrieval (GraphRAG-lite)
       graphExpansionEnabled: z.boolean().nullish(),
@@ -383,14 +385,14 @@ if (!z) {
       chunkContextMaxNeighbors: z.number().int().min(0).max(3).nullish(),
 
       // Llama engine tuning
-      llamaGpuLayers: z.number().int().min(-1).nullish(),
+      llamaGpuLayers: z.number().int().min(-1).max(256).nullish(),
       llamaContextSize: z.number().int().min(512).max(131072).nullish(),
 
       // Vector DB persistence (relative to userData)
       vectorDbPersistPath: z.string().min(1).max(200).nullish(),
 
       // Internal schema version for settings migrations
-      settingsSchemaVersion: z.number().int().min(1).nullish(),
+      settingsSchemaVersion: z.number().int().min(1).max(10000).nullish(),
 
       // Deprecated settings (kept for backward compatibility)
       smartFolderWatchEnabled: z.boolean().nullish()
@@ -995,8 +997,6 @@ if (!z) {
   module.exports = {
     z,
     schemas,
-    zodLoadError,
-    // Also export individual schemas for convenience
-    ...schemas
+    zodLoadError
   };
 }

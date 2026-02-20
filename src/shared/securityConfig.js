@@ -105,7 +105,6 @@ function getDangerousPaths(platform = PLATFORM) {
   if (platform === 'darwin') {
     paths.push(...DANGEROUS_PATHS.darwin);
   } else if (platform === 'win32') {
-    // FIX Bug 18: Generate dangerous paths for all detected drive letters,
     // not just the hardcoded C: drive. Systems commonly have D:, E:, etc.
     const driveLetters = _getWindowsDriveLetters();
     const windowsSubPaths = [
@@ -153,7 +152,6 @@ function _getWindowsDriveLetters() {
     }
   }
 
-  // FIX: Enumerate all mounted drive letters so dangerous paths on D:, E:, etc.
   // are also blocked. Previous code only covered C: and env-based drives.
   try {
     const fs = require('fs');
@@ -292,7 +290,7 @@ const ALLOWED_METADATA_FIELDS = [
   'tags',
   'keywords',
   'entity',
-  // 'type', // FIX HIGH-48: Removed duplicate 'type'
+  // 'type',
   'project',
   'date',
   'suggestedName',

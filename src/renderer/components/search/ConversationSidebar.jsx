@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import PropTypes from 'prop-types';
-import { Plus, MessageSquare, Trash2, Search } from 'lucide-react';
-import { Button } from '../ui';
+import { Plus, MessageSquare, Trash2, Search, ChevronLeft } from 'lucide-react';
+import { Button, IconButton } from '../ui';
 import { Text } from '../ui/Typography';
 import {
   listConversations,
@@ -70,6 +70,7 @@ export default function ConversationSidebar({
   currentConversationId,
   onSelectConversation,
   onNewConversation,
+  onClose,
   className = ''
 }) {
   const [conversations, setConversations] = useState([]);
@@ -77,6 +78,14 @@ export default function ConversationSidebar({
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
+  const deleteTimerRef = useRef(null);
+
+  // Clean up delete confirmation timer on unmount
+  useEffect(() => {
+    return () => {
+      if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedQuery(searchQuery), 300);
@@ -125,8 +134,12 @@ export default function ConversationSidebar({
     } else {
       // First click arms the deletion (click again to confirm)
       setPendingDeleteId(id);
-      // Auto-cancel after 3 seconds
-      setTimeout(() => setPendingDeleteId((prev) => (prev === id ? null : prev)), 3000);
+      // Auto-cancel after 3 seconds (clear previous timer to avoid stacking)
+      if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+      deleteTimerRef.current = setTimeout(() => {
+        setPendingDeleteId((prev) => (prev === id ? null : prev));
+        deleteTimerRef.current = null;
+      }, 3000);
     }
   };
 
@@ -135,14 +148,27 @@ export default function ConversationSidebar({
       className={`flex flex-col h-full bg-system-gray-50 border-r border-system-gray-200 ${className}`}
     >
       <div className="p-3 border-b border-system-gray-200 space-y-3">
-        <Button
-          variant="primary"
-          className="w-full justify-center gap-2"
-          onClick={onNewConversation}
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Chat</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="primary"
+            className="flex-1 justify-center gap-2"
+            onClick={onNewConversation}
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Chat</span>
+          </Button>
+          {onClose && (
+            <IconButton
+              onClick={onClose}
+              size="sm"
+              variant="secondary"
+              className="shrink-0 w-8 h-8"
+              title="Collapse conversation sidebar"
+              aria-label="Collapse conversation sidebar"
+              icon={<ChevronLeft className="w-4 h-4 text-system-gray-500" />}
+            />
+          )}
+        </div>
 
         <div className="relative">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-system-gray-400" />

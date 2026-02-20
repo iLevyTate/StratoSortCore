@@ -103,11 +103,9 @@ class AnalysisHistoryServiceCore {
     this._writeLock = null;
     this._writeLockMeta = null;
 
-    // FIX: Callback for cascade orphan marking when entries are removed
     // Set via setOnEntriesRemovedCallback from ServiceIntegration
     this._onEntriesRemovedCallback = null;
 
-    // Fix 9: Write Queue Batching
     this._pendingWrites = [];
     this._writeBufferTimer = null;
     this.WRITE_BUFFER_MS = 100;
@@ -336,7 +334,6 @@ class AnalysisHistoryServiceCore {
       error.code = 'WRITE_BUFFER_FULL';
       return Promise.reject(error);
     }
-    // Fix 9: Buffer writes to reduce lock contention
     return new Promise((resolve, reject) => {
       this._pendingWrites.push({ fileInfo, analysisResults, resolve, reject });
       this._scheduleFlush();
@@ -600,7 +597,6 @@ class AnalysisHistoryServiceCore {
             );
           });
 
-          // FIX: Persistence failed - roll back in-memory mutations then force re-initialization
           logger.error(
             '[AnalysisHistoryService] Persistence failed, rolling back in-memory changes and forcing re-initialization'
           );
@@ -858,7 +854,6 @@ class AnalysisHistoryServiceCore {
             entry.fileName = update.newName;
           }
 
-          // FIX: Update the path index for fast lookups by new path
           if (this.analysisIndex) {
             updatePathIndexForMove(this.analysisIndex, entry, oldActualPath, update.newPath);
           }

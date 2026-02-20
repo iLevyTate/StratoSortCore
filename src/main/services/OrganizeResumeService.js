@@ -2,7 +2,6 @@ const path = require('path');
 const fs = require('fs').promises;
 const { crossDeviceMove } = require('../../shared/atomicFileOperations');
 const { IPC_EVENTS } = require('../../shared/constants');
-// FIX: Import safeSend for validated IPC event sending
 const { safeSend } = require('../ipc/ipcWrappers');
 const { computeFileChecksum, handleDuplicateMove } = require('../utils/fileDedup');
 const { removeEmbeddingsForPathBestEffort } = require('../ipc/files/embeddingSync');
@@ -44,7 +43,6 @@ async function resumeIncompleteBatches(serviceIntegration, logger, getMainWindow
         if (op.status === 'done') {
           const win = getMainWindow?.();
           if (win && !win.isDestroyed()) {
-            // FIX: Use safeSend for validated IPC event sending
             safeSend(win.webContents, IPC_EVENTS.OPERATION_PROGRESS, {
               type: 'batch_organize',
               current: i + 1,
@@ -68,7 +66,6 @@ async function resumeIncompleteBatches(serviceIntegration, logger, getMainWindow
 
               const win = getMainWindow?.();
               if (win && !win.isDestroyed()) {
-                // FIX: Use safeSend for validated IPC event sending
                 safeSend(win.webContents, IPC_EVENTS.OPERATION_PROGRESS, {
                   type: 'batch_organize',
                   current: i + 1,
@@ -163,7 +160,6 @@ async function resumeIncompleteBatches(serviceIntegration, logger, getMainWindow
 
           const win = getMainWindow?.();
           if (win && !win.isDestroyed()) {
-            // FIX: Use safeSend for validated IPC event sending
             safeSend(win.webContents, IPC_EVENTS.OPERATION_PROGRESS, {
               type: 'batch_organize',
               current: i + 1,

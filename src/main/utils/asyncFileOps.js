@@ -6,6 +6,7 @@
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { createLogger } = require('../../shared/logger');
 const { RETRY } = require('../../shared/performanceConstants');
 const { withRetry } = require('../../shared/promiseUtils');
@@ -92,9 +93,7 @@ async function safeWriteFile(filePath, data, options = 'utf8') {
       return { success: false, error: dirResult.error };
     }
 
-    // FIX: Use atomic write (temp + rename) to prevent corruption on crash
-    // FIX: Add random suffix to prevent collision when concurrent writes target the same file
-    const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
+    const tempPath = `${filePath}.tmp.${Date.now()}.${crypto.randomBytes(3).toString('hex')}`;
     try {
       await fs.writeFile(tempPath, data, options);
 

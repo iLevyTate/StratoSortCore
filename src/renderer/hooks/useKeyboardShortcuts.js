@@ -13,14 +13,12 @@ export function useKeyboardShortcuts() {
   const currentPhase = useAppSelector((state) => state.ui.currentPhase);
   const showSettings = useAppSelector((state) => state.ui.showSettings);
   const { addNotification } = useNotification();
-  // FIX: Use the React UndoRedo system instead of direct IPC calls
   // This ensures state callbacks (onUndo/onRedo) are invoked, updating UI properly
   const { undo: undoAction, redo: redoAction, canUndo, canRedo } = useUndoRedo();
 
   // Use refs to avoid re-attaching event listeners when these values change
   const showSettingsRef = useRef(showSettings);
   const currentPhaseRef = useRef(currentPhase);
-  // FIX: Use refs for undo/redo to prevent event listener re-attachment
   const undoActionRef = useRef(undoAction);
   const redoActionRef = useRef(redoAction);
   const canUndoRef = useRef(canUndo);
@@ -46,11 +44,9 @@ export function useKeyboardShortcuts() {
     canRedoRef.current = canRedo;
   }, [canRedo]);
 
-  // CRITICAL FIX: Memoize actions to prevent event listener re-attachment on every render
   const handleToggleSettings = useCallback(() => dispatch(toggleSettings()), [dispatch]);
   const handleAdvancePhase = useCallback((phase) => dispatch(setPhase(phase)), [dispatch]);
 
-  // CRITICAL FIX: Use useMemo for stable actions object reference
   const actions = useMemo(
     () => ({
       toggleSettings: handleToggleSettings,
@@ -60,10 +56,8 @@ export function useKeyboardShortcuts() {
   );
 
   useEffect(() => {
-    // MEDIUM FIX: Make handler async to properly await undo/redo calls
     const handleKeyDown = async (event) => {
       // Ctrl/Cmd + Z for Undo
-      // FIX: Use React UndoRedo system instead of direct IPC to ensure UI state updates
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey) {
         event.preventDefault();
         try {
@@ -83,7 +77,6 @@ export function useKeyboardShortcuts() {
       }
 
       // Ctrl/Cmd + Shift + Z for Redo (also support Ctrl+Y on Windows)
-      // FIX: Use React UndoRedo system instead of direct IPC to ensure UI state updates
       if (
         (event.ctrlKey || event.metaKey) &&
         ((event.key.toLowerCase() === 'z' && event.shiftKey) || event.key.toLowerCase() === 'y')

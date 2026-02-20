@@ -4,9 +4,7 @@ import { logger } from '../../../shared/logger';
 import { serializeData } from '../../utils/serialization';
 import { settingsIpc } from '../../services/ipc';
 
-// FIX: Define explicit phase order for navigation logic
 // PHASE_ORDER is imported from constants
-// FIX: Add fallback to prevent crash if PHASES is undefined during module initialization
 const VALID_PHASES = PHASE_ORDER || ['welcome', 'setup', 'discover', 'organize', 'complete'];
 
 function isValidPhase(phase) {
@@ -29,13 +27,11 @@ function canTransitionTo(fromPhase, toPhase) {
 
 // Navigation state rules - determines when navigation buttons should be disabled
 // This centralizes the logic to prevent inconsistencies across components
-// FIX: isAnalyzing should be passed in context from analysisSlice for accurate state
 const NAVIGATION_RULES = {
   // Rules for when "Back" button should be disabled
   // context.isAnalyzing must be passed from analysisSlice.isAnalyzing
   canGoBack: (state, context = {}) => {
     // Cannot go back from welcome phase
-    // FIX: Add null check for PHASES to prevent crash during module initialization
     if (state.currentPhase === (PHASES?.WELCOME ?? 'welcome')) return false;
     // Cannot go back while loading/processing
     if (state.isLoading) return false;
@@ -51,7 +47,6 @@ const NAVIGATION_RULES = {
     if (state.isOrganizing || context.isAnalyzing) return false;
 
     // Phase-specific rules
-    // FIX: Add null checks for PHASES to prevent crash during module initialization
     switch (state.currentPhase) {
       case PHASES?.SETUP ?? 'setup':
         // Setup requires at least one smart folder (context provides this)
@@ -77,7 +72,6 @@ const NAVIGATION_RULES = {
 };
 
 // Thunk to fetch settings (only once, then cached)
-// FIX: Added forceRefresh parameter to allow cache invalidation
 export const fetchSettings = createAsyncThunk(
   'ui/fetchSettings',
   async (arg, { getState, rejectWithValue }) => {
@@ -98,7 +92,6 @@ export const fetchSettings = createAsyncThunk(
 );
 
 const initialState = {
-  // FIX: Add null check for PHASES to prevent crash during module initialization
   currentPhase: PHASES?.WELCOME ?? 'welcome',
   previousPhase: null, // Track previous phase for back navigation
   sidebarOpen: true,
@@ -108,14 +101,12 @@ const initialState = {
   activeModal: null, // 'history', 'confirm', etc.
   settings: null, // Cached settings from main process
   settingsLoading: false,
-  settingsError: null, // FIX: Track settings fetch errors
+  settingsError: null,
   // Navigation state tracking for consistent button states
   isOrganizing: false, // True during file organization operations
-  // FIX MEDIUM-1: Add additional processing states for better UX feedback
   isDiscovering: false, // True during file discovery/scanning operations
   isProcessing: false, // Generic processing state for any background operation
   navigationError: null, // Last navigation error for debugging
-  // FIX MEDIUM-2: Track operation errors with more detail
   lastOperationError: null, // { operation: string, message: string, timestamp: number }
   resetCounter: 0 // Incremented on reset to invalidate selector caches
 };
@@ -124,7 +115,6 @@ const uiSlice = createSlice({
   name: 'ui',
   initialState,
   reducers: {
-    // FIX: Add validation to prevent invalid navigation states
     setPhase: (state, action) => {
       const newPhase = action.payload;
 
@@ -140,7 +130,6 @@ const uiSlice = createSlice({
         });
         state.navigationError = error;
         // Reset to safe state instead of corrupting the store
-        // FIX: Add null check for PHASES to prevent crash during module initialization
         state.currentPhase = PHASES?.WELCOME ?? 'welcome';
         state.previousPhase = null;
         return;
@@ -224,17 +213,14 @@ const uiSlice = createSlice({
       }
     },
     updateSettings: (state, action) => {
-      // CRITICAL FIX: Handle case where settings is null before first fetch
       state.settings = { ...(state.settings || {}), ...serializeData(action.payload) };
     },
-    // FIX MEDIUM-1: Add reducers for new processing states
     setDiscovering: (state, action) => {
       state.isDiscovering = Boolean(action.payload);
     },
     setProcessing: (state, action) => {
       state.isProcessing = Boolean(action.payload);
     },
-    // FIX MEDIUM-2: Set operation error with details
     setOperationError: (state, action) => {
       if (action.payload) {
         state.lastOperationError = {
@@ -263,7 +249,6 @@ const uiSlice = createSlice({
         state.settingsError = null;
       })
       .addCase(fetchSettings.rejected, (state, action) => {
-        // FIX: Preserve existing settings on failure instead of wiping them
         // Only set to empty object if no previous settings exist
         if (!state.settings) {
           state.settings = {};

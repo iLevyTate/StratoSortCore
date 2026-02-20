@@ -36,7 +36,6 @@ const serializeLoadedFile = (file) => {
 };
 
 const serializeLoadedFiles = (files) => {
-  // FIX: Handle null/undefined and non-array inputs safely
   if (files == null) return [];
   if (!Array.isArray(files)) {
     logger.warn('[Store] serializeLoadedFiles received non-array input, returning empty array');
@@ -96,10 +95,8 @@ const loadState = () => {
       if (legacyState) {
         try {
           const parsedLegacy = JSON.parse(legacyState);
-          // FIX: Ensure all slice properties have explicit defaults for complete state
           return {
             ui: {
-              // FIX: Add null check for PHASES to prevent crash during module initialization
               currentPhase: parsedLegacy.currentPhase || (PHASES?.WELCOME ?? 'welcome'),
               previousPhase: null,
               sidebarOpen: true,
@@ -136,8 +133,7 @@ const loadState = () => {
               results: serializeLoadedFiles(parsedLegacy.phaseData?.analysisResults || []),
               isAnalyzing: false,
               analysisProgress: { current: 0, total: 0, lastActivity: 0 },
-              currentAnalysisFile: '',
-              stats: null
+              currentAnalysisFile: ''
             }
           };
         } catch {
@@ -175,7 +171,6 @@ const loadState = () => {
     }
 
     if (stateAgeMs > STATE_TTL_MS) {
-      // FIX: Store flag so UI can notify user their state was expired
       // This prevents silent data loss confusion
       window.__STRATOSORT_STATE_EXPIRED__ = true;
       window.__STRATOSORT_STATE_EXPIRED_AGE_HOURS__ = hasValidTimestamp
@@ -220,8 +215,7 @@ const loadState = () => {
           isAnalyzing: false,
           analysisProgress: { current: 0, total: 0, lastActivity: 0 },
           currentAnalysisFile: '',
-          results: [],
-          stats: null
+          results: []
         },
         system: {
           metrics: { cpu: 0, memory: 0, uptime: 0 },
@@ -244,11 +238,9 @@ const loadState = () => {
       };
     }
 
-    // FIX CRIT-4: Explicitly set defaults for ALL slice properties to prevent null/undefined
     // from persisted state overriding slice initial state defaults
     return {
       ui: {
-        // FIX: Add null check for PHASES to prevent crash during module initialization
         currentPhase: parsed.ui?.currentPhase || (PHASES?.WELCOME ?? 'welcome'),
         previousPhase: parsed.ui?.previousPhase || null,
         sidebarOpen: parsed.ui?.sidebarOpen !== false, // default true
@@ -273,7 +265,7 @@ const loadState = () => {
         organizedFiles: serializeLoadedFiles(parsed.files?.organizedFiles || []),
         smartFolders: parsed.files?.smartFolders || [],
         smartFoldersLoading: false,
-        smartFoldersError: null, // FIX: Missing error state
+        smartFoldersError: null,
         fileStates: parsed.files?.fileStates || {},
         namingConvention: parsed.files?.namingConvention || {
           convention: 'subject-date',
@@ -365,7 +357,6 @@ const store = configureStore({
   preloadedState
 });
 
-// FIX Issue 3: Mark store as ready to flush any queued IPC events
 markStoreReady();
 
 // NOTE: State-expiration notification is handled by WelcomePhase.jsx (which

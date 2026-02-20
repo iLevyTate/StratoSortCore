@@ -17,7 +17,6 @@ let hasWarnedMissingZod = false;
 try {
   z = require('zod');
 } catch (error) {
-  // FIX: Log warning when Zod fails to load so validation bypass is visible
   logger.warn('[ipcEventSchemas] Zod not available, schema validation disabled:', error.message);
   z = null;
 }
@@ -251,20 +250,6 @@ const schemas = z
           .optional()
       });
 
-      /**
-       * Operation Failed Event
-       * FIX H-7: Add schema for operation-failed event
-       * Emitted when an operation fails critically
-       */
-      const operationFailedSchema = z.object({
-        operationId: z.string().optional(),
-        operationType: z.string().optional(),
-        error: z.string(),
-        code: z.string().optional(),
-        details: z.any().optional(),
-        timestamp: z.number().optional()
-      });
-
       return {
         operationProgressSchema,
         operationCompleteSchema,
@@ -279,8 +264,7 @@ const schemas = z
         appUpdateSchema,
         openSemanticSearchSchema,
         batchResultsChunkSchema,
-        undoRedoStateChangedSchema,
-        operationFailedSchema
+        undoRedoStateChangedSchema
       };
     })()
   : {};
@@ -304,8 +288,7 @@ const EVENT_SCHEMAS = z
       [IPC_EVENTS.APP_UPDATE]: schemas.appUpdateSchema,
       [IPC_EVENTS.OPEN_SEMANTIC_SEARCH]: schemas.openSemanticSearchSchema,
       [IPC_EVENTS.BATCH_RESULTS_CHUNK]: schemas.batchResultsChunkSchema,
-      [IPC_EVENTS.UNDO_REDO_STATE_CHANGED]: schemas.undoRedoStateChangedSchema,
-      [IPC_EVENTS.OPERATION_FAILED]: schemas.operationFailedSchema
+      [IPC_EVENTS.UNDO_REDO_STATE_CHANGED]: schemas.undoRedoStateChangedSchema
     }
   : {};
 
@@ -317,7 +300,6 @@ const EVENT_SCHEMAS = z
  */
 function validateEventPayload(channel, data) {
   if (!z) {
-    // SECURITY FIX: Fail-closed when Zod is missing — do not silently pass unvalidated data.
     // This ensures callers using strict mode won't send unvalidated payloads.
     if (!hasWarnedMissingZod) {
       hasWarnedMissingZod = true;

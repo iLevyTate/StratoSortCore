@@ -8,20 +8,12 @@
  * @module shared/LRUCache
  */
 
-// FIX: Robust logger import with fallback for cross-process safety
 let logger;
 try {
-  const loggerModule = require('./logger');
-  logger = loggerModule.createLogger ? loggerModule.createLogger('LRUCache') : loggerModule.logger;
+  const { createSafeLogger } = require('./logger');
+  logger = createSafeLogger('LRUCache');
 } catch {
-  logger = {
-    debug: () => {},
-    info: () => {},
-    // eslint-disable-next-line no-console
-    warn: console.warn.bind(console, '[LRUCache]'),
-    // eslint-disable-next-line no-console
-    error: console.error.bind(console, '[LRUCache]')
-  };
+  logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 }
 
 /**

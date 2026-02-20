@@ -69,16 +69,13 @@ function normalizeAnalysisProgressPayload(payload) {
 // Track listeners for cleanup to prevent memory leaks
 let listenersInitialized = false;
 let cleanupFunctions = [];
-// FIX: Track beforeunload handler reference for proper cleanup
 let beforeUnloadHandler = null;
 
-// FIX Issue 3: Event queue for early IPC events
 // Events that arrive before store.dispatch is ready are queued and flushed later
 let isStoreReady = false;
 let eventQueue = [];
 let storeRef = null;
 
-// FIX: Maximum event queue size to prevent unbounded memory growth during startup
 const MAX_EVENT_QUEUE_SIZE = 300;
 const CRITICAL_ACTION_CREATORS = new Set([
   updateProgress,
@@ -115,7 +112,6 @@ function safeDispatch(actionCreator, data) {
   if (isStoreReady && storeRef) {
     storeRef.dispatch(actionCreator(data));
   } else {
-    // FIX: Enforce queue size limit to prevent unbounded memory growth
     if (eventQueue.length >= MAX_EVENT_QUEUE_SIZE) {
       logger.warn('[IPC Middleware] Event queue full, dropping oldest event', {
         queueSize: eventQueue.length,
@@ -142,7 +138,6 @@ function safeDispatch(actionCreator, data) {
       dropOneEvent();
     }
 
-    // FIX HIGH-1: Only warn about overflow when queue is actually near capacity
     if (!safeDispatch.hasWarnedOverflow && eventQueue.length >= MAX_EVENT_QUEUE_SIZE * 0.8) {
       safeDispatch.hasWarnedOverflow = true;
       if (eventQueue.length >= MAX_EVENT_QUEUE_SIZE) {
@@ -188,19 +183,16 @@ export function markStoreReady() {
 
   if (eventQueue.length > 0 && storeRef) {
     logger.info('[IPC Middleware] Flushing event queue', { count: eventQueue.length });
-    // FIX: Swap references before processing to prevent race condition
     // If events arrive during the forEach loop, they would be added to eventQueue
     // and then lost when eventQueue = [] runs. By swapping first, new events
     // go into a fresh array while we process the old one.
     const eventsToFlush = eventQueue;
     eventQueue = [];
     eventsToFlush.forEach(({ actionCreator, data }) => {
-      // FIX HIGH-44: Wrap dispatch in try-catch to prevent one error stopping the queue
       try {
         storeRef.dispatch(actionCreator(data));
       } catch (e) {
         logger.error('[IPC Middleware] Error flushing queued event:', e.message);
-        // FIX: Dispatch error notification for critical event failures
         // Only notify for non-notification actions to avoid infinite loops
         if (actionCreator !== addNotification) {
           try {
@@ -232,12 +224,10 @@ export function markStoreReady() {
 }
 
 const ipcMiddleware = (store) => {
-  // FIX Issue 3: Store reference for event queue flushing
   storeRef = store;
 
   // Set up listeners once (with cleanup tracking)
   if (window.electronAPI?.events && !listenersInitialized) {
-    // FIX: Clean up any existing listeners first (defensive for HMR edge cases)
     // This ensures no duplicate listeners accumulate even if listenersInitialized
     // was incorrectly reset or the module was partially reloaded
     cleanupIpcListeners(false);
@@ -245,7 +235,6 @@ const ipcMiddleware = (store) => {
     listenersInitialized = true;
 
     // Listen for operation progress from batch operations
-    // FIX: Use safeDispatch to handle early events
     if (typeof window.electronAPI.events.onOperationProgress === 'function') {
       const progressCleanup = window.electronAPI.events.onOperationProgress((data) => {
         const { valid, data: validatedData } = validateIncomingEvent('operation-progress', data);
@@ -271,7 +260,6 @@ const ipcMiddleware = (store) => {
       logger.debug('[IPC] onSystemMetrics handler unavailable');
     }
 
-    // FIX: Subscribe to file operation complete events (moves, deletes)
     if (window.electronAPI.events.onFileOperationComplete) {
       const fileOpCleanup = window.electronAPI.events.onFileOperationComplete((data) => {
         const { valid, data: validatedData } = validateIncomingEvent(
@@ -284,7 +272,6 @@ const ipcMiddleware = (store) => {
           fileCount: validatedData.files?.length
         });
 
-        // FIX: Wrap dispatches in try-catch to prevent silent failures
         try {
           if (validatedData.operation === 'move') {
             // Support both batch payloads (files/destinations) and single-file payloads
@@ -321,7 +308,6 @@ const ipcMiddleware = (store) => {
             }
           }
 
-          // FIX: Dispatch DOM event for components that need to react to file operations
           // (e.g., UnifiedSearchModal graph updates, search index invalidation)
           try {
             window.dispatchEvent(
@@ -343,7 +329,6 @@ const ipcMiddleware = (store) => {
       if (fileOpCleanup) cleanupFunctions.push(fileOpCleanup);
     }
 
-    // FIX: Subscribe to notification events from watchers and background processes
     // Now uses unified notification schema from main process (no field translation needed)
     if (window.electronAPI.events.onNotification) {
       const notificationCleanup = window.electronAPI.events.onNotification((data) => {
@@ -365,7 +350,6 @@ const ipcMiddleware = (store) => {
       if (notificationCleanup) cleanupFunctions.push(notificationCleanup);
     }
 
-    // FIX: Subscribe to batch results chunk events for progressive streaming
     if (window.electronAPI.events.onBatchResultsChunk) {
       const batchChunkCleanup = window.electronAPI.events.onBatchResultsChunk((data) => {
         const { valid, data: validatedData } = validateIncomingEvent('batch-results-chunk', data);
@@ -409,7 +393,6 @@ const ipcMiddleware = (store) => {
       if (batchChunkCleanup) cleanupFunctions.push(batchChunkCleanup);
     }
 
-    // FIX: Subscribe to app error events
     if (window.electronAPI.events.onAppError) {
       const appErrorCleanup = window.electronAPI.events.onAppError((data) => {
         const { valid, data: validatedData } = validateIncomingEvent('app:error', data);
@@ -473,7 +456,6 @@ const ipcMiddleware = (store) => {
     }
 
     // Clean up listeners on window unload to prevent memory leaks
-    // FIX: Store handler reference so it can be removed during cleanup
     beforeUnloadHandler = () => cleanupIpcListeners(true);
     window.addEventListener('beforeunload', beforeUnloadHandler);
 
@@ -485,7 +467,6 @@ const ipcMiddleware = (store) => {
     }
   }
 
-  // FIX Issue 3: Automatically mark store as ready if this is a re-initialization
   // but we already have a storeRef from before. This handles HMR and late-loading middleware.
   if (storeRef && !isStoreReady) {
     setTimeout(markStoreReady, 0);
@@ -508,7 +489,6 @@ export const cleanupIpcListeners = (isTeardown = false) => {
   cleanupFunctions = [];
   listenersInitialized = false;
 
-  // FIX: ALWAYS remove the beforeunload listener to prevent accumulation during HMR
   // This must happen BEFORE the isTeardown check, otherwise HMR calls with
   // isTeardown=false would leave orphaned handlers in the event listener list
   if (beforeUnloadHandler) {
@@ -516,14 +496,12 @@ export const cleanupIpcListeners = (isTeardown = false) => {
     beforeUnloadHandler = null;
   }
 
-  // FIX Issue 3: Reset event queue state only on real teardown
   // During HMR or listener refresh, we want to keep the store state
   if (isTeardown) {
     isStoreReady = false;
     eventQueue = [];
     droppedCriticalEventCount = 0;
     storeRef = null;
-    // FIX: Reset overflow warning flag so it can fire again after reinit
     if (typeof safeDispatch !== 'undefined') {
       safeDispatch.hasWarnedOverflow = false;
     }

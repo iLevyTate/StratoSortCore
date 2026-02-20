@@ -131,7 +131,6 @@ class GPUMonitor {
       }
     }
 
-    // FIX Bug #30: Use PowerShell Get-CimInstance for modern Windows support
     // wmic is deprecated and often returns empty/malformed data for integrated GPUs
     const ps = await runCommand('powershell', [
       '-NoProfile',
@@ -149,7 +148,6 @@ class GPUMonitor {
         let maxRAM = -1;
 
         for (const gpu of gpus) {
-          // FIX: Win32_VideoController.AdapterRAM is a uint32 WMI property,
           // capped at ~4GB. Values of 0 or exactly 4294967295 (0xFFFFFFFF)
           // typically indicate truncation for GPUs with >4GB VRAM. In that
           // case, fall through to nvidia-smi or report 0 rather than a
@@ -277,7 +275,6 @@ class GPUMonitor {
       .split(',')
       .map((s) => parseInt(s.trim()));
 
-    // FIX: Use isNaN instead of falsy check -- `!0` is true, so an idle GPU
     // reporting 0 MB used would incorrectly return null with `!used`.
     if (isNaN(used) || isNaN(total) || total <= 0) return null;
 

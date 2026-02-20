@@ -236,7 +236,6 @@ async function recognizeWithTesseractJs(input, options = {}) {
     try {
       if (pool) {
         const result = await pool.run({ input, options });
-        // FIX: ocrWorker now returns { text, error? } instead of throwing
         // to prevent uncaught exceptions in the Piscina thread
         if (result?.error) {
           logger?.warn?.('[OCR] Worker pool failed, falling back to local worker', {
@@ -250,7 +249,6 @@ async function recognizeWithTesseractJs(input, options = {}) {
               // Ignore pool cleanup errors
             }
           }
-          // FIX: Fall through to local JS worker instead of returning empty string.
           // The log says "falling back to local worker" but previously returned ''
           // and never actually tried the local worker.
         } else {
@@ -369,7 +367,6 @@ async function terminateJsWorker() {
 }
 
 function resetTesseractAvailability() {
-  // FIX: Terminate the worker before dropping the reference to prevent process leak
   // Use fire-and-forget since callers expect a sync function
   terminateJsWorker().catch(() => {});
   availabilityCache = null;

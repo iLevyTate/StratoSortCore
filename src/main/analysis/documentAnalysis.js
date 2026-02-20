@@ -263,10 +263,13 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
 
     if (fileExtension === '.pdf') {
       try {
-        // FIX: Don't double-wrap with withTimeout — extractTextFromPdf already has
         // a 120s internal timeout, and ocrPdfIfNeeded has a 180s internal timeout.
-        // Wrapping with a 60s outer timeout killed extractions prematurely.
-        extractedText = await extractTextFromPdf(filePath, fileName);
+        // Wrapping with a 300s outer timeout to prevent indefinite hangs on malformed PDFs.
+        extractedText = await withTimeout(
+          extractTextFromPdf(filePath, fileName),
+          300000, // 5 minutes
+          'PDF extraction'
+        );
 
         if (!extractedText || extractedText.trim().length === 0) {
           // Try OCR fallback for image-only PDFs (has internal 180s timeout)
@@ -392,7 +395,6 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
 
       try {
         logExtraction();
-        // FIX: Use AI_ANALYSIS_LONG (120s) instead of AI_ANALYSIS_MEDIUM (60s)
         // to avoid killing XLSX/PPTX extractions that have 90s internal timeouts.
         extractedText = await withTimeout(
           extractOfficeContent(),
@@ -469,7 +471,6 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
               'PowerPoint presentation - content extraction failed, using filename analysis';
           }
 
-          // Fix: Ensure category maps to a valid smart folder, not just "document"
           const category = normalizeCategoryToSmartFolders(
             intelligentCategory || 'document',
             smartFolders
@@ -496,7 +497,6 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
         archiveInfo.keywords?.slice(0, TRUNCATION.KEYWORDS_MAX) ||
         getIntelligentKeywords(fileName, fileExtension);
 
-      // Fix: Ensure category maps to a valid smart folder
       const category = normalizeCategoryToSmartFolders('archive', smartFolders);
 
       return {
@@ -574,7 +574,6 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
 
       // Backend Caching & Deduplication:
       // Generate a content hash to prevent duplicate AI processing
-      // FIX: Ensure modelName is a string to prevent crypto.update() from throwing
       const safeModelName = String(modelName || 'default-model');
       const contentHash = crypto
         .createHash('md5')

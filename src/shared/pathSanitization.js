@@ -25,7 +25,6 @@ try {
   fs = null;
 }
 
-// HIGH FIX (HIGH-13): Default timeout for symlink operations to prevent hangs on network mounts
 const SYMLINK_CHECK_TIMEOUT_MS = 5000;
 const URL_SCHEME_REGEX = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
 
@@ -55,7 +54,6 @@ function sanitizePath(filePath) {
     return '';
   }
 
-  // FIX: Handle file:// URLs for consistency with preload behavior
   // This ensures main process handles file:// URLs the same way as the renderer
   let processedPath = filePath;
   if (processedPath.toLowerCase().startsWith('file://')) {
@@ -102,7 +100,6 @@ function sanitizePath(filePath) {
     const ext = path.extname(normalized);
     const truncateLength = maxLength - ext.length;
     if (truncateLength > 0) {
-      // FIX (MED-5): Use Array.from for code-point-aware truncation.
       // String.substring operates on UTF-16 code units and can split
       // surrogate pairs (emoji, CJK supplementary characters).
       const chars = Array.from(normalized);
@@ -260,7 +257,6 @@ function isPathWithinAllowed(targetPath, allowedBasePaths) {
     return false;
   }
 
-  // FIX: Platform-aware case sensitivity handling
   // Windows and macOS (HFS+) are case-insensitive, Linux is case-sensitive
   const isWindows = process.platform === 'win32';
   const isMacOS = process.platform === 'darwin';
@@ -338,7 +334,6 @@ async function checkSymlinkSafety(
     return { isSymlink: false, isSafe: true };
   }
 
-  // HIGH FIX (HIGH-13): Wrap operations in timeout to prevent hangs on network mounts
   const timeoutPromise = new Promise((_, reject) => {
     const id = setTimeout(() => {
       reject(

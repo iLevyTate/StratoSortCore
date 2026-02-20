@@ -37,7 +37,6 @@ function sortEntries(entries, sortBy, sortOrder) {
         comparison = a.fileName.localeCompare(b.fileName);
         break;
       case 'confidence':
-        // FIX 83: Use optional chaining to prevent crash on entries with missing analysis
         comparison = (a.analysis?.confidence || 0) - (b.analysis?.confidence || 0);
         break;
       case 'fileSize':

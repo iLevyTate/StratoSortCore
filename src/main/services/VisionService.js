@@ -11,6 +11,7 @@ const { createSingletonHelpers } = require('../../shared/singletonFactory');
 const { resolveRuntimePath } = require('../utils/runtimePaths');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
 const { delay } = require('../../shared/promiseUtils');
+const { isVisionDecodePressureError } = require('./visionErrorClassification');
 
 const logger = createLogger('VisionService');
 let loggedRuntimeVariant = false;
@@ -290,11 +291,9 @@ async function downloadFile(url, destination, _redirectCount = 0) {
         fileStream.close(resolve);
       });
       fileStream.on('error', (error) => {
-        // FIX: Destroy the response stream to stop incoming data on write error
         response.destroy();
         fs.unlink(destination, () => reject(error));
       });
-      // FIX: Handle response errors by cleaning up the write stream
       response.on('error', (error) => {
         fileStream.destroy();
         fs.unlink(destination, () => reject(error));
@@ -450,13 +449,25 @@ class VisionService {
     this._activeConfig = null;
     this._runtimeInit = null;
     this._startPromise = null;
-    this._shutdownPromise = null; // FIX: Track shutdown to prevent race conditions
-    this._serverLock = Promise.resolve(); // FIX: Mutex for server state changes
+    this._shutdownPromise = null;
+    this._serverLock = Promise.resolve();
     this._idleShutdownTimer = null;
+    this._recentStderr = '';
     this._idleKeepAliveMs = parseKeepAliveMs(
       process.env.STRATOSORT_VISION_KEEPALIVE_MS,
       DEFAULT_IDLE_KEEPALIVE_MS
     );
+  }
+
+  _extractDecodePressureHint() {
+    const recent = String(this._recentStderr || '');
+    if (!recent) return '';
+    if (!isVisionDecodePressureError(recent)) {
+      return '';
+    }
+    const normalized = recent.replace(/\s+/g, ' ').trim();
+    const excerpt = normalized.slice(0, 240);
+    return excerpt ? ` [vision-runtime: ${excerpt}]` : '';
   }
 
   isIdleKeepAliveEnabled() {
@@ -586,6 +597,7 @@ class VisionService {
         return this._binaryPath;
       }
     } catch (error) {
+      this._runtimeInit = null;
       logger.warn('[VisionService] Download failed, rechecking bundled path', {
         error: error.message
       });
@@ -636,7 +648,17 @@ class VisionService {
       asset: asset.assetName
     });
     await downloadFile(asset.url, archivePath);
-    await extractArchive(archivePath, runtimeRoot, asset.archiveType);
+
+    try {
+      await extractArchive(archivePath, runtimeRoot, asset.archiveType);
+    } catch (extractionError) {
+      try {
+        await fs.promises.unlink(archivePath);
+      } catch {
+        /* ignore cleanup errors */
+      }
+      throw extractionError;
+    }
 
     const binaryPath = await findBinary(runtimeRoot, SERVER_BINARY_NAME);
     if (!binaryPath) {
@@ -713,7 +735,9 @@ class VisionService {
       '127.0.0.1',
       '--port',
       String(port),
-      '--no-webui'
+      '--no-webui',
+      '--parallel',
+      '1'
     ];
 
     if (config.mmprojPath) {
@@ -799,6 +823,7 @@ class VisionService {
     child.stderr?.on('data', (data) => {
       const text = data.toString();
       stderrChunks.push(text);
+      this._recentStderr = `${this._recentStderr}${text}`.slice(-4000);
       logger.debug('[VisionService][stderr]', { message: text });
     });
 
@@ -807,7 +832,6 @@ class VisionService {
 
     // Create a promise that rejects if the process exits before health is confirmed.
     // This prevents _waitForHealth from polling a dead process for 180s.
-    // FIX: Store the exit handler so we can remove it after health check succeeds,
     // preventing both a stale listener and an unhandled promise rejection when the
     // process later exits normally.
     let earlyExitHandler;
@@ -832,13 +856,15 @@ class VisionService {
     });
 
     // Clean up state when the process exits (for both startup failures and runtime crashes)
-    child.on('exit', (code, signal) => {
+    this._generalExitHandler = (code, signal) => {
       logger.warn('[VisionService] Vision runtime exited', { code, signal });
       this._process = null;
       this._port = null;
       this._activeConfig = null;
       this._startPromise = null;
-    });
+      this._recentStderr = '';
+    };
+    child.on('exit', this._generalExitHandler);
 
     this._process = child;
     this._port = port;
@@ -863,9 +889,16 @@ class VisionService {
       // Health check succeeded -- remove the startup exit listener to avoid
       // spurious rejection when the process later exits normally.
       child.removeListener('exit', earlyExitHandler);
+      // Free startup stderr buffer — no longer needed after successful health check
+      stderrChunks.length = 0;
     } catch (error) {
       // Ensure we clean up if health check fails or process exits
       child.removeListener('exit', earlyExitHandler);
+      // Remove process-level exit handler to prevent stale listener leak
+      if (this._exitHandler) {
+        process.removeListener('exit', this._exitHandler);
+        this._exitHandler = null;
+      }
       if (this._process === child) {
         this._process = null;
         this._port = null;
@@ -1016,7 +1049,9 @@ class VisionService {
       });
 
       if (response?.json?.error) {
-        throw new Error(response.json.error.message || 'Vision runtime error');
+        const baseMessage = response.json.error.message || 'Vision runtime error';
+        const decodePressureHint = this._extractDecodePressureHint();
+        throw new Error(`${baseMessage}${decodePressureHint}`);
       }
 
       const content = response?.json?.choices?.[0]?.message?.content;
@@ -1044,11 +1079,22 @@ class VisionService {
     this._port = null;
     this._activeConfig = null;
     this._startPromise = null;
+    this._recentStderr = '';
 
     // Remove the parent-exit safety handler since we're shutting down explicitly
     if (this._exitHandler) {
       process.removeListener('exit', this._exitHandler);
       this._exitHandler = null;
+    }
+
+    // Remove the general exit listener from the child process to prevent stale listener leaks
+    if (proc && this._generalExitHandler) {
+      try {
+        proc.removeListener('exit', this._generalExitHandler);
+      } catch {
+        /* ignore -- process may already be destroyed */
+      }
+      this._generalExitHandler = null;
     }
 
     if (proc) {

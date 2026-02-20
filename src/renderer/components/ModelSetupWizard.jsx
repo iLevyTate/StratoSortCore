@@ -204,6 +204,20 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     void checkSystem();
   }, [checkSystem]);
 
+  // Failsafe: If checkSystem hangs (e.g. backend unresponsive), force exit 'checking' state
+  useEffect(() => {
+    if (step === 'checking') {
+      const timer = setTimeout(() => {
+        if (isMountedRef.current) {
+          setInitError('AI system check timed out. Please select models manually.');
+          setStep('select');
+          setIsRefreshing(false);
+        }
+      }, 15000); // 15s failsafe (longer than checkSystem's 12s timeout)
+      return () => clearTimeout(timer);
+    }
+  }, [step]);
+
   useEffect(() => {
     // Subscribe to download progress
     // Note: Assuming window.electronAPI.events.onOperationProgress handles this

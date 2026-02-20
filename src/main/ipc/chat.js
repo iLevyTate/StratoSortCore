@@ -46,7 +46,6 @@ function registerChatIpc(servicesOrParams) {
     const settingsService = safeResolve(ServiceIds.SETTINGS);
     const chatHistoryStore = safeResolve(ServiceIds.CHAT_HISTORY_STORE);
 
-    // FIX 85: Don't cache ChatService when critical deps are null.
     // If cached with null llamaService, all chat queries fail for the entire session.
     if (!llamaService) {
       const isRegistered = diContainer?.has?.(ServiceIds.LLAMA_SERVICE);

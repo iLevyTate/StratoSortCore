@@ -150,7 +150,7 @@ async function loadLlamaConfig() {
 
     const { getInstance: getSettings } = require('./services/SettingsService');
     const settings = getSettings();
-    const allSettings = settings?.getAll?.() || {};
+    const allSettings = (await settings?.load?.()) || {};
 
     // Helper to resolve model name
     const resolveModel = (configured, defaultName) => {
@@ -209,7 +209,6 @@ function getEmbeddingDimensions() {
  * Clean up resources
  */
 async function cleanup() {
-  // FIX: LlamaService shutdown is managed by ServiceContainer/ServiceIntegration.
   // We do not manually shut it down here to avoid double-dispose issues.
   // This function is kept for backward compatibility with scripts.
   const service = getLlamaService();

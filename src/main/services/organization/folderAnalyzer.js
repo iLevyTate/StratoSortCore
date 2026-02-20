@@ -395,7 +395,6 @@ function calculateFolderSimilarity(folder1, folder2) {
  * @returns {number} Similarity score 0-1
  */
 function calculateStringSimilarity(str1, str2) {
-  // FIX: Use Sets to avoid inflated scores from repeated words
   // e.g. "the the the project" vs "the project files" previously scored 1.0
   const set1 = new Set(str1.split(/\s+/).filter(Boolean));
   const set2 = new Set(str2.split(/\s+/).filter(Boolean));

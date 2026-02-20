@@ -32,22 +32,12 @@
  * module.exports = { MyService: MyServiceClass, getInstance, ... };
  */
 
-// FIX: Robust logger import with fallback for cross-process safety
 let logger;
 try {
-  const loggerModule = require('./logger');
-  logger = loggerModule.createLogger
-    ? loggerModule.createLogger('SingletonFactory')
-    : loggerModule.logger;
+  const { createSafeLogger } = require('./logger');
+  logger = createSafeLogger('SingletonFactory');
 } catch {
-  logger = {
-    debug: () => {},
-    info: () => {},
-    // eslint-disable-next-line no-console
-    warn: console.warn.bind(console, '[SingletonFactory]'),
-    // eslint-disable-next-line no-console
-    error: console.error.bind(console, '[SingletonFactory]')
-  };
+  logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 }
 
 /**
@@ -101,7 +91,6 @@ function createSingletonHelpers(options) {
   // Module-level state (closure)
   let _localInstance = null;
   let _containerRegistered = false;
-  // FIX: Add pending promise for concurrent getInstance() calls to prevent race condition
   // Two concurrent calls could both pass the if (!_localInstance) check and create duplicates
   let _pendingInstance = null;
 
@@ -124,12 +113,10 @@ function createSingletonHelpers(options) {
       // Container not available yet, use local instance
     }
 
-    // FIX: Fast path - return existing instance immediately
     if (_localInstance) {
       return _localInstance;
     }
 
-    // FIX: If initialization is in progress (async factory), return pending promise
     // This ensures all concurrent callers wait for the same instance
     if (_pendingInstance) {
       return _pendingInstance;
@@ -140,12 +127,10 @@ function createSingletonHelpers(options) {
     try {
       instance = createFactory ? createFactory(instanceOptions) : new ServiceClass(instanceOptions);
     } catch (createError) {
-      // FIX HIGH-72: Log creation errors
       logger.error(`[SingletonFactory] Error creating instance for ${serviceName}:`, createError);
       throw createError;
     }
 
-    // FIX: Handle both sync and async factory results
     // For sync factories, return synchronously (backward compatible)
     // For async factories, wrap in promise deduplication to prevent race conditions
     if (instance && typeof instance.then === 'function') {
@@ -186,19 +171,19 @@ function createSingletonHelpers(options) {
    * @param {string} registrationId - The service identifier
    */
   function registerWithContainer(container, registrationId) {
-    // FIX: Use container.has() as the atomic check - it's the source of truth
-    // This handles cases where another module registered the service first
-    // Note: Check if has() exists for backward compatibility with mock containers
-    if (typeof container.has === 'function' && container.has(registrationId)) {
-      _containerRegistered = true;
+    // This is the authoritative source of truth and handles cases where another
+    // module registered the service first, or concurrent calls race.
+    if (typeof container.has === 'function') {
+      if (container.has(registrationId)) {
+        _containerRegistered = true;
+        return;
+      }
+    } else if (_containerRegistered) {
+      // Fallback for mock containers without has() — use local flag only
       return;
     }
 
-    // Also check our local flag for performance (avoids redundant has() calls)
-    if (_containerRegistered) return;
-
     container.registerSingleton(registrationId, () => {
-      // FIX: If there's a pending async instance being created, wait for it
       // This prevents creating duplicate instances when registerWithContainer is called
       // while an async factory is still initializing
       if (_pendingInstance) {
@@ -226,7 +211,6 @@ function createSingletonHelpers(options) {
     // Reset container registration flag
     _containerRegistered = false;
 
-    // FIX: Clear pending instance promise to ensure clean reset
     _pendingInstance = null;
 
     // Clear from DI container if registered

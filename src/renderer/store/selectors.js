@@ -71,7 +71,6 @@ const createStableSelector = (dependencies, combiner) => {
 
     const result = baseSelector(state);
 
-    // FIX C12: Skip caching for large arrays to prevent pinning mega-arrays
     // in the closure. Components handling 1000+ items should already handle
     // reference changes via virtualization or their own memoization.
     if (Array.isArray(result) && result.length > LARGE_ARRAY_THRESHOLD) {
@@ -122,7 +121,6 @@ export const selectFilesWithAnalysis = createSelector(
       return files; // Return original reference for empty arrays
     }
 
-    // Fix 7: Check if any files need extension extraction
     const safeAnalysisResults = Array.isArray(analysisResults) ? analysisResults : [];
     const safeFileStates =
       fileStates && typeof fileStates === 'object' && !Array.isArray(fileStates) ? fileStates : {};
@@ -143,7 +141,6 @@ export const selectFilesWithAnalysis = createSelector(
       }
     });
 
-    // FIX: Only create new objects for files that actually need merging
     // This reduces object churn when analysis hasn't changed
     let hasChanges = false;
     const mergedFiles = files.map((file) => {

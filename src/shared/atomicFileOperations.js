@@ -232,6 +232,19 @@ class AtomicFileOperations {
     for (const file of journalFiles) {
       const journalPath = path.join(this.journalDirectory, file);
 
+      // Advisory lock to prevent concurrent instances from processing same journal
+      const lockPath = `${journalPath}.lock`;
+      let lockFd;
+      try {
+        lockFd = await fs.open(lockPath, 'wx');
+      } catch (lockErr) {
+        if (lockErr.code === 'EEXIST') {
+          logger.debug('[ATOMIC-OPS] Journal already being processed by another instance:', file);
+          continue;
+        }
+        // Other lock errors: proceed anyway (best-effort)
+      }
+
       try {
         const content = await fs.readFile(journalPath, 'utf8');
         const journal = JSON.parse(content);
@@ -313,6 +326,12 @@ class AtomicFileOperations {
         // Remove corrupt journal
         await fs.unlink(journalPath).catch(() => {});
         errors++;
+      } finally {
+        // Release advisory lock
+        if (lockFd) {
+          await lockFd.close().catch(() => {});
+          await fs.unlink(lockPath).catch(() => {});
+        }
       }
     }
 
@@ -367,7 +386,11 @@ class AtomicFileOperations {
     await this.initializeBackupDirectory();
 
     const filename = path.basename(normalizedPath);
-    const backupPath = path.join(this.backupDirectory, `${transactionId}_${filename}`);
+    // Use per-transaction counter to prevent collisions when two files in the
+    // same transaction share the same basename (e.g. different dirs).
+    const tx = this.activeTransactions.get(transactionId);
+    const counter = tx ? (tx._backupCounter = (tx._backupCounter || 0) + 1) : Date.now();
+    const backupPath = path.join(this.backupDirectory, `${transactionId}_${counter}_${filename}`);
     const normalizedBackupPath = resolveFsPath(backupPath);
 
     try {
@@ -465,7 +488,6 @@ class AtomicFileOperations {
     // Ensure source exists for memfs-based tests to prevent ENOENT
     const normalizedSource = resolveFsPath(source);
     if (type === 'move' || type === 'copy') {
-      // FIX CRIT-16: Only create placeholders in test environment
       if (process.env.NODE_ENV === 'test') {
         if (!(await this.fileExists(normalizedSource))) {
           await fs.mkdir(path.dirname(normalizedSource), {
@@ -514,7 +536,6 @@ class AtomicFileOperations {
       case 'delete':
         if (await this.fileExists(normalizedSource)) {
           backupPath = await this.createBackup(normalizedSource, transactionId);
-          // FIX: Use normalizedSource (not raw source) so rollback restores to the correct path
           transaction.backups.push({ source: normalizedSource, backup: backupPath });
           await fs.unlink(normalizedSource);
         }
@@ -564,7 +585,6 @@ class AtomicFileOperations {
         return finalDestination;
       } catch (error) {
         if (error.code === 'ENOENT') {
-          // FIX: In production, fail fast on first ENOENT — source doesn't exist,
           // retrying is wasteful. The branch at line 428 was unreachable dead code.
           if (attempts === 0 && process.env.NODE_ENV !== 'test') {
             throw new FileSystemError(FILE_SYSTEM_ERROR_CODES.FILE_NOT_FOUND, {
@@ -593,7 +613,6 @@ class AtomicFileOperations {
         } else if (error.code === 'EXDEV') {
           // Cross-device move: copy then delete with verification
           try {
-            // FIX: Use COPYFILE_EXCL to prevent silently overwriting existing files
             await fs.copyFile(normalizedSource, finalDestination, fsConstants.COPYFILE_EXCL);
 
             // Verify copy succeeded
@@ -725,7 +744,6 @@ class AtomicFileOperations {
           continue;
         } else if (error.code === 'ENOENT') {
           // Create placeholder source and retry once
-          // FIX CRIT-16: Only create placeholders in test environment
           if (process.env.NODE_ENV === 'test') {
             await fs.mkdir(path.dirname(normalizedSource), {
               recursive: true
@@ -1062,10 +1080,17 @@ class AtomicFileOperations {
     }
 
     // Delete destinations created by move/copy/create operations (in reverse order)
+    // Deduplicate by path to avoid deleting a just-restored file
+    const restoredPaths = new Set(transaction.backups.map((b) => b.source));
     let deletedCount = 0;
     if (transaction.createdDestinations && transaction.createdDestinations.length > 0) {
       for (let i = transaction.createdDestinations.length - 1; i >= 0; i--) {
         const dest = transaction.createdDestinations[i];
+        // Skip if this path was just restored from backup
+        if (restoredPaths.has(dest)) {
+          logger.debug('[ATOMIC-OPS] Skipping destination delete (just restored):', { dest });
+          continue;
+        }
         try {
           if (await this.fileExists(dest)) {
             await fs.unlink(dest);

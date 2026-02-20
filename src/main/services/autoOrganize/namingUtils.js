@@ -204,7 +204,6 @@ function generateSuggestedNameFromAnalysis({
   const project = sanitizeToken(rawProject) || 'Project';
   const category = sanitizeToken(rawCategory) || 'Category';
 
-  // FIX: Consolidated switch -- date-based cases were previously empty with logic
   // duplicated as if-checks after the switch. Now all cases set `base` directly.
   let base;
   switch (convention) {
@@ -232,7 +231,6 @@ function generateSuggestedNameFromAnalysis({
   const finalBase = caseConvention ? applyCaseConvention(base, caseConvention) : base;
   const fullName = `${finalBase}${extension}`;
 
-  // FIX: Validate filename length doesn't exceed filesystem limits
   return enforceFileNameLength(fullName, extension);
 }
 

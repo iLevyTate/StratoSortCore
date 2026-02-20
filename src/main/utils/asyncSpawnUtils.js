@@ -44,7 +44,6 @@ async function asyncSpawn(command, args = [], options = {}) {
         return;
       }
 
-      // FIX: Helper to release child process listeners after resolution
       const cleanupChild = () => {
         try {
           child.stdout?.removeAllListeners();

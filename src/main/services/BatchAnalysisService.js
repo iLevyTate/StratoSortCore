@@ -36,7 +36,6 @@ class BatchAnalysisService {
     this.batchProcessor = globalBatchProcessor;
     this.batchProcessor.concurrencyLimit = this.concurrency;
 
-    // FIX: Initialize parallel embedding service for batch embedding operations.
     // Store the initial config but always access the live singleton via getter
     // to avoid holding a stale reference if the service is reset/recreated.
     this._embeddingServiceConfig = {
@@ -46,11 +45,9 @@ class BatchAnalysisService {
     // Ensure singleton is created with initial config
     getParallelEmbeddingService(this._embeddingServiceConfig);
 
-    // FIX: Mutex for embedding backpressure checks
     // Ensures only one worker checks the queue capacity at a time, preventing "check-then-act" races
     this.backpressureLock = new Semaphore(1);
 
-    // FIX: Track embedding progress for comprehensive reporting
     this._embeddingProgressUnsubscribe = null;
     this._backpressureWaitPromise = null;
     this._adaptiveRecommendation = null;
@@ -72,7 +69,6 @@ class BatchAnalysisService {
     const cpuCores = os.cpus().length;
     const freeMem = os.freemem();
     const totalMem = os.totalmem();
-    // FIX: Prevent division by zero and clamp to valid range (VMs/containers may report freeMem > totalMem)
     const memUsage = totalMem > 0 ? Math.max(0, Math.min(1, 1 - freeMem / totalMem)) : 0.5;
 
     // Base concurrency on CPU cores (75% utilization to leave headroom)
@@ -432,6 +428,8 @@ class BatchAnalysisService {
           const backpressureStart = Date.now();
           let backpressureDelay = BACKPRESSURE_INITIAL_DELAY_MS;
           let iterations = 0;
+          let lastQueueLength = -1;
+          let stalledChecks = 0;
 
           while (true) {
             const elapsed = Date.now() - backpressureStart;
@@ -450,6 +448,29 @@ class BatchAnalysisService {
             await this.backpressureLock.acquire();
             try {
               const currentStats = analysisQueue.getStats();
+
+              // Check if queue is actually draining
+              // If queue length hasn't decreased (and we are waiting), it might be stalled
+              if (lastQueueLength !== -1 && currentStats.queueLength >= lastQueueLength) {
+                stalledChecks++;
+              } else {
+                stalledChecks = 0;
+              }
+              lastQueueLength = currentStats.queueLength;
+
+              // If queue hasn't moved for 5 consecutive checks, assume consumer is dead/stuck and proceed
+              // This prevents the batch from hanging for 60s per file
+              if (stalledChecks >= 5) {
+                logger.warn(
+                  '[BATCH-ANALYSIS] Embedding queue appears stalled (not draining), bypassing backpressure',
+                  {
+                    queueLength: currentStats.queueLength,
+                    stalledChecks
+                  }
+                );
+                break;
+              }
+
               if (currentStats.capacityPercent > 50) {
                 stillFull = true;
                 if (iterations % 10 === 0) {

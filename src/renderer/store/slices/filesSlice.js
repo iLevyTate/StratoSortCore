@@ -4,7 +4,6 @@ import { serializeData } from '../../utils/serialization';
 import { smartFoldersIpc } from '../../services/ipc';
 
 // Thunk to fetch smart folders with optional cache bypass
-// FIX: Added forceRefresh parameter to allow cache invalidation when folders change
 export const fetchSmartFolders = createAsyncThunk(
   'files/fetchSmartFolders',
   async (arg, { getState, rejectWithValue }) => {
@@ -42,7 +41,7 @@ const initialState = {
   selectedFiles: [], // Array of file objects
   smartFolders: [], // Array of configured smart folders
   smartFoldersLoading: false, // Loading state for smart folders
-  smartFoldersError: null, // FIX: Track smart folders fetch errors
+  smartFoldersError: null,
   organizedFiles: [], // History of organized files
   fileStates: {}, // Map of path -> state (pending, analyzing, ready, error)
   namingConvention: {
@@ -133,7 +132,6 @@ const filesSlice = createSlice({
     resetFilesState: () => {
       return initialState;
     },
-    // FIX: Update file paths after organize/move operations
     // This ensures Redux state stays in sync with actual file locations
     updateFilePathsAfterMove: (state, action) => {
       const { oldPaths, newPaths } = action.payload;
@@ -169,7 +167,6 @@ const filesSlice = createSlice({
       });
 
       // Update fileStates (rename keys)
-      // FIX HIGH-43: Inconsistent state updates after move
       // Ensure we clean up old keys and only set new ones
       const newFileStates = { ...state.fileStates };
 
@@ -192,7 +189,6 @@ const filesSlice = createSlice({
       state.fileStates = newFileStates;
 
       // Update organizedFiles if present
-      // FIX: Add null guard for file entries that may be undefined
       state.organizedFiles = state.organizedFiles.map((file) => {
         if (!file) return file; // Skip null/undefined entries
         const newPath =
@@ -220,7 +216,6 @@ const filesSlice = createSlice({
         state.smartFoldersError = null;
       })
       .addCase(fetchSmartFolders.rejected, (state, action) => {
-        // FIX: Preserve existing smartFolders on failure instead of losing them
         // Only log the error, don't clear the array
         state.smartFoldersLoading = false;
         state.smartFoldersError =
@@ -247,7 +242,6 @@ export const {
   removeOrganizedFiles
 } = filesSlice.actions;
 
-// FIX: Re-export atomic actions from dedicated module to avoid circular dependency
 // The actual implementations are in atomicActions.js which properly imports from both slices
 export { atomicUpdateFilePathsAfterMove, atomicRemoveFilesWithCleanup } from './atomicActions';
 

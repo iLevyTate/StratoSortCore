@@ -23,10 +23,30 @@ const { generateSecureId } = require('./idUtils');
 const logger = createLogger('AutoOrganize-FileProcessor');
 // FIX CRIT-24: Module-level lock to prevent concurrent processing of the same file
 const processingLocks = new Set();
+const destinationLocks = new Set();
 
 // Normalize file paths for lock comparison (case-insensitive on Windows)
 const normalizeLockPath = (filePath) =>
   process.platform === 'win32' ? path.resolve(filePath).toLowerCase() : path.resolve(filePath);
+
+/**
+ * Get a unique destination path within a batch run to avoid overwriting files
+ * with the same name.
+ */
+function getUniqueBatchDestination(initialDestination, plannedDestinations) {
+  let attempt = 0;
+  let destination = initialDestination;
+  const ext = path.extname(destination);
+  const base = destination.slice(0, destination.length - ext.length);
+
+  while (plannedDestinations.has(normalizeLockPath(destination)) && attempt < 50) {
+    attempt++;
+    destination = `${base}-${attempt + 1}${ext}`;
+  }
+
+  plannedDestinations.add(normalizeLockPath(destination));
+  return destination;
+}
 
 /**
  * Process files without analysis (use default folder)
@@ -90,6 +110,11 @@ async function processFilesIndividually(files, smartFolders, options, results, s
   // This allows users to organize files with lower confidence (e.g., filename-only analysis)
   const effectiveThreshold = Number.isFinite(confidenceThreshold) ? confidenceThreshold : 0.75;
 
+  // Initialize planned destinations set to prevent duplicates in same batch
+  if (!results._plannedDestinations) {
+    results._plannedDestinations = new Set();
+  }
+
   for (const file of files) {
     try {
       // Get suggestion for the file
@@ -105,9 +130,13 @@ async function processFilesIndividually(files, smartFolders, options, results, s
         });
 
         // Use fallback logic on suggestion failure
-        const fallbackDestination = getFallbackDestination(file, smartFolders, defaultLocation);
+        let fallbackDestination = getFallbackDestination(file, smartFolders, defaultLocation);
 
         if (fallbackDestination) {
+          fallbackDestination = getUniqueBatchDestination(
+            fallbackDestination,
+            results._plannedDestinations
+          );
           results.organized.push({
             file: sanitizeFile(file),
             destination: fallbackDestination,
@@ -134,9 +163,13 @@ async function processFilesIndividually(files, smartFolders, options, results, s
 
       if (!suggestion || !suggestion.success || !suggestion.primary) {
         // Use fallback logic
-        const fallbackDestination = getFallbackDestination(file, smartFolders, defaultLocation);
+        let fallbackDestination = getFallbackDestination(file, smartFolders, defaultLocation);
 
         if (fallbackDestination) {
+          fallbackDestination = getUniqueBatchDestination(
+            fallbackDestination,
+            results._plannedDestinations
+          );
           results.organized.push({
             file: sanitizeFile(file),
             destination: fallbackDestination,
@@ -170,7 +203,8 @@ async function processFilesIndividually(files, smartFolders, options, results, s
       if (confidence >= effectiveThreshold && canonicalPrimary) {
         // High confidence - organize automatically
         const safePrimary = safeSuggestion(canonicalPrimary);
-        const destination = buildDestinationPath(file, safePrimary, defaultLocation, preserveNames);
+        let destination = buildDestinationPath(file, safePrimary, defaultLocation, preserveNames);
+        destination = getUniqueBatchDestination(destination, results._plannedDestinations);
 
         results.organized.push({
           file: sanitizeFile(file),
@@ -212,7 +246,8 @@ async function processFilesIndividually(files, smartFolders, options, results, s
           typeof defaultFolder.path === 'string' &&
           confidence < effectiveThreshold
         ) {
-          const destination = path.join(defaultFolder.path, file.name);
+          let destination = path.join(defaultFolder.path, file.name);
+          destination = getUniqueBatchDestination(destination, results._plannedDestinations);
           const uncategorizedSuggestion = {
             ...defaultFolder,
             isSmartFolder: true
@@ -385,7 +420,53 @@ async function processNewFile(filePath, smartFolders, options, suggestionService
     // Only auto-organize if confidence is very high and destination resolves to a configured smart folder
     if (suggestion.success && canonicalPrimary && suggestion.confidence >= effectiveThreshold) {
       const safePrimary = safeSuggestion(canonicalPrimary);
-      const destination = buildDestinationPath(file, safePrimary, options.defaultLocation, false);
+      let destination = buildDestinationPath(file, safePrimary, options.defaultLocation, false);
+
+      // Resolve collisions against disk AND in-memory locks
+      let attempt = 0;
+      const ext = path.extname(destination);
+      const base = destination.slice(0, destination.length - ext.length);
+      let normalizedDest = normalizeLockPath(destination);
+
+      while (attempt < 50) {
+        // Check disk collision first
+        try {
+          await fs.access(destination);
+          // Exists on disk, bump
+          attempt++;
+          destination = `${base}-${attempt + 1}${ext}`;
+          normalizedDest = normalizeLockPath(destination);
+          continue;
+        } catch (error) {
+          if (error?.code !== 'ENOENT') {
+            throw error; // Unexpected FS error
+          }
+        }
+
+        // Check in-memory lock
+        if (destinationLocks.has(normalizedDest)) {
+          // Locked by another process, bump
+          attempt++;
+          destination = `${base}-${attempt + 1}${ext}`;
+          normalizedDest = normalizeLockPath(destination);
+          continue;
+        }
+
+        // Found free slot! Lock it.
+        destinationLocks.add(normalizedDest);
+
+        // Auto-release lock after 30s to prevent leaks if caller crashes or fails to move
+        // The caller is expected to complete the move within this window.
+        const timer = setTimeout(() => destinationLocks.delete(normalizedDest), 30000);
+        if (timer && typeof timer.unref === 'function') {
+          timer.unref();
+        }
+        break;
+      }
+
+      if (attempt >= 50) {
+        throw new Error('Failed to find unique destination for auto-organize operation');
+      }
 
       logger.info('[AutoOrganize] Auto-organizing new file', {
         file: filePath,

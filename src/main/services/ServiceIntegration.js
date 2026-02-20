@@ -76,12 +76,10 @@ class ServiceIntegration {
     this.relationshipIndex = null;
     this.initialized = false;
 
-    // FIX: Register all services in constructor so they exist even when initialize() never runs
     // (e.g. degraded mode after startup timeout). Handlers like GET_CLUSTERS will then resolve
     // 'clustering' successfully; individual services may remain uninitialized until first use.
     this._registerCoreServices();
 
-    // FIX: Add initialization mutex to prevent race conditions
     // Multiple concurrent initialize() calls would previously both pass the
     // if (this.initialized) check and run in parallel, causing undefined behavior
     this._initPromise = null;
@@ -122,7 +120,6 @@ class ServiceIntegration {
    * @returns {Promise<{initialized: string[], errors: Array<{service: string, error: string}>, skipped: string[]}>}
    */
   async initialize(options = {}) {
-    // FIX: Return existing initialization promise if one is in progress
     // This prevents race conditions when multiple calls happen concurrently
     if (this._initPromise) {
       return this._initPromise;
@@ -132,7 +129,6 @@ class ServiceIntegration {
       return { initialized: [], errors: [], skipped: [], alreadyInitialized: true };
     }
 
-    // FIX: Store the initialization promise so concurrent calls can await it
     this._initPromise = this._doInitialize(options);
     try {
       return await this._initPromise;
@@ -153,7 +149,6 @@ class ServiceIntegration {
     throwIfAborted(signal, 'initialization setup');
     logger.info('[ServiceIntegration] Starting initialization...');
 
-    // FIX L3: Clear stale init status from any previous initialization attempts
     this._lastInitStatus = null;
     this._lastInitError = null;
 
@@ -234,7 +229,6 @@ class ServiceIntegration {
         );
       }
 
-      // FIX: Tiered initialization with explicit dependency ordering
       // Tier 0: Initialize independent services in parallel
       throwIfAborted(signal, 'tier0 initialization');
       const tier0Results = await Promise.allSettled([
@@ -371,7 +365,6 @@ class ServiceIntegration {
         });
       }
 
-      // FIX: Return structured initialization status for callers to inspect
       return { ...initStatus, success };
     } catch (error) {
       const errorMsg = error?.message || String(error);
@@ -455,7 +448,6 @@ class ServiceIntegration {
       });
     }
 
-    // FIX: Register ClusteringService as separate DI entry to avoid circular dependency
     // This allows other services to depend on ClusteringService independently
     if (!container.has(ServiceIds.CLUSTERING)) {
       container.registerSingleton(ServiceIds.CLUSTERING, (c) => {
@@ -479,7 +471,6 @@ class ServiceIntegration {
           vectorDbService: c.resolve(ServiceIds.ORAMA_VECTOR),
           folderMatchingService: c.resolve(ServiceIds.FOLDER_MATCHING),
           settingsService: settingsService,
-          // FIX: Use lazy resolution with getter to break potential circular dependency
           // This allows ClusteringService to be resolved when first needed, not during registration
           getClusteringService: () => c.resolve(ServiceIds.CLUSTERING),
           config: {
@@ -623,7 +614,6 @@ class ServiceIntegration {
         const settingsService = c.resolve(ServiceIds.SETTINGS);
         const vectorDbService = c.resolve(ServiceIds.ORAMA_VECTOR);
         const filePathCoordinator = c.resolve(ServiceIds.FILE_PATH_COORDINATOR);
-        // FIX: Add folderMatcher for auto-embedding analyzed files into vector DB
         const folderMatcher = c.resolve(ServiceIds.FOLDER_MATCHING);
         const notificationService = c.resolve(ServiceIds.NOTIFICATION_SERVICE);
 
@@ -637,13 +627,12 @@ class ServiceIntegration {
           settingsService,
           vectorDbService,
           filePathCoordinator,
-          folderMatcher, // FIX: Pass folderMatcher for immediate auto-embedding
+          folderMatcher,
           notificationService // For user feedback on file analysis
         });
       });
     }
 
-    // FIX: Register SearchService with container for proper DI and lifecycle management
     // SearchService is a core feature service that was previously manually instantiated
     if (!container.has(ServiceIds.SEARCH_SERVICE)) {
       container.registerSingleton(ServiceIds.SEARCH_SERVICE, (c) => {
@@ -659,7 +648,6 @@ class ServiceIntegration {
       });
     }
 
-    // FIX: Register DownloadWatcher with container for proper lifecycle management
     // DownloadWatcher monitors downloads folder and needs proper shutdown handling
     if (!container.has(ServiceIds.DOWNLOAD_WATCHER)) {
       container.registerSingleton(ServiceIds.DOWNLOAD_WATCHER, (c) => {
@@ -691,7 +679,6 @@ class ServiceIntegration {
    * @returns {Promise<void>}
    */
   async shutdown() {
-    // FIX: Wait for any in-progress initialization to complete before shutting down
     // This prevents race conditions where shutdown runs concurrently with init
     if (this._initPromise) {
       logger.debug(

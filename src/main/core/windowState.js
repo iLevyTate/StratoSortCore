@@ -124,7 +124,6 @@ function restoreMinimizedWindow(win) {
     let timeout; // Forward declaration
 
     const onRestore = () => {
-      // FIX CRIT-34: Clear timeout when restore event fires
       if (timeout) clearTimeout(timeout);
 
       // Guard against destroyed window
@@ -137,7 +136,6 @@ function restoreMinimizedWindow(win) {
 
       // After restore, verify visibility and focus
       // Use a small delay to let Chromium settle
-      // FIX: Store settle timer ID and clear on window close to prevent stale callback
       const settleTimerId = setTimeout(() => {
         if (!win || win.isDestroyed()) {
           resolve();

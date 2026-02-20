@@ -182,7 +182,6 @@ const systemSlice = createSlice({
       ) {
         notification.status = NotificationStatus.SEEN;
         notification.seenAt = new Date().toISOString();
-        // FIX Bug #37: Recalculate unread count to prevent drift
         state.unreadNotificationCount = state.notifications.filter(
           (n) => n.status !== NotificationStatus.SEEN && n.status !== NotificationStatus.DISMISSED
         ).length;
@@ -196,7 +195,6 @@ const systemSlice = createSlice({
       if (notification) {
         notification.status = NotificationStatus.DISMISSED;
         notification.dismissedAt = new Date().toISOString();
-        // FIX Bug #37: Recalculate unread count to prevent drift
         state.unreadNotificationCount = state.notifications.filter(
           (n) => n.status !== NotificationStatus.SEEN && n.status !== NotificationStatus.DISMISSED
         ).length;

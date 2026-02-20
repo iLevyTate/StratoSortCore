@@ -133,7 +133,6 @@ async function removeEmbeddingsForPath(filePath, services, log = logger) {
 
     if (typeof vectorDbService.batchDeleteFileEmbeddings === 'function') {
       const result = await vectorDbService.batchDeleteFileEmbeddings(ids);
-      // FIX: Check return value for success/queued status
       if (result && result.success) {
         dbRemovedCount = ids.length;
       } else if (result && result.queued) {
@@ -145,7 +144,6 @@ async function removeEmbeddingsForPath(filePath, services, log = logger) {
     } else if (typeof vectorDbService.deleteFileEmbedding === 'function') {
       for (const id of ids) {
         const result = await vectorDbService.deleteFileEmbedding(id);
-        // FIX: Check return value
         if (result === true || (result && (result.success || result.queued))) {
           dbRemovedCount++;
         }

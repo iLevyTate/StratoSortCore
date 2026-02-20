@@ -123,7 +123,20 @@ function mergeWithDefaults(overrides) {
 
     // Type-check: ensure the override matches the default's type
     if (typeof value !== typeof defaultValue) {
-      // Type mismatch -- silently discard the override, keeping the default
+      // Type mismatch -- discard the override, keeping the default
+      try {
+        const { createLogger } = require('./logger');
+        createLogger('DefaultSettings').warn(
+          '[DefaultSettings] Type mismatch for setting, using default',
+          {
+            key,
+            expected: typeof defaultValue,
+            got: typeof value
+          }
+        );
+      } catch {
+        // Logger may not be available in all contexts
+      }
       continue;
     }
 

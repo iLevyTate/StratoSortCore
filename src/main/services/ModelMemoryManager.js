@@ -2,6 +2,7 @@
 
 const os = require('os');
 const { createLogger } = require('../../shared/logger');
+const { delay } = require('../../shared/promiseUtils');
 
 const logger = createLogger('ModelMemoryManager');
 
@@ -315,7 +316,7 @@ class ModelMemoryManager {
       logger.info('[Memory] Waiting for active refs before unload', { type: modelType, refs });
       const deadline = Date.now() + 5000;
       while ((this._activeRefs.get(modelType) || 0) > 0 && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 100));
+        await delay(100);
       }
       if ((this._activeRefs.get(modelType) || 0) > 0) {
         logger.warn('[Memory] Unload timeout — keeping model loaded due to active refs', {
