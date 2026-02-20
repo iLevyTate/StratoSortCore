@@ -63,6 +63,7 @@ blob-report/
 # Temporary files
 *.tmp
 *.temp
+test-list.txt
 .cache/
 .webpack-cache/
 .eslintcache

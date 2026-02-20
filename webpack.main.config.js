@@ -80,7 +80,10 @@ module.exports = (env, argv) => {
         // unpdf bundles pdf.js which contains dynamic import() expressions that
         // webpack cannot statically analyze. Runs fine as a runtime require in
         // the Node.js main process.
-        unpdf: 'commonjs unpdf'
+        unpdf: 'commonjs unpdf',
+        // Chokidar v5 is ESM-only ("type": "module"). Bundling it causes
+        // ERR_REQUIRE_ESM at runtime. Keep external for runtime resolution.
+        chokidar: 'commonjs chokidar'
       },
       ({ request }, callback) => {
         if (!request) return callback();
