@@ -67,7 +67,7 @@ npm run lint
 npm test
 ```
 
-Use `npm run ci` for the same baseline checks as CI.  
+Use `npm run ci` for core quality gates; CI additionally runs E2E and IPC channel checks.  
 See `TESTING.md` for test patterns, priorities, and the manual QA checklist.
 
 ## Pull Request Checklist

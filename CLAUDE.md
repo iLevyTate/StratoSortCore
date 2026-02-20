@@ -36,7 +36,7 @@ src/main/ipc/            # IPC handler registrations
 src/renderer/components/ # React components organized by feature (discover/, organize/, search/, settings/, setup/)
 src/renderer/store/      # Redux slices, middleware (persistence, IPC), thunks, selectors
 src/shared/              # Cross-process utilities (logger, security, config schemas, constants)
-test/                    # 264+ test files (unit, integration, e2e, perf, stress)
+test/                    # 400+ test files (unit, integration, e2e, perf, stress)
 scripts/                 # 14 build/setup scripts (models, Tesseract, icons, runtime)
 ```
 
@@ -45,7 +45,7 @@ scripts/                 # 14 build/setup scripts (models, Tesseract, icons, run
 - File analysis: User selects files -> Validation -> Document extraction -> LLM analysis -> Vector
   DB storage -> UI display
 - Organization: AI suggestions -> User confirmation -> Atomic file move with undo/redo
-- Search: Query -> Vector search + full-text (Lunr) -> Re-ranking -> Results
+- Search: Query -> Vector search + full-text (Orama BM25) -> Re-ranking -> Results
 
 ## Development Commands
 
@@ -57,7 +57,7 @@ npm run test:coverage    # Tests with coverage report
 npm run test:e2e         # Playwright E2E tests
 npm run lint             # ESLint check
 npm run format:check     # Prettier check
-npm run ci               # format:check + lint + test + build (what CI runs)
+npm run ci               # format:check + lint + test:coverage + verify:ipc-handlers + build
 npm run dist:win         # Build Windows installer
 ```
 

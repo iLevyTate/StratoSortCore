@@ -1,7 +1,7 @@
 # StratoSort Core Testing Guide
 
-**Version:** 2.0.0  
-**Date:** 2026-02-16  
+**Version:** 2.0.2  
+**Date:** 2026-02-18  
 **Purpose:** Single source of truth for manual QA and automated test expectations.
 
 ---
@@ -16,7 +16,7 @@ Every item should pass. If time is limited, focus on Sections A-C.
 - [ ] App launches without fatal errors or blank white screen.
 - [ ] AI setup/readiness state is clear (either "Ready" badge or Model Setup Wizard is shown).
 - [ ] Existing settings load correctly (theme, preferences, configured smart folders).
-- [ ] Navigation bar renders all phase tabs (Welcome, Setup, Discover, Organize, Search).
+- [ ] Navigation bar renders all phase tabs (Welcome, Setup, Discover, Organize, Complete).
 - [ ] Clicking each nav tab transitions to the correct phase without errors.
 - [ ] Window controls (minimize, maximize, close) work on all platforms.
 
@@ -217,7 +217,8 @@ Open Settings (gear icon or nav bar) and walk through each collapsible section.
 
 ### N. Navigation Bar
 
-- [ ] All phase tabs render with correct icons and labels.
+- [ ] All phase tabs (Welcome, Setup, Discover, Organize, Complete) render with correct icons and
+      labels.
 - [ ] Active phase tab is visually highlighted.
 - [ ] Transition guards prevent invalid phase jumps (e.g., skipping Setup).
 - [ ] Health status indicator shows AI readiness state.
@@ -264,7 +265,9 @@ npm run test:e2e
 
 Notes:
 
-- `npm run ci` runs the same baseline checks as CI (`format:check`, `lint`, `test`, `build`).
+- `npm run ci` runs the core quality gates: `format:check`, `lint`, `test:coverage`,
+  `verify:ipc-handlers`, and `build`. CI additionally runs E2E tests (`test:e2e`) and IPC channel
+  sync (`generate:channels:check`).
 - Use targeted test commands when iterating (`npm test -- <pattern>`).
 
 ---

@@ -146,10 +146,10 @@ Orchestrates the boot sequence with progress reporting to the splash screen:
 
 #### LlamaService (`LlamaService.js`)
 
-In-process GGUF inference via node-llama-cpp. Three model types: text (Mistral 7B Q4), vision
-(config/coordination only, delegates to VisionService), embedding (nomic-embed Q8_0 768d). GPU
-auto-detection (CUDA -> Vulkan -> Metal -> CPU), lazy loading via ModelMemoryManager (LRU eviction,
-70% RAM budget).
+In-process GGUF inference via node-llama-cpp. Three model types: text (Llama 3.2 3B default, or
+Qwen2.5-7B for better quality), vision (config/coordination only, delegates to VisionService),
+embedding (all-MiniLM-L6-v2 or nomic-embed 768d). GPU auto-detection (CUDA -> Vulkan -> Metal ->
+CPU), lazy loading via ModelMemoryManager (LRU eviction, 70% RAM budget).
 
 #### VisionService (`VisionService.js`)
 

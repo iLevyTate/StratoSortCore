@@ -27,13 +27,14 @@ These variables affect setup scripts and `postinstall` behavior:
 
 ### Default AI Models
 
-StratoSort Core uses these GGUF models out of the box (configurable in Settings → AI Configuration):
+StratoSort Core uses the **Base (Small & Fast)** profile by default (configurable in Settings → AI
+Configuration). A **Better Quality** profile with larger models is available during setup.
 
-| Role          | Default Model                       | Purpose                                               |
-| ------------- | ----------------------------------- | ----------------------------------------------------- |
-| **Text**      | `Qwen2.5-7B-Instruct-Q4_K_M.gguf`   | Document analysis, chat, smart folders (128K context) |
-| **Vision**    | `llava-v1.6-mistral-7b-Q4_K_M.gguf` | Image understanding and OCR                           |
-| **Embedding** | `nomic-embed-text-v1.5-Q8_0.gguf`   | Semantic search (768 dimensions)                      |
+| Role          | Default (Base)                      | Better Quality                                     |
+| ------------- | ----------------------------------- | -------------------------------------------------- |
+| **Text**      | `Llama-3.2-3B-Instruct-Q4_K_M.gguf` | `Qwen2.5-7B-Instruct-Q4_K_M.gguf` (128K context)   |
+| **Vision**    | `llava-phi-3-mini-int4.gguf`        | `llava-v1.6-mistral-7b-Q4_K_M.gguf`                |
+| **Embedding** | `all-MiniLM-L6-v2-Q4_K_M.gguf`      | `nomic-embed-text-v1.5-Q8_0.gguf` (768 dimensions) |
 
 To change defaults before install, edit `src/shared/aiModelConfig.js` or set env vars:
 `STRATOSORT_TEXT_MODEL`, `STRATOSORT_VISION_MODEL`, `STRATOSORT_EMBEDDING_MODEL`. See
@@ -83,6 +84,17 @@ All-MiniLM vs 768 for Nomic). The index must be rebuilt when switching; the UI p
 | -------------------------- | ------- | ----------------------------------------------- |
 | `MAX_IMAGE_CACHE`          | `300`   | Maximum cached image analyses (50-1000)         |
 | `AUTO_ORGANIZE_BATCH_SIZE` | `10`    | Files processed per auto-organize batch (1-100) |
+
+### Processing Limits (Settings > Performance)
+
+These settings are configurable via **Settings > Performance > Processing limits**:
+
+| Setting                 | Default | Description                                                        |
+| ----------------------- | ------- | ------------------------------------------------------------------ |
+| `maxConcurrentAnalysis` | 1       | Files analyzed in parallel (1–10). Lower values reduce memory use. |
+| `maxFileSize`           | 100 MB  | Maximum general file size for analysis.                            |
+| `maxImageFileSize`      | 100 MB  | Maximum size for image analysis.                                   |
+| `maxDocumentFileSize`   | 200 MB  | Maximum size for document extraction.                              |
 
 ### Startup & Health Checks
 

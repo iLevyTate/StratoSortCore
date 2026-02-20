@@ -11,8 +11,41 @@ permissions:
   contents: write
 
 jobs:
-  build-release:
-    runs-on: macos-latest
+  quality-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20.x
+          cache: 'npm'
+      - name: Install Dependencies
+        run: npm ci
+      - name: Check formatting
+        run: npm run format:check
+      - name: Lint
+        run: npm run lint
+      - name: Run tests with coverage
+        run: npm run test:coverage
+      - name: Verify IPC handlers
+        run: npm run verify:ipc-handlers
+      - name: Build
+        run: npm run build
+
+  build-macos:
+    needs: quality-gates
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-13
+            dist_script: dist:mac:x64
+          - arch: arm64
+            runner: macos-14
+            dist_script: dist:mac:arm64
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Checkout
@@ -24,11 +57,14 @@ jobs:
           node-version: 20.x
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install dependencies (with optional deps)
+        run: npm ci --include=optional
 
-      - name: Build Mac app and DMG
-        run: npm run dist:mac
+      - name: Rebuild native modules for Electron runtime
+        run: npx --no electron-builder install-app-deps
+
+      - name: Build Mac app and DMG (${{ matrix.arch }})
+        run: npm run ${{ matrix.dist_script }}
 
       # Notarization requires Apple Developer ID. Uncomment when ready:
       # - name: Notarize app
@@ -40,14 +76,46 @@ jobs:
       #     xcrun notarytool submit release/build/*.dmg --wait
       #     xcrun stapler staple release/build/*.dmg
 
+      - name: Stage artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p "release/upload/${{ matrix.arch }}"
+
+          for f in release/build/StratoSortCore-*-${{ matrix.arch }}.dmg release/build/StratoSortCore-*-${{ matrix.arch }}.zip; do
+            if [ -f "$f" ]; then
+              cp "$f" "release/upload/${{ matrix.arch }}/"
+            fi
+          done
+
+          for f in release/build/latest*.yml; do
+            if [ -f "$f" ]; then
+              base="$(basename "$f")"
+              cp "$f" "release/upload/${{ matrix.arch }}/${{ matrix.arch }}-$base"
+            fi
+          done
+
+      - name: Upload macOS artifacts (${{ matrix.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}-artifacts
+          path: release/upload/${{ matrix.arch }}
+          if-no-files-found: error
+
+  publish-release:
+    needs: build-macos
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: macos-*-artifacts
+          merge-multiple: true
+          path: release/build
+
       - name: Generate SHA256 checksums
         run: |
           cd release/build
           rm -f checksums-macos.sha256
-
-          if [ -f latest.yml ]; then
-            mv latest.yml latest-macos.yml
-          fi
 
           for f in StratoSortCore-*.dmg StratoSortCore-*.zip; do
             [ -f "$f" ] && shasum -a 256 "$f" >> checksums-macos.sha256 || true
@@ -66,5 +134,5 @@ jobs:
           files: |
             release/build/StratoSortCore-*.dmg
             release/build/StratoSortCore-*.zip
-            release/build/latest*.yml
+            release/build/*latest*.yml
             release/build/checksums-macos.sha256

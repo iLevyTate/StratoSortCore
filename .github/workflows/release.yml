@@ -9,7 +9,30 @@ permissions:
   contents: write
 
 jobs:
+  quality-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20.x
+          cache: 'npm'
+      - name: Install Dependencies
+        run: npm ci
+      - name: Check formatting
+        run: npm run format:check
+      - name: Lint
+        run: npm run lint
+      - name: Run tests with coverage
+        run: npm run test:coverage
+      - name: Verify IPC handlers
+        run: npm run verify:ipc-handlers
+      - name: Build
+        run: npm run build
+
   build-release:
+    needs: quality-gates
     runs-on: windows-latest
 
     steps:

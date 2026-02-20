@@ -36,9 +36,9 @@ The graph doesn't just show files; it shows _meaning_.
 
 ### Frontend (`Renderer`)
 
-- `GraphView.jsx`: Main container component.
+- `UnifiedSearchModal.jsx`: Main search modal and graph container (Discover, Relate, Understand
+  tabs). Hosts the React Flow canvas, graph state, and search results.
 - `useGraphState.js`: Manages the complex state of nodes and edges.
-- `UnifiedSearchModal.jsx`: Bridges the search experience with graph visualization.
 
 ### Backend (`Main Process`)
 
@@ -48,8 +48,9 @@ The graph doesn't just show files; it shows _meaning_.
 
 ## Usage Guide
 
-1.  **Search**: Start by typing a query in the search bar.
-2.  **Visual Results**: Switch to the "Graph" tab to see your results visualized.
+1.  **Search**: Start by typing a query in the search bar (Ctrl+K / Cmd+K).
+2.  **Visual Results**: Switch to the Relate tab or use "View in Graph" to see your results
+    visualized.
 3.  **Explore**:
     - **Click** a node to select it.
     - **Double-click** to focus and expand.

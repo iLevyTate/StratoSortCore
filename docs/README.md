@@ -28,6 +28,8 @@ find the right documentation for your needs.
 
 - **[ARCHITECTURE.md](./ARCHITECTURE.md)** - System architecture diagram showing the relationship
   between Renderer, IPC, and Main processes
+- **[FEATURES_GRAPH.md](./FEATURES_GRAPH.md)** - Knowledge Graph capabilities, usage, and
+  implementation
 - **[DI_PATTERNS.md](./DI_PATTERNS.md)** - Dependency injection patterns and ServiceContainer usage
 - **[LEARNING_GUIDE.md](./LEARNING_GUIDE.md)** - Comprehensive developer onboarding guide covering:
   - Architecture, design patterns, and data flow
@@ -54,11 +56,6 @@ find the right documentation for your needs.
   - Critical Path Strategy
   - Debugging Tips
 
-## Active Development
-
-- **[GRAPH_INTEGRATION_PLAN.md](./GRAPH_INTEGRATION_PLAN.md)** - Graph visualization feature roadmap
-  and implementation status
-
 ## Configuration
 
 Environment variables and configuration are centralized in:
@@ -77,8 +74,10 @@ docs/
 ├── CONFIG.md                            # Environment variables
 ├── DI_PATTERNS.md                       # Dependency injection
 ├── ERROR_HANDLING_GUIDE.md              # Error patterns
-├── GRAPH_INTEGRATION_PLAN.md            # Graph feature roadmap
-└── LEARNING_GUIDE.md                    # Developer onboarding (glossary + examples)
+├── FEATURES_GRAPH.md                    # Knowledge Graph features
+├── LEARNING_GUIDE.md                    # Developer onboarding (glossary + examples)
+├── MOTION_SYSTEM.md                     # UI animation standards
+└── RELEASING.md                         # Release process
 ```
 
 ## Contributing
