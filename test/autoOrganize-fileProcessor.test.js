@@ -26,8 +26,7 @@ jest.mock('electron', () => ({
 const mockFs = {
   mkdir: jest.fn().mockResolvedValue(undefined),
   lstat: jest.fn().mockRejectedValue({ code: 'ENOENT' }),
-  // FIX: Add access mock for file existence check after analysis
-  access: jest.fn().mockResolvedValue(undefined),
+  access: jest.fn(),
   stat: jest.fn().mockResolvedValue({ size: 1000, birthtime: new Date(), mtime: new Date() })
 };
 jest.mock('fs', () => ({
@@ -62,6 +61,16 @@ describe('AutoOrganize File Processor', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.resetModules();
+    mockFs.access.mockImplementation(async (targetPath) => {
+      // Source file exists for processNewFile TOCTOU checks.
+      if (typeof targetPath === 'string' && targetPath.startsWith('/path/to/')) {
+        return undefined;
+      }
+      // Destination usually does not exist during tests unless explicitly mocked.
+      const err = new Error('not found');
+      err.code = 'ENOENT';
+      throw err;
+    });
 
     mockSuggestionService = {
       getSuggestionsForFile: jest.fn().mockResolvedValue({
@@ -314,6 +323,38 @@ describe('AutoOrganize File Processor', () => {
       expect(results.organized).toHaveLength(0);
       expect(results.needsReview).toHaveLength(1);
     });
+
+    test('deduplicates planned destinations for low-confidence default-folder moves', async () => {
+      mockSuggestionService.getSuggestionsForFile
+        .mockResolvedValueOnce({
+          success: true,
+          primary: { folder: 'Documents', path: '/docs/Documents', isSmartFolder: true },
+          confidence: 0.6
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          primary: { folder: 'Documents', path: '/docs/Documents', isSmartFolder: true },
+          confidence: 0.6
+        });
+
+      const files = [
+        { name: 'duplicate.pdf', path: '/src/a.pdf', extension: 'pdf' },
+        { name: 'duplicate.pdf', path: '/src/b.pdf', extension: 'pdf' }
+      ];
+      const results = { organized: [], needsReview: [], failed: [], operations: [] };
+
+      await processFilesIndividually(
+        files,
+        [{ name: 'Documents', path: '/docs/Documents', isDefault: true }],
+        { confidenceThreshold: 0.8, defaultLocation: '/docs', preserveNames: true },
+        results,
+        mockSuggestionService
+      );
+
+      expect(results.organized).toHaveLength(2);
+      expect(results.organized[0].destination).not.toBe(results.organized[1].destination);
+      expect(results._plannedDestinations).toBeInstanceOf(Set);
+    });
   });
 
   describe('processNewFile', () => {
@@ -465,6 +506,44 @@ describe('AutoOrganize File Processor', () => {
       );
 
       expect(result).toBeDefined();
+    });
+
+    test('adjusts destination when target file already exists', async () => {
+      mockFs.access.mockImplementation(async (targetPath) => {
+        if (targetPath === '/path/to/file.pdf') return undefined; // source exists
+        if (
+          targetPath === '/docs/Documents/file.pdf' ||
+          targetPath === '\\docs\\Documents\\file.pdf'
+        ) {
+          return undefined; // destination collision
+        }
+        if (
+          targetPath === '/docs/Documents/file-2.pdf' ||
+          targetPath === '\\docs\\Documents\\file-2.pdf'
+        ) {
+          const err = new Error('not found');
+          err.code = 'ENOENT';
+          throw err;
+        }
+        const err = new Error('not found');
+        err.code = 'ENOENT';
+        throw err;
+      });
+
+      const result = await processNewFile(
+        '/path/to/file.pdf',
+        [{ name: 'Documents', path: '/docs/Documents', isDefault: true }],
+        {
+          autoOrganizeEnabled: true,
+          confidenceThreshold: 0.8,
+          defaultLocation: '/docs'
+        },
+        mockSuggestionService,
+        mockUndoRedo
+      );
+
+      expect(result.destination.replace(/\\/g, '/')).toBe('/docs/Documents/file-2.pdf');
+      expect(result.undoAction.data.newPath.replace(/\\/g, '/')).toBe('/docs/Documents/file-2.pdf');
     });
   });
 });

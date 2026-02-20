@@ -85,9 +85,14 @@ describe('executeRollback - extended coverage', () => {
   });
 
   test('processes operations in reverse order', async () => {
-    const renameOrder = [];
-    mockFsPromises.rename.mockImplementation(async (from) => {
-      renameOrder.push(from);
+    const rollbackRenames = [];
+    let callIndex = 0;
+    mockFsPromises.rename.mockImplementation(async (from, to) => {
+      callIndex++;
+      // Skip the first rename call which is writeFileAtomic (tmp -> manifest)
+      if (callIndex > 1) {
+        rollbackRenames.push(from);
+      }
     });
 
     const ops = [
@@ -99,9 +104,9 @@ describe('executeRollback - extended coverage', () => {
     await executeRollback(ops, [], 0, 'test', 'batch-order', log);
 
     // Should reverse: third, second, first
-    expect(renameOrder[0]).toBe('/dst/third.txt');
-    expect(renameOrder[1]).toBe('/dst/second.txt');
-    expect(renameOrder[2]).toBe('/dst/first.txt');
+    expect(rollbackRenames[0]).toBe('/dst/third.txt');
+    expect(rollbackRenames[1]).toBe('/dst/second.txt');
+    expect(rollbackRenames[2]).toBe('/dst/first.txt');
   });
 
   test('all operations fail - manifest updated with partial_failure', async () => {
@@ -161,7 +166,11 @@ describe('executeRollback - extended coverage', () => {
   test('EXDEV triggers crossDeviceMove with parent dir creation', async () => {
     const exdevError = new Error('EXDEV');
     exdevError.code = 'EXDEV';
-    mockFsPromises.rename.mockRejectedValueOnce(exdevError);
+    // First rename is from writeFileAtomic (manifest creation) - let it succeed.
+    // Second rename is the actual rollback rename - throw EXDEV.
+    mockFsPromises.rename
+      .mockResolvedValueOnce(undefined) // writeFileAtomic: tmp -> manifest
+      .mockRejectedValueOnce(exdevError); // rollback rename
 
     const ops = [
       { source: '/mnt/drive2/deep/nested/file.txt', destination: '/mnt/drive1/file.txt' }
@@ -182,7 +191,12 @@ describe('executeRollback - extended coverage', () => {
   test('non-EXDEV rename error propagates as rollback failure', async () => {
     const permError = new Error('Permission denied');
     permError.code = 'EACCES';
-    mockFsPromises.rename.mockRejectedValueOnce(permError);
+    // First rename is writeFileAtomic (manifest creation) - succeeds.
+    // Second rename is the rollback rename - fails with EACCES.
+    mockFsPromises.rename
+      .mockResolvedValueOnce(undefined) // writeFileAtomic: tmp -> manifest
+      .mockRejectedValueOnce(permError) // rollback rename fails
+      .mockResolvedValueOnce(undefined); // writeFileAtomic: tmp -> manifest (update)
     mockFsPromises.readFile.mockResolvedValue(JSON.stringify({ status: 'pending', results: [] }));
 
     const ops = [{ source: '/a.txt', destination: '/b.txt' }];
@@ -197,15 +211,19 @@ describe('executeRollback - extended coverage', () => {
   });
 
   test('manifest update failure is handled gracefully', async () => {
-    // First writeFile (manifest creation) succeeds
+    // writeFileAtomic for initial manifest:
+    //   writeFile(tmp) succeeds, rename(tmp -> manifest) succeeds
     mockFsPromises.writeFile.mockResolvedValueOnce(undefined);
-    // Rollback fails
-    mockFsPromises.rename.mockRejectedValueOnce(new Error('fail'));
+    mockFsPromises.rename
+      .mockResolvedValueOnce(undefined) // writeFileAtomic: tmp -> manifest (creation)
+      .mockRejectedValueOnce(new Error('fail')) // rollback rename fails
+      .mockResolvedValueOnce(undefined); // writeFileAtomic: tmp -> manifest (update attempt)
+
     // readFile for manifest update succeeds
     mockFsPromises.readFile.mockResolvedValueOnce(
       JSON.stringify({ status: 'pending', results: [] })
     );
-    // Second writeFile (manifest update) fails
+    // Second writeFile (manifest update via writeFileAtomic) fails
     mockFsPromises.writeFile.mockRejectedValueOnce(new Error('Write failed'));
 
     const ops = [{ source: '/a.txt', destination: '/b.txt' }];

@@ -178,7 +178,7 @@ describe('llamaUtils', () => {
   describe('loadLlamaConfig', () => {
     test('loads config from settings service', async () => {
       mockSettingsInstance = {
-        getAll: jest.fn(() => ({
+        load: jest.fn(async () => ({
           textModel: 'settings-text.gguf',
           visionModel: 'settings-vision.gguf',
           embeddingModel: 'settings-embed.gguf'
@@ -194,7 +194,7 @@ describe('llamaUtils', () => {
 
     test('uses defaults when settings are empty', async () => {
       mockSettingsInstance = {
-        getAll: jest.fn(() => ({}))
+        load: jest.fn(async () => ({}))
       };
 
       const result = await llamaUtils.loadLlamaConfig();
@@ -214,9 +214,9 @@ describe('llamaUtils', () => {
       expect(result.selectedTextModel).toBeDefined();
     });
 
-    test('handles getAll returning null', async () => {
+    test('handles load returning null', async () => {
       mockSettingsInstance = {
-        getAll: jest.fn(() => null)
+        load: jest.fn(async () => null)
       };
 
       const result = await llamaUtils.loadLlamaConfig();

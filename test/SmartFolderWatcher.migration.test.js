@@ -90,6 +90,10 @@ jest.mock('../src/main/analysis/embeddingSummary', () => ({
   buildEmbeddingSummary: jest.fn(() => 'summary text')
 }));
 
+jest.mock('../src/main/analysis/semanticFolderMatcher', () => ({
+  clearSmartFolderUpsertCache: jest.fn()
+}));
+
 jest.mock('../src/shared/fileOperationTracker', () => ({
   getInstance: jest.fn(() => ({
     isBeingProcessed: jest.fn(() => false),

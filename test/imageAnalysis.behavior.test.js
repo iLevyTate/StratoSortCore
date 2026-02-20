@@ -77,7 +77,18 @@ jest.mock('../src/main/utils/llmOptimization', () => ({
 }));
 
 jest.mock('../src/main/utils/jsonRepair', () => ({
-  extractAndParseJSON: jest.fn((text) => JSON.parse(text))
+  extractAndParseJSON: jest.fn((text) => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  })
+}));
+
+jest.mock('../src/main/utils/llmJsonRepair', () => ({
+  attemptJsonRepairWithLlama: jest.fn(),
+  attemptProseExtractionWithLlama: jest.fn()
 }));
 
 jest.mock('../src/main/utils/tesseractUtils', () => ({
@@ -160,6 +171,9 @@ describe('Image Analysis Behavior', () => {
       supportsVisionInput: jest.fn().mockResolvedValue(true)
     };
     require('../src/main/services/LlamaService').getInstance.mockReturnValue(mockLlamaService);
+    const llmJsonRepair = require('../src/main/utils/llmJsonRepair');
+    llmJsonRepair.attemptJsonRepairWithLlama.mockResolvedValue(null);
+    llmJsonRepair.attemptProseExtractionWithLlama.mockResolvedValue(null);
 
     // Setup folderUtils mock default
     require('../src/shared/folderUtils').findContainingSmartFolder.mockReturnValue(null);
@@ -257,6 +271,42 @@ describe('Image Analysis Behavior', () => {
     expect(result.category).toBe('Financial');
     expect(result.analysisWarning).toMatch(/parse json|empty response/i);
     expect(result.reason).not.toBe('AI engine failed');
+  });
+
+  test('skips JSON repair for prose-like vision responses and uses prose extraction directly', async () => {
+    mockLlamaService.analyzeImage.mockResolvedValue({
+      response: 'The image appears to be a team structure chart for a project meeting.'
+    });
+
+    const { extractAndParseJSON } = require('../src/main/utils/jsonRepair');
+    extractAndParseJSON.mockReturnValueOnce(null).mockReturnValueOnce({
+      category: 'Work',
+      keywords: ['team', 'project'],
+      confidence: 88,
+      suggestedName: 'team_structure',
+      has_text: true
+    });
+
+    const {
+      attemptJsonRepairWithLlama,
+      attemptProseExtractionWithLlama
+    } = require('../src/main/utils/llmJsonRepair');
+    attemptProseExtractionWithLlama.mockResolvedValueOnce(
+      JSON.stringify({
+        category: 'Work',
+        keywords: ['team', 'project'],
+        confidence: 88,
+        suggestedName: 'team_structure',
+        has_text: true
+      })
+    );
+
+    const result = await analyzeImageFile('/path/to/image.png');
+
+    expect(attemptJsonRepairWithLlama).not.toHaveBeenCalled();
+    expect(attemptProseExtractionWithLlama).toHaveBeenCalledTimes(1);
+    expect(result.error).toBeUndefined();
+    expect(result.category).toBe('Work');
   });
 
   test('routes non-recoverable vision error payloads through final OCR/text fallback', async () => {

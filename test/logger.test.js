@@ -26,9 +26,7 @@ const {
   Logger,
   logger,
   LOG_LEVELS,
-  LOG_LEVEL_NAMES,
   createLogger,
-  getLogger,
   sanitizeLogData
 } = require('../src/shared/logger');
 
@@ -51,14 +49,6 @@ describe('Logger', () => {
       expect(LOG_LEVELS.INFO).toBe('info');
       expect(LOG_LEVELS.DEBUG).toBe('debug');
       expect(LOG_LEVELS.TRACE).toBe('trace');
-    });
-
-    test('LOG_LEVEL_NAMES matches LOG_LEVELS', () => {
-      expect(LOG_LEVEL_NAMES[0]).toBe('ERROR');
-      expect(LOG_LEVEL_NAMES[1]).toBe('WARN');
-      expect(LOG_LEVEL_NAMES[2]).toBe('INFO');
-      expect(LOG_LEVEL_NAMES[3]).toBe('DEBUG');
-      expect(LOG_LEVEL_NAMES[4]).toBe('TRACE');
     });
   });
 
@@ -206,20 +196,6 @@ describe('Logger', () => {
       const log1 = createLogger('A');
       const log2 = createLogger('B');
       expect(log1).not.toBe(log2);
-    });
-  });
-
-  describe('getLogger factory', () => {
-    test('returns a new logger instance with context set', () => {
-      const log = getLogger('Service');
-      expect(log.context).toBe('Service');
-    });
-
-    test('returns independent instances so contexts do not collide', () => {
-      const log1 = getLogger('A');
-      const log2 = getLogger('B');
-      expect(log1.context).toBe('A');
-      expect(log2.context).toBe('B');
     });
   });
 

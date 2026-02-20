@@ -139,7 +139,12 @@ describe('SettingsService', () => {
     isNotFoundError.mockReturnValue(true);
 
     const settings = await service.load();
-    expect(settings).toEqual({ confidenceThreshold: 0.5, theme: 'light' });
+    // _buildRuntimeDefaults adds defaultSmartFolderLocation from app.getPath('documents')
+    expect(settings).toEqual({
+      confidenceThreshold: 0.5,
+      theme: 'light',
+      defaultSmartFolderLocation: 'C:\\fake-user-data'
+    });
   });
 
   test('load uses cache within TTL', async () => {

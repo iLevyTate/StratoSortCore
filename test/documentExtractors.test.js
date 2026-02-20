@@ -24,6 +24,21 @@ jest.mock('mammoth');
 jest.mock('xlsx-populate');
 jest.mock('adm-zip');
 
+// Mock analysisLimits so checkFileSize uses a known limit (100MB)
+jest.mock('../src/main/analysis/analysisLimits', () => ({
+  getAnalysisLimits: jest.fn().mockResolvedValue({
+    maxFileSize: 100 * 1024 * 1024,
+    maxImageFileSize: 100 * 1024 * 1024,
+    maxDocumentFileSize: 100 * 1024 * 1024
+  }),
+  getDefaultLimits: jest.fn().mockReturnValue({
+    maxFileSize: 100 * 1024 * 1024,
+    maxImageFileSize: 100 * 1024 * 1024,
+    maxDocumentFileSize: 100 * 1024 * 1024
+  }),
+  invalidateCache: jest.fn()
+}));
+
 const {
   extractTextFromPdf,
   ocrPdfIfNeeded,

@@ -226,7 +226,7 @@ describe('llamaUtils - legacy Ollama model name detection', () => {
   test('loadLlamaConfig replaces legacy Ollama-style names with defaults', async () => {
     jest.doMock('../src/main/services/SettingsService', () => ({
       getInstance: jest.fn(() => ({
-        getAll: () => ({
+        load: jest.fn().mockResolvedValue({
           textModel: 'llama2:latest', // Ollama format (colon)
           visionModel: 'bakllava', // Ollama format (no extension)
           embeddingModel: 'nomic-embed-text-v1.5-Q8_0.gguf' // Valid GGUF
@@ -247,7 +247,7 @@ describe('llamaUtils - legacy Ollama model name detection', () => {
   test('loadLlamaConfig keeps valid GGUF names', async () => {
     jest.doMock('../src/main/services/SettingsService', () => ({
       getInstance: jest.fn(() => ({
-        getAll: () => ({
+        load: jest.fn().mockResolvedValue({
           textModel: 'custom-model-Q4_K_M.gguf',
           visionModel: 'my-vision.gguf',
           embeddingModel: 'embed-v2.gguf'

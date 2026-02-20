@@ -58,7 +58,12 @@ describe('autoOrganize/fileProcessor (edge cases)', () => {
       releaseAnalysis = () => resolve({ category: 'Reports', confidence: 0.95 });
     });
     analyzeDocumentFile.mockReturnValueOnce(analysisPromise);
-    fs.access.mockResolvedValue(undefined);
+    fs.access.mockImplementation(async (targetPath) => {
+      if (targetPath === 'C:\\X\\File.pdf' || targetPath === 'C:\\x\\file.pdf') return undefined;
+      const err = new Error('not found');
+      err.code = 'ENOENT';
+      throw err;
+    });
 
     const suggestionService = {
       getSuggestionsForFile: jest.fn().mockResolvedValue({
@@ -119,7 +124,12 @@ describe('autoOrganize/fileProcessor (edge cases)', () => {
     } = require('../src/main/services/autoOrganize/namingUtils');
 
     analyzeDocumentFile.mockResolvedValue({ category: 'Reports', confidence: 0.95 });
-    fs.access.mockResolvedValue(undefined);
+    fs.access.mockImplementation(async (targetPath) => {
+      if (targetPath === 'C:\\X\\File.pdf') return undefined;
+      const err = new Error('not found');
+      err.code = 'ENOENT';
+      throw err;
+    });
     fs.stat.mockResolvedValue({ birthtime: new Date('2020-01-01'), mtime: new Date('2020-02-01') });
     generateSuggestedNameFromAnalysis.mockReturnValue('Renamed.pdf');
 
@@ -152,7 +162,12 @@ describe('autoOrganize/fileProcessor (edge cases)', () => {
     const { buildDestinationPath } = require('../src/main/services/autoOrganize/folderOperations');
 
     analyzeDocumentFile.mockResolvedValue({ category: 'Reports', confidence: 0.95 });
-    fs.access.mockResolvedValue(undefined);
+    fs.access.mockImplementation(async (targetPath) => {
+      if (targetPath === 'C:\\X\\File.pdf') return undefined;
+      const err = new Error('not found');
+      err.code = 'ENOENT';
+      throw err;
+    });
 
     const smartFolders = [{ name: 'Documents', path: 'C:\\Smart\\Documents' }];
     const suggestionService = {

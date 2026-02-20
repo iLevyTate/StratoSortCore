@@ -141,6 +141,10 @@ jest.mock('../src/main/services/LlamaResilience', () => ({
   resetLlamaCircuit: jest.fn()
 }));
 
+jest.mock('../src/main/analysis/semanticFolderMatcher', () => ({
+  clearSmartFolderUpsertCache: jest.fn()
+}));
+
 const fs = require('fs').promises;
 const chokidar = require('chokidar');
 const SmartFolderWatcher = require('../src/main/services/SmartFolderWatcher');

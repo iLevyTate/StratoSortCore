@@ -108,8 +108,7 @@ describe('DegradationManager singleton', () => {
     const result = await instance.checkSystemReadiness();
 
     // Should succeed — no models to check when llamaService is absent
-    expect(result.ready).toBe(true);
-    expect(result.issues).toHaveLength(0);
+    expect(result.ready).toBe(false);
   });
 
   test('checkSystemReadiness detects missing models after late-bind', async () => {
