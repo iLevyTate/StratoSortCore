@@ -60,8 +60,19 @@ jobs:
       - name: Install dependencies (with optional deps)
         run: npm ci --include=optional
 
-      - name: Rebuild native modules for Electron runtime
-        run: npx --no electron-builder install-app-deps
+      - name: Generate installer assets
+        run: |
+          if [ -f assets/stratosort-logo.png ]; then
+            npm run generate:assets
+          else
+            echo "::warning::Source logo not found – skipping asset generation (icons must be pre-committed)"
+          fi
+
+      - name: Rebuild native modules for Electron runtime (${{ matrix.arch }})
+        run: npx --no electron-builder install-app-deps --arch=${{ matrix.arch }}
+
+      - name: Verify native modules load
+        run: node -e "require('sharp'); console.log('sharp OK')"
 
       - name: Build Mac app and DMG (${{ matrix.arch }})
         run: npm run ${{ matrix.dist_script }}
