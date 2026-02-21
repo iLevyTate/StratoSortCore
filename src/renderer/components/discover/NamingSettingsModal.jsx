@@ -5,6 +5,7 @@ import NamingSettings from './NamingSettings';
 import { Button } from '../ui';
 import { Text } from '../ui/Typography';
 import { Stack } from '../layout';
+import { applyCaseConvention } from '../../../shared/namingConventions';
 
 const NamingSettingsModal = memo(function NamingSettingsModal({
   isOpen,
@@ -53,7 +54,10 @@ const NamingSettingsModal = memo(function NamingSettingsModal({
             <span className="font-mono bg-surface-muted border border-border-soft px-3 py-1.5 rounded-lg">
               {namingConvention === 'keep-original'
                 ? 'original-filename.ext'
-                : `${namingConvention.replace(/-/g, separator || '-')}.ext`}
+                : `${namingConvention
+                    .split('-')
+                    .map((part) => applyCaseConvention(part, caseConvention))
+                    .join(separator || '-')}.ext`}
             </span>
           </Text>
         </div>

@@ -204,32 +204,35 @@ function generateSuggestedNameFromAnalysis({
   const project = sanitizeToken(rawProject) || 'Project';
   const category = sanitizeToken(rawCategory) || 'Category';
 
-  // duplicated as if-checks after the switch. Now all cases set `base` directly.
+  const applyCasing = (text) => (caseConvention ? applyCaseConvention(text, caseConvention) : text);
+
+  const subjectStr = applyCasing(subject);
+  const projectStr = applyCasing(project);
+  const categoryStr = applyCasing(category);
+
   let base;
   switch (convention) {
     case 'subject-date':
-      base = `${subject}${separator}${formattedDate}`;
+      base = `${subjectStr}${separator}${formattedDate}`;
       break;
     case 'date-subject':
-      base = `${formattedDate}${separator}${subject}`;
+      base = `${formattedDate}${separator}${subjectStr}`;
       break;
     case 'project-subject-date':
-      base = `${project}${separator}${subject}${separator}${formattedDate}`;
+      base = `${projectStr}${separator}${subjectStr}${separator}${formattedDate}`;
       break;
     case 'category-subject':
-      base = `${category}${separator}${subject}`;
+      base = `${categoryStr}${separator}${subjectStr}`;
       break;
     case 'keep-original':
-      // Preserve the original filename's base; still apply case convention if provided
-      base = originalBase;
+      base = applyCasing(originalBase);
       break;
     default:
-      base = subject;
+      base = subjectStr;
       break;
   }
 
-  const finalBase = caseConvention ? applyCaseConvention(base, caseConvention) : base;
-  const fullName = `${finalBase}${extension}`;
+  const fullName = `${base}${extension}`;
 
   return enforceFileNameLength(fullName, extension);
 }

@@ -96,28 +96,33 @@ function generatePreviewName(originalName, settings) {
   const extension = dotIdx > 0 ? originalName.slice(dotIdx) : '';
   const today = new Date();
 
+  const applyCasing = (text) => (caseConvention ? applyCaseConvention(text, caseConvention) : text);
+  const formattedBaseName = applyCasing(baseName);
+  const dateStr = formatDate(today, dateFormat);
+
   let previewName;
   switch (convention) {
     case 'subject-date':
-      previewName = `${baseName}${separator}${formatDate(today, dateFormat)}`;
+      previewName = `${formattedBaseName}${separator}${dateStr}`;
       break;
     case 'date-subject':
-      previewName = `${formatDate(today, dateFormat)}${separator}${baseName}`;
+      previewName = `${dateStr}${separator}${formattedBaseName}`;
       break;
     case 'project-subject-date':
-      previewName = `Project${separator}${baseName}${separator}${formatDate(today, dateFormat)}`;
+      previewName = `${applyCasing('project')}${separator}${formattedBaseName}${separator}${dateStr}`;
       break;
     case 'category-subject':
-      previewName = `Category${separator}${baseName}`;
+      previewName = `${applyCasing('category')}${separator}${formattedBaseName}`;
       break;
     case 'keep-original':
       previewName = baseName;
-      break;
+      // Do not apply case convention to keep-original
+      return previewName + extension;
     default:
-      previewName = baseName;
+      previewName = formattedBaseName;
   }
 
-  return applyCaseConvention(previewName, caseConvention) + extension;
+  return previewName + extension;
 }
 
 /**
