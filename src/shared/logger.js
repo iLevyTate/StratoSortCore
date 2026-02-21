@@ -28,7 +28,6 @@ const _hasPinoTransport = typeof pino.transport === 'function';
 let _sharedDevTransport = null;
 let _transportDead = false;
 const _activeLoggers = new Set();
-const MAX_ACTIVE_LOGGERS = 200;
 const _globalLogConfig = {
   enableFile: false,
   logFile: null,
@@ -137,16 +136,13 @@ class Logger {
     this.level = process.env.NODE_ENV === 'development' ? 'debug' : 'info';
 
     // Initialize Pino instance
-    // Cap _activeLoggers to prevent unbounded growth; evict oldest entries first
-    if (_activeLoggers.size >= MAX_ACTIVE_LOGGERS) {
-      const iter = _activeLoggers.values();
-      const toRemove = _activeLoggers.size - MAX_ACTIVE_LOGGERS + 1;
-      for (let i = 0; i < toRemove; i++) {
-        const oldest = iter.next().value;
-        if (oldest) _activeLoggers.delete(oldest);
+    // Clean up dead weak refs occasionally
+    if (_activeLoggers.size % 10 === 0) {
+      for (const ref of _activeLoggers) {
+        if (!ref.deref()) _activeLoggers.delete(ref);
       }
     }
-    _activeLoggers.add(this);
+    _activeLoggers.add(new WeakRef(this));
     this._applyGlobalConfig();
     // Allow deferring _initPino when the caller (e.g. createLogger) will
     // override properties and call _initPino itself, avoiding a wasted init.
@@ -416,16 +412,21 @@ function configureFileLogging(logFilePath, options = {}) {
     _globalLogConfig.level = options.level;
   }
 
-  for (const instance of _activeLoggers) {
-    instance.enableFile = true;
-    instance.logFile = logFilePath;
-    if (typeof options.enableConsole === 'boolean') {
-      instance.enableConsole = options.enableConsole;
+  for (const ref of _activeLoggers) {
+    const instance = ref.deref();
+    if (instance) {
+      instance.enableFile = true;
+      instance.logFile = logFilePath;
+      if (typeof options.enableConsole === 'boolean') {
+        instance.enableConsole = options.enableConsole;
+      }
+      if (typeof options.level === 'string') {
+        instance.level = options.level;
+      }
+      instance._initPino();
+    } else {
+      _activeLoggers.delete(ref);
     }
-    if (typeof options.level === 'string') {
-      instance.level = options.level;
-    }
-    instance._initPino();
   }
 }
 
@@ -434,11 +435,16 @@ function configureConsoleLogging(enableConsole) {
     _globalLogConfig.enableConsole = enableConsole;
   }
 
-  for (const instance of _activeLoggers) {
-    if (typeof enableConsole === 'boolean') {
-      instance.enableConsole = enableConsole;
+  for (const ref of _activeLoggers) {
+    const instance = ref.deref();
+    if (instance) {
+      if (typeof enableConsole === 'boolean') {
+        instance.enableConsole = enableConsole;
+      }
+      instance._initPino();
+    } else {
+      _activeLoggers.delete(ref);
     }
-    instance._initPino();
   }
 }
 

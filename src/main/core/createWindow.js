@@ -344,7 +344,7 @@ function createMainWindow() {
       allowRunningInsecureContent: false,
       experimentalFeatures: false,
       backgroundThrottling: false,
-      devTools: isDev,
+      devTools: isDev || getEnvBool('FORCE_DEV_TOOLS'),
       hardwareAcceleration: true,
       enableWebGL: true,
       safeDialogs: true,
@@ -620,11 +620,16 @@ function createMainWindow() {
         ? message.trim().replace(/^['"](.*)['"]$/, '$1')
         : String(message);
 
+    const truncatedMessage =
+      normalizedMessage.length > 8192
+        ? normalizedMessage.substring(0, 8192) + '...[truncated]'
+        : normalizedMessage;
+
     // Pino's browser logger calls console.* with structured objects which serialise
     // as "[object Object]" through Electron's console-message event. Chromium may
     // wrap the literal value in quotes, so normalize first and drop both forms.
     // Structured log payloads are already forwarded via window.electronAPI.system.log.
-    if (normalizedMessage === '[object Object]') {
+    if (truncatedMessage === '[object Object]') {
       // Prevent Chromium from echoing noisy raw console payloads to the terminal.
       if (typeof event?.preventDefault === 'function') {
         event.preventDefault();
@@ -633,11 +638,11 @@ function createMainWindow() {
     }
 
     if (level >= 3) {
-      logger.error(`${prefix} ${normalizedMessage}`, meta);
+      logger.error(`${prefix} ${truncatedMessage}`, meta);
     } else if (level >= 2) {
-      logger.warn(`${prefix} ${normalizedMessage}`, meta);
+      logger.warn(`${prefix} ${truncatedMessage}`, meta);
     } else {
-      logger.info(`${prefix} ${normalizedMessage}`, meta);
+      logger.info(`${prefix} ${truncatedMessage}`, meta);
     }
   });
 

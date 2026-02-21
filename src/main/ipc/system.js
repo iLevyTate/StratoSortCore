@@ -337,21 +337,14 @@ function registerSystemIpc(servicesOrParams) {
           const { app, dialog } = require('electron');
           const path = require('path');
           const fs = require('fs');
-          const AdmZip = require('adm-zip');
+          const { Worker } = require('worker_threads');
 
           const logsDir = path.join(app.getPath('userData'), 'logs');
           if (!fs.existsSync(logsDir)) {
             return { success: false, error: 'No logs found' };
           }
 
-          const zip = new AdmZip();
-          zip.addLocalFolder(logsDir, 'logs');
-
-          // Also include crash dumps if they exist
           const crashDumpsDir = path.join(app.getPath('userData'), 'crash-dumps');
-          if (fs.existsSync(crashDumpsDir)) {
-            zip.addLocalFolder(crashDumpsDir, 'crash-dumps');
-          }
 
           const { filePath } = await dialog.showSaveDialog({
             title: 'Export Debug Logs',
@@ -363,7 +356,37 @@ function registerSystemIpc(servicesOrParams) {
             return canceledResponse();
           }
 
-          zip.writeZip(filePath);
+          await new Promise((resolve, reject) => {
+            const workerCode = `
+              const { parentPort, workerData } = require('worker_threads');
+              const AdmZip = require('adm-zip');
+              const fs = require('fs');
+              try {
+                const zip = new AdmZip();
+                zip.addLocalFolder(workerData.logsDir, 'logs');
+                if (workerData.crashDumpsDir && fs.existsSync(workerData.crashDumpsDir)) {
+                  zip.addLocalFolder(workerData.crashDumpsDir, 'crash-dumps');
+                }
+                zip.writeZip(workerData.outPath);
+                parentPort.postMessage({ success: true });
+              } catch (err) {
+                parentPort.postMessage({ success: false, error: err.message });
+              }
+            `;
+            const worker = new Worker(workerCode, {
+              eval: true,
+              workerData: { logsDir, crashDumpsDir, outPath: filePath }
+            });
+            worker.on('message', (msg) => {
+              if (msg.success) resolve();
+              else reject(new Error(msg.error));
+            });
+            worker.on('error', reject);
+            worker.on('exit', (code) => {
+              if (code !== 0) reject(new Error(`Worker stopped with exit code ${code}`));
+            });
+          });
+
           return { success: true, filePath };
         } catch (error) {
           logger.error('Failed to export logs:', error);
