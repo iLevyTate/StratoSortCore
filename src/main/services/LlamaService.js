@@ -472,8 +472,8 @@ class LlamaService extends EventEmitter {
 
     const profile = {
       contextSize: effectiveContextSize,
-      batchSize: envBatchSize || defaultBatchSize,
-      ubatchSize: envUbatchSize || defaultUbatchSize,
+      batchSize: envBatchSize || (useConservativeProfile ? defaultBatchSize : null),
+      ubatchSize: envUbatchSize || (useConservativeProfile ? defaultUbatchSize : null),
       maxTokens:
         retryDegraded && useConservativeProfile
           ? Math.max(
@@ -2498,15 +2498,22 @@ class LlamaService extends EventEmitter {
 
                 // In batch mode, exitVisionBatchMode() handles shutdown + reload
                 if (!this._visionBatchMode) {
-                  // Always shut down vision server for single-image to free VRAM
-                  // for the text model. Keep-alive only benefits batch mode
-                  // (handled by exitVisionBatchMode above).
-                  try {
-                    await visionService.shutdown();
-                  } catch {
-                    /* ignore — server may already be gone */
+                  const keepAliveEnabled =
+                    typeof visionService.isIdleKeepAliveEnabled === 'function' &&
+                    visionService.isIdleKeepAliveEnabled();
+
+                  if (keepAliveEnabled) {
+                    visionService.scheduleIdleShutdown?.('single-image-complete');
+                  } else {
+                    // Shut down vision server to release VRAM before reloading text model
+                    try {
+                      await visionService.shutdown();
+                    } catch {
+                      /* ignore — server may already be gone */
+                    }
+                    // Wait for CUDA VRAM release before reloading text model
+                    await delay(500);
                   }
-                  await delay(500);
 
                   // Vision done — pre-load text model for next inference
                   this._ensureModelLoaded('text')

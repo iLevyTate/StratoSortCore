@@ -220,7 +220,16 @@ async function persistData(filePath, data, options = {}) {
     if (data === null || data === undefined || typeof data !== 'object') {
       throw new TypeError(`persistData expects an Array or Object, got ${typeof data}`);
     }
-    const isEmpty = Array.isArray(data) ? data.length === 0 : Object.keys(data).length === 0;
+    let isEmpty = false;
+    if (Array.isArray(data)) {
+      isEmpty = data.length === 0;
+    } else if (data instanceof Map || data instanceof Set) {
+      isEmpty = data.size === 0;
+    } else if (data instanceof Date) {
+      isEmpty = false;
+    } else {
+      isEmpty = Object.keys(data).length === 0;
+    }
 
     if (isEmpty) {
       await safeUnlink(filePath);

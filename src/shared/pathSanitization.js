@@ -95,23 +95,16 @@ function sanitizePath(filePath) {
   const platform = PLATFORM;
   const maxLength = MAX_PATH_LENGTHS[platform] || MAX_PATH_LENGTHS.linux;
   if (normalized.length > maxLength) {
-    // Truncate the path if it's too long instead of throwing
-    // Try to preserve the file extension if possible
     const ext = path.extname(normalized);
-    const truncateLength = maxLength - ext.length;
-    if (truncateLength > 0) {
-      // String.substring operates on UTF-16 code units and can split
-      // surrogate pairs (emoji, CJK supplementary characters).
-      const chars = Array.from(normalized);
-      normalized = chars.slice(0, truncateLength).join('') + ext;
+    if (ext.length >= maxLength) {
+      normalized = normalized.slice(0, maxLength);
     } else {
-      const chars = Array.from(normalized);
-      normalized = chars.slice(0, maxLength).join('');
+      normalized = normalized.slice(0, maxLength - ext.length) + ext;
     }
   }
 
   // 6. Validate path depth to prevent deep nesting attacks
-  const pathParts = normalizedParts;
+  const pathParts = normalized.split(path.sep).filter((part) => part.length > 0);
   if (pathParts.length > MAX_PATH_DEPTH) {
     throw new Error(
       `Invalid path: path depth (${pathParts.length}) exceeds maximum (${MAX_PATH_DEPTH})`

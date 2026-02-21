@@ -496,13 +496,84 @@ async function processNewFile(filePath, smartFolders, options, suggestionService
       };
     }
 
-    // Confidence below threshold - do not move automatically.
+    // As per settings: "Files below this threshold are routed to 'Uncategorized' for manual review"
     const confidence = suggestion.confidence || 0;
-    logger.info('[AutoOrganize] File confidence below threshold; skipping auto-organize', {
-      file: filePath,
-      confidence,
-      threshold: effectiveThreshold
-    });
+    const defaultFolder = findDefaultFolder(smartFolders);
+
+    if (defaultFolder && defaultFolder.path) {
+      let destination = buildDestinationPath(file, defaultFolder, options.defaultLocation, false);
+
+      let attempt = 0;
+      const ext = path.extname(destination);
+      const base = destination.slice(0, destination.length - ext.length);
+      let normalizedDest = normalizeLockPath(destination);
+
+      while (attempt < 50) {
+        try {
+          await fs.access(destination);
+          attempt++;
+          destination = `${base}-${attempt + 1}${ext}`;
+          normalizedDest = normalizeLockPath(destination);
+          continue;
+        } catch (error) {
+          if (error?.code !== 'ENOENT') {
+            throw error;
+          }
+        }
+
+        if (destinationLocks.has(normalizedDest)) {
+          attempt++;
+          destination = `${base}-${attempt + 1}${ext}`;
+          normalizedDest = normalizeLockPath(destination);
+          continue;
+        }
+
+        destinationLocks.add(normalizedDest);
+        const timer = setTimeout(() => destinationLocks.delete(normalizedDest), 30000);
+        if (timer && typeof timer.unref === 'function') {
+          timer.unref();
+        }
+        break;
+      }
+
+      if (attempt >= 50) {
+        throw new Error('Failed to find unique destination for auto-organize fallback');
+      }
+
+      logger.info('[AutoOrganize] File confidence below threshold; routing to Uncategorized', {
+        file: filePath,
+        destination,
+        confidence,
+        threshold: effectiveThreshold
+      });
+
+      const undoAction = {
+        type: 'FILE_MOVE',
+        data: {
+          originalPath: filePath,
+          newPath: destination
+        },
+        timestamp: Date.now(),
+        description: `Auto-organized ${file.name} to Uncategorized (low confidence)`
+      };
+
+      return {
+        source: filePath,
+        destination,
+        confidence,
+        suggestion: { ...defaultFolder, isSmartFolder: true },
+        undoAction
+      };
+    }
+
+    logger.info(
+      '[AutoOrganize] File confidence below threshold and no default folder; skipping auto-organize',
+      {
+        file: filePath,
+        confidence,
+        threshold: effectiveThreshold
+      }
+    );
     return null;
   } catch (error) {
     logger.error('[AutoOrganize] Error processing new file:', {

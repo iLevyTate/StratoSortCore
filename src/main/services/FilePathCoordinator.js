@@ -421,129 +421,163 @@ class FilePathCoordinator extends EventEmitter {
       return { success: true, results: [], summary: { total: 0, successful: 0, failed: 0 } };
     }
 
-    const startTime = Date.now();
-    logger.info('[FilePathCoordinator] Starting batch path update', {
-      count: pathChanges.length,
-      type: options.type || PathChangeType.MOVE
-    });
+    // Acquire locks for all paths to prevent concurrent modifications (deadlock prevention via sorting)
+    const lockKeys = [
+      ...new Set(pathChanges.map((c) => path.resolve(c.oldPath).toLowerCase()))
+    ].sort();
+    const resolveLocks = [];
 
-    const results = [];
-    const errors = [];
-    const missingSystems = new Set();
-
-    // Process in batches for large updates
-    for (let i = 0; i < pathChanges.length; i += this._batchSize) {
-      const batch = pathChanges.slice(i, i + this._batchSize);
-
-      const errorCountBeforeBatch = errors.length;
-
-      // 1. Batch update vector DB
-      if (!options.skipVectorDb && this._vectorDbService) {
-        try {
-          await this._batchUpdateVectorDbPaths(batch);
-        } catch (err) {
-          errors.push({ system: 'vectorDb', error: err.message, batch: i / this._batchSize });
-          logger.warn('[FilePathCoordinator] Vector DB batch update failed', {
-            error: err.message
-          });
-        }
-      } else if (!options.skipVectorDb && !missingSystems.has('vectorDb')) {
-        errors.push({ system: 'vectorDb', error: 'Vector DB service unavailable' });
-        missingSystems.add('vectorDb');
-        logger.warn('[FilePathCoordinator] Vector DB service unavailable for batch update');
+    for (const lockKey of lockKeys) {
+      while (this._pathLocks.has(lockKey)) {
+        await this._pathLocks.get(lockKey);
       }
-
-      // 2. Batch update Analysis History
-      if (!options.skipAnalysisHistory && this._analysisHistoryService) {
-        try {
-          await this._batchUpdateAnalysisHistoryPaths(batch);
-        } catch (err) {
-          errors.push({
-            system: 'analysisHistory',
-            error: err.message,
-            batch: i / this._batchSize
-          });
-          logger.warn('[FilePathCoordinator] Analysis history batch update failed', {
-            error: err.message
-          });
-        }
-      } else if (!options.skipAnalysisHistory && !missingSystems.has('analysisHistory')) {
-        errors.push({ system: 'analysisHistory', error: 'Analysis history service unavailable' });
-        missingSystems.add('analysisHistory');
-        logger.warn('[FilePathCoordinator] Analysis history service unavailable for batch update');
-      }
-
-      // 3. Batch update Embedding Queue
-      if (!options.skipEmbeddingQueue && this._embeddingQueue) {
-        try {
-          this._batchUpdateEmbeddingQueuePaths(batch);
-        } catch (err) {
-          errors.push({ system: 'embeddingQueue', error: err.message, batch: i / this._batchSize });
-          logger.warn('[FilePathCoordinator] Embedding queue batch update failed', {
-            error: err.message
-          });
-        }
-      } else if (!options.skipEmbeddingQueue && !missingSystems.has('embeddingQueue')) {
-        errors.push({ system: 'embeddingQueue', error: 'Embedding queue unavailable' });
-        missingSystems.add('embeddingQueue');
-        logger.warn('[FilePathCoordinator] Embedding queue unavailable for batch update');
-      }
-
-      const batchHadErrors = errors.length > errorCountBeforeBatch;
-      const batchErrors = errors.slice(errorCountBeforeBatch);
-
-      // Track results for each path change
-      batch.forEach((change) => {
-        // If a system failed, check if it was critical for this file
-        // For now, we mark partial success if at least one system succeeded
-        results.push({
-          oldPath: change.oldPath,
-          newPath: change.newPath,
-          success: !batchHadErrors,
-          partialSuccess: batchHadErrors && batchErrors.length < 3, // Heuristic: <3 failed systems = partial
-          failedSystems: batchErrors.map((e) => e.system)
-        });
+      let resolveLock;
+      const lockPromise = new Promise((resolve) => {
+        resolveLock = resolve;
       });
+      this._pathLocks.set(lockKey, lockPromise);
+      resolveLocks.push({ key: lockKey, resolve: resolveLock, promise: lockPromise });
     }
 
-    // 4. Single cache invalidation for all paths
-    if (this._cacheInvalidationBus) {
-      try {
-        this._cacheInvalidationBus.invalidateBatch(pathChanges, options.type);
-      } catch (err) {
-        errors.push({ system: 'cacheInvalidation', error: err.message });
-        logger.warn('[FilePathCoordinator] Cache invalidation failed', { error: err.message });
+    try {
+      const startTime = Date.now();
+      logger.info('[FilePathCoordinator] Starting batch path update', {
+        count: pathChanges.length,
+        type: options.type || PathChangeType.MOVE
+      });
+
+      const results = [];
+      const errors = [];
+      const missingSystems = new Set();
+
+      // Process in batches for large updates
+      for (let i = 0; i < pathChanges.length; i += this._batchSize) {
+        const batch = pathChanges.slice(i, i + this._batchSize);
+
+        const errorCountBeforeBatch = errors.length;
+
+        // 1. Batch update vector DB
+        if (!options.skipVectorDb && this._vectorDbService) {
+          try {
+            await this._batchUpdateVectorDbPaths(batch);
+          } catch (err) {
+            errors.push({ system: 'vectorDb', error: err.message, batch: i / this._batchSize });
+            logger.warn('[FilePathCoordinator] Vector DB batch update failed', {
+              error: err.message
+            });
+          }
+        } else if (!options.skipVectorDb && !missingSystems.has('vectorDb')) {
+          errors.push({ system: 'vectorDb', error: 'Vector DB service unavailable' });
+          missingSystems.add('vectorDb');
+          logger.warn('[FilePathCoordinator] Vector DB service unavailable for batch update');
+        }
+
+        // 2. Batch update Analysis History
+        if (!options.skipAnalysisHistory && this._analysisHistoryService) {
+          try {
+            await this._batchUpdateAnalysisHistoryPaths(batch);
+          } catch (err) {
+            errors.push({
+              system: 'analysisHistory',
+              error: err.message,
+              batch: i / this._batchSize
+            });
+            logger.warn('[FilePathCoordinator] Analysis history batch update failed', {
+              error: err.message
+            });
+          }
+        } else if (!options.skipAnalysisHistory && !missingSystems.has('analysisHistory')) {
+          errors.push({ system: 'analysisHistory', error: 'Analysis history service unavailable' });
+          missingSystems.add('analysisHistory');
+          logger.warn(
+            '[FilePathCoordinator] Analysis history service unavailable for batch update'
+          );
+        }
+
+        // 3. Batch update Embedding Queue
+        if (!options.skipEmbeddingQueue && this._embeddingQueue) {
+          try {
+            this._batchUpdateEmbeddingQueuePaths(batch);
+          } catch (err) {
+            errors.push({
+              system: 'embeddingQueue',
+              error: err.message,
+              batch: i / this._batchSize
+            });
+            logger.warn('[FilePathCoordinator] Embedding queue batch update failed', {
+              error: err.message
+            });
+          }
+        } else if (!options.skipEmbeddingQueue && !missingSystems.has('embeddingQueue')) {
+          errors.push({ system: 'embeddingQueue', error: 'Embedding queue unavailable' });
+          missingSystems.add('embeddingQueue');
+          logger.warn('[FilePathCoordinator] Embedding queue unavailable for batch update');
+        }
+
+        const batchHadErrors = errors.length > errorCountBeforeBatch;
+        const batchErrors = errors.slice(errorCountBeforeBatch);
+
+        // Track results for each path change
+        batch.forEach((change) => {
+          // If a system failed, check if it was critical for this file
+          // For now, we mark partial success if at least one system succeeded
+          results.push({
+            oldPath: change.oldPath,
+            newPath: change.newPath,
+            success: !batchHadErrors,
+            partialSuccess: batchHadErrors && batchErrors.length < 3, // Heuristic: <3 failed systems = partial
+            failedSystems: batchErrors.map((e) => e.system)
+          });
+        });
       }
-    } else if (!missingSystems.has('cacheInvalidation')) {
-      errors.push({ system: 'cacheInvalidation', error: 'Cache invalidation bus unavailable' });
-      missingSystems.add('cacheInvalidation');
-      logger.warn('[FilePathCoordinator] Cache invalidation bus unavailable for batch update');
+
+      // 4. Single cache invalidation for all paths
+      if (this._cacheInvalidationBus) {
+        try {
+          this._cacheInvalidationBus.invalidateBatch(pathChanges, options.type);
+        } catch (err) {
+          errors.push({ system: 'cacheInvalidation', error: err.message });
+          logger.warn('[FilePathCoordinator] Cache invalidation failed', { error: err.message });
+        }
+      } else if (!missingSystems.has('cacheInvalidation')) {
+        errors.push({ system: 'cacheInvalidation', error: 'Cache invalidation bus unavailable' });
+        missingSystems.add('cacheInvalidation');
+        logger.warn('[FilePathCoordinator] Cache invalidation bus unavailable for batch update');
+      }
+
+      // Emit batch event
+      this.emit('paths-changed', {
+        type: options.type || PathChangeType.MOVE,
+        changes: pathChanges,
+        errors
+      });
+
+      const duration = Date.now() - startTime;
+      const successful = results.filter((result) => result.success).length;
+      const summary = {
+        total: pathChanges.length,
+        successful,
+        failed: pathChanges.length - successful,
+        duration
+      };
+
+      logger.info('[FilePathCoordinator] Batch path update complete', summary);
+
+      return {
+        success: errors.length === 0,
+        results,
+        errors,
+        summary
+      };
+    } finally {
+      // Release all acquired locks
+      for (const { key, resolve, promise } of resolveLocks) {
+        if (this._pathLocks.get(key) === promise) {
+          this._pathLocks.delete(key);
+        }
+        resolve();
+      }
     }
-
-    // Emit batch event
-    this.emit('paths-changed', {
-      type: options.type || PathChangeType.MOVE,
-      changes: pathChanges,
-      errors
-    });
-
-    const duration = Date.now() - startTime;
-    const successful = results.filter((result) => result.success).length;
-    const summary = {
-      total: pathChanges.length,
-      successful,
-      failed: pathChanges.length - successful,
-      duration
-    };
-
-    logger.info('[FilePathCoordinator] Batch path update complete', summary);
-
-    return {
-      success: errors.length === 0,
-      results,
-      errors,
-      summary
-    };
   }
 
   /**

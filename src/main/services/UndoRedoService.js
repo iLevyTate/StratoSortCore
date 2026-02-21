@@ -7,6 +7,7 @@ const { buildPathUpdatePairs } = require('../utils/fileIdUtils');
 const { RETRY } = require('../../shared/performanceConstants');
 const { crossDeviceMove } = require('../../shared/atomicFileOperations');
 const { validateFileOperationPath } = require('../../shared/pathSanitization');
+const { getInstance: getFileOperationTracker } = require('../../shared/fileOperationTracker');
 
 const logger = createLogger('UndoRedoService');
 
@@ -108,9 +109,19 @@ class UndoRedoService {
         await crossDeviceMove(normalizedSource, normalizedDestination, {
           verify: true
         });
-        return;
+      } else {
+        throw error;
       }
-      throw error;
+    }
+
+    try {
+      const tracker = getFileOperationTracker();
+      tracker.recordOperation(normalizedSource, 'move', 'undoRedo');
+      tracker.recordOperation(normalizedDestination, 'move', 'undoRedo');
+    } catch (trackerErr) {
+      logger.warn('[UndoRedoService] Failed to record operation in tracker', {
+        error: trackerErr.message
+      });
     }
   }
 

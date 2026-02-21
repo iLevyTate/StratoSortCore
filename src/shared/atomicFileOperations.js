@@ -743,6 +743,12 @@ class AtomicFileOperations {
           finalDestination = await this.generateUniqueFilename(finalDestination);
           continue;
         } else if (error.code === 'ENOENT') {
+          if (attempts === 0 && process.env.NODE_ENV !== 'test') {
+            throw new FileSystemError(FILE_SYSTEM_ERROR_CODES.FILE_NOT_FOUND, {
+              path: normalizedSource,
+              operation: 'copy'
+            });
+          }
           // Create placeholder source and retry once
           if (process.env.NODE_ENV === 'test') {
             await fs.mkdir(path.dirname(normalizedSource), {

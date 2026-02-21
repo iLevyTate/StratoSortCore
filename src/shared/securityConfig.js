@@ -152,22 +152,6 @@ function _getWindowsDriveLetters() {
     }
   }
 
-  // are also blocked. Previous code only covered C: and env-based drives.
-  try {
-    const fs = require('fs');
-    for (let code = 65; code <= 90; code++) {
-      const letter = `${String.fromCharCode(code)}:`;
-      try {
-        fs.accessSync(`${letter}\\`);
-        drives.add(letter);
-      } catch {
-        // Drive not mounted, skip
-      }
-    }
-  } catch {
-    // fs not available (browser context), fall back to env-based detection
-  }
-
   return Array.from(drives);
 }
 

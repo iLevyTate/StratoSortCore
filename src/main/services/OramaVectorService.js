@@ -1424,7 +1424,9 @@ class OramaVectorService extends EventEmitter {
       // those writes are not silently orphaned.
       if (this._persistPending && !this._isShuttingDown) {
         this._persistTimer = setTimeout(() => {
-          this._currentPersistPromise = this._doPersist();
+          if (!this._isPersisting) {
+            this._currentPersistPromise = this._doPersist();
+          }
         }, PERSIST_DEBOUNCE_MS);
         if (typeof this._persistTimer?.unref === 'function') this._persistTimer.unref();
       }
@@ -2058,17 +2060,18 @@ class OramaVectorService extends EventEmitter {
       const results = await this.querySimilarFiles(sourceEmbedding, topK * 3);
 
       // Normalize directory path for consistent comparison
-      const normalizedDir = targetDirectory.replace(/\\/g, '/').replace(/\/+$/, '');
+      const normalizedDir = targetDirectory.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 
       // Filter to files within the target directory and above threshold
       return results
         .filter((result) => {
           if (result.id === fileId) return false; // Exclude self
-          const filePath = (result.metadata?.filePath || result.metadata?.path || '').replace(
+          const rawFilePath = (result.metadata?.filePath || result.metadata?.path || '').replace(
             /\\/g,
             '/'
           );
-          if (!filePath) return false;
+          if (!rawFilePath) return false;
+          const filePath = rawFilePath.toLowerCase();
           // Check if file is within the target directory
           return filePath.startsWith(normalizedDir + '/') && result.score >= threshold;
         })
@@ -2238,9 +2241,8 @@ class OramaVectorService extends EventEmitter {
         // syncEmbeddingForMove provide, instead of silently dropping them.
         const metaOverrides = this._buildMetaOverrides(updateSpec?.newMeta, newPath, newName);
 
-        // If ID changed, delete old and insert new
+        // If ID changed, insert new then delete old to prevent data loss on insert failure
         if (newId && newId !== oldId) {
-          await remove(this._databases.files, oldId);
           await insert(this._databases.files, {
             ...existing,
             ...metaOverrides,
@@ -2248,6 +2250,8 @@ class OramaVectorService extends EventEmitter {
             filePath: newPath || existing.filePath,
             fileName: newName || existing.fileName
           });
+          await remove(this._databases.files, oldId);
+
           // Migrate embedding in sidecar store
           const embStore = this._embeddingStore?.files;
           if (embStore) {
