@@ -477,6 +477,7 @@ function DiscoverPhase() {
           </Inline>
 
           <div
+            data-testid="drag-drop-zone"
             className={`flex-1 flex flex-col items-center justify-center animate-fade-in text-center min-h-[200px] p-8 transition-colors [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] border-2 border-dashed rounded-xl ${
               isDragging ? 'border-stratosort-blue bg-stratosort-blue/5' : 'border-system-gray-200'
             }`}

@@ -96,11 +96,11 @@ function CompletePhase() {
       {/* Header with optional celebration animation */}
       <Stack className="text-center flex-shrink-0" gap="compact">
         <motion.div
-          initial={showCelebration ? { opacity: 0, scale: 0.96 } : false}
-          animate={{ opacity: 1, scale: 1 }}
+          initial={showCelebration ? { opacity: 0 } : false}
+          animate={{ opacity: 1 }}
           transition={{
-            duration: 0.35,
-            ease: [0.16, 1, 0.3, 1]
+            duration: 0.22,
+            ease: [0.22, 1, 0.36, 1]
           }}
         >
           <Heading as="h1" variant="display">
@@ -108,12 +108,12 @@ function CompletePhase() {
           </Heading>
         </motion.div>
         <motion.div
-          initial={showCelebration ? { opacity: 0, y: 4 } : false}
-          animate={{ opacity: 1, y: 0 }}
+          initial={showCelebration ? { opacity: 0 } : false}
+          animate={{ opacity: 1 }}
           transition={{
-            duration: 0.3,
+            duration: 0.22,
             delay: showCelebration ? 0.1 : 0,
-            ease: [0.16, 1, 0.3, 1]
+            ease: [0.22, 1, 0.36, 1]
           }}
           className="max-w-xl mx-auto"
         >
@@ -127,12 +127,12 @@ function CompletePhase() {
 
       {/* Toolbar with success badge animation */}
       <motion.div
-        initial={showCelebration ? { opacity: 0, y: 6 } : false}
-        animate={{ opacity: 1, y: 0 }}
+        initial={showCelebration ? { opacity: 0 } : false}
+        animate={{ opacity: 1 }}
         transition={{
-          duration: 0.3,
+          duration: 0.22,
           delay: showCelebration ? 0.18 : 0,
-          ease: [0.16, 1, 0.3, 1]
+          ease: [0.22, 1, 0.36, 1]
         }}
       >
         <Inline className="justify-between pt-2" gap="cozy">

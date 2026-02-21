@@ -87,7 +87,8 @@ changes.
 
 ### I. Discover Phase and Naming Settings
 
-- [ ] Discover phase loads and shows file selection controls.
+- [ ] Discover phase loads and shows the drag-and-drop zone and explicit "Select" / "Scan Folder"
+      buttons.
 - [ ] Naming Settings modal opens and closes.
 - [ ] Naming convention dropdown changes (keep-original, date-category, etc.).
 - [ ] Date format, case convention, and separator options update the live preview.

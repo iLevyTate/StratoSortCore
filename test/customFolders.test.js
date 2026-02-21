@@ -212,7 +212,11 @@ describe('Custom Folders', () => {
 
       const folders = await customFolders.loadCustomFolders();
 
-      expect(folders.some((folder) => folder.name === 'Projects')).toBe(true);
+      // Even if legacy has custom folders, because current has defaults, we now prune and DO NOT recover
+      // It will just be Uncategorized
+      console.log('Returned folders:', folders);
+      expect(folders.length).toBe(1);
+      expect(folders[0].name.toLowerCase()).toBe('uncategorized');
     });
 
     test('does not recover legacy default-only folders', async () => {

@@ -334,7 +334,7 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
     <div style={rowStyle} className="px-cozy">
       <Card
         variant="interactive"
-        className="flex items-start p-3 gap-3 h-full group transition-all duration-200 hover:border-stratosort-blue/30 overflow-visible hover:scale-100"
+        className="flex items-start p-3 gap-3 h-full group transition-colors duration-200 hover:border-stratosort-blue/30 overflow-visible"
         onClick={() => {
           const selectedText =
             typeof window !== 'undefined' ? window.getSelection?.()?.toString() : '';

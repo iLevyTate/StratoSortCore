@@ -153,8 +153,8 @@ CPU), lazy loading via ModelMemoryManager (LRU eviction, 70% RAM budget).
 
 #### VisionService (`VisionService.js`)
 
-External llama-server process (separate binary, downloads from GitHub releases). OpenAI-compatible
-`/v1/chat/completions` API, 120s per-image timeout, health check polling.
+In-process multi-modal inference via node-llama-cpp and its companion projection files. No external
+background process required. 120s per-image timeout, health check polling.
 
 #### Document Extractors (`src/main/analysis/documentExtractors.js`)
 

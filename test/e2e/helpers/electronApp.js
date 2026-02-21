@@ -33,7 +33,9 @@ const DEFAULT_LAUNCH_OPTIONS = {
     // Disable hardware acceleration for more stable CI testing
     ELECTRON_DISABLE_GPU: '1',
     // Enable logging for debugging
-    ELECTRON_ENABLE_LOGGING: '1'
+    ELECTRON_ENABLE_LOGGING: '1',
+    // Force launch to bypass single instance lock during testing
+    STRATOSORT_FORCE_LAUNCH: '1'
   },
   // Timeout for app launch (30 seconds)
   timeout: 30000
@@ -62,7 +64,7 @@ async function launchApp(options = {}) {
   // Use relative path from APP_ROOT so app.getAppPath() returns correct root
   const args = [MAIN_ENTRY_RELATIVE];
   if (!options.headed) {
-    args.push('--disable-gpu');
+    args.push('--disable-gpu', '--headless');
   }
 
   console.log('[E2E] Launching Electron app...');

@@ -170,7 +170,11 @@ function Toast({
     >
       <div className="flex items-center gap-2.5">
         <span aria-hidden="true">{getSeverityIcon()}</span>
-        <Text as="span" variant="small" className="flex-1 text-[13px] font-medium leading-snug">
+        <Text
+          as="span"
+          variant="small"
+          className="flex-1 min-w-0 text-[13px] font-medium leading-snug break-words"
+        >
           {renderMessageContent()}
           {mergeCount > 1 && (
             <Text
