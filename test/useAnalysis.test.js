@@ -5,6 +5,18 @@
 
 import { renderHook, act } from '@testing-library/react';
 
+// Mock react-redux
+jest.mock('react-redux', () => ({
+  useStore: jest.fn(() => ({
+    getState: jest.fn(() => ({
+      analysis: {
+        isAnalyzing: false,
+        progress: null
+      }
+    }))
+  }))
+}));
+
 // Mock dependencies
 jest.mock('../src/shared/logger', () => {
   const logger = {

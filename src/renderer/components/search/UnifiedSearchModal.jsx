@@ -2800,17 +2800,19 @@ export default function UnifiedSearchModal({
         }
       }
 
-      if (successCount > 0) {
-        setGraphStatus(`Moved ${successCount} file(s) to ${safeBasename(destFolder)}`);
-        clearBulkSelection();
-        // Optionally refresh search results
-      }
-      if (failCount > 0) {
-        setError(`Failed to move ${failCount} file(s)`);
+      if (isMountedRef.current) {
+        if (successCount > 0) {
+          setGraphStatus(`Moved ${successCount} file(s) to ${safeBasename(destFolder)}`);
+          clearBulkSelection();
+          // Optionally refresh search results
+        }
+        if (failCount > 0) {
+          setError(`Failed to move ${failCount} file(s)`);
+        }
       }
     } catch (e) {
       logger.error('[Search] Move operation failed', e);
-      setError(`Move failed: ${e?.message || 'Unknown error'}`);
+      if (isMountedRef.current) setError(`Move failed: ${e?.message || 'Unknown error'}`);
     }
   }, [searchResults, bulkSelectedIds, clearBulkSelection]);
 
@@ -2869,7 +2871,7 @@ export default function UnifiedSearchModal({
     try {
       const memberIds = clusterData?.memberIds || [];
       if (memberIds.length === 0) {
-        setError('No files in this cluster');
+        if (isMountedRef.current) setError('No files in this cluster');
         return;
       }
 
@@ -2884,7 +2886,7 @@ export default function UnifiedSearchModal({
       // Get file metadata for all members in one call
       const metadataResult = await window.electronAPI?.embeddings?.getFileMetadata?.(memberIds);
       if (!metadataResult?.success) {
-        setError('Failed to retrieve file metadata');
+        if (isMountedRef.current) setError('Failed to retrieve file metadata');
         return;
       }
 
@@ -2976,22 +2978,24 @@ export default function UnifiedSearchModal({
   const handleOpenAllFilesInCluster = useCallback(async (clusterData) => {
     const memberIds = clusterData?.memberIds || [];
     if (memberIds.length === 0) {
-      setError('No files in this cluster');
+      if (isMountedRef.current) setError('No files in this cluster');
       return;
     }
 
     const fileApi = window.electronAPI?.files;
     if (!fileApi?.open) {
-      setError('Open operation is unavailable');
+      if (isMountedRef.current) setError('Open operation is unavailable');
       return;
     }
 
     // Limit to prevent opening too many files at once
     const MAX_FILES_TO_OPEN = 10;
     if (memberIds.length > MAX_FILES_TO_OPEN) {
-      setGraphStatus(
-        `Opening first ${MAX_FILES_TO_OPEN} of ${memberIds.length} files (limit reached)`
-      );
+      if (isMountedRef.current) {
+        setGraphStatus(
+          `Opening first ${MAX_FILES_TO_OPEN} of ${memberIds.length} files (limit reached)`
+        );
+      }
     }
 
     try {
@@ -3080,7 +3084,8 @@ export default function UnifiedSearchModal({
       const memberIds = selectedClusterForTagging.memberIds || [];
       if (memberIds.length === 0) return;
 
-      setGraphStatus(`Applying ${tags.length} tags to ${memberIds.length} files...`);
+      if (isMountedRef.current)
+        setGraphStatus(`Applying ${tags.length} tags to ${memberIds.length} files...`);
 
       try {
         // Call backend to add tags
@@ -3090,32 +3095,34 @@ export default function UnifiedSearchModal({
           throw new Error(result?.errors?.[0]?.error || 'Failed to add tags');
         }
 
-        // Update local graph node to reflect new tags immediately
-        graphActions.setNodes((prev) =>
-          prev.map((n) => {
-            if (n.id === selectedClusterForTagging.id) {
-              const currentTags = n.data.commonTags || [];
-              const newTags = [...new Set([...currentTags, ...tags])];
-              return {
-                ...n,
-                data: {
-                  ...n.data,
-                  commonTags: newTags,
-                  topTerms: newTags.slice(0, 3) // Update display
-                }
-              };
-            }
-            return n;
-          })
-        );
+        if (isMountedRef.current) {
+          // Update local graph node to reflect new tags immediately
+          graphActions.setNodes((prev) =>
+            prev.map((n) => {
+              if (n.id === selectedClusterForTagging.id) {
+                const currentTags = n.data.commonTags || [];
+                const newTags = [...new Set([...currentTags, ...tags])];
+                return {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    commonTags: newTags,
+                    topTerms: newTags.slice(0, 3) // Update display
+                  }
+                };
+              }
+              return n;
+            })
+          );
 
-        setGraphStatus(`Applied tags to cluster: ${selectedClusterForTagging.label}`);
+          setGraphStatus(`Applied tags to cluster: ${selectedClusterForTagging.label}`);
+        }
       } catch (error) {
         logger.error('Failed to apply tags', {
           error: error?.message,
           stack: error?.stack
         });
-        setError('Failed to apply tags');
+        if (isMountedRef.current) setError('Failed to apply tags');
       }
     },
     [selectedClusterForTagging, graphActions]

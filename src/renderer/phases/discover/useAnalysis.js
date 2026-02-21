@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useRef, useEffect, useState, useMemo } from 'react';
+import { useStore } from 'react-redux';
 import { PHASES, FILE_STATES } from '../../../shared/constants';
 import { TIMEOUTS, CONCURRENCY, RETRY } from '../../../shared/performanceConstants';
 import { createLogger } from '../../../shared/logger';
@@ -277,6 +278,7 @@ function showAnalysisCompletionNotification({
  * @returns {Object} Analysis functions and state
  */
 export function useAnalysis(options = {}) {
+  const store = useStore();
   const {
     selectedFiles = [],
     fileStates = {},
@@ -673,11 +675,19 @@ export function useAnalysis(options = {}) {
 
       // Atomic lock acquisition (use refs to avoid stale closures)
       const tryAcquireLock = () => {
-        if (analysisLockRef.current || globalAnalysisActiveRef.current || isAnalyzingRef.current) {
+        const state = store.getState();
+        const isReduxAnalyzing = state.analysis.isAnalyzing;
+        if (
+          analysisLockRef.current ||
+          globalAnalysisActiveRef.current ||
+          isAnalyzingRef.current ||
+          isReduxAnalyzing
+        ) {
           logger.debug('Analysis lock not acquired', {
             locked: analysisLockRef.current,
             global: globalAnalysisActiveRef.current,
-            isAnalyzing: isAnalyzingRef.current
+            isAnalyzing: isAnalyzingRef.current,
+            isReduxAnalyzing
           });
           return false;
         }
@@ -688,9 +698,9 @@ export function useAnalysis(options = {}) {
       let lockAcquired = tryAcquireLock();
 
       if (!lockAcquired) {
-        const lastActivity = Number.isFinite(analysisProgressRef.current?.lastActivity)
-          ? analysisProgressRef.current.lastActivity
-          : 0;
+        const state = store.getState();
+        const progress = state.analysis.progress || analysisProgressRef.current;
+        const lastActivity = Number.isFinite(progress?.lastActivity) ? progress.lastActivity : 0;
         const inactivityMs = lastActivity ? Date.now() - lastActivity : Infinity;
         const staleThreshold = TIMEOUTS.ANALYSIS_LOCK || 5 * 60 * 1000;
 
@@ -807,7 +817,8 @@ export function useAnalysis(options = {}) {
           return;
         }
         if (localAnalyzingRef.current) {
-          const prev = analysisProgressRef.current;
+          const state = store.getState();
+          const prev = state.analysis.progress || analysisProgressRef.current;
           const currentProgress = {
             current: prev?.current || 0,
             total: prev?.total || uniqueFiles.length,
@@ -887,7 +898,8 @@ export function useAnalysis(options = {}) {
             ? lastProgressAtRef.current
             : 0;
           const inactivityMs = lastProgressAt ? Date.now() - lastProgressAt : Infinity;
-          const progressState = analysisProgressRef.current || {};
+          const state = store.getState();
+          const progressState = state.analysis.progress || analysisProgressRef.current || {};
           const hasCompleted =
             Number(progressState.total) > 0 &&
             Number(progressState.current) >= Number(progressState.total);
@@ -1040,6 +1052,11 @@ export function useAnalysis(options = {}) {
             }
           };
 
+          const abortListener = () => {
+            window.removeEventListener(BATCH_ANALYSIS_PROGRESS_EVENT, onBatchProgress);
+          };
+          abortSignal.addEventListener('abort', abortListener);
+
           window.addEventListener(BATCH_ANALYSIS_PROGRESS_EVENT, onBatchProgress);
           try {
             const batchResult = await withTimeout(
@@ -1157,6 +1174,7 @@ export function useAnalysis(options = {}) {
             }
           } finally {
             window.removeEventListener(BATCH_ANALYSIS_PROGRESS_EVENT, onBatchProgress);
+            abortSignal.removeEventListener('abort', abortListener);
           }
         };
 
@@ -1370,11 +1388,10 @@ export function useAnalysis(options = {}) {
           // Update local refs to ensure proper lock synchronization
           localAnalyzingRef.current = false;
 
+          const state = store.getState();
+          const progress = state.analysis.progress || analysisProgressRef.current;
           const trackedTotal =
-            Number.isInteger(analysisProgressRef.current?.total) &&
-            analysisProgressRef.current.total > 0
-              ? analysisProgressRef.current.total
-              : files.length;
+            Number.isInteger(progress?.total) && progress.total > 0 ? progress.total : files.length;
           const didComplete = trackedTotal > 0 && completedCountRef.current >= trackedTotal;
           if (!didComplete) {
             requeueInFlightFileStates();
@@ -1454,7 +1471,8 @@ export function useAnalysis(options = {}) {
       applyAnalysisOutcome,
       requeueInFlightFileStates,
       resetAnalysisState,
-      getCurrentPhase
+      getCurrentPhase,
+      store
     ]
   );
 

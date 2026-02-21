@@ -616,7 +616,6 @@ export function useOrganization({
 
         const stateCallbacks = {
           onExecute: (result) => {
-            if (!isMountedRef.current) return;
             try {
               // When chunkedResults is true, the actual results were sent via IPC events
               // and accumulated in chunkedResultsRef, not in result.results
@@ -709,7 +708,6 @@ export function useOrganization({
             }
           },
           onUndo: (result) => {
-            if (!isMountedRef.current) return;
             try {
               logger.info('[ORGANIZE] onUndo called', {
                 hasResult: !!result,
@@ -784,7 +782,6 @@ export function useOrganization({
             }
           },
           onRedo: (result) => {
-            if (!isMountedRef.current) return;
             try {
               logger.info('[ORGANIZE] onRedo called', {
                 hasResult: !!result,

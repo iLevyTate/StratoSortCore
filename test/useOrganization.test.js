@@ -538,7 +538,7 @@ describe('useOrganization', () => {
         expect(options.addOrganizedFiles).not.toHaveBeenCalled();
       });
 
-      test('state callbacks are no-op after unmount', async () => {
+      test('state callbacks still update global state after unmount', async () => {
         jest.useFakeTimers();
         const options = createMockOptions();
         options.executeAction.mockImplementation(
@@ -564,8 +564,8 @@ describe('useOrganization', () => {
           await pending;
         });
 
-        expect(options.addOrganizedFiles).not.toHaveBeenCalled();
-        expect(options.markFilesAsProcessed).not.toHaveBeenCalled();
+        expect(options.addOrganizedFiles).toHaveBeenCalled();
+        expect(options.markFilesAsProcessed).toHaveBeenCalled();
         jest.useRealTimers();
       });
     });

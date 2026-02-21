@@ -18,6 +18,7 @@ import {
   AnalysisProgress
 } from '../components/discover';
 import { FileListSkeleton } from '../components/ui/LoadingSkeleton';
+import store from '../store';
 
 import {
   useDiscoverState,
@@ -384,7 +385,14 @@ function DiscoverPhase() {
     if (!isAnalyzing) return;
 
     const checkStalled = () => {
-      const progress = analysisProgressRef.current;
+      // Use Redux store directly to prevent stale reads when the window is minimized
+      // (React suspends rendering when minimized, so refs bound to props become stale)
+      const state = store.getState();
+      const isActuallyAnalyzing = state.analysis.isAnalyzing;
+
+      if (!isActuallyAnalyzing) return; // Already finished, ignore
+
+      const progress = state.analysis.progress || analysisProgressRef.current;
       const lastActivity = progress?.lastActivity || Date.now();
       const timeSinceActivity = Date.now() - lastActivity;
       const current = progress?.current || 0;
