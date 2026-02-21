@@ -18,7 +18,7 @@ async function rebuildNativeModules() {
     buildPath: path.resolve(__dirname, '..'),
     electronVersion,
     arch: targetArch,
-    onlyModules: ['node-llama-cpp', 'sharp', 'better-sqlite3'],
+    onlyModules: ['node-llama-cpp', 'better-sqlite3'],
     useElectronClang: true
   });
 
