@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Rocket, FolderOpen, Settings, Search, Sparkles, FolderCheck } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Rocket, FolderOpen, Settings, Search, Sparkles, FolderCheck, Loader2 } from 'lucide-react';
 import { PHASES, AI_DEFAULTS } from '../../shared/constants';
 import { useAppDispatch } from '../store/hooks';
 import { toggleSettings, setPhase } from '../store/slices/uiSlice';
@@ -11,11 +11,21 @@ import { Stack } from '../components/layout';
 import ModelSetupWizard from '../components/ModelSetupWizard';
 import { isForceModelWizardEnabled } from '../utils/debugFlags';
 
+const MODEL_CHECK_ESCAPE_MS = 8000;
+const LOADING_STATUS_MESSAGES = [
+  'Checking local model availability...',
+  'Checking active background downloads...',
+  'Preparing safe first-run defaults...'
+];
+
 function WelcomePhase() {
   const dispatch = useAppDispatch();
   const { addNotification } = useNotification();
   const [showFlowsModal, setShowFlowsModal] = useState(false);
   const [modelCheckState, setModelCheckState] = useState('loading'); // 'loading' | 'missing' | 'ready' | 'downloading'
+  const modelCheckLockedRef = useRef(false);
+  const [showLoadingEscape, setShowLoadingEscape] = useState(false);
+  const [loadingStatusIndex, setLoadingStatusIndex] = useState(0);
 
   // Check if required AI models are downloaded
   // Retry once after delay when models list is empty - LlamaService may not be ready yet
@@ -23,9 +33,16 @@ function WelcomePhase() {
     let cancelled = false;
     const RETRY_DELAY_MS = 1800;
     const forceModelWizard = isForceModelWizardEnabled();
+    modelCheckLockedRef.current = false;
+
+    function setModelCheckStateIfAllowed(nextState) {
+      if (!cancelled && !modelCheckLockedRef.current) {
+        setModelCheckState(nextState);
+      }
+    }
 
     if (forceModelWizard) {
-      setModelCheckState('missing');
+      setModelCheckStateIfAllowed('missing');
       return () => {
         cancelled = true;
       };
@@ -54,7 +71,7 @@ function WelcomePhase() {
       const getModels = window?.electronAPI?.llama?.getModels;
       const getConfig = window?.electronAPI?.llama?.getConfig;
       if (typeof getModels !== 'function') {
-        if (!cancelled) setModelCheckState('ready');
+        setModelCheckStateIfAllowed('ready');
         return;
       }
       const [modelsResponse, configResponse] = await Promise.all([
@@ -73,13 +90,12 @@ function WelcomePhase() {
       const config = configResponse?.config || configResponse;
       const required = [
         config?.embeddingModel || AI_DEFAULTS?.EMBEDDING?.MODEL,
-        config?.textModel || AI_DEFAULTS?.TEXT?.MODEL,
-        config?.visionModel || AI_DEFAULTS?.IMAGE?.MODEL
+        config?.textModel || AI_DEFAULTS?.TEXT?.MODEL
       ].filter(Boolean);
       const missing = required.filter((name) => !available.has(name));
 
       if (missing.length === 0) {
-        if (!cancelled) setModelCheckState('ready');
+        setModelCheckStateIfAllowed('ready');
         return;
       }
 
@@ -99,9 +115,9 @@ function WelcomePhase() {
         const retryMissing = required.filter((name) => !retryAvailable.has(name));
         if (retryMissing.length > 0) {
           const activeCount = await getActiveMissingDownloadCount(retryMissing);
-          if (!cancelled) setModelCheckState(activeCount > 0 ? 'downloading' : 'missing');
-        } else if (!cancelled) {
-          setModelCheckState('ready');
+          setModelCheckStateIfAllowed(activeCount > 0 ? 'downloading' : 'missing');
+        } else {
+          setModelCheckStateIfAllowed('ready');
         }
         if (retryResponse?.requiresModelConfirmation) {
           addNotification(
@@ -116,9 +132,9 @@ function WelcomePhase() {
 
       if (missing.length > 0) {
         const activeCount = await getActiveMissingDownloadCount(missing);
-        if (!cancelled) setModelCheckState(activeCount > 0 ? 'downloading' : 'missing');
-      } else if (!cancelled) {
-        setModelCheckState('ready');
+        setModelCheckStateIfAllowed(activeCount > 0 ? 'downloading' : 'missing');
+      } else {
+        setModelCheckStateIfAllowed('ready');
       }
       if (modelsResponse?.requiresModelConfirmation) {
         addNotification(
@@ -134,7 +150,7 @@ function WelcomePhase() {
       try {
         await doCheck();
       } catch {
-        if (!cancelled) setModelCheckState('ready');
+        setModelCheckStateIfAllowed('missing');
       }
     }
     checkModels();
@@ -144,17 +160,49 @@ function WelcomePhase() {
   }, [addNotification]);
 
   const handleModelSetupComplete = useCallback(() => {
+    modelCheckLockedRef.current = true;
     setModelCheckState('ready');
     addNotification('AI models are ready. You can start organizing files.', 'success');
   }, [addNotification]);
 
   const handleModelSetupSkip = useCallback(() => {
+    modelCheckLockedRef.current = true;
     setModelCheckState('ready');
     addNotification(
-      'Models will download in the background. Some AI features may be limited until complete.',
+      'Continuing with limited AI while models finish downloading in the background.',
       'info'
     );
   }, [addNotification]);
+
+  const handleOpenModelSetup = useCallback(() => {
+    modelCheckLockedRef.current = true;
+    setModelCheckState('missing');
+    addNotification('Opening model setup. You can continue with limited AI at any time.', 'info');
+  }, [addNotification]);
+
+  useEffect(() => {
+    if (modelCheckState !== 'loading') {
+      setShowLoadingEscape(false);
+      setLoadingStatusIndex(0);
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      setShowLoadingEscape(true);
+    }, MODEL_CHECK_ESCAPE_MS);
+
+    return () => clearTimeout(timer);
+  }, [modelCheckState]);
+
+  useEffect(() => {
+    if (modelCheckState !== 'loading') return undefined;
+
+    const timer = setInterval(() => {
+      setLoadingStatusIndex((prev) => (prev + 1) % LOADING_STATUS_MESSAGES.length);
+    }, 2200);
+
+    return () => clearInterval(timer);
+  }, [modelCheckState]);
 
   useEffect(() => {
     if (window.__STRATOSORT_STATE_EXPIRED__) {
@@ -191,33 +239,46 @@ function WelcomePhase() {
     }
   ];
 
-  // Show compact "downloading in background" when background setup is already downloading
-  if (modelCheckState === 'downloading') {
+  if (modelCheckState === 'loading') {
     return (
       <div className="flex flex-col flex-1 min-h-0 justify-center py-12">
-        <Card className="max-w-lg mx-auto p-8 text-center">
+        <Card className="max-w-2xl mx-auto p-8 text-center border border-stratosort-blue/15 bg-gradient-to-b from-white to-stratosort-blue/5 animate-loading-fade">
           <div className="mb-6">
             <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-blue/10 mb-4">
-              <Sparkles className="w-7 h-7 text-stratosort-blue animate-pulse" />
+              <Loader2 className="w-7 h-7 text-stratosort-blue animate-spin" />
             </div>
             <Heading as="h2" variant="h2">
-              Downloading AI Models
+              Preparing AI Setup
             </Heading>
             <Text className="text-system-gray-600 mt-2">
-              Required models are downloading in the background. You can continue and use the app
-              while they finish.
+              Checking model availability and background downloads so your first run starts cleanly.
+            </Text>
+            <Text variant="tiny" className="text-system-gray-500 mt-2">
+              {LOADING_STATUS_MESSAGES[loadingStatusIndex]}
             </Text>
           </div>
-          <Button onClick={handleModelSetupSkip} variant="primary">
-            Continue
-          </Button>
+          {showLoadingEscape && (
+            <div className="flex flex-col items-center gap-3">
+              <Text variant="tiny" className="text-system-gray-500">
+                Still checking models. Continue now or open setup manually.
+              </Text>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button onClick={handleModelSetupSkip} variant="secondary">
+                  Continue with limited AI
+                </Button>
+                <Button onClick={handleOpenModelSetup} variant="primary">
+                  Open model setup
+                </Button>
+              </div>
+            </div>
+          )}
         </Card>
       </div>
     );
   }
 
-  // Show ModelSetupWizard when required models are missing and no background download
-  if (modelCheckState === 'missing') {
+  // Use one setup flow for missing and active background downloads.
+  if (modelCheckState === 'missing' || modelCheckState === 'downloading') {
     return (
       <div className="flex flex-col flex-1 min-h-0 justify-center py-12">
         <ModelSetupWizard onComplete={handleModelSetupComplete} onSkip={handleModelSetupSkip} />

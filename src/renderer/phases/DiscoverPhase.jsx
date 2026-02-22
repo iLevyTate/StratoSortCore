@@ -329,10 +329,47 @@ function DiscoverPhase() {
   useSettingsSubscription(
     useCallback(
       (changedSettings) => {
-        logger.info('Settings changed externally:', Object.keys(changedSettings));
-        if (changedSettings.textModel && !isAnalyzing) {
-          addNotification('AI settings saved', 'info', 2000, 'settings-changed');
+        const changedKeys = Object.keys(changedSettings || {});
+        if (changedKeys.length === 0) return;
+        logger.info('Settings changed externally:', changedKeys);
+
+        const changedLabels = [];
+        if (Object.prototype.hasOwnProperty.call(changedSettings, 'textModel')) {
+          changedLabels.push('text model');
         }
+        if (Object.prototype.hasOwnProperty.call(changedSettings, 'visionModel')) {
+          changedLabels.push('vision model');
+        }
+        if (Object.prototype.hasOwnProperty.call(changedSettings, 'embeddingModel')) {
+          changedLabels.push('embedding model');
+        }
+        if (Object.prototype.hasOwnProperty.call(changedSettings, 'analysisSettings')) {
+          changedLabels.push('analysis settings');
+        }
+
+        if (changedLabels.length === 0) return;
+
+        const targetMessage =
+          changedLabels.length === 1
+            ? `Updated ${changedLabels[0]}.`
+            : `Updated ${changedLabels.join(', ')}.`;
+
+        if (isAnalyzing) {
+          addNotification(
+            `${targetMessage} Current analysis keeps previous settings; new analysis runs will use these updates.`,
+            'info',
+            3500,
+            'settings-changed'
+          );
+          return;
+        }
+
+        addNotification(
+          `${targetMessage} New analysis runs will use these updates.`,
+          'info',
+          2500,
+          'settings-changed'
+        );
       },
       [isAnalyzing, addNotification]
     ),

@@ -12,6 +12,7 @@ import { getElectronAPI, settingsIpc, systemIpc } from '../../services/ipc';
 function DiagnosticsLogsSection({ addNotification }) {
   const [isOpeningLogs, setIsOpeningLogs] = React.useState(false);
   const [isExportingLogs, setIsExportingLogs] = React.useState(false);
+  const [exportStatus, setExportStatus] = React.useState('');
   const electronApi = getElectronAPI();
   const canOpenLogsFolder = typeof electronApi?.settings?.openLogsFolder === 'function';
   const canExportLogs = typeof electronApi?.system?.exportLogs === 'function';
@@ -45,21 +46,34 @@ function DiagnosticsLogsSection({ addNotification }) {
     }
 
     setIsExportingLogs(true);
+    setExportStatus('Choose where to save the archive in the system dialog...');
+    addNotification?.('Choose where to save the log archive in the file dialog.', 'info');
+
+    const statusTimer = setTimeout(() => {
+      setExportStatus('Creating archive... this can take up to a minute on large logs.');
+    }, 5000);
+
     try {
       const result = await systemIpc.exportLogs();
       if (result?.success) {
+        setExportStatus('');
         addNotification?.(`Logs exported to ${result.filePath || 'file'}`, 'success');
       } else if (result?.canceled || result?.cancelled) {
+        setExportStatus('');
         // User canceled the save dialog — no notification needed
       } else if (result?.error) {
+        setExportStatus('');
         logger.error('[Diagnostics] Failed to export logs', { error: result.error });
         addNotification?.(result.error || 'Failed to export logs', 'error');
       }
     } catch (error) {
+      setExportStatus('');
       logger.error('[Diagnostics] Failed to export logs', { error });
       addNotification?.('Failed to export logs', 'error');
     } finally {
+      clearTimeout(statusTimer);
       setIsExportingLogs(false);
+      setExportStatus('');
     }
   }, [addNotification, canExportLogs, isExportingLogs]);
 
@@ -92,6 +106,9 @@ function DiagnosticsLogsSection({ addNotification }) {
             Export Logs
           </Button>
         </div>
+        {isExportingLogs && exportStatus && (
+          <div className="w-full mt-2 text-sm text-system-gray-600">{exportStatus}</div>
+        )}
       </SettingRow>
     </SettingsCard>
   );

@@ -12,6 +12,24 @@ import { AI_DEFAULTS, INSTALL_MODEL_PROFILES } from '../../shared/constants';
 import { getModel } from '../../shared/modelRegistry';
 
 const CHECK_SYSTEM_TIMEOUT_MS = 12000;
+const CHECKING_ESCAPE_MS = 7000;
+const CONTINUE_WITH_LIMITED_AI_LABEL = 'Continue with limited AI';
+const STEP_ORDER = ['checking', 'select', 'downloading', 'complete'];
+const STEP_TITLES = {
+  checking: 'Check',
+  select: 'Choose',
+  downloading: 'Download',
+  complete: 'Finish'
+};
+const CHECKING_STATUS_MESSAGES = [
+  'Detecting available local models...',
+  'Checking active background downloads...',
+  'Preparing safe defaults for your setup...'
+];
+
+function getSetupCardClassName() {
+  return 'max-w-2xl mx-auto p-8 border border-stratosort-blue/15 bg-gradient-to-b from-white to-stratosort-blue/5 animate-loading-fade';
+}
 
 const PROFILE_MODELS = {
   base: {
@@ -34,7 +52,14 @@ function detectProfileKey(models) {
   ) {
     return 'quality';
   }
-  return 'base';
+  if (
+    models?.embedding === PROFILE_MODELS.base.embedding &&
+    models?.text === PROFILE_MODELS.base.text &&
+    models?.vision === PROFILE_MODELS.base.vision
+  ) {
+    return 'base';
+  }
+  return 'custom';
 }
 
 function withTimeout(promise, timeoutMs, timeoutMessage) {
@@ -59,6 +84,8 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
   const [initError, setInitError] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasApi, setHasApi] = useState(true);
+  const [showCheckingEscape, setShowCheckingEscape] = useState(false);
+  const [checkingStatusIndex, setCheckingStatusIndex] = useState(0);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -116,7 +143,7 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     }
 
     try {
-      const [config, modelsResponse, downloadStatus] = await withTimeout(
+      const [configResponse, modelsResponse, downloadStatus] = await withTimeout(
         Promise.all([
           llamaApi.getConfig(),
           llamaApi.getModels(),
@@ -128,6 +155,7 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
         'AI system check timed out'
       );
       if (!isMountedRef.current) return;
+      const config = configResponse?.config || configResponse || {};
 
       const defaults = {
         embedding: config?.embeddingModel || fallbackDefaults.embedding,
@@ -135,7 +163,7 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
         vision: config?.visionModel || fallbackDefaults.vision
       };
       const profileKey = detectProfileKey(defaults);
-      const selectedProfileModels = PROFILE_MODELS[profileKey] || defaults;
+      const selectedProfileModels = profileKey === 'custom' ? defaults : PROFILE_MODELS[profileKey];
 
       const modelList = Array.isArray(modelsResponse)
         ? modelsResponse
@@ -219,25 +247,65 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
   }, [step]);
 
   useEffect(() => {
+    if (step !== 'checking') {
+      setShowCheckingEscape(false);
+      setCheckingStatusIndex(0);
+      return undefined;
+    }
+
+    const escapeTimer = setTimeout(() => {
+      if (isMountedRef.current) {
+        setShowCheckingEscape(true);
+      }
+    }, CHECKING_ESCAPE_MS);
+
+    const statusTimer = setInterval(() => {
+      if (!isMountedRef.current) return;
+      setCheckingStatusIndex((prev) => (prev + 1) % CHECKING_STATUS_MESSAGES.length);
+    }, 2200);
+
+    return () => {
+      clearTimeout(escapeTimer);
+      clearInterval(statusTimer);
+    };
+  }, [step]);
+
+  useEffect(() => {
     // Subscribe to download progress
     // Note: Assuming window.electronAPI.events.onOperationProgress handles this
     const subscribe = window?.electronAPI?.events?.onOperationProgress;
     if (typeof subscribe !== 'function') return undefined;
     const unsubscribe = subscribe((data) => {
-      if (!data || data.type !== 'model-download') return;
-
+      if (!data) return;
+      const eventType = data.type;
       const payload = data.progress || data;
       const modelName = data.model || payload.model || payload.filename;
       if (!modelName) return;
 
-      updateDownloadState(modelName, {
-        status: 'downloading',
-        percent: payload.percent ?? payload.percentage ?? 0,
-        downloadedBytes: payload.downloadedBytes,
-        totalBytes: payload.totalBytes,
-        speedBps: payload.speedBps,
-        etaSeconds: payload.etaSeconds
-      });
+      if (eventType === 'model-download') {
+        updateDownloadState(modelName, {
+          status: 'downloading',
+          percent: payload.percent ?? payload.percentage ?? 0,
+          downloadedBytes: payload.downloadedBytes,
+          totalBytes: payload.totalBytes,
+          speedBps: payload.speedBps,
+          etaSeconds: payload.etaSeconds
+        });
+        return;
+      }
+
+      if (eventType === 'model-download-complete') {
+        updateDownloadState(modelName, { status: 'ready', percent: 100 });
+        setAvailableModels((prev) => Array.from(new Set([...(prev || []), modelName])));
+        return;
+      }
+
+      if (eventType === 'model-download-error') {
+        updateDownloadState(modelName, {
+          status: 'failed',
+          error: data.error || payload.error || 'Download failed'
+        });
+      }
     });
     return () => {
       if (typeof unsubscribe === 'function') {
@@ -246,9 +314,9 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     };
   }, [updateDownloadState]);
 
-  async function applySelectedProfileConfig() {
+  const applySelectedProfileConfig = useCallback(async () => {
     const updateConfig = window?.electronAPI?.llama?.updateConfig;
-    if (typeof updateConfig !== 'function') return;
+    if (typeof updateConfig !== 'function') return true;
     const payload = {
       textModel: selectedModels.text,
       embeddingModel: selectedModels.embedding
@@ -257,11 +325,115 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
       payload.visionModel = selectedModels.vision;
     }
     try {
-      await updateConfig(payload);
+      const response = await updateConfig(payload);
+      if (response?.success === false) {
+        setInitError(response?.error || 'Could not apply selected model profile.');
+        return false;
+      }
+      return true;
     } catch (error) {
       setInitError(error?.message || 'Could not apply selected model profile.');
+      return false;
     }
-  }
+  }, [selectedModels]);
+
+  useEffect(() => {
+    if (step !== 'downloading') return undefined;
+
+    const llamaApi = window?.electronAPI?.llama;
+    if (typeof llamaApi?.getModels !== 'function') return undefined;
+
+    let cancelled = false;
+    const POLL_INTERVAL_MS = 4000;
+
+    async function syncDownloadState() {
+      try {
+        const [modelsResponse, downloadStatus] = await Promise.all([
+          llamaApi.getModels(),
+          typeof llamaApi.getDownloadStatus === 'function'
+            ? llamaApi.getDownloadStatus().catch(() => null)
+            : Promise.resolve(null)
+        ]);
+        if (cancelled || !isMountedRef.current) return;
+
+        const modelList = Array.isArray(modelsResponse)
+          ? modelsResponse
+          : Array.isArray(modelsResponse?.models)
+            ? modelsResponse.models
+            : [];
+        const latestAvailable = modelList.map((m) => m.name || m.filename || m).filter(Boolean);
+        const latestAvailableSet = new Set(latestAvailable);
+        const hasReliableDownloadStatus = Array.isArray(downloadStatus?.status?.downloads);
+        const activeDownloads = hasReliableDownloadStatus ? downloadStatus.status.downloads : [];
+
+        if (latestAvailable.length > 0) {
+          setAvailableModels((prev) => Array.from(new Set([...(prev || []), ...latestAvailable])));
+        }
+
+        setDownloadState((prev) => {
+          const next = { ...(prev || {}) };
+
+          latestAvailable.forEach((name) => {
+            next[name] = {
+              ...(next[name] || {}),
+              status: 'ready',
+              percent: 100
+            };
+          });
+
+          activeDownloads.forEach((download) => {
+            if (!download?.filename) return;
+            next[download.filename] = {
+              ...(next[download.filename] || {}),
+              status: 'downloading',
+              percent: download.progress ?? next[download.filename]?.percent ?? 0,
+              downloadedBytes: download.downloadedBytes,
+              totalBytes: download.totalBytes
+            };
+          });
+
+          return next;
+        });
+
+        const requiredMissing = [selectedModels.embedding, selectedModels.text]
+          .filter(Boolean)
+          .filter((name) => !latestAvailableSet.has(name));
+
+        if (requiredMissing.length === 0 && activeDownloads.length === 0) {
+          const applied = await applySelectedProfileConfig();
+          if (!cancelled && isMountedRef.current && applied) {
+            setStep('complete');
+          } else if (!cancelled && isMountedRef.current && !applied) {
+            setStep('select');
+          }
+          return;
+        }
+
+        if (
+          requiredMissing.length > 0 &&
+          hasReliableDownloadStatus &&
+          activeDownloads.length === 0
+        ) {
+          setInitError(
+            (prev) => prev || 'Required model downloads stopped. Please retry downloads.'
+          );
+          setStep('select');
+        }
+      } catch {
+        // Best-effort sync only; keep existing state if polling fails.
+      }
+    }
+
+    void syncDownloadState();
+    const timer = setInterval(() => {
+      void syncDownloadState();
+    }, POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [step, selectedModels, applySelectedProfileConfig]);
 
   async function startDownloads() {
     const modelsToDownload = Object.values(selectedModels)
@@ -269,8 +441,10 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
       .filter((modelName) => !availableSet.has(modelName));
 
     if (modelsToDownload.length === 0) {
-      await applySelectedProfileConfig();
-      setStep('complete');
+      const applied = await applySelectedProfileConfig();
+      if (applied) {
+        setStep('complete');
+      }
       return;
     }
 
@@ -287,15 +461,10 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
       try {
         const result = await window.electronAPI.llama.downloadModel(filename);
         if (result?.success) {
-          if (result?.alreadyInProgress) {
-            // Background setup already started this download; keep showing in-progress
-            // and wait for actual availability before marking complete.
-            updateDownloadState(filename, { status: 'downloading' });
-          } else {
-            updateDownloadState(filename, { status: 'ready', percent: 100 });
-            nextAvailable.add(filename);
-            setAvailableModels((prev) => Array.from(new Set([...(prev || []), filename])));
-          }
+          // downloadModel() acknowledges that a download has started; it does not
+          // guarantee the model is installed yet. We only mark ready when the
+          // model appears in getModels() or a completion event arrives.
+          updateDownloadState(filename, { status: 'downloading' });
         } else {
           updateDownloadState(filename, {
             status: 'failed',
@@ -313,6 +482,7 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     // Refresh availability from source-of-truth after requests complete.
     // This avoids treating "alreadyInProgress" downloads as fully installed.
     let activeDownloads = [];
+    let hasReliableDownloadStatus = false;
     try {
       const [modelsResponse, downloadStatus] = await Promise.all([
         window.electronAPI.llama.getModels(),
@@ -333,7 +503,11 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
         setAvailableModels((prev) => Array.from(new Set([...(prev || []), ...latestAvailable])));
       }
 
-      activeDownloads = downloadStatus?.status?.downloads || [];
+      const downloads = downloadStatus?.status?.downloads;
+      if (Array.isArray(downloads)) {
+        hasReliableDownloadStatus = true;
+        activeDownloads = downloads;
+      }
       activeDownloads.forEach((download) => {
         if (!download?.filename) return;
         updateDownloadState(download.filename, {
@@ -351,14 +525,21 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
       .filter(Boolean)
       .filter((name) => !nextAvailable.has(name));
 
+    let configApplied = true;
     if (requiredMissing.length === 0) {
-      await applySelectedProfileConfig();
+      configApplied = await applySelectedProfileConfig();
     }
 
-    if (requiredMissing.length === 0) {
+    if (requiredMissing.length === 0 && configApplied) {
       setStep('complete');
     } else {
-      setStep(activeDownloads.length > 0 ? 'downloading' : 'select');
+      setStep(
+        hasReliableDownloadStatus
+          ? activeDownloads.length > 0
+            ? 'downloading'
+            : 'select'
+          : 'downloading'
+      );
     }
   }
 
@@ -395,23 +576,39 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
 
   if (step === 'checking') {
     return (
-      <Card className="max-w-2xl mx-auto p-8 text-center animate-loading-fade">
+      <Card className={`${getSetupCardClassName()} text-center`}>
         <div className="animate-loading-content">
-          <Text variant="tiny" className="uppercase tracking-wide text-system-gray-500 mb-2">
-            Step 1 of 3
-          </Text>
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-blue/10 mb-4">
-            <Loader2 className="w-7 h-7 text-stratosort-blue animate-spin" />
-          </div>
-          <Heading as="h2" variant="h2">
-            Preparing AI Setup
-          </Heading>
-          <Text className="text-system-gray-600 mt-2">
-            Detecting your hardware, model availability, and download status.
-          </Text>
+          <SetupHeader
+            step="checking"
+            icon={Loader2}
+            title="Preparing AI Setup"
+            description="Detecting model availability and active downloads for your first run."
+          />
           <Text variant="tiny" className="text-system-gray-500 mt-2">
-            If this takes too long, manual setup options will appear automatically.
+            {CHECKING_STATUS_MESSAGES[checkingStatusIndex]}
           </Text>
+          <Text variant="tiny" className="text-system-gray-500 mt-1">
+            If this takes too long, you can continue now or open manual setup.
+          </Text>
+          {showCheckingEscape && (
+            <div className="mt-4 flex flex-col sm:flex-row gap-3 justify-center">
+              <Button onClick={onSkip} variant="secondary">
+                {CONTINUE_WITH_LIMITED_AI_LABEL}
+              </Button>
+              <Button
+                onClick={() => {
+                  setInitError(
+                    'AI check is taking longer than expected. You can continue with manual setup or press Refresh.'
+                  );
+                  setStep('select');
+                  setIsRefreshing(false);
+                }}
+                variant="primary"
+              >
+                Open manual setup
+              </Button>
+            </div>
+          )}
         </div>
       </Card>
     );
@@ -419,22 +616,13 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
 
   if (step === 'select') {
     return (
-      <Card className="max-w-2xl mx-auto p-8 animate-loading-fade">
-        <div className="text-center mb-6">
-          <Text variant="tiny" className="uppercase tracking-wide text-system-gray-500 mb-2">
-            Step 2 of 3
-          </Text>
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-blue/10 mb-4">
-            <Cpu className="w-7 h-7 text-stratosort-blue" />
-          </div>
-          <Heading as="h2" variant="h2">
-            AI Model Setup
-          </Heading>
-          <Text className="text-system-gray-600 mt-2">
-            StratoSort runs AI locally on your device. Download the core models once, then use them
-            offline.
-          </Text>
-        </div>
+      <Card className={getSetupCardClassName()}>
+        <SetupHeader
+          step="select"
+          icon={Cpu}
+          title="Choose AI Models"
+          description="StratoSort runs AI locally. Download core models once, then keep using them offline."
+        />
 
         {initError && (
           <AlertBox variant="warning" className="mb-6">
@@ -584,7 +772,7 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
             Refresh
           </Button>
           <Button onClick={onSkip} variant="secondary" className="sm:min-w-[140px]">
-            Continue without AI
+            {CONTINUE_WITH_LIMITED_AI_LABEL}
           </Button>
         </div>
       </Card>
@@ -604,21 +792,13 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
     );
 
     return (
-      <Card className="max-w-2xl mx-auto p-8 animate-loading-fade">
-        <div className="text-center mb-6">
-          <Text variant="tiny" className="uppercase tracking-wide text-system-gray-500 mb-2">
-            Step 3 of 3
-          </Text>
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-blue/10 mb-4">
-            <Download className="w-7 h-7 text-stratosort-blue" />
-          </div>
-          <Heading as="h2" variant="h2">
-            Downloading Models
-          </Heading>
-          <Text className="text-system-gray-600 mt-2">
-            This may take a while depending on your connection speed
-          </Text>
-        </div>
+      <Card className={getSetupCardClassName()}>
+        <SetupHeader
+          step="downloading"
+          icon={Download}
+          title="Downloading Models"
+          description="This can take a while depending on your connection. You can continue with limited AI at any time."
+        />
 
         <div className="space-y-4">
           {models.map(([_type, filename]) => {
@@ -665,9 +845,12 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
 
         <div className="mt-6 flex flex-col sm:flex-row gap-3">
           <Button
-            onClick={() => {
+            onClick={async () => {
               if (allComplete) {
-                setStep('complete');
+                const applied = await applySelectedProfileConfig();
+                if (applied) {
+                  setStep('complete');
+                }
               } else {
                 onSkip();
               }
@@ -675,7 +858,7 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
             variant={allComplete ? 'primary' : 'secondary'}
             className="w-full sm:flex-1"
           >
-            {allComplete ? 'Continue' : 'Continue while downloading'}
+            {allComplete ? 'Continue' : CONTINUE_WITH_LIMITED_AI_LABEL}
           </Button>
           {hasFailures && (
             <Button onClick={startDownloads} variant="secondary" className="w-full sm:flex-1">
@@ -688,7 +871,7 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
   }
 
   return (
-    <Card className="max-w-2xl mx-auto p-8 text-center animate-loading-fade">
+    <Card className={`${getSetupCardClassName()} text-center`}>
       <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-success/10 mb-4">
         <CheckCircle className="w-7 h-7 text-stratosort-success" />
       </div>
@@ -702,6 +885,49 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
         Get Started
       </Button>
     </Card>
+  );
+}
+
+function SetupHeader({ step, icon: Icon, title, description }) {
+  const currentStepIndex = Math.max(0, STEP_ORDER.indexOf(step));
+
+  return (
+    <div className="text-center mb-6">
+      <div className="flex items-center justify-center gap-2 mb-3">
+        {STEP_ORDER.map((stepKey, index) => {
+          const isActive = index <= currentStepIndex;
+          return (
+            <React.Fragment key={stepKey}>
+              <Text
+                as="span"
+                variant="tiny"
+                className={`px-2 py-1 rounded-full border ${
+                  isActive
+                    ? 'border-stratosort-blue/40 bg-stratosort-blue/10 text-stratosort-blue'
+                    : 'border-border-soft bg-white text-system-gray-500'
+                }`}
+              >
+                {STEP_TITLES[stepKey]}
+              </Text>
+              {index < STEP_ORDER.length - 1 && (
+                <span className="text-system-gray-300" aria-hidden="true">
+                  -
+                </span>
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+      <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-stratosort-blue/10 mb-4">
+        <Icon
+          className={`w-7 h-7 text-stratosort-blue ${step === 'checking' ? 'animate-spin' : ''}`}
+        />
+      </div>
+      <Heading as="h2" variant="h2">
+        {title}
+      </Heading>
+      <Text className="text-system-gray-600 mt-2">{description}</Text>
+    </div>
   );
 }
 

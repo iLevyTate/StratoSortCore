@@ -212,9 +212,6 @@ function SetupPhase() {
         } else {
           showSuccess(`Added smart folder: ${newFolder.name}`);
         }
-        if (result.llmEnhanced) {
-          showInfo('Smart folder enhanced with AI suggestions', 5000);
-        }
         await loadSmartFolders();
         return true;
       }

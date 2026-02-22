@@ -50,6 +50,8 @@ const SUPPORTED_EXTENSIONS = ANALYSIS_SUPPORTED_EXTENSIONS || ALL_SUPPORTED_EXTE
 
 const SCAN_TIMEOUT = TIMEOUTS.DIRECTORY_SCAN || 30000;
 const FILE_STATS_BATCH_SIZE = 25;
+const buildMissingPathWarning = (count) =>
+  `Skipped ${count} item${count > 1 ? 's' : ''} because no stable absolute path was available`;
 
 /**
  * Custom hook for file handling operations
@@ -428,12 +430,7 @@ export function useFileHandlers({
 
         if (droppedNonAbsolute > 0 || unusableCount > 0) {
           const skipped = droppedNonAbsolute + unusableCount;
-          addNotification(
-            `Skipped ${skipped} item${skipped > 1 ? 's' : ''} without a usable absolute path`,
-            'warning',
-            2500,
-            'file-selection-path'
-          );
+          addNotification(buildMissingPathWarning(skipped), 'warning', 2500, 'file-selection-path');
         }
 
         const newFiles = filterNewFiles(usableFiles, selectedFiles);
@@ -647,7 +644,7 @@ export function useFileHandlers({
         const skippedCount = files.length - usableFiles.length;
         if (skippedCount > 0) {
           addNotification(
-            `Skipped ${skippedCount} item${skippedCount > 1 ? 's' : ''} without a usable absolute path`,
+            buildMissingPathWarning(skippedCount),
             'warning',
             2500,
             'drop-missing-path'

@@ -2,15 +2,16 @@
  * @jest-environment jsdom
  */
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 jest.mock('../../src/renderer/store/hooks', () => ({
   useAppDispatch: jest.fn(() => jest.fn())
 }));
 
+const mockAddNotification = jest.fn();
 jest.mock('../../src/renderer/contexts/NotificationContext', () => ({
-  useNotification: jest.fn(() => ({ addNotification: jest.fn() }))
+  useNotification: jest.fn(() => ({ addNotification: mockAddNotification }))
 }));
 
 jest.mock('../../src/renderer/store/slices/uiSlice', () => ({
@@ -49,7 +50,8 @@ jest.mock('lucide-react', () => ({
   Settings: () => <span />,
   Search: () => <span />,
   Sparkles: () => <span />,
-  FolderCheck: () => <span />
+  FolderCheck: () => <span />,
+  Loader2: () => <span />
 }));
 
 import WelcomePhase from '../../src/renderer/phases/WelcomePhase';
@@ -58,6 +60,8 @@ describe('WelcomePhase', () => {
   const originalNodeEnv = process.env.NODE_ENV;
 
   afterEach(() => {
+    mockAddNotification.mockReset();
+    jest.useRealTimers();
     delete window.electronAPI;
     delete window.__STRATOSORT_FORCE_MODEL_WIZARD__;
     delete window.__STRATOSORT_DEBUG_MODE__;
@@ -71,9 +75,12 @@ describe('WelcomePhase', () => {
     window.electronAPI = undefined;
     render(<WelcomePhase />);
 
-    await waitFor(() => {
-      expect(screen.getByText(/Organize files now/i)).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByText(/Organize files now/i)).toBeInTheDocument();
+      },
+      { timeout: 3000 }
+    );
     expect(screen.queryByTestId('model-setup-wizard')).not.toBeInTheDocument();
   });
 
@@ -87,7 +94,59 @@ describe('WelcomePhase', () => {
     expect(screen.queryByTestId('model-setup-wizard')).not.toBeInTheDocument();
   });
 
-  test('shows background downloading state when missing models are actively downloading', async () => {
+  test('shows setup loading state before model checks complete', async () => {
+    window.electronAPI = {
+      llama: {
+        getModels: jest.fn(() => new Promise(() => {})),
+        getConfig: jest.fn(() => new Promise(() => {})),
+        getDownloadStatus: jest.fn(() =>
+          Promise.resolve({ success: true, status: { downloads: [] } })
+        )
+      }
+    };
+
+    render(<WelcomePhase />);
+
+    expect(screen.getByText(/Preparing AI Setup/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Organize files now/i)).not.toBeInTheDocument();
+  });
+
+  test('shows loading escape and continues with limited AI when checks hang', async () => {
+    jest.useFakeTimers();
+    window.electronAPI = {
+      llama: {
+        getModels: jest.fn(() => new Promise(() => {})),
+        getConfig: jest.fn(() => new Promise(() => {})),
+        getDownloadStatus: jest.fn(() =>
+          Promise.resolve({ success: true, status: { downloads: [] } })
+        )
+      }
+    };
+
+    render(<WelcomePhase />);
+
+    expect(screen.getByText(/Preparing AI Setup/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Continue with limited AI/i })
+    ).not.toBeInTheDocument();
+
+    await act(async () => {
+      jest.advanceTimersByTime(8000);
+    });
+
+    const continueButton = await screen.findByRole('button', { name: /Continue with limited AI/i });
+    fireEvent.click(continueButton);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Organize files now/i)).toBeInTheDocument();
+    });
+    expect(mockAddNotification).toHaveBeenCalledWith(
+      expect.stringMatching(/Continuing with limited AI/i),
+      'info'
+    );
+  });
+
+  test('shows model setup wizard when missing models are actively downloading', async () => {
     window.electronAPI = {
       llama: {
         getModels: jest.fn(async () => ({ models: ['unrelated.gguf'] })),
@@ -110,10 +169,13 @@ describe('WelcomePhase', () => {
 
     render(<WelcomePhase />);
 
-    await waitFor(() => {
-      expect(screen.getByText(/Downloading AI Models/i)).toBeInTheDocument();
-    });
-    expect(screen.queryByTestId('model-setup-wizard')).not.toBeInTheDocument();
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('model-setup-wizard')).toBeInTheDocument();
+      },
+      { timeout: 3000 }
+    );
+    expect(screen.queryByText(/Organize files now/i)).not.toBeInTheDocument();
   });
 
   test('shows model setup wizard when dev force flag is enabled', async () => {
