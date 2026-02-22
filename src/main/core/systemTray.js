@@ -80,6 +80,8 @@ function initializeTrayConfig(config) {
  * Create the system tray
  */
 function createSystemTray() {
+  if (tray) return; // Prevent creating multiple tray icons
+
   try {
     const iconPath = getAssetPath(
       isWindows ? 'icons/win/icon.ico' : isMacOS ? 'icons/png/24x24.png' : 'icons/png/16x16.png'
@@ -216,10 +218,23 @@ function updateTrayMenu() {
         try {
           const settingsService = trayConfig.getSettingsService?.();
           if (settingsService) {
-            const merged = await settingsService.save({
+            const saveResult = await settingsService.save({
               autoOrganize: enable
             });
-            trayConfig.handleSettingsChanged?.(merged);
+            const normalizedSettings =
+              saveResult &&
+              typeof saveResult === 'object' &&
+              saveResult.settings &&
+              typeof saveResult.settings === 'object'
+                ? saveResult.settings
+                : saveResult && typeof saveResult === 'object'
+                  ? saveResult
+                  : null;
+            trayConfig.handleSettingsChanged?.(
+              normalizedSettings || {
+                autoOrganize: enable
+              }
+            );
           } else {
             trayConfig.handleSettingsChanged?.({ autoOrganize: enable });
           }

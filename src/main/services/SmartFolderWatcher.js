@@ -1154,7 +1154,7 @@ class SmartFolderWatcher {
             const settings = await this.settingsService.load();
             const namingSettings = {
               convention: settings.namingConvention || 'keep-original',
-              separator: settings.separator || '-',
+              separator: settings.separator ?? '-',
               dateFormat: settings.dateFormat || 'YYYY-MM-DD',
               caseConvention: settings.caseConvention
             };

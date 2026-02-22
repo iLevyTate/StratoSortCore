@@ -8,6 +8,38 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { logger } from '../../shared/logger';
 
+function stableSerialize(value) {
+  try {
+    return JSON.stringify(
+      value,
+      (key, val) => {
+        if (val && typeof val === 'object' && !Array.isArray(val)) {
+          return Object.keys(val)
+            .sort()
+            .reduce((acc, nextKey) => {
+              acc[nextKey] = val[nextKey];
+              return acc;
+            }, {});
+        }
+        return val;
+      },
+      0
+    );
+  } catch {
+    return null;
+  }
+}
+
+function areValuesEqual(a, b) {
+  if (Object.is(a, b)) return true;
+  const aIsObject = a && typeof a === 'object';
+  const bIsObject = b && typeof b === 'object';
+  if (!aIsObject || !bIsObject) return false;
+  const aSerialized = stableSerialize(a);
+  const bSerialized = stableSerialize(b);
+  return aSerialized != null && aSerialized === bSerialized;
+}
+
 /**
  * Hook that subscribes to settings changes from the main process
  * and calls the provided callback when settings change.
@@ -20,6 +52,8 @@ import { logger } from '../../shared/logger';
 export function useSettingsSubscription(onSettingsChanged, options = {}) {
   const { enabled = true, watchKeys = null } = options;
   const callbackRef = useRef(onSettingsChanged);
+  const lastSettingsRef = useRef(null);
+  const lastWatchedValuesRef = useRef({});
 
   // Keep callback ref updated
   useEffect(() => {
@@ -33,6 +67,13 @@ export function useSettingsSubscription(onSettingsChanged, options = {}) {
   useEffect(() => {
     watchKeysRef.current = watchKeys;
   }, [watchKeysKey, watchKeys]);
+
+  useEffect(() => {
+    // Reset snapshot when subscription scope changes so we don't compare
+    // values from a previous watch-key configuration.
+    lastSettingsRef.current = null;
+    lastWatchedValuesRef.current = {};
+  }, [enabled, watchKeysKey]);
 
   useEffect(() => {
     if (!enabled) return () => {};
@@ -52,21 +93,35 @@ export function useSettingsSubscription(onSettingsChanged, options = {}) {
         // If watching specific keys, filter to only those changes
         const currentWatchKeys = watchKeysRef.current;
         if (currentWatchKeys && Array.isArray(currentWatchKeys)) {
+          const previousWatchedValues = lastWatchedValuesRef.current || {};
+          const nextWatchedValues = { ...previousWatchedValues };
           const relevantChanges = {};
           let hasRelevantChange = false;
 
           currentWatchKeys.forEach((key) => {
-            if (key in normalizedSettings) {
-              relevantChanges[key] = normalizedSettings[key];
+            if (!(key in normalizedSettings)) return;
+            const nextValue = normalizedSettings[key];
+            const prevValue = previousWatchedValues[key];
+            const hasPreviousValue = Object.prototype.hasOwnProperty.call(
+              previousWatchedValues,
+              key
+            );
+            nextWatchedValues[key] = nextValue;
+            if (!hasPreviousValue || !areValuesEqual(prevValue, nextValue)) {
+              relevantChanges[key] = nextValue;
               hasRelevantChange = true;
             }
           });
+
+          lastWatchedValuesRef.current = nextWatchedValues;
+          lastSettingsRef.current = normalizedSettings;
 
           if (hasRelevantChange) {
             callbackRef.current?.(relevantChanges);
           }
         } else {
           // No filter, pass all settings
+          lastSettingsRef.current = normalizedSettings;
           callbackRef.current?.(normalizedSettings);
         }
       } catch (error) {

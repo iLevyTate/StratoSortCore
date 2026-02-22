@@ -60,9 +60,10 @@ const CASE_CONVENTIONS = [
 const SMART_FOLDER_ROUTING_MODES = ['auto', 'llm', 'embedding', 'hybrid'];
 
 /**
- * Filename separator pattern (reject unsafe path characters)
+ * Filename separator pattern.
+ * Allowed: empty string (no separator), "-", ".", "_".
  */
-const SEPARATOR_PATTERN = /^[^/\\:*?"<>|]+$/;
+const SEPARATOR_PATTERN = /^[-._]?$/;
 
 /**
  * URL validation pattern

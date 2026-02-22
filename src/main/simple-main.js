@@ -529,6 +529,25 @@ function handleSettingsChanged(settings) {
   }
 
   currentSettings = settings;
+
+  // Keep renderer consumers in sync for runtime setting changes triggered
+  // outside SettingsPanel (e.g., tray actions, imports, restores).
+  try {
+    const eventPayload = {
+      settings,
+      source: 'main',
+      timestamp: Date.now()
+    };
+    const windows = BrowserWindow.getAllWindows();
+    windows.forEach((win) => {
+      if (win && !win.isDestroyed() && win.webContents) {
+        safeSend(win.webContents, IPC_EVENTS.SETTINGS_CHANGED_EXTERNAL, eventPayload);
+      }
+    });
+  } catch (error) {
+    logger.warn('[SETTINGS] Failed to notify renderer about settings change:', error?.message);
+  }
+
   updateDownloadWatcher(settings);
   // Note: Smart folder watcher is always enabled - no settings-based control needed
   // Propagate confidence threshold to auto-organize service (so it doesn't stick to defaults)

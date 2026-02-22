@@ -19,6 +19,7 @@ const MAX_LOG_SERIALIZED_DATA_BYTES = 16384;
 const MAX_LOG_DATA_DEPTH = 4;
 const MAX_LOG_DATA_KEYS = 100;
 const MAX_LOG_ARRAY_ITEMS = 100;
+const LOG_EXPORT_WORKER_TIMEOUT_MS = 120000;
 const BLOCKED_LOG_DATA_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const MAX_CONFIG_PATH_CHARS = 120;
 const SAFE_CONFIG_PATH_PATTERN = /^[A-Za-z0-9_.-]+$/;
@@ -357,6 +358,8 @@ function registerSystemIpc(servicesOrParams) {
           }
 
           await new Promise((resolve, reject) => {
+            let settled = false;
+            let timeoutId = null;
             const workerCode = `
               const { parentPort, workerData } = require('worker_threads');
               const AdmZip = require('adm-zip');
@@ -377,13 +380,36 @@ function registerSystemIpc(servicesOrParams) {
               eval: true,
               workerData: { logsDir, crashDumpsDir, outPath: filePath }
             });
+
+            const finish = (error = null) => {
+              if (settled) return;
+              settled = true;
+              if (timeoutId) clearTimeout(timeoutId);
+              if (error) reject(error);
+              else resolve();
+            };
+
+            timeoutId = setTimeout(() => {
+              worker.terminate().catch(() => {});
+              finish(
+                new Error(
+                  `Log export timed out after ${Math.round(LOG_EXPORT_WORKER_TIMEOUT_MS / 1000)}s`
+                )
+              );
+            }, LOG_EXPORT_WORKER_TIMEOUT_MS);
+
             worker.on('message', (msg) => {
-              if (msg.success) resolve();
-              else reject(new Error(msg.error));
+              if (msg?.success) {
+                finish();
+              } else {
+                finish(new Error(msg?.error || 'Log export failed'));
+              }
             });
-            worker.on('error', reject);
+            worker.on('error', (error) => finish(error));
             worker.on('exit', (code) => {
-              if (code !== 0) reject(new Error(`Worker stopped with exit code ${code}`));
+              if (!settled && code !== 0) {
+                finish(new Error(`Worker stopped with exit code ${code}`));
+              }
             });
           });
 

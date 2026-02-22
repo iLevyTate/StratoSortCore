@@ -222,9 +222,9 @@ const VALIDATION_RULES = {
   },
   separator: {
     type: 'string',
-    maxLength: 5,
+    maxLength: 1,
     required: false,
-    // Reject unsafe path characters
+    // Allow only common filename separators
     pattern: SEPARATOR_PATTERN
   },
   textModel: {

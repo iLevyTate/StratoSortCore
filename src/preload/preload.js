@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 const { IpcRateLimiter } = require('./ipcRateLimiter');
 const { createIpcSanitizer } = require('./ipcSanitizer');
 const { createIpcValidator } = require('./ipcValidator');
@@ -876,6 +876,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
         error: result.error,
         ...stats
       };
+    },
+    getPathForDroppedFile: (file) => {
+      try {
+        if (!file || typeof webUtils?.getPathForFile !== 'function') return '';
+        return webUtils.getPathForFile(file) || '';
+      } catch {
+        return '';
+      }
     },
     getDirectoryContents: (dirPath) =>
       secureIPC.safeInvoke(IPC_CHANNELS.FILES.GET_FILES_IN_DIRECTORY, dirPath),

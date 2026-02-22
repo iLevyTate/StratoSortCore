@@ -194,7 +194,7 @@ jest.mock('../src/shared/validationConstants', () => ({
     'UPPERCASE'
   ],
   SMART_FOLDER_ROUTING_MODES: ['auto', 'llm', 'embedding', 'hybrid'],
-  SEPARATOR_PATTERN: /^[^/\\:*?"<>|]+$/,
+  SEPARATOR_PATTERN: /^[-._]?$/,
   NUMERIC_LIMITS: {
     cacheSize: { min: 0, max: 100000 },
     maxBatchSize: { min: 1, max: 1000 }

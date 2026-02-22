@@ -579,7 +579,7 @@ class DownloadWatcher {
           // Construct naming settings object to match old implementation expectations
           const namingSettings = {
             convention: settings.namingConvention,
-            separator: settings.separator || '-',
+            separator: settings.separator ?? '-',
             dateFormat: settings.dateFormat || 'YYYY-MM-DD',
             caseConvention: settings.caseConvention || 'kebab-case'
           };
@@ -717,7 +717,7 @@ class DownloadWatcher {
         namingSettings: {
           // Default to subject-date so files are actually renamed when settings are missing
           convention: settings.namingConvention || 'subject-date',
-          separator: settings.separator || '-',
+          separator: settings.separator ?? '-',
           dateFormat: settings.dateFormat || 'YYYY-MM-DD',
           caseConvention: settings.caseConvention || 'kebab-case'
         }
