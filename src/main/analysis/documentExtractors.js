@@ -22,6 +22,22 @@ const logger = createLogger('DocumentExtractors');
 
 let unpdfRenderer = null;
 let unpdfRendererInit = null;
+let sharpModule = null;
+let sharpLoadAttempted = false;
+
+function getSharp() {
+  if (sharpLoadAttempted) return sharpModule;
+  sharpLoadAttempted = true;
+  try {
+    sharpModule = require('sharp');
+  } catch (error) {
+    logger.warn('[OCR] sharp unavailable, image preprocessing disabled', {
+      error: error.message
+    });
+    sharpModule = null;
+  }
+  return sharpModule;
+}
 
 function ensurePromiseResolversPolyfill() {
   if (typeof Promise.withResolvers === 'function') return;
@@ -483,7 +499,6 @@ async function extractTextFromPdf(filePath, fileName) {
 }
 
 async function ocrPdfIfNeeded(filePath) {
-  const sharp = require('sharp');
   let pdfBuffer;
   let rasterPng;
 
@@ -497,6 +512,11 @@ async function ocrPdfIfNeeded(filePath) {
   try {
     if (!(await isTesseractAvailable())) {
       logger.debug('[OCR] Skipping PDF OCR - tesseract unavailable');
+      return '';
+    }
+    const sharp = getSharp();
+    if (!sharp) {
+      logger.debug('[OCR] Skipping PDF OCR preprocessing - sharp unavailable');
       return '';
     }
 
@@ -701,7 +721,6 @@ async function extractTextFromDoc(filePath) {
 
 async function extractImagesFromOfficeArchiveAndOcr(filePath, mediaPathPrefix) {
   const AdmZip = require('adm-zip');
-  const sharp = require('sharp');
   const OCR_MAX_WIDTH = 2480; // ~A4 at 150 DPI
   const OCR_MAX_HEIGHT = 3508; // ~A4 at 150 DPI
   const OCR_MAX_BYTES = 20 * 1024 * 1024; // 20MB limit per image
@@ -709,6 +728,11 @@ async function extractImagesFromOfficeArchiveAndOcr(filePath, mediaPathPrefix) {
   try {
     if (!(await isTesseractAvailable())) {
       logger.debug('[OFFICE-OCR] Skipping OCR - tesseract unavailable');
+      return '';
+    }
+    const sharp = getSharp();
+    if (!sharp) {
+      logger.debug('[OFFICE-OCR] Skipping image preprocessing - sharp unavailable');
       return '';
     }
 
