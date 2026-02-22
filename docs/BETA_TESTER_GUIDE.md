@@ -10,6 +10,7 @@ If you can install an app, use it for normal work, and share clear bug reports, 
 
 - **Download:** [Latest release installers](https://github.com/iLevyTate/StratoSortCore/releases)
 - **Install help:** [INSTALL_GUIDE.md](./INSTALL_GUIDE.md)
+- **Release preflight (maintainers):** [RELEASE_PREFLIGHT.md](./RELEASE_PREFLIGHT.md)
 - **Bug reports:**
   [Open a bug report](https://github.com/iLevyTate/StratoSortCore/issues/new?template=bug_report.md)
 - **General issues:** [Issues board](https://github.com/iLevyTate/StratoSortCore/issues)

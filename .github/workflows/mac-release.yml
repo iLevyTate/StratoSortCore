@@ -60,6 +60,24 @@ jobs:
       - name: Install dependencies (with optional deps)
         run: npm ci --include=optional
 
+      - name: Detect mac release mode
+        id: mac-release-mode
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${CSC_LINK:-}" && -n "${CSC_KEY_PASSWORD:-}" && -n "${APPLE_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Using signed + notarized mac release mode."
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Signing/notarization secrets not configured. Building unsigned mac beta artifacts."
+          fi
+
       - name: Generate installer assets
         run: |
           if [ -f assets/stratosort-logo.png ]; then
@@ -71,21 +89,79 @@ jobs:
       - name: Rebuild native modules for Electron runtime (${{ matrix.arch }})
         run: npx --no electron-builder install-app-deps --arch=${{ matrix.arch }}
 
-      - name: Verify native modules load
-        run: node -e "require('sharp'); console.log('sharp OK')"
+      - name: Verify native module loading
+        run: npm run verify:native-modules
 
-      - name: Build Mac app and DMG (${{ matrix.arch }})
+      - name: Clean release output directory
+        run: |
+          rm -rf release/build
+
+      - name: Build Mac app and DMG (${{ matrix.arch }}) [signed]
+        if: steps.mac-release-mode.outputs.signed == 'true'
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: true
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run ${{ matrix.dist_script }}
 
-      # Notarization requires Apple Developer ID. Uncomment when ready:
-      # - name: Notarize app
-      #   env:
-      #     APPLE_ID: ${{ secrets.APPLE_ID }}
-      #     APPLE_ID_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      #     APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      #   run: |
-      #     xcrun notarytool submit release/build/*.dmg --wait
-      #     xcrun stapler staple release/build/*.dmg
+      - name: Build Mac app and DMG (${{ matrix.arch }}) [unsigned beta]
+        if: steps.mac-release-mode.outputs.signed != 'true'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npm run ${{ matrix.dist_script }}
+
+      - name: Verify packaged macOS artifacts (${{ matrix.arch }})
+        run: node scripts/verify-packaged-artifacts.js --platform=mac --arch=${{ matrix.arch }}
+
+      - name: Verify app signature
+        if: steps.mac-release-mode.outputs.signed == 'true'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apps=(release/build/mac*/StratoSort\ Core.app)
+          if [ ${#apps[@]} -eq 0 ]; then
+            echo "::error::No .app bundle found for signature verification."
+            ls -R release/build || true
+            exit 1
+          fi
+
+          for app_path in "${apps[@]}"; do
+            codesign --verify --deep --strict --verbose=2 "$app_path"
+            spctl -a -t exec -vv "$app_path" || true
+          done
+
+      - name: Notarize and staple artifacts (${{ matrix.arch }})
+        if: steps.mac-release-mode.outputs.signed == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          artifacts=(release/build/StratoSortCore-*-${{ matrix.arch }}.dmg release/build/StratoSortCore-*-${{ matrix.arch }}.zip)
+          if [ ${#artifacts[@]} -eq 0 ]; then
+            echo "::error::No notarizable mac artifacts found."
+            ls -R release/build || true
+            exit 1
+          fi
+
+          for artifact in "${artifacts[@]}"; do
+            xcrun notarytool submit "$artifact" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait
+          done
+
+          for dmg_path in release/build/StratoSortCore-*-${{ matrix.arch }}.dmg; do
+            [ -f "$dmg_path" ] || continue
+            xcrun stapler staple "$dmg_path"
+            xcrun stapler validate "$dmg_path"
+          done
 
       - name: Stage artifacts
         run: |
@@ -101,7 +177,24 @@ jobs:
           for f in release/build/latest*.yml; do
             if [ -f "$f" ]; then
               base="$(basename "$f")"
-              cp "$f" "release/upload/${{ matrix.arch }}/${{ matrix.arch }}-$base"
+              target_base="$base"
+
+              # Preserve canonical updater metadata filenames for electron-updater.
+              # arm64 metadata should be latest-mac-arm64.yml, x64 metadata latest-mac.yml.
+              if [ "$base" = "latest.yml" ] || [ "$base" = "latest-mac.yml" ]; then
+                if [ "${{ matrix.arch }}" = "arm64" ]; then
+                  target_base="latest-mac-arm64.yml"
+                else
+                  target_base="latest-mac.yml"
+                fi
+              fi
+
+              target_path="release/upload/${{ matrix.arch }}/$target_base"
+              if [ -f "$target_path" ] && ! cmp -s "$f" "$target_path"; then
+                echo "::error::Conflicting updater metadata for $target_base"
+                exit 1
+              fi
+              cp "$f" "$target_path"
             fi
           done
 
@@ -120,8 +213,29 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: macos-*-artifacts
-          merge-multiple: true
-          path: release/build
+          path: release/artifacts
+
+      - name: Prepare merged release files
+        run: |
+          set -euo pipefail
+          mkdir -p release/build
+
+          shopt -s globstar nullglob
+          for f in release/artifacts/**; do
+            [ -f "$f" ] || continue
+            base="$(basename "$f")"
+            target="release/build/$base"
+
+            if [ -f "$target" ] && ! cmp -s "$f" "$target"; then
+              echo "::error::Conflicting artifact filename '$base' from $f"
+              exit 1
+            fi
+
+            cp "$f" "$target"
+          done
+
+      - name: Verify mac updater metadata
+        run: node scripts/verify-updater-metadata.js --platform=mac --build-root=release/build
 
       - name: Generate SHA256 checksums
         run: |

@@ -137,9 +137,8 @@ Compare the hash output to the matching entry in the checksum file. They should 
 3. Follow the installer prompts (choose install location, shortcuts, etc.).
 4. Launch **StratoSort Core** from the Start menu or desktop shortcut.
 
-> **Why the SmartScreen warning?** The app is not code-signed yet. SmartScreen flags all unsigned
-> apps — this is normal for open-source software distributed outside the Microsoft Store. You can
-> review the [source code](https://github.com/iLevyTate/StratoSortCore) to verify it before running.
+> **Why this can happen:** During beta, Windows builds may be unsigned and SmartScreen may warn
+> before launch. Verify the download checksum and continue only if it matches the release notes.
 
 ### macOS
 
@@ -153,9 +152,9 @@ Compare the hash output to the matching entry in the checksum file. They should 
    - **Option B:** Open **System Settings** → **Privacy & Security** → scroll down → click **Open
      Anyway** next to StratoSort Core.
 
-> **Why the macOS warning?** The app is not notarized by Apple yet. Gatekeeper blocks all
-> un-notarized apps by default. You can review the
-> [source code](https://github.com/iLevyTate/StratoSortCore) before running.
+> **Why this can happen:** During beta, macOS builds may be unsigned or unnotarized. Gatekeeper can
+> also block incomplete/corrupted downloads or wrong-architecture builds. Verify checksums and use
+> the correct Intel vs Apple Silicon artifact.
 
 ### Linux (AppImage)
 
@@ -207,7 +206,7 @@ search (GGUF format). They are stored locally on your computer and never sent an
 **Can I change this later?** Yes. Go to **Settings** → **AI Configuration** → **Default AI Models**
 to switch profiles or download additional models at any time.
 
-**Can I keep using the app while models download?** Yes. Click **Continue while downloading** if you
+**Can I keep using the app while models download?** Yes. Click **Continue with limited AI** if you
 want to explore the app immediately. AI features will become available once the download finishes.
 
 ---
@@ -308,8 +307,9 @@ StratoSort Core:
 - Is open source: you can inspect the code at
   [github.com/iLevyTate/StratoSortCore](https://github.com/iLevyTate/StratoSortCore)
 
-The "developer cannot be verified" / SmartScreen warnings appear because the app is not yet signed
-with a publisher certificate. That affects trust prompts only — not how the app works.
+If you see "developer cannot be verified" / SmartScreen warnings during beta, first verify checksums
+from the release page and ensure you downloaded the correct OS/architecture artifact before
+proceeding.
 
 ---
 
