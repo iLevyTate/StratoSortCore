@@ -25,13 +25,14 @@ const SmartStepEdge = ({
 }) => {
   // Prefer ELK-routed path if available for collision avoidance
   const elkPath = useElkPath(data);
+  const parallelOffset = Number(data?.parallelOffset || 0);
 
   const [smoothPath, smoothLabelX, smoothLabelY] = getSmoothStepPath({
     sourceX,
-    sourceY,
+    sourceY: sourceY + parallelOffset,
     sourcePosition,
     targetX,
-    targetY,
+    targetY: targetY + parallelOffset,
     targetPosition,
     borderRadius: 16, // Increased border radius for smoother corners
     offset: 20 // Offset for the path to avoid hugging nodes too closely
@@ -39,11 +40,16 @@ const SmartStepEdge = ({
 
   const edgePath = elkPath || smoothPath;
   const labelX = smoothLabelX;
-  const labelY = smoothLabelY;
+  const labelY = smoothLabelY + parallelOffset;
+  const edgeStyle = {
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+    ...style
+  };
 
   return (
     <>
-      <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
+      <BaseEdge path={edgePath} markerEnd={markerEnd} style={edgeStyle} />
       {label && (
         <EdgeLabelRenderer>
           <div
@@ -81,6 +87,7 @@ SmartStepEdge.propTypes = {
   markerEnd: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
   label: PropTypes.node,
   data: PropTypes.shape({
+    parallelOffset: PropTypes.number,
     elkSections: PropTypes.arrayOf(
       PropTypes.shape({
         startPoint: PropTypes.shape({

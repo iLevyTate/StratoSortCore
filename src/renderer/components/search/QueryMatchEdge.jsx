@@ -2,7 +2,7 @@ import React, { memo, useCallback, useMemo } from 'react';
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from 'reactflow';
 import PropTypes from 'prop-types';
 import BaseEdgeTooltip from './BaseEdgeTooltip';
-import { useEdgeHover } from './useEdgeInteraction';
+import { useEdgeHover, useElkPath } from './useEdgeInteraction';
 
 /**
  * Custom edge component for query-to-file match connections
@@ -22,20 +22,23 @@ const QueryMatchEdge = memo(
     markerEnd
   }) => {
     const { isHovered, handleMouseEnter, handleMouseLeave } = useEdgeHover();
+    const elkPath = useElkPath(data);
+    const parallelOffset = Number(data?.parallelOffset || 0);
 
     // Get the edge path
     // Position label 75% along the path (much closer to target file) to clearly associate score with file
-    const [edgePath, labelX, labelY] = getSmoothStepPath({
+    const [smoothPath, labelX, labelY] = getSmoothStepPath({
       sourceX,
-      sourceY,
+      sourceY: sourceY + parallelOffset,
       sourcePosition,
       targetX,
-      targetY,
+      targetY: targetY + parallelOffset,
       targetPosition,
       borderRadius: 8,
       centerX: (sourceX + targetX * 3) / 4,
-      centerY: (sourceY + targetY * 3) / 4
+      centerY: (sourceY + targetY * 3) / 4 + parallelOffset
     });
+    const edgePath = elkPath || smoothPath;
 
     const score = data?.score ?? 0;
     const scorePercent = Math.round(score * 100);
@@ -106,7 +109,9 @@ const QueryMatchEdge = memo(
       strokeWidth: isHovered ? 2.5 : 2,
       opacity: isHovered ? 1 : 0.8,
       filter: isHovered ? 'drop-shadow(0 0 4px rgba(79, 70, 229, 0.5))' : 'none',
-      transition: 'all 0.2s ease'
+      transition: 'all 0.2s ease',
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round'
     };
 
     const reasons = buildMatchReasons();
@@ -235,7 +240,8 @@ QueryMatchEdge.propTypes = {
       queryTermsInTags: PropTypes.arrayOf(PropTypes.string),
       queryTermsInCategory: PropTypes.bool,
       sources: PropTypes.arrayOf(PropTypes.string)
-    })
+    }),
+    parallelOffset: PropTypes.number
   }),
   style: PropTypes.object,
   markerEnd: PropTypes.oneOfType([PropTypes.string, PropTypes.object])

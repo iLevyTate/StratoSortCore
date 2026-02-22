@@ -81,11 +81,11 @@ let layoutAborted = false;
  * Node size configuration for different node types
  */
 const NODE_SIZES = {
-  queryNode: { width: 180, height: 60 },
-  fileNode: { width: 240, height: 120 },
-  folderNode: { width: 220, height: 90 },
-  clusterNode: { width: 180, height: 180 },
-  default: { width: 220, height: 100 }
+  queryNode: { width: 240, height: 92 },
+  fileNode: { width: 240, height: 124 },
+  folderNode: { width: 240, height: 96 },
+  clusterNode: { width: 190, height: 190 },
+  default: { width: 230, height: 110 }
 };
 
 /**
@@ -135,8 +135,8 @@ export async function elkLayout(nodes, edges, options = {}) {
   const elkAlgorithm = ALGORITHM_MAP[algorithm] || algorithm;
 
   // Spacing proportional to base spacing
-  const edgeSpacing = Math.max(40, Math.round(spacing / 4));
-  const edgeNodeSpacing = Math.max(40, Math.round(spacing / 3));
+  const edgeSpacing = Math.max(56, Math.round(spacing / 3));
+  const edgeNodeSpacing = Math.max(56, Math.round(spacing / 2.6));
   const edgeLayerSpacing = Math.max(60, Math.round(layerSpacing / 3));
 
   // Base layout options
@@ -150,6 +150,8 @@ export async function elkLayout(nodes, edges, options = {}) {
     'elk.edgeRouting': 'SPLINES',
     // Prioritize node placement that reduces edge crossings
     'elk.layered.crossingMinimization.forceNodeModelOrder': 'true',
+    // Keep edge order deterministic to reduce line stacking flicker between layouts
+    'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
     // Separate edge segments to prevent overlap
     'elk.layered.mergeEdges': 'false'
   };
@@ -162,6 +164,7 @@ export async function elkLayout(nodes, edges, options = {}) {
     layoutOptions['elk.layered.nodePlacement.strategy'] = 'BRANDES_KOEPF'; // Better straight-line alignment
     layoutOptions['elk.spacing.componentComponent'] = String(spacing); // Keep disconnected clusters close
     layoutOptions['elk.layered.crossingMinimization.strategy'] = 'LAYER_SWEEP';
+    layoutOptions['elk.layered.crossingMinimization.greedySwitch.type'] = 'TWO_SIDED';
   } else if (elkAlgorithm === 'org.eclipse.elk.force') {
     layoutOptions['elk.force.iterations'] = '100';
     layoutOptions['elk.force.repulsion'] = String(Math.max(2.0, spacing / 50)); // Scale repulsion

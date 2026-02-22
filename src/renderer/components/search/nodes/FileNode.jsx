@@ -163,7 +163,7 @@ const FileNode = memo(({ data, selected }) => {
   return (
     <div
       className={`
-        relative px-2.5 py-1.5 rounded-lg border-2 shadow-sm min-w-[140px] max-w-[200px]
+        relative px-2.5 py-1.5 rounded-lg border-2 shadow-sm w-[220px] min-h-[104px] overflow-hidden
         transition-all duration-200 cursor-pointer group backface-hidden transform-gpu
         ${
           selected
@@ -281,7 +281,7 @@ const FileNode = memo(({ data, selected }) => {
           </div>
 
           <div
-            className="file-node-label text-xs font-semibold text-[var(--color-system-gray-900)] truncate mb-1"
+            className="file-node-label text-xs font-semibold text-[var(--color-system-gray-900)] clamp-2 break-all leading-snug mb-1"
             title={displayLabel}
           >
             {displayLabel}
@@ -291,7 +291,7 @@ const FileNode = memo(({ data, selected }) => {
             <div className="flex flex-wrap gap-1 mt-1.5">
               {displaySuggestedFolder && (
                 <span
-                  className="px-1.5 py-0.5 rounded-md text-xs bg-black/5 text-black/60 font-medium truncate max-w-full inline-block"
+                  className="px-1.5 py-0.5 rounded-md text-xs bg-black/5 text-black/60 font-medium truncate max-w-full inline-block break-all"
                   title={displaySuggestedFolder}
                 >
                   📂 {displaySuggestedFolder}
@@ -300,7 +300,7 @@ const FileNode = memo(({ data, selected }) => {
               {tags.map((tag, i) => (
                 <span
                   key={i}
-                  className="px-1.5 py-0.5 rounded-md text-xs bg-white/60 text-[var(--color-system-gray-600)] border border-black/5 max-w-full truncate inline-block"
+                  className="px-1.5 py-0.5 rounded-md text-xs bg-white/60 text-[var(--color-system-gray-600)] border border-black/5 max-w-full truncate inline-block break-all"
                   title={tag}
                 >
                   #{tag}

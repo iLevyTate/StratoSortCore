@@ -115,11 +115,12 @@ const ClusterNode = memo(({ data, selected }) => {
   const diameter = Math.round(
     HUB_SIZE.MIN_DIAMETER + scaleFactor * (HUB_SIZE.MAX_DIAMETER - HUB_SIZE.MIN_DIAMETER)
   );
+  const showTopTerms = topTerms.length > 0 && diameter >= 124;
 
   return (
     <div
       className={`
-        relative rounded-full border-4 shadow-lg flex flex-col items-center justify-center
+        relative rounded-full border-4 shadow-lg flex flex-col items-center justify-center overflow-hidden
         transition-all duration-300 cursor-pointer
         ${selected ? 'scale-105 z-50' : 'hover:scale-105 z-10'}
         ${isExpanded ? 'ring-4 ring-stratosort-accent/20' : ''}
@@ -237,11 +238,11 @@ const ClusterNode = memo(({ data, selected }) => {
       <div
         className={`p-2.5 rounded-full mb-1.5 ${selected ? 'bg-stratosort-accent/20 text-stratosort-accent' : 'bg-stratosort-accent/10 text-stratosort-accent'}`}
       >
-        <Layers className="w-8 h-8" strokeWidth={1.5} />
+        <Layers className="w-7 h-7" strokeWidth={1.5} />
       </div>
 
       {/* Label Area */}
-      <div className="text-center px-4 w-full relative z-10">
+      <div className="text-center px-4 w-full max-w-[82%] mx-auto relative z-10">
         {isEditingLabel ? (
           <input
             ref={labelInputRef}
@@ -255,7 +256,7 @@ const ClusterNode = memo(({ data, selected }) => {
           />
         ) : (
           <div
-            className="text-xs font-bold text-system-gray-800 line-clamp-2 leading-tight break-words group/label"
+            className="text-xs font-bold text-system-gray-800 clamp-2 leading-tight break-words group/label"
             title={label}
           >
             {label}
@@ -270,9 +271,9 @@ const ClusterNode = memo(({ data, selected }) => {
       </div>
 
       {/* Top terms / why (kept inside the hub to avoid clipping) */}
-      {topTerms.length > 0 && (
+      {showTopTerms && (
         <div
-          className="mt-1 px-5 text-center text-xs leading-snug text-stratosort-accent font-medium line-clamp-2 break-all"
+          className="mt-0.5 px-4 max-w-[82%] mx-auto text-center text-[10px] leading-tight text-stratosort-accent font-medium clamp-1 break-words"
           title={`Shared terms: ${topTerms.join(', ')}`}
         >
           {topTerms.join(' • ')}

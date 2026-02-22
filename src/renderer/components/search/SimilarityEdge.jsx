@@ -25,18 +25,19 @@ const SimilarityEdge = memo(
   }) => {
     const { isHovered, handleMouseEnter, handleMouseLeave } = useEdgeHover();
     const elkPath = useElkPath(data);
+    const parallelOffset = Number(data?.parallelOffset || 0);
 
     // Fallback to ReactFlow's path routing if ELK path is missing
     const [smoothPath, smoothLabelX, smoothLabelY] = getSmoothStepPath({
       sourceX,
-      sourceY,
+      sourceY: sourceY + parallelOffset,
       sourcePosition,
       targetX,
-      targetY,
+      targetY: targetY + parallelOffset,
       targetPosition,
       borderRadius: 16, // Smoother corners
       centerX: (sourceX + targetX) / 2,
-      centerY: (sourceY + targetY) / 2
+      centerY: (sourceY + targetY) / 2 + parallelOffset
     });
 
     const edgePath = elkPath || smoothPath;
@@ -44,7 +45,7 @@ const SimilarityEdge = memo(
     // For label position, if we have a custom path, we might want to calculate it more precisely
     // But for now, using the smooth step midpoint is a reasonable approximation
     const labelX = smoothLabelX;
-    const labelY = smoothLabelY;
+    const labelY = smoothLabelY + parallelOffset;
 
     const isCrossCluster = data?.kind === 'cross_cluster';
     const similarity = data?.similarity ?? 0;
@@ -192,7 +193,9 @@ const SimilarityEdge = memo(
       strokeDasharray: primaryType === 'similarity' || primaryType === 'cross' ? '4 4' : 'none', // Dash only purely similar edges
       opacity: isHovered ? 1 : primaryType === 'similarity' ? 0.6 : 0.8,
       filter: isHovered ? `drop-shadow(0 0 4px ${strokeColor})` : 'none',
-      transition: 'all 0.2s ease'
+      transition: 'all 0.2s ease',
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round'
     };
 
     const compactLabelText =
@@ -445,7 +448,8 @@ SimilarityEdge.propTypes = {
       category: PropTypes.string,
       subject: PropTypes.string
     }),
-    isSurprise: PropTypes.bool
+    isSurprise: PropTypes.bool,
+    parallelOffset: PropTypes.number
   }),
   style: PropTypes.object,
   markerEnd: PropTypes.oneOfType([PropTypes.string, PropTypes.object])
