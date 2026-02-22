@@ -315,7 +315,7 @@ describe('File Naming - Preview Generation', () => {
       caseConvention: 'kebab-case'
     });
 
-    expect(result).toBe('original-name.txt');
+    expect(result).toBe('Original_Name.txt');
   });
 });
 

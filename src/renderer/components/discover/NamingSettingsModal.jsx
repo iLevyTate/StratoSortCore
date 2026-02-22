@@ -5,7 +5,7 @@ import NamingSettings from './NamingSettings';
 import { Button } from '../ui';
 import { Text } from '../ui/Typography';
 import { Stack } from '../layout';
-import { applyCaseConvention } from '../../../shared/namingConventions';
+import { generatePreviewName } from '../../../shared/namingConventions';
 
 const NamingSettingsModal = memo(function NamingSettingsModal({
   isOpen,
@@ -19,6 +19,13 @@ const NamingSettingsModal = memo(function NamingSettingsModal({
   separator,
   setSeparator
 }) {
+  const previewName = generatePreviewName('Sample Document.ext', {
+    convention: namingConvention,
+    separator,
+    dateFormat,
+    caseConvention
+  });
+
   return (
     <Modal
       isOpen={isOpen}
@@ -51,13 +58,11 @@ const NamingSettingsModal = memo(function NamingSettingsModal({
         <div className="border-t border-border-soft/70 pt-4 mt-2">
           <Text variant="tiny" className="text-system-gray-500 mb-4">
             <strong>Preview:</strong>{' '}
-            <span className="font-mono bg-surface-muted border border-border-soft px-3 py-1.5 rounded-lg">
-              {namingConvention === 'keep-original'
-                ? 'original-filename.ext'
-                : `${namingConvention
-                    .split('-')
-                    .map((part) => applyCaseConvention(part, caseConvention))
-                    .join(separator || '-')}.ext`}
+            <span
+              data-testid="naming-preview-value"
+              className="font-mono bg-surface-muted border border-border-soft px-3 py-1.5 rounded-lg"
+            >
+              {previewName}
             </span>
           </Text>
         </div>

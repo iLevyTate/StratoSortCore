@@ -188,6 +188,33 @@ test.describe('Naming Strategy - Preview', () => {
     await expect(previewLabel.first()).toBeVisible({ timeout: 3000 });
   });
 
+  test('should update preview when date format changes', async () => {
+    const previewValue = window.locator('[data-testid="naming-preview-value"]');
+    await expect(previewValue).toBeVisible({ timeout: 3000 });
+
+    // Ensure the convention includes a date token so date-format changes are reflected in preview.
+    const conventionTrigger = window.locator('#naming-convention');
+    const currentConvention = ((await conventionTrigger.textContent()) || '').trim();
+    if (currentConvention !== 'subject-date') {
+      await conventionTrigger.click();
+      await window.locator('[role="option"]:has-text("subject-date")').click();
+      await window.waitForTimeout(200);
+    }
+
+    const before = await previewValue.textContent();
+
+    const dateFormatTrigger = window.locator('#date-format');
+    const currentDateFormat = ((await dateFormatTrigger.textContent()) || '').trim();
+    const nextDateFormat = currentDateFormat === 'YYYYMMDD' ? 'YYYY-MM-DD' : 'YYYYMMDD';
+
+    await dateFormatTrigger.click();
+    await window.locator(`[role="option"]:has-text("${nextDateFormat}")`).click();
+    await window.waitForTimeout(200);
+
+    const after = await previewValue.textContent();
+    expect(after).not.toBe(before);
+  });
+
   test('should have Done button to close modal', async () => {
     const doneButton = window.locator('button:has-text("Done")');
     await expect(doneButton.first()).toBeVisible({ timeout: 5000 });
