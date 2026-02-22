@@ -86,11 +86,88 @@ const MAX_GRAPH_NODES = 300;
 const GRAPH_LAYOUT_SPACING = 300; // Increased from 180 to reduce clutter
 const GRAPH_LAYER_SPACING = 400; // Increased from 280 to reduce clutter
 const ZOOM_LABEL_HIDE_THRESHOLD = 0.6;
+const EDGE_LABEL_HIDE_THRESHOLD = 0.9;
+const SMALL_GRAPH_NODE_THRESHOLD = 18;
+const SMALL_GRAPH_EDGE_THRESHOLD = 26;
+const DENSE_GRAPH_NODE_THRESHOLD = 40;
+const DENSE_GRAPH_EDGE_THRESHOLD = 70;
+const DENSE_GRAPH_EDGE_RATIO_THRESHOLD = 1.35;
 const MAX_CHAT_MESSAGES = 200;
+const PARALLEL_EDGE_OFFSET_PX = 14;
 const GRAPH_SIDEBAR_CARD = 'rounded-lg border border-system-gray-200 bg-white/90 p-3 shadow-sm';
 const GRAPH_SIDEBAR_SECTION_TITLE =
   'text-xs font-semibold text-system-gray-500 uppercase tracking-wider flex items-center gap-2';
 const WHY_CONNECTIONS_DISPLAY_LIMIT = 6;
+
+const getZoomBucket = (zoom) => {
+  if (zoom < ZOOM_LABEL_HIDE_THRESHOLD) return 'far';
+  if (zoom < EDGE_LABEL_HIDE_THRESHOLD) return 'mid';
+  return 'near';
+};
+
+const EDGE_KIND_PRIORITY = Object.freeze({
+  query_match: 0,
+  similarity: 1,
+  knowledge: 2,
+  cross_cluster: 3,
+  organize: 4,
+  cluster_member: 5
+});
+
+const buildUndirectedEdgeKey = (edge) => {
+  const source = String(edge?.source || '');
+  const target = String(edge?.target || '');
+  return source <= target ? `${source}::${target}` : `${target}::${source}`;
+};
+
+const applyParallelEdgeOffsets = (edges = []) => {
+  if (!Array.isArray(edges) || edges.length === 0) {
+    return edges || [];
+  }
+
+  const grouped = new Map();
+  edges.forEach((edge, index) => {
+    const key = buildUndirectedEdgeKey(edge);
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push({ edge, index });
+  });
+
+  const desiredOffsets = new Array(edges.length).fill(0);
+  grouped.forEach((entries) => {
+    if (entries.length <= 1) return;
+
+    const sorted = [...entries].sort((a, b) => {
+      const kindA = EDGE_KIND_PRIORITY[a.edge?.data?.kind] ?? 99;
+      const kindB = EDGE_KIND_PRIORITY[b.edge?.data?.kind] ?? 99;
+      if (kindA !== kindB) return kindA - kindB;
+      const idA = String(a.edge?.id || '');
+      const idB = String(b.edge?.id || '');
+      return idA.localeCompare(idB);
+    });
+
+    const center = (sorted.length - 1) / 2;
+    sorted.forEach((entry, idx) => {
+      desiredOffsets[entry.index] = Math.round((idx - center) * PARALLEL_EDGE_OFFSET_PX);
+    });
+  });
+
+  let changed = false;
+  const nextEdges = edges.map((edge, index) => {
+    const desiredOffset = desiredOffsets[index];
+    const currentOffset = Number(edge?.data?.parallelOffset || 0);
+    if (currentOffset === desiredOffset) return edge;
+    changed = true;
+    return {
+      ...edge,
+      data: {
+        ...edge.data,
+        parallelOffset: desiredOffset
+      }
+    };
+  });
+
+  return changed ? nextEdges : edges;
+};
 
 /**
  * Format error messages to be more user-friendly and actionable
@@ -1043,8 +1120,7 @@ export default function UnifiedSearchModal({
   const [addMode, setAddMode] = useState(true);
   const [withinQuery, setWithinQuery] = useState('');
   const [debouncedWithinQuery, setDebouncedWithinQuery] = useState('');
-  // Keep setter for status updates while intentionally ignoring current status value.
-  const [, setGraphStatus] = useState('');
+  const [graphStatus, setGraphStatus] = useState('');
 
   // Layout state
   const [autoLayout, setAutoLayout] = useState(true);
@@ -1147,6 +1223,7 @@ export default function UnifiedSearchModal({
 
   const [performanceNotice, setPerformanceNotice] = useState('');
   const noticeTimerRef = useRef(null);
+  const graphStatusTimerRef = useRef(null);
   const showPerformanceNotice = useCallback((message) => {
     setPerformanceNotice(message);
     if (noticeTimerRef.current) {
@@ -1156,10 +1233,32 @@ export default function UnifiedSearchModal({
       setPerformanceNotice('');
     }, 4000);
   }, []);
+  useEffect(() => {
+    if (!graphStatus) return undefined;
+
+    if (graphStatusTimerRef.current) {
+      clearTimeout(graphStatusTimerRef.current);
+    }
+
+    graphStatusTimerRef.current = setTimeout(() => {
+      setGraphStatus('');
+      graphStatusTimerRef.current = null;
+    }, 2800);
+
+    return () => {
+      if (graphStatusTimerRef.current) {
+        clearTimeout(graphStatusTimerRef.current);
+        graphStatusTimerRef.current = null;
+      }
+    };
+  }, [graphStatus]);
   useEffect(
     () => () => {
       if (noticeTimerRef.current) {
         clearTimeout(noticeTimerRef.current);
+      }
+      if (graphStatusTimerRef.current) {
+        clearTimeout(graphStatusTimerRef.current);
       }
     },
     []
@@ -1229,16 +1328,18 @@ export default function UnifiedSearchModal({
   const [bridgeOverlayEnabled, setBridgeOverlayEnabled] = useState(false);
 
   // Zoom state
-  const [zoomLevel, setZoomLevel] = useState(1);
-  const zoomBucketRef = useRef(zoomLevel < ZOOM_LABEL_HIDE_THRESHOLD);
+  const [, setZoomLevel] = useState(1);
+  const [zoomBucket, setZoomBucket] = useState(() => getZoomBucket(1));
+  const zoomBucketRef = useRef(zoomBucket);
   useEffect(() => {
-    zoomBucketRef.current = zoomLevel < ZOOM_LABEL_HIDE_THRESHOLD;
-  }, [zoomLevel]);
+    zoomBucketRef.current = zoomBucket;
+  }, [zoomBucket]);
   const [hoveredClusterId, setHoveredClusterId] = useState(null);
 
   // Focus mode state - for local graph view
   const [focusNodeId, setFocusNodeId] = useState(null);
   const [focusDepth, setFocusDepth] = useState(1);
+  const [searchWithinScope, setSearchWithinScope] = useState(null);
 
   // Related clusters UI state (accordion + file list expansion)
   const [expandedRelatedClusters, setExpandedRelatedClusters] = useState(() => ({}));
@@ -1263,6 +1364,12 @@ export default function UnifiedSearchModal({
     setClusterFilters(getDefaultClusterFilters());
     setActiveFilters(getDefaultActiveFilters());
     setBridgeOverlayEnabled(false);
+    setWithinQuery('');
+    setDebouncedWithinQuery('');
+    setFocusNodeId(null);
+    setFocusDepth(1);
+    setSearchWithinScope(null);
+    setShowAdvancedFilters(false);
     setGuideInput('');
   }, []);
 
@@ -3048,24 +3155,64 @@ export default function UnifiedSearchModal({
     }
   }, []);
 
-  /**
-   * Search within a specific cluster - focuses the within-graph search on cluster files
-   */
-  const handleSearchWithinCluster = useCallback((clusterData) => {
-    const label = clusterData?.label || 'cluster';
-    // Set the within-graph search query to help user search within this cluster
-    setWithinQuery(`in:${label}`);
-    setGraphStatus(`Searching within "${label}" - enter your query above`);
+  const focusWithinFilterInput = useCallback(() => {
+    if (typeof document === 'undefined') return;
 
-    // If cluster is not expanded, expand it first
-    const clusterId = clusterData?.id || clusterData?.clusterId;
-    if (clusterId && !clusterData?.expanded) {
-      const memberIds = clusterData?.memberIds || [];
-      if (memberIds.length > 0) {
-        expandClusterRef.current?.(clusterId, memberIds);
+    const focusInput = () => {
+      const input = document.querySelector('[aria-label="Filter graph nodes"]');
+      if (input && typeof input.focus === 'function') {
+        input.focus();
+        if (typeof input.select === 'function') {
+          input.select();
+        }
       }
-    }
+    };
+
+    // Try now and shortly after re-render in case the Advanced section just opened.
+    setTimeout(focusInput, 0);
+    setTimeout(focusInput, 120);
   }, []);
+
+  /**
+   * Search within a specific cluster - reveals and focuses the graph filter input.
+   */
+  const handleSearchWithinCluster = useCallback(
+    (clusterData) => {
+      const label = clusterData?.label || 'cluster';
+      const clusterId = clusterData?.id || clusterData?.clusterId;
+      const memberIds = Array.isArray(clusterData?.memberIds)
+        ? clusterData.memberIds.filter((id) => typeof id === 'string' && id.length > 0)
+        : [];
+
+      // Ensure the user can immediately see and use the search control.
+      setSidebarSections((prev) => (prev.advanced ? prev : { ...prev, advanced: true }));
+      setWithinQuery('');
+      setGraphStatus(
+        `Searching within "${label}". Use the filter box in Advanced to refine results.`
+      );
+      focusWithinFilterInput();
+
+      // Scope visibility around this cluster while searching.
+      if (clusterId) {
+        setFocusNodeId(clusterId);
+        setFocusDepth(1);
+        setSearchWithinScope({
+          clusterId,
+          memberIds
+        });
+      } else {
+        setSearchWithinScope(null);
+      }
+
+      // If cluster is not expanded, expand it first.
+      if (clusterId && !clusterData?.expanded) {
+        if (memberIds.length > 0) {
+          expandClusterRef.current?.(clusterId, memberIds);
+        }
+      }
+    },
+    [focusWithinFilterInput]
+  );
 
   /**
    * Rename a cluster label (user override of auto-generated label)
@@ -3187,6 +3334,7 @@ export default function UnifiedSearchModal({
    */
   const handleClearFocus = useCallback(() => {
     setFocusNodeId(null);
+    setSearchWithinScope(null);
     setGraphStatus('Focus cleared - showing all nodes');
   }, []);
 
@@ -3759,6 +3907,12 @@ export default function UnifiedSearchModal({
       selectedNode
     ]
   );
+
+  const runCustomGuideIntent = useCallback(() => {
+    const text = guideInput.trim();
+    if (!text) return;
+    handleGuideIntent('custom', { text });
+  }, [guideInput, handleGuideIntent]);
 
   // ============================================================================
   // Debounce query
@@ -4870,7 +5024,7 @@ export default function UnifiedSearchModal({
           id: `cluster:${clusterId}->${id}`,
           source: clusterId,
           target: id,
-          type: 'default', // Using default bezier curve instead of straight
+          type: 'smartStep',
           animated: false,
           style: {
             stroke: '#fbbf24', // Amber-400
@@ -5541,10 +5695,21 @@ export default function UnifiedSearchModal({
       let scoreMap = null;
       const q = debouncedWithinQuery;
       let topMatches = [];
+      const activeScope =
+        searchWithinScope &&
+        focusNodeId &&
+        searchWithinScope.clusterId === focusNodeId &&
+        Array.isArray(searchWithinScope.memberIds)
+          ? searchWithinScope
+          : null;
+      const scopedMemberIds = activeScope ? new Set(activeScope.memberIds) : null;
+      const scoreTargetFileIds = scopedMemberIds
+        ? fileNodeIds.filter((id) => scopedMemberIds.has(id))
+        : fileNodeIds;
 
-      if (q && q.length >= 2 && fileNodeIds.length > 0) {
+      if (q && q.length >= 2 && scoreTargetFileIds.length > 0) {
         try {
-          const resp = await window.electronAPI?.embeddings?.scoreFiles?.(q, fileNodeIds);
+          const resp = await window.electronAPI?.embeddings?.scoreFiles?.(q, scoreTargetFileIds);
           if (cancelled || withinReqRef.current !== requestId) return;
 
           if (resp && resp.success === true && Array.isArray(resp.scores)) {
@@ -5562,39 +5727,52 @@ export default function UnifiedSearchModal({
 
       // 2. Calculate focus mode visibility
       const focusVisibleNodes = focusNodeId ? getNodesInFocus(focusNodeId, focusDepth) : null;
+      const scopeClusterId = activeScope?.clusterId;
+      const getNodeKind = (node) =>
+        node.data?.kind ||
+        (node.type === 'clusterNode'
+          ? 'cluster'
+          : node.type === 'queryNode'
+            ? 'query'
+            : node.type === 'folderNode'
+              ? 'folder'
+              : 'file');
+      const evaluateNodeVisibility = (node) => {
+        const kind = getNodeKind(node);
+        const isTypeActive = activeFilters.types.includes(kind);
+        let isConfidenceActive = true;
+        if (kind === 'cluster') {
+          const conf = ['high', 'medium', 'low'].includes(node.data?.confidence)
+            ? node.data?.confidence
+            : 'low';
+          isConfidenceActive = activeFilters.confidence.includes(conf);
+        }
+        const isInFocus = focusVisibleNodes ? focusVisibleNodes.has(node.id) : true;
+        const isInScope = scopedMemberIds
+          ? (kind === 'cluster' && node.id === scopeClusterId) ||
+            (kind === 'file' && scopedMemberIds.has(node.id))
+          : true;
+        return {
+          kind,
+          shouldHide: !isTypeActive || !isConfidenceActive || !isInFocus || !isInScope
+        };
+      };
+      const visibilityByNodeId = new Map();
+      const hiddenNodeIds = new Set();
+      nodes.forEach((node) => {
+        const visibility = evaluateNodeVisibility(node);
+        visibilityByNodeId.set(node.id, visibility);
+        if (visibility.shouldHide) {
+          hiddenNodeIds.add(node.id);
+        }
+      });
 
       // 3. Apply updates (Filters + Scores + Focus)
       graphActions.setNodes((prev) => {
         let changed = false;
         const updated = prev.map((n) => {
-          // Normalize kind from node type or data
-          const kind =
-            n.data?.kind ||
-            (n.type === 'clusterNode'
-              ? 'cluster'
-              : n.type === 'queryNode'
-                ? 'query'
-                : n.type === 'folderNode'
-                  ? 'folder'
-                  : 'file');
-
-          // -- Filter Logic --
-          const isTypeActive = activeFilters.types.includes(kind);
-
-          // Special case: if node is cluster, check confidence
-          let isConfidenceActive = true;
-          if (kind === 'cluster') {
-            // ClusterNode normalizes confidence to low/medium/high
-            const conf = ['high', 'medium', 'low'].includes(n.data?.confidence)
-              ? n.data?.confidence
-              : 'low';
-            isConfidenceActive = activeFilters.confidence.includes(conf);
-          }
-
-          // -- Focus Mode Logic --
-          const isInFocus = focusVisibleNodes ? focusVisibleNodes.has(n.id) : true;
-
-          const shouldHide = !isTypeActive || !isConfidenceActive || !isInFocus;
+          const visibility = visibilityByNodeId.get(n.id) || evaluateNodeVisibility(n);
+          const { kind, shouldHide } = visibility;
 
           // -- Score/Opacity Logic --
           let opacity = 1;
@@ -5666,32 +5844,6 @@ export default function UnifiedSearchModal({
         return changed ? updated : prev;
       });
 
-      // This ensures edges don't point to non-existent visual nodes
-      // Build set of hidden node IDs based on current filter state
-      const hiddenNodeIds = new Set();
-      nodes.forEach((n) => {
-        const kind =
-          n.data?.kind ||
-          (n.type === 'clusterNode'
-            ? 'cluster'
-            : n.type === 'queryNode'
-              ? 'query'
-              : n.type === 'folderNode'
-                ? 'folder'
-                : 'file');
-        const isTypeActive = activeFilters.types.includes(kind);
-        let isConfidenceActive = true;
-        if (kind === 'cluster') {
-          const conf = ['high', 'medium', 'low'].includes(n.data?.confidence)
-            ? n.data?.confidence
-            : 'low';
-          isConfidenceActive = activeFilters.confidence.includes(conf);
-        }
-        if (!isTypeActive || !isConfidenceActive) {
-          hiddenNodeIds.add(n.id);
-        }
-      });
-
       graphActions.setEdges((prevEdges) => {
         let edgeChanged = false;
         const updatedEdges = prevEdges.map((e) => {
@@ -5732,7 +5884,8 @@ export default function UnifiedSearchModal({
     nodes,
     focusNodeId,
     focusDepth,
-    getNodesInFocus
+    getNodesInFocus,
+    searchWithinScope
   ]);
 
   const onNodeClick = useCallback(
@@ -5784,9 +5937,10 @@ export default function UnifiedSearchModal({
 
   const handleGraphMove = useCallback((_, viewport) => {
     if (!viewport || typeof viewport.zoom !== 'number') return;
-    const nextBucket = viewport.zoom < ZOOM_LABEL_HIDE_THRESHOLD;
+    const nextBucket = getZoomBucket(viewport.zoom);
     if (nextBucket === zoomBucketRef.current) return;
     zoomBucketRef.current = nextBucket;
+    setZoomBucket(nextBucket);
     setZoomLevel(viewport.zoom);
   }, []);
 
@@ -5843,18 +5997,23 @@ export default function UnifiedSearchModal({
     });
   }, [nodes, selectedNodeId, showClusters]);
 
+  const visibleNodeIds = useMemo(() => {
+    if (showClusters) return null;
+    return new Set(nodes.filter((node) => node.data?.kind !== 'cluster').map((node) => node.id));
+  }, [nodes, showClusters]);
+
   // Split into baseEdges (expensive, no hover deps) and rfEdges (lightweight hover overlay)
   const baseEdges = useMemo(() => {
-    const filtered = showClusters
-      ? edges
-      : (() => {
-          const visibleNodeIds = new Set(rfNodes.map((n) => n.id));
-          return edges.filter((e) => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target));
-        })();
+    const filtered =
+      showClusters || !visibleNodeIds
+        ? edges
+        : edges.filter((e) => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target));
+
+    let styledEdges = filtered;
 
     // Bridge overlay: dim non-bridge edges when showing cluster bridges only
     if (bridgeOverlayEnabled && showClusters) {
-      return filtered.map((edge) => {
+      styledEdges = filtered.map((edge) => {
         const isBridge = edge.data?.kind === 'cross_cluster';
         return {
           ...edge,
@@ -5870,35 +6029,122 @@ export default function UnifiedSearchModal({
       });
     }
 
-    return filtered;
-  }, [edges, rfNodes, showClusters, bridgeOverlayEnabled]);
+    return applyParallelEdgeOffsets(styledEdges);
+  }, [edges, visibleNodeIds, showClusters, bridgeOverlayEnabled]);
+
+  const graphReadabilityProfile = useMemo(() => {
+    const nodeCount = rfNodes.length;
+    const edgeCount = baseEdges.length;
+    const edgePerNode = edgeCount / Math.max(nodeCount, 1);
+
+    const isSmall =
+      nodeCount <= SMALL_GRAPH_NODE_THRESHOLD && edgeCount <= SMALL_GRAPH_EDGE_THRESHOLD;
+    const isDense =
+      nodeCount >= DENSE_GRAPH_NODE_THRESHOLD ||
+      edgeCount >= DENSE_GRAPH_EDGE_THRESHOLD ||
+      (nodeCount >= SMALL_GRAPH_NODE_THRESHOLD && edgePerNode >= DENSE_GRAPH_EDGE_RATIO_THRESHOLD);
+
+    return { nodeCount, edgeCount, isSmall, isDense };
+  }, [rfNodes, baseEdges]);
 
   const rfEdges = useMemo(() => {
+    let edgesForRender = baseEdges;
+
     // hoveredClusterId + hasHoveredCluster which could desync and permanently
     // hide cross-cluster edges.
-    if (!hoveredClusterId) return baseEdges;
-    if (!showClusters || bridgeOverlayEnabled) return baseEdges;
+    if (hoveredClusterId && showClusters && !bridgeOverlayEnabled) {
+      const hoveredId = hoveredClusterId;
+      edgesForRender = baseEdges.map((edge) => {
+        if (edge.data?.kind !== 'cross_cluster') return edge;
+        const isConnected = edge.source === hoveredId || edge.target === hoveredId;
+        const targetOpacity = isConnected ? 0.8 : 0.1;
+        const currentOpacity = edge.style?.opacity ?? 1;
+        if (currentOpacity === targetOpacity) return edge;
+        return {
+          ...edge,
+          style: {
+            ...edge.style,
+            opacity: targetOpacity
+          },
+          className: isConnected
+            ? edge.className?.replace('opacity-0', 'opacity-100') || edge.className
+            : edge.className?.replace('opacity-100', 'opacity-0') || edge.className
+        };
+      });
+    }
 
-    // Hovered cluster highlighting: dim non-connected edges, highlight connected
-    const hoveredId = hoveredClusterId;
-    return baseEdges.map((edge) => {
-      if (edge.data?.kind !== 'cross_cluster') return edge;
-      const isConnected = edge.source === hoveredId || edge.target === hoveredId;
-      const targetOpacity = isConnected ? 0.8 : 0.1;
-      const currentOpacity = edge.style?.opacity ?? 1;
-      if (currentOpacity === targetOpacity) return edge;
+    let suppressEdgeLabelsForZoom = false;
+    let readabilityOpacityCap = null;
+    if (zoomBucket === 'far') {
+      suppressEdgeLabelsForZoom = true;
+      readabilityOpacityCap = graphReadabilityProfile.isDense ? 0.4 : 0.5;
+    } else if (zoomBucket === 'mid') {
+      if (graphReadabilityProfile.isSmall) {
+        suppressEdgeLabelsForZoom = false;
+        readabilityOpacityCap = null;
+      } else if (graphReadabilityProfile.isDense) {
+        suppressEdgeLabelsForZoom = true;
+        readabilityOpacityCap = 0.6;
+      } else {
+        suppressEdgeLabelsForZoom = false;
+        readabilityOpacityCap = 0.75;
+      }
+    }
+
+    if (!suppressEdgeLabelsForZoom && readabilityOpacityCap === null) {
+      return edgesForRender;
+    }
+
+    let changed = false;
+    const adjusted = edgesForRender.map((edge) => {
+      const kind = edge.data?.kind;
+      const shouldSoftenEdge =
+        readabilityOpacityCap !== null &&
+        (kind === 'similarity' || kind === 'knowledge' || kind === 'cross_cluster');
+
+      const currentOpacity = edge.style?.opacity;
+      const nextOpacity = shouldSoftenEdge
+        ? Math.min(typeof currentOpacity === 'number' ? currentOpacity : 1, readabilityOpacityCap)
+        : currentOpacity;
+
+      const currentShowLabels = edge.data?.showEdgeLabels ?? true;
+      const nextShowLabels = suppressEdgeLabelsForZoom ? false : currentShowLabels;
+
+      const needsStyleUpdate = nextOpacity !== currentOpacity;
+      const needsDataUpdate = nextShowLabels !== currentShowLabels;
+      if (!needsStyleUpdate && !needsDataUpdate) return edge;
+
+      changed = true;
       return {
         ...edge,
-        style: {
-          ...edge.style,
-          opacity: targetOpacity
-        },
-        className: isConnected
-          ? edge.className?.replace('opacity-0', 'opacity-100') || edge.className
-          : edge.className?.replace('opacity-100', 'opacity-0') || edge.className
+        ...(needsStyleUpdate
+          ? {
+              style: {
+                ...edge.style,
+                opacity: nextOpacity
+              }
+            }
+          : {}),
+        ...(needsDataUpdate
+          ? {
+              data: {
+                ...edge.data,
+                showEdgeLabels: nextShowLabels
+              }
+            }
+          : {})
       };
     });
-  }, [baseEdges, hoveredClusterId, showClusters, bridgeOverlayEnabled]);
+
+    return changed ? adjusted : edgesForRender;
+  }, [
+    baseEdges,
+    hoveredClusterId,
+    showClusters,
+    bridgeOverlayEnabled,
+    zoomBucket,
+    graphReadabilityProfile
+  ]);
 
   const rfFitViewOptions = useMemo(() => ({ padding: 0.2 }), []);
   const rfDefaultViewport = useMemo(() => ({ x: 0, y: 0, zoom: 1 }), []);
@@ -5935,8 +6181,15 @@ export default function UnifiedSearchModal({
     if (conf.length > 0 && conf.length < 3) {
       chips.push(`Conf: ${conf.join(', ')}`);
     }
+    const trimmedWithinQuery = withinQuery.trim();
+    if (trimmedWithinQuery) {
+      chips.push(`Within: ${trimmedWithinQuery}`);
+    }
+    if (focusNodeId) {
+      chips.push(`Focus: ${focusDepth} hop${focusDepth === 1 ? '' : 's'}`);
+    }
     return chips;
-  }, [activeFilters]);
+  }, [activeFilters, withinQuery, focusNodeId, focusDepth]);
 
   const hasGraphFilterIndicators = useMemo(
     () =>
@@ -7119,6 +7372,7 @@ export default function UnifiedSearchModal({
                           variant="primary"
                           size="sm"
                           onClick={runGraphSearch}
+                          disabled={query.trim().length < 2}
                           className="px-4 py-1.5 h-auto text-xs font-semibold shadow-sm"
                         >
                           Add
@@ -7597,16 +7851,20 @@ export default function UnifiedSearchModal({
                             <Input
                               value={guideInput}
                               onChange={(e) => setGuideInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  runCustomGuideIntent();
+                                }
+                              }}
                               placeholder="Describe what you need..."
                               className="h-8 text-sm bg-white"
                             />
                             <Button
                               variant="primary"
                               size="sm"
-                              onClick={() =>
-                                guideInput.trim() &&
-                                handleGuideIntent('custom', { text: guideInput })
-                              }
+                              onClick={runCustomGuideIntent}
+                              disabled={guideInput.trim().length === 0}
                               className="h-8 px-3 text-xs font-semibold"
                             >
                               Go
@@ -7787,6 +8045,8 @@ export default function UnifiedSearchModal({
                           Filter Visibility
                         </Text>
                         <Input
+                          id="graph-within-filter-input"
+                          aria-label="Filter graph nodes"
                           value={withinQuery}
                           onChange={(e) => setWithinQuery(e.target.value)}
                           placeholder="Filter nodes..."
@@ -8135,6 +8395,11 @@ export default function UnifiedSearchModal({
                         transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
                       }
 
+                      .graph-zoomed-mid .file-node-label {
+                        opacity: 0.6;
+                        transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
+                      }
+
                       /* Hide connection handles (dots) for now */
                       .graph-flow .react-flow__handle {
                         opacity: 0;
@@ -8149,7 +8414,13 @@ export default function UnifiedSearchModal({
                     edgeTypes={stableEdgeTypes}
                     onNodesChange={onNodesChange}
                     onEdgesChange={graphActions.onEdgesChange}
-                    className={`graph-flow bg-[var(--surface-muted)] ${zoomLevel < ZOOM_LABEL_HIDE_THRESHOLD ? 'graph-zoomed-out' : ''}`}
+                    className={`graph-flow bg-[var(--surface-muted)] ${
+                      zoomBucket === 'far'
+                        ? 'graph-zoomed-out'
+                        : zoomBucket === 'mid' && !graphReadabilityProfile.isSmall
+                          ? 'graph-zoomed-mid'
+                          : ''
+                    }`}
                     onNodeClick={onNodeClick}
                     onNodeDoubleClick={onNodeDoubleClick}
                     onNodeMouseEnter={onNodeMouseEnter}
@@ -8210,18 +8481,29 @@ export default function UnifiedSearchModal({
                     )}
 
                     {/* Zoom Level Indicator */}
-                    {zoomLevel < ZOOM_LABEL_HIDE_THRESHOLD && (
+                    {zoomBucket === 'far' && (
                       <Text
                         as="div"
                         variant="tiny"
                         className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-system-gray-900/75 backdrop-blur-md text-white px-4 py-2 rounded-full shadow-lg pointer-events-none animate-in fade-in slide-in-from-bottom-2 [animation-duration:var(--motion-duration-standard)] [animation-timing-function:var(--motion-ease-emphasized)] z-50 border border-white/10"
                       >
-                        Labels hidden at this zoom • Use the zoom controls (+/-) to zoom in
+                        Labels hidden at this zoom • Use (+/-) to zoom in
+                      </Text>
+                    )}
+                    {zoomBucket === 'mid' && !graphReadabilityProfile.isSmall && (
+                      <Text
+                        as="div"
+                        variant="tiny"
+                        className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-md text-system-gray-700 px-3 py-1.5 rounded-full shadow-sm pointer-events-none animate-in fade-in [animation-duration:var(--motion-duration-fast)] [animation-timing-function:var(--motion-ease-standard)] z-50 border border-system-gray-200"
+                      >
+                        {graphReadabilityProfile.isDense
+                          ? 'Dense graph simplified for readability'
+                          : 'Connections softened while zoomed out for clarity'}
                       </Text>
                     )}
 
                     {/* Keyboard shortcuts hint (subtle, bottom-left) */}
-                    {nodes.length > 0 && zoomLevel >= ZOOM_LABEL_HIDE_THRESHOLD && (
+                    {nodes.length > 0 && zoomBucket !== 'far' && (
                       <Text
                         as="div"
                         variant="tiny"
@@ -8242,6 +8524,15 @@ export default function UnifiedSearchModal({
                         className="absolute top-4 left-1/2 -translate-x-1/2 bg-system-gray-900/80 backdrop-blur-md text-white px-3 py-1.5 rounded-full shadow-md pointer-events-none animate-in fade-in slide-in-from-top-1 [animation-duration:var(--motion-duration-fast)] [animation-timing-function:var(--motion-ease-standard)] z-40 border border-white/10"
                       >
                         {performanceNotice}
+                      </Text>
+                    )}
+                    {graphStatus && (
+                      <Text
+                        as="div"
+                        variant="tiny"
+                        className="absolute top-14 left-1/2 -translate-x-1/2 bg-white/95 text-system-gray-700 px-3 py-1.5 rounded-full shadow-sm pointer-events-none animate-in fade-in [animation-duration:var(--motion-duration-fast)] [animation-timing-function:var(--motion-ease-standard)] z-40 border border-system-gray-200"
+                      >
+                        {graphStatus}
                       </Text>
                     )}
                   </ReactFlow>

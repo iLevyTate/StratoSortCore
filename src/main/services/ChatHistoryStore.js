@@ -13,6 +13,8 @@ class ChatHistoryStore {
     this._initialized = false;
     this._hasMetaColumn = false;
     this._hasSortOrderColumn = false;
+    this._conversationCache = new Map();
+    this._conversationCacheLimit = 20;
   }
 
   async initialize() {
@@ -99,13 +101,23 @@ class ChatHistoryStore {
       VALUES (?, ?, ?)
     `);
     stmt.run(finalId, title, JSON.stringify(documentScope));
+    this._invalidateConversationCache(finalId);
     return { id: finalId, title, documentScope, createdAt: new Date().toISOString() };
   }
 
   getConversation(id) {
     this._checkInit();
     const conv = this._db.prepare('SELECT * FROM conversations WHERE id = ?').get(id);
-    if (!conv) return null;
+    if (!conv) {
+      this._invalidateConversationCache(id);
+      return null;
+    }
+
+    const cached = this._conversationCache.get(id);
+    if (cached && cached.updatedAt === conv.updated_at) {
+      this._touchConversationCacheEntry(id, cached);
+      return cached.value;
+    }
 
     const messages = this._hasSortOrderColumn
       ? this._db
@@ -117,7 +129,7 @@ class ChatHistoryStore {
           .prepare(`SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC`)
           .all(id);
 
-    return {
+    const parsed = {
       id: conv.id,
       title: conv.title,
       documentScope: JSON.parse(conv.document_scope || '[]'),
@@ -125,6 +137,8 @@ class ChatHistoryStore {
       updatedAt: conv.updated_at,
       messages: messages.map(this._parseMessage)
     };
+    this._setConversationCache(id, conv.updated_at, parsed);
+    return parsed;
   }
 
   listConversations(limit = 50, offset = 0) {
@@ -239,6 +253,7 @@ class ChatHistoryStore {
     `
       )
       .run(conversationId);
+    this._invalidateConversationCache(conversationId);
 
     return { id, ...message };
   }
@@ -246,6 +261,7 @@ class ChatHistoryStore {
   deleteConversation(id) {
     this._checkInit();
     this._db.prepare('DELETE FROM conversations WHERE id = ?').run(id);
+    this._invalidateConversationCache(id);
   }
 
   searchConversations(query) {
@@ -315,6 +331,7 @@ class ChatHistoryStore {
     this._db
       .prepare("UPDATE conversations SET title = ?, updated_at = datetime('now') WHERE id = ?")
       .run(title, conversationId);
+    this._invalidateConversationCache(conversationId);
   }
 
   exportAsMarkdown(conversationId) {
@@ -361,7 +378,30 @@ class ChatHistoryStore {
       this._initialized = false;
       this._hasMetaColumn = false;
       this._hasSortOrderColumn = false;
+      this._conversationCache.clear();
     }
+  }
+
+  _setConversationCache(id, updatedAt, value) {
+    if (!id) return;
+    if (this._conversationCache.has(id)) {
+      this._conversationCache.delete(id);
+    }
+    this._conversationCache.set(id, { updatedAt, value });
+    if (this._conversationCache.size > this._conversationCacheLimit) {
+      const oldestKey = this._conversationCache.keys().next().value;
+      if (oldestKey) this._conversationCache.delete(oldestKey);
+    }
+  }
+
+  _touchConversationCacheEntry(id, entry) {
+    this._conversationCache.delete(id);
+    this._conversationCache.set(id, entry);
+  }
+
+  _invalidateConversationCache(id) {
+    if (!id) return;
+    this._conversationCache.delete(id);
   }
 }
 
