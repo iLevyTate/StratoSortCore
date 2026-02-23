@@ -75,6 +75,7 @@ nul
 debug-analysis.js
 startup-validation.js
 verify-*.js
+!scripts/verify-*.js
 
 # Documentation build
 docs/_build/

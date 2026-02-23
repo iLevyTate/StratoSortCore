@@ -172,7 +172,8 @@ describe('constants', () => {
   describe('LIMITS', () => {
     test('defines file size limits', () => {
       expect(constants.LIMITS.MAX_FILE_SIZE).toBe(100 * 1024 * 1024);
-      expect(constants.LIMITS.MAX_PATH_LENGTH).toBe(260);
+      const expectedPathLength = { win32: 260, linux: 4096, darwin: 1024 }[process.platform] || 260;
+      expect(constants.LIMITS.MAX_PATH_LENGTH).toBe(expectedPathLength);
       expect(constants.LIMITS.MAX_FILENAME_LENGTH).toBe(255);
     });
   });

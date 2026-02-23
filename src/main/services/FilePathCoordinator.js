@@ -149,8 +149,8 @@ class FilePathCoordinator extends EventEmitter {
 
     logger.info('[FilePathCoordinator] Starting atomic path update', {
       operationId,
-      oldPath: path.basename(oldPath),
-      newPath: path.basename(newPath),
+      oldPath: path.win32.basename(oldPath),
+      newPath: path.win32.basename(newPath),
       type: options.type || PathChangeType.MOVE
     });
 
@@ -849,7 +849,7 @@ class FilePathCoordinator extends EventEmitter {
     const destId = getFileEmbeddingId(destPath, 'file');
     const destMeta = {
       path: destPath,
-      name: path.basename(destPath)
+      name: path.win32.basename(destPath)
     };
 
     if (this._vectorDbService.cloneFileEmbedding) {
@@ -877,7 +877,7 @@ class FilePathCoordinator extends EventEmitter {
       {
         oldPath,
         newPath,
-        newName: path.basename(newPath)
+        newName: path.win32.basename(newPath)
       }
     ]);
   }
@@ -893,7 +893,7 @@ class FilePathCoordinator extends EventEmitter {
     const historyUpdates = changes.map((c) => ({
       oldPath: c.oldPath,
       newPath: c.newPath,
-      newName: path.basename(c.newPath)
+      newName: path.win32.basename(c.newPath)
     }));
     await this._analysisHistoryService.updateEntryPaths(historyUpdates);
   }

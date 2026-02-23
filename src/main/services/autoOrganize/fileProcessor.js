@@ -379,7 +379,7 @@ async function processNewFile(filePath, smartFolders, options, suggestionService
 
     // Create file object
     const file = {
-      name: path.basename(filePath),
+      name: path.win32.basename(filePath),
       path: filePath,
       extension,
       analysis

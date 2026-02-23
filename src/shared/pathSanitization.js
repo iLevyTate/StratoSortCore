@@ -82,11 +82,13 @@ function sanitizePath(filePath) {
   // 3. Normalize the path first (resolves .., ., etc.)
   // This must happen BEFORE truncation so that ".." segments are resolved
   // and truncation cannot create a path traversal vector.
-  normalized = path.normalize(normalized);
+  const isWin32Path =
+    PLATFORM === 'win32' || /^[a-zA-Z]:[\\/]/.test(normalized) || normalized.includes('\\');
+  normalized = isWin32Path ? path.win32.normalize(normalized) : path.posix.normalize(normalized);
 
   // 4. Check for path traversal attempts AFTER normalization
   // Only treat ".." as traversal when it's an actual path segment.
-  const normalizedParts = normalized.split(path.sep).filter((part) => part.length > 0);
+  const normalizedParts = normalized.split(/[\\/]/).filter((part) => part.length > 0);
   if (normalizedParts.some((part) => part === '..')) {
     throw new Error('Invalid path: path traversal detected');
   }

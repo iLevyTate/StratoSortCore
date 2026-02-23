@@ -896,7 +896,7 @@ class EmbeddingQueue {
           if (item.meta && typeof item.meta === 'object') {
             item.meta.path = newPath;
             if (typeof item.meta.name === 'string') {
-              item.meta.name = path.basename(newPath);
+              item.meta.name = newPath.split(/[\\/]/).pop();
             }
           }
           queueUpdated++;

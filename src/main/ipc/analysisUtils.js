@@ -116,7 +116,7 @@ function buildErrorContext({ operation, filePath, error }) {
   return {
     operation,
     filePath,
-    fileName: path.basename(filePath),
+    fileName: path.win32.basename(filePath),
     fileExtension: path.extname(filePath),
     timestamp: new Date().toISOString(),
     error: error.message,
@@ -142,7 +142,7 @@ function buildErrorContext({ operation, filePath, error }) {
  * @returns {Object} Fallback analysis result with error context
  */
 function createAnalysisFallback(filePath, category, errorMessage, errorContext = {}) {
-  const fileName = path.basename(filePath);
+  const fileName = path.win32.basename(filePath);
   const fileExtension = path.extname(filePath);
   const isImage = category === 'images';
 
@@ -224,9 +224,12 @@ async function recordAnalysisResult({
 
     // Include all LLM-extracted fields for richer context in chat/queries
     const normalized = {
-      subject: normalizeText(result.subject || result.suggestedName || path.basename(filePath), {
-        maxLength: 255
-      }),
+      subject: normalizeText(
+        result.subject || result.suggestedName || path.win32.basename(filePath),
+        {
+          maxLength: 255
+        }
+      ),
       category: normalizeText(result.category || 'uncategorized', { maxLength: 100 }),
       tags: normalizeKeywords(Array.isArray(result.keywords) ? result.keywords : []),
       confidence: typeof result.confidence === 'number' ? result.confidence : 0,
