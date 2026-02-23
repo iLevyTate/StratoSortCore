@@ -40,10 +40,10 @@ jobs:
       matrix:
         include:
           - arch: x64
-            runner: macos-13
+            runner: macos-latest
             dist_script: dist:mac:x64
           - arch: arm64
-            runner: macos-14
+            runner: macos-latest
             dist_script: dist:mac:arm64
     runs-on: ${{ matrix.runner }}
 
