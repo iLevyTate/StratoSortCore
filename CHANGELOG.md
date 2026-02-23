@@ -14,9 +14,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Release Prep
 
-- Next release placeholder: update this section when preparing `v2.0.4` (or the next semver tag).
+- Next release placeholder: update this section when preparing `v2.0.5` (or the next semver tag).
 
-## [2.0.3] - 2026-02-23
+## [2.0.4] - 2026-02-23
 
 ### Fixed
 
