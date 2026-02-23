@@ -71,7 +71,6 @@ class AnalysisCacheService {
    * @private
    */
   _subscribeToInvalidationBus() {
-    // FIX #4: Track subscription attempt to ensure cleanup on failure
     let subscriptionAttempted = false;
     try {
       const bus = getCacheInvalidationBus();
@@ -99,7 +98,6 @@ class AnalysisCacheService {
       logger.debug(`[${this.name}] Subscribed to cache invalidation bus`);
     } catch (error) {
       logger.warn(`[${this.name}] Failed to subscribe to cache invalidation bus:`, error.message);
-      // FIX #4: If subscription was attempted but failed, ensure _unsubscribe is a no-op
       // to prevent null reference errors in shutdown()
       if (subscriptionAttempted && !this._unsubscribe) {
         this._unsubscribe = () => {}; // Safe no-op to prevent memory leaks on retry
@@ -116,7 +114,18 @@ class AnalysisCacheService {
   _invalidateForPath(filePath) {
     if (!filePath) return;
 
-    const invalidated = this._cache.invalidateWhere((key) => key.includes(filePath));
+    // Cache keys embed file paths as substrings (e.g., "version|model|...|/path/to/file.txt|size|mtime").
+    // Use includes() to match any key containing the path, but verify the match ends at a
+    // non-alphanumeric boundary to prevent /docs/foo from matching /docs/foobar.
+    const normalizedPath = filePath.replace(/[\\/]+$/, '');
+    const invalidated = this._cache.invalidateWhere((key) => {
+      const idx = key.indexOf(normalizedPath);
+      if (idx === -1) return false;
+      const afterIdx = idx + normalizedPath.length;
+      if (afterIdx >= key.length) return true;
+      const charAfter = key[afterIdx];
+      return charAfter === '|' || charAfter === '/' || charAfter === '\\' || charAfter === '-';
+    });
 
     if (invalidated > 0) {
       logger.debug(`[${this.name}] Invalidated ${invalidated} entries for path change`);
@@ -136,7 +145,6 @@ class AnalysisCacheService {
     const truncatedText =
       textContent?.length > MAX_TEXT_LENGTH ? textContent.slice(0, MAX_TEXT_LENGTH) : textContent;
 
-    // FIX: Use SHA256 instead of deprecated SHA1
     const hasher = crypto.createHash('sha256');
     // Include original length to prevent hash collision
     hasher.update(`${textContent?.length || 0}:`);
@@ -210,7 +218,6 @@ class AnalysisCacheService {
    * @returns {boolean} True if entry was deleted, false if key didn't exist
    */
   delete(key) {
-    // FIX #10: Return actual deletion result instead of always true
     return this._cache.delete(key);
   }
 

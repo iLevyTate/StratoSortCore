@@ -38,7 +38,10 @@ export function highlightMatches(text, query) {
 
   // Escape regex special characters and create pattern
   const escapedWords = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const pattern = new RegExp(`(${escapedWords.join('|')})`, 'gi');
+  const limitedWords = escapedWords.length > 50 ? escapedWords.slice(0, 50) : escapedWords;
+  const patternStr = limitedWords.join('|');
+  if (patternStr.length > 2000) return [{ text, highlight: false }];
+  const pattern = new RegExp(`(${patternStr})`, 'gi');
 
   const segments = [];
   let lastIndex = 0;

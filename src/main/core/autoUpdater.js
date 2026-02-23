@@ -11,7 +11,6 @@ const { BrowserWindow } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { IPC_EVENTS } = require('../../shared/constants');
 const { createLogger } = require('../../shared/logger');
-// FIX: Import safeSend for validated IPC event sending
 const { safeSend } = require('../ipc/ipcWrappers');
 
 const logger = createLogger('AutoUpdater');
@@ -29,7 +28,6 @@ function notifyRenderer(payload, getMainWindow) {
   try {
     const win = (getMainWindow ? getMainWindow() : null) || BrowserWindow.getAllWindows()[0];
     if (win && !win.isDestroyed()) {
-      // FIX: Use safeSend for validated IPC event sending
       const updatePayload =
         typeof payload === 'string'
           ? { status: payload }
@@ -154,7 +152,6 @@ async function initializeAutoUpdater(isDev, getMainWindow) {
       autoUpdater.on('update-available', updateAvailableHandler);
       autoUpdater.on('update-not-available', updateNotAvailableHandler);
       autoUpdater.on('update-downloaded', updateDownloadedHandler);
-      // FIX HIGH-57: Add progress listener
       autoUpdater.on('download-progress', downloadProgressHandler);
 
       // Store cleanup function
@@ -226,8 +223,10 @@ function cleanupAutoUpdater() {
 async function checkForUpdates() {
   try {
     await autoUpdater.checkForUpdatesAndNotify();
+    return { success: true };
   } catch (error) {
     logger.error('[UPDATER] Manual update check failed:', error);
+    return { success: false, error: error?.message || 'Failed to check for updates' };
   }
 }
 

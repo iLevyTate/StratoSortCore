@@ -44,17 +44,23 @@ export function useFileDrop(onFilesDropped) {
       e.stopPropagation();
       setIsDragging(false);
 
-      // FIX: Use optional chaining consistently for defensive null checks
       if (!e.dataTransfer) return;
 
-      const { paths } = extractDroppedFiles(e.dataTransfer);
+      const { paths, unresolvedNames = [] } = extractDroppedFiles(e.dataTransfer);
+      const candidatePaths = [...paths, ...unresolvedNames];
 
-      const uniquePaths = paths.filter((pathValue) =>
+      const uniquePaths = candidatePaths.filter((pathValue) =>
         isAbsolutePath(pathValue, { collapseWhitespace: false })
       );
 
-      if (uniquePaths.length > 0 && onFilesDropped) {
-        const fileObjects = uniquePaths.map((pathValue) => ({
+      const fallbackNames = candidatePaths.filter(
+        (pathValue) =>
+          typeof pathValue === 'string' && pathValue.length > 0 && !/[\\/]/.test(pathValue)
+      );
+      const normalizedUnique = Array.from(new Set([...uniquePaths, ...fallbackNames]));
+
+      if (normalizedUnique.length > 0 && onFilesDropped) {
+        const fileObjects = normalizedUnique.map((pathValue) => ({
           path: pathValue,
           name: extractFileName(pathValue),
           type: 'file' // Default type, caller can refine

@@ -1,5 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
-const { Logger, LOG_LEVELS } = require('../shared/logger');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 const { IpcRateLimiter } = require('./ipcRateLimiter');
 const { createIpcSanitizer } = require('./ipcSanitizer');
 const { createIpcValidator } = require('./ipcValidator');
@@ -7,10 +6,7 @@ const { sanitizePath } = require('../shared/pathSanitization');
 // Import performance constants for configuration values
 const { LIMITS: PERF_LIMITS, TIMEOUTS } = require('../shared/performanceConstants');
 // Import centralized security config to avoid channel definition drift
-const {
-  ALLOWED_RECEIVE_CHANNELS: SECURITY_RECEIVE_CHANNELS,
-  ALLOWED_SEND_CHANNELS: SECURITY_SEND_CHANNELS
-} = require('../shared/securityConfig');
+const { ALLOWED_RECEIVE_CHANNELS: SECURITY_RECEIVE_CHANNELS } = require('../shared/securityConfig');
 
 // === START GENERATED IPC_CHANNELS ===
 // Auto-generated from src/shared/constants.js
@@ -31,7 +27,8 @@ const IPC_CHANNELS = {
     COPY_FILE: 'files:copy',
     OPEN_FOLDER: 'files:open-folder',
     DELETE_FOLDER: 'files:delete-folder',
-    CLEANUP_ANALYSIS: 'files:cleanup-analysis'
+    CLEANUP_ANALYSIS: 'files:cleanup-analysis',
+    ADD_TAGS: 'files:add-tags'
   },
 
   // SMART_FOLDERS
@@ -131,6 +128,7 @@ const IPC_CHANNELS = {
     GET_CLUSTER_MEMBERS: 'embeddings:get-cluster-members',
     GET_SIMILARITY_EDGES: 'embeddings:get-similarity-edges',
     GET_FILE_METADATA: 'embeddings:get-file-metadata',
+    FIND_FILES_BY_PATHS: 'embeddings:find-files-by-paths',
     FIND_DUPLICATES: 'embeddings:find-duplicates',
     CLEAR_CLUSTERS: 'embeddings:clear-clusters'
   },
@@ -140,6 +138,7 @@ const IPC_CHANNELS = {
     GET_METRICS: 'system:get-metrics',
     GET_APPLICATION_STATISTICS: 'system:get-app-stats',
     APPLY_UPDATE: 'system:apply-update',
+    CHECK_FOR_UPDATES: 'system:check-for-updates',
     GET_CONFIG: 'system:get-config',
     GET_CONFIG_VALUE: 'system:get-config-value',
     RENDERER_ERROR_REPORT: 'renderer-error-report',
@@ -197,8 +196,16 @@ const IPC_CHANNELS = {
 
   // CHAT
   CHAT: {
-    QUERY: 'chat:query',
-    RESET_SESSION: 'chat:reset-session'
+    QUERY_STREAM: 'chat:query-stream',
+    CANCEL_STREAM: 'chat:cancel-stream',
+    STREAM_CHUNK: 'chat:stream-chunk',
+    STREAM_END: 'chat:stream-end',
+    RESET_SESSION: 'chat:reset-session',
+    LIST_CONVERSATIONS: 'chat:list-conversations',
+    GET_CONVERSATION: 'chat:get-conversation',
+    DELETE_CONVERSATION: 'chat:delete-conversation',
+    SEARCH_CONVERSATIONS: 'chat:search-conversations',
+    EXPORT_CONVERSATION: 'chat:export-conversation'
   },
 
   // KNOWLEDGE
@@ -207,31 +214,105 @@ const IPC_CHANNELS = {
     GET_RELATIONSHIP_STATS: 'knowledge:get-relationship-stats'
   }
 };
+
+const IPC_EVENTS = {
+  SYSTEM_METRICS: 'system-metrics',
+  OPERATION_PROGRESS: 'operation-progress',
+  APP_ERROR: 'app:error',
+  APP_UPDATE: 'app:update',
+  MENU_ACTION: 'menu-action',
+  OPEN_SEMANTIC_SEARCH: 'open-semantic-search',
+  SETTINGS_CHANGED_EXTERNAL: 'settings-changed-external',
+  FILE_OPERATION_COMPLETE: 'file-operation-complete',
+  NOTIFICATION: 'notification',
+  UNDO_REDO_STATE_CHANGED: 'undo-redo:state-changed',
+  BATCH_RESULTS_CHUNK: 'batch-results-chunk'
+};
 // === END GENERATED IPC_CHANNELS ===
 
-const preloadLogger = new Logger();
-preloadLogger.setContext('Preload');
-preloadLogger.setLevel(
-  process?.env?.NODE_ENV === 'development' ? LOG_LEVELS.DEBUG : LOG_LEVELS.INFO
-);
+const isPreloadDevMode = process?.env?.NODE_ENV === 'development';
+const PRELOAD_LOG_LEVEL = isPreloadDevMode ? 'debug' : 'info';
+
+const shouldLogPreloadLevel = (level) => {
+  const levels = { debug: 10, info: 20, warn: 30, error: 40 };
+  return levels[level] >= levels[PRELOAD_LOG_LEVEL];
+};
+
+const serializePreloadLogData = (value) => {
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: value.message,
+      stack: value.stack
+    };
+  }
+  return value;
+};
+
+const MAX_SYSTEM_LOG_MESSAGE_CHARS = 8192;
+const ALLOWED_SYSTEM_LOG_LEVELS = new Set(['trace', 'debug', 'info', 'warn', 'error', 'fatal']);
+
+const normalizeSystemLogPayload = (level, message, data) => {
+  const normalizedLevel = ALLOWED_SYSTEM_LOG_LEVELS.has(level) ? level : 'info';
+
+  let normalizedMessage = '';
+  if (typeof message === 'string') {
+    normalizedMessage = message;
+  } else if (message instanceof Error) {
+    normalizedMessage = message.message || String(message);
+  } else if (message != null) {
+    normalizedMessage = String(message);
+  }
+  if (!normalizedMessage) {
+    normalizedMessage = '[renderer-log]';
+  }
+  if (normalizedMessage.length > MAX_SYSTEM_LOG_MESSAGE_CHARS) {
+    normalizedMessage = normalizedMessage.slice(0, MAX_SYSTEM_LOG_MESSAGE_CHARS);
+  }
+
+  const serializedData = serializePreloadLogData(data);
+  let normalizedData = {};
+  if (serializedData && typeof serializedData === 'object' && !Array.isArray(serializedData)) {
+    normalizedData = serializedData;
+  } else if (Array.isArray(serializedData)) {
+    normalizedData = { items: serializedData };
+  } else if (serializedData != null) {
+    normalizedData = { value: serializedData };
+  }
+
+  return {
+    level: normalizedLevel,
+    message: normalizedMessage,
+    data: normalizedData
+  };
+};
+
+/* eslint-disable no-console */
+const writePreloadLog = (level, message, data) => {
+  if (!shouldLogPreloadLevel(level)) return;
+  const payload = serializePreloadLogData(data);
+  const prefix = '[Preload]';
+  if (level === 'error') {
+    console.error(prefix, message, payload ?? '');
+    return;
+  }
+  if (level === 'warn') {
+    console.warn(prefix, message, payload ?? '');
+    return;
+  }
+  if (level === 'debug') {
+    console.debug(prefix, message, payload ?? '');
+    return;
+  }
+  console.info(prefix, message, payload ?? '');
+};
+/* eslint-enable no-console */
 
 const log = {
-  debug: (message, data) => preloadLogger.debug(message, data),
-  info: (message, data) => preloadLogger.info(message, data),
-  warn: (message, data) => preloadLogger.warn(message, data),
-  error: (message, error) => {
-    let errorPayload = error;
-    if (error instanceof Error) {
-      errorPayload = {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      };
-    } else if (typeof error === 'string') {
-      errorPayload = { detail: error };
-    }
-    preloadLogger.error(message, errorPayload);
-  }
+  debug: (message, data) => writePreloadLog('debug', message, data),
+  info: (message, data) => writePreloadLog('info', message, data),
+  warn: (message, data) => writePreloadLog('warn', message, data),
+  error: (message, error) => writePreloadLog('error', message, error)
 };
 
 const buildEmbeddingSearchPayload = (query, options = {}) => {
@@ -283,16 +364,10 @@ const ALLOWED_CHANNELS = {
   KNOWLEDGE: Object.values(IPC_CHANNELS.KNOWLEDGE || {})
 };
 
-// FIX: Use centralized security config to prevent drift between preload and main process
-// FIX: Use IPC_CHANNELS constant instead of hardcoded string
 const ALLOWED_RECEIVE_CHANNELS = [...SECURITY_RECEIVE_CHANNELS];
 
-// Allowed send channels (for ipcRenderer.send, not invoke)
-// FIX: Use centralized security config
-const ALLOWED_SEND_CHANNELS = [...SECURITY_SEND_CHANNELS];
-
-// Flatten allowed send channels for validation
-const ALL_SEND_CHANNELS = Object.values(ALLOWED_CHANNELS).flat();
+// Flatten allowed send channels for validation (Set for O(1) lookup and no coercion edge cases)
+const ALL_SEND_CHANNELS = new Set(Object.values(ALLOWED_CHANNELS).flat());
 
 const THROTTLED_CHANNELS = new Map([
   // Avoid request bursts on large folder scans.
@@ -340,7 +415,6 @@ class SecureIPCManager {
       channel === IPC_CHANNELS.ANALYSIS.ANALYZE_IMAGE ||
       channel === IPC_CHANNELS.ANALYSIS.ANALYZE_DOCUMENT ||
       channel === IPC_CHANNELS.ANALYSIS.ANALYZE_BATCH ||
-      channel === IPC_CHANNELS.CHAT.QUERY ||
       channel === IPC_CHANNELS.SUGGESTIONS.GET_BATCH_SUGGESTIONS ||
       channel === IPC_CHANNELS.SUGGESTIONS.GET_FILE_SUGGESTIONS ||
       channel === IPC_CHANNELS.FILES.PERFORM_OPERATION ||
@@ -369,6 +443,11 @@ class SecureIPCManager {
       channel === IPC_CHANNELS.EMBEDDINGS.REANALYZE_ALL
     ) {
       timeout = TIMEOUTS.AI_ANALYSIS_BATCH || 300000;
+    }
+    // Chat streaming involves retrieval (search + BM25 rebuild + re-ranking)
+    // plus LLM inference, which routinely exceeds the 30s default timeout
+    if (channel === IPC_CHANNELS.CHAT.QUERY_STREAM) {
+      timeout = TIMEOUTS.AI_ANALYSIS_LONG || 180000;
     }
     return timeout;
   }
@@ -504,7 +583,6 @@ class SecureIPCManager {
     };
   }
 
-  // FIX CRIT-35: Remove async to ensure synchronous execution up to return
   enqueueThrottled(channel, task) {
     const STALE_QUEUE_TIMEOUT_MS = 30000;
 
@@ -550,7 +628,7 @@ class SecureIPCManager {
   async safeInvokeCore(channel, ...args) {
     try {
       // Channel validation
-      if (!ALL_SEND_CHANNELS.includes(channel)) {
+      if (!ALL_SEND_CHANNELS.has(channel)) {
         log.warn(`Blocked invoke to unauthorized channel: ${channel}`);
         throw new Error(`Unauthorized IPC channel: ${channel}`);
       }
@@ -631,7 +709,6 @@ class SecureIPCManager {
     }
 
     const createdAt = Date.now();
-    // FIX: Use timestamp (not counter) in key so audit can determine listener age.
     const listenerKey = `${channel}_${++this._listenerCounter}_${createdAt}`;
 
     const wrappedCallback = (event, ...args) => {
@@ -711,7 +788,8 @@ try {
     directoryScanTimeoutMs: TIMEOUTS.DIRECTORY_SCAN || 60000,
     scanStructureInvokeTimeoutMs: secureIPC._getInvokeTimeout(
       IPC_CHANNELS.SMART_FOLDERS.SCAN_STRUCTURE
-    )
+    ),
+    chatQueryStreamTimeoutMs: secureIPC._getInvokeTimeout(IPC_CHANNELS.CHAT.QUERY_STREAM)
   });
 } catch {
   // Non-fatal (logging only)
@@ -799,6 +877,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ...stats
       };
     },
+    getPathForDroppedFile: (file) => {
+      try {
+        if (!file || typeof webUtils?.getPathForFile !== 'function') return '';
+        return webUtils.getPathForFile(file) || '';
+      } catch {
+        return '';
+      }
+    },
     getDirectoryContents: (dirPath) =>
       secureIPC.safeInvoke(IPC_CHANNELS.FILES.GET_FILES_IN_DIRECTORY, dirPath),
     organize: (operations) =>
@@ -865,7 +951,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         log.error('File analysis security check failed:', error);
         return Promise.reject(error);
       }
-    }
+    },
+    addTags: (fileIds, tags) => secureIPC.safeInvoke(IPC_CHANNELS.FILES.ADD_TAGS, fileIds, tags)
   },
 
   // Smart Folders
@@ -964,6 +1051,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       }),
     getFileMetadata: (fileIds) =>
       secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_FILE_METADATA, { fileIds }),
+    findFilesByPaths: (paths) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FIND_FILES_BY_PATHS, { paths }),
     findDuplicates: (options) =>
       secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FIND_DUPLICATES, options || {}),
     clearClusters: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.CLEAR_CLUSTERS)
@@ -971,9 +1060,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Chat
   chat: {
-    query: (payload) => secureIPC.safeInvoke(IPC_CHANNELS.CHAT.QUERY, payload),
+    queryStream: (payload) => secureIPC.safeInvoke(IPC_CHANNELS.CHAT.QUERY_STREAM, payload),
+    cancelStream: (payload) => secureIPC.safeInvoke(IPC_CHANNELS.CHAT.CANCEL_STREAM, payload),
+    onStreamChunk: (callback) => secureIPC.safeOn(IPC_CHANNELS.CHAT.STREAM_CHUNK, callback),
+    onStreamEnd: (callback) => secureIPC.safeOn(IPC_CHANNELS.CHAT.STREAM_END, callback),
     resetSession: (sessionId) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.CHAT.RESET_SESSION, { sessionId })
+      secureIPC.safeInvoke(IPC_CHANNELS.CHAT.RESET_SESSION, { sessionId }),
+    listConversations: (limit, offset) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.CHAT.LIST_CONVERSATIONS, { limit, offset }),
+    getConversation: (id) => secureIPC.safeInvoke(IPC_CHANNELS.CHAT.GET_CONVERSATION, { id }),
+    deleteConversation: (id) => secureIPC.safeInvoke(IPC_CHANNELS.CHAT.DELETE_CONVERSATION, { id }),
+    searchConversations: (query) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.CHAT.SEARCH_CONVERSATIONS, { query }),
+    exportConversation: (id) => secureIPC.safeInvoke(IPC_CHANNELS.CHAT.EXPORT_CONVERSATION, { id })
   },
 
   // Knowledge
@@ -1052,14 +1151,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getApplicationStatistics: () =>
       secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_APPLICATION_STATISTICS),
     applyUpdate: () => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.APPLY_UPDATE),
+    checkForUpdates: () => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.CHECK_FOR_UPDATES),
     getConfig: () => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_CONFIG),
     getConfigValue: (path) => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_CONFIG_VALUE, path),
     getRecommendedConcurrency: () =>
       secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_RECOMMENDED_CONCURRENCY),
     log: (level, message, data) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.LOG, { level, message, data }),
+      secureIPC.safeInvoke(
+        IPC_CHANNELS.SYSTEM.LOG,
+        normalizeSystemLogPayload(level, message, data)
+      ),
     exportLogs: () => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.EXPORT_LOGS),
-    onOpenSemanticSearch: (callback) => secureIPC.safeOn('open-semantic-search', callback)
+    onOpenSemanticSearch: (callback) => secureIPC.safeOn(IPC_EVENTS.OPEN_SEMANTIC_SEARCH, callback)
   },
 
   // Window
@@ -1110,34 +1213,51 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Event Listeners
   events: {
-    onOperationProgress: (callback) => secureIPC.safeOn('operation-progress', callback),
-    onAppError: (callback) => secureIPC.safeOn('app:error', callback),
-    onAppUpdate: (callback) => secureIPC.safeOn('app:update', callback),
-    onSystemMetrics: (callback) => secureIPC.safeOn('system-metrics', callback),
-    onMenuAction: (callback) => secureIPC.safeOn('menu-action', callback),
-    onSettingsChanged: (callback) => secureIPC.safeOn('settings-changed-external', callback),
-    onFileOperationComplete: (callback) => secureIPC.safeOn('file-operation-complete', callback),
-    onNotification: (callback) => secureIPC.safeOn('notification', callback),
-    onBatchResultsChunk: (callback) => secureIPC.safeOn('batch-results-chunk', callback),
-    sendError: (errorData) => {
-      try {
-        if (!errorData || typeof errorData !== 'object' || !errorData.message) return;
-        const channel = IPC_CHANNELS.SYSTEM.RENDERER_ERROR_REPORT;
-        if (!ALLOWED_SEND_CHANNELS.includes(channel)) return;
-        const sanitized = {
-          ...(typeof errorData.message === 'string' && {
-            message: errorData.message.slice(0, 2048)
-          }),
-          ...(typeof errorData.stack === 'string' && { stack: errorData.stack.slice(0, 4096) }),
-          ...(typeof errorData.componentStack === 'string' && {
-            componentStack: errorData.componentStack.slice(0, 4096)
-          })
-        };
-        ipcRenderer.send(channel, sanitized);
-      } catch (error) {
-        log.error('[events.sendError] Failed to send error report:', error);
-      }
-    }
+    onOperationProgress: (callback) => secureIPC.safeOn(IPC_EVENTS.OPERATION_PROGRESS, callback),
+    onAppError: (callback) => secureIPC.safeOn(IPC_EVENTS.APP_ERROR, callback),
+    onAppUpdate: (callback) => secureIPC.safeOn(IPC_EVENTS.APP_UPDATE, callback),
+    onSystemMetrics: (callback) => secureIPC.safeOn(IPC_EVENTS.SYSTEM_METRICS, callback),
+    onMenuAction: (callback) => secureIPC.safeOn(IPC_EVENTS.MENU_ACTION, callback),
+    onSettingsChanged: (callback) =>
+      secureIPC.safeOn(IPC_EVENTS.SETTINGS_CHANGED_EXTERNAL, callback),
+    onFileOperationComplete: (callback) =>
+      secureIPC.safeOn(IPC_EVENTS.FILE_OPERATION_COMPLETE, callback),
+    onNotification: (callback) => secureIPC.safeOn(IPC_EVENTS.NOTIFICATION, callback),
+    onBatchResultsChunk: (callback) => secureIPC.safeOn(IPC_EVENTS.BATCH_RESULTS_CHUNK, callback),
+    sendError: (() => {
+      let _sendErrorCount = 0;
+      let _sendErrorWindowStart = Date.now();
+      const SEND_ERROR_MAX_PER_SEC = 10;
+
+      return (errorData) => {
+        try {
+          if (!errorData || typeof errorData !== 'object' || !errorData.message) return;
+
+          // Rate limit: max 10 error reports per second
+          const now = Date.now();
+          if (now - _sendErrorWindowStart > 1000) {
+            _sendErrorCount = 0;
+            _sendErrorWindowStart = now;
+          }
+          if (++_sendErrorCount > SEND_ERROR_MAX_PER_SEC) return;
+
+          const channel = IPC_CHANNELS.SYSTEM.RENDERER_ERROR_REPORT;
+          if (!ALL_SEND_CHANNELS.has(channel)) return;
+          const sanitized = {
+            ...(typeof errorData.message === 'string' && {
+              message: errorData.message.slice(0, 2048)
+            }),
+            ...(typeof errorData.stack === 'string' && { stack: errorData.stack.slice(0, 4096) }),
+            ...(typeof errorData.componentStack === 'string' && {
+              componentStack: errorData.componentStack.slice(0, 4096)
+            })
+          };
+          ipcRenderer.send(channel, sanitized);
+        } catch (error) {
+          log.error('[events.sendError] Failed to send error report:', error);
+        }
+      };
+    })()
   },
 
   // Settings

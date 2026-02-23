@@ -19,6 +19,7 @@ import StatusBadge from '../ui/StatusBadge';
 import { Heading, Text, Caption } from '../ui/Typography';
 import { formatDisplayPath } from '../../utils/pathDisplay';
 import { selectRedactPaths } from '../../store/selectors';
+import { filesIpc } from '../../services/ipc';
 
 const SmartFolderItem = memo(function SmartFolderItem({
   folder,
@@ -52,12 +53,27 @@ const SmartFolderItem = memo(function SmartFolderItem({
   const cardAnimationClass = shouldAnimateEntrance ? 'animate-slide-in-right' : '';
   const cardAnimationDelay = shouldAnimateEntrance ? `${index * 0.05}s` : undefined;
 
+  const handleBrowsePath = async () => {
+    try {
+      const result = await filesIpc.selectDirectory();
+      if (result?.success && result.path) {
+        setEditingFolder((prev) => ({
+          ...(prev || folder),
+          path: result.path
+        }));
+      }
+    } catch {
+      addNotification?.('Failed to browse folder', 'error');
+    }
+  };
+
   // Compact view
   if (compact && !isExpanded && !isEditing) {
     return (
       <Card
+        data-testid="folder-item"
         variant="compact"
-        className="flex items-center gap-3 transition-all duration-200 hover:scale-[1.01] hover:shadow-md cursor-pointer active:scale-[0.99]"
+        className="flex items-center gap-3 transition-colors transition-shadow [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] hover:shadow-md cursor-pointer"
         onClick={() => onToggleExpand?.(folder.id)}
         role="button"
         tabIndex={0}
@@ -88,6 +104,7 @@ const SmartFolderItem = memo(function SmartFolderItem({
   if (isEditing) {
     return (
       <Card
+        data-testid="folder-item"
         variant="elevated"
         className={`flex flex-col gap-4 ${cardAnimationClass}`}
         style={{ animationDelay: cardAnimationDelay }}
@@ -121,22 +138,28 @@ const SmartFolderItem = memo(function SmartFolderItem({
               if (e.key === 'Escape') onCancelEdit();
             }}
           />
-          <Input
-            type={redactPaths ? 'password' : 'text'}
-            value={editingFolder.path || ''}
-            onChange={(e) =>
-              setEditingFolder((prev) => ({
-                ...(prev || folder),
-                path: e.target.value
-              }))
-            }
-            className="flex-1"
-            placeholder="Folder path"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') onSaveEdit();
-              if (e.key === 'Escape') onCancelEdit();
-            }}
-          />
+          <div className="flex flex-1 gap-2">
+            <Input
+              type={redactPaths ? 'password' : 'text'}
+              value={editingFolder.path || ''}
+              onChange={(e) =>
+                setEditingFolder((prev) => ({
+                  ...(prev || folder),
+                  path: e.target.value
+                }))
+              }
+              className="flex-1"
+              placeholder="Folder path"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSaveEdit();
+                if (e.key === 'Escape') onCancelEdit();
+              }}
+            />
+            <Button type="button" variant="secondary" size="sm" onClick={handleBrowsePath}>
+              <FolderOpen className="w-4 h-4" />
+              Browse
+            </Button>
+          </div>
         </div>
 
         <div className="relative">
@@ -200,6 +223,7 @@ const SmartFolderItem = memo(function SmartFolderItem({
   // Expanded view
   return (
     <Card
+      data-testid="folder-item"
       variant="default"
       className={`flex flex-col gap-4 h-full ${cardAnimationClass}`}
       style={{ animationDelay: cardAnimationDelay }}

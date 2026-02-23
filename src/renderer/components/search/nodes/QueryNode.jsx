@@ -63,12 +63,12 @@ const QueryNode = memo(({ data, selected }) => {
   return (
     <div
       className={`
-        relative px-3 py-2 rounded-lg border-2 shadow-sm min-w-[120px] max-w-[180px]
+        relative px-3 py-2 rounded-lg border-2 shadow-sm w-[220px] min-h-[84px] overflow-hidden
         transition-colors duration-200 cursor-pointer
         ${
           selected
-            ? 'border-indigo-500 bg-indigo-50 shadow-md ring-2 ring-indigo-300'
-            : 'border-indigo-200 bg-gradient-to-br from-indigo-50 to-blue-50 hover:border-indigo-400'
+            ? 'border-stratosort-indigo bg-stratosort-indigo/10 shadow-md ring-2 ring-stratosort-indigo/30'
+            : 'border-stratosort-indigo/30 bg-stratosort-indigo/5 hover:border-stratosort-indigo/50'
         }
       `}
       onContextMenu={handleContextMenu}
@@ -100,7 +100,7 @@ const QueryNode = memo(({ data, selected }) => {
             role="menuitem"
             variant="ghost"
             size="sm"
-            leftIcon={<Search className="w-4 h-4 text-indigo-600" />}
+            leftIcon={<Search className="w-4 h-4 text-stratosort-indigo" />}
             onClick={(e) => {
               e.stopPropagation();
               handleMenuAction(handleSearchAgain);
@@ -113,20 +113,20 @@ const QueryNode = memo(({ data, selected }) => {
       )}
 
       <div className="flex items-start gap-2">
-        <MessageSquare className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+        <MessageSquare className="w-4 h-4 text-stratosort-indigo shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] uppercase tracking-wider text-indigo-500 font-medium">
+          <div className="text-xs uppercase tracking-wider text-stratosort-indigo font-medium">
             Query
           </div>
           <div
-            className="file-node-label text-xs font-medium text-[var(--color-system-gray-900)] truncate"
+            className="file-node-label text-xs font-medium text-[var(--color-system-gray-900)] clamp-2 break-all leading-snug"
             title={queryText}
           >
             {queryText}
           </div>
         </div>
       </div>
-      <Handle type="source" position={Position.Right} className="!bg-indigo-500 !w-2 !h-2" />
+      <Handle type="source" position={Position.Right} className="!bg-stratosort-indigo !w-2 !h-2" />
     </div>
   );
 });

@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from 'reactflow';
 import BaseEdgeTooltip from './BaseEdgeTooltip';
 import { useElkPath, useEdgeHover } from './useEdgeInteraction';
+import { Text } from '../ui/Typography';
 
 /**
  * KnowledgeEdge
@@ -25,17 +26,18 @@ const KnowledgeEdge = memo(
   }) => {
     const { isHovered, handleMouseEnter, handleMouseLeave } = useEdgeHover();
     const elkPath = useElkPath(data);
+    const parallelOffset = Number(data?.parallelOffset || 0);
 
     const [smoothPath, labelX, labelY] = getSmoothStepPath({
       sourceX,
-      sourceY,
+      sourceY: sourceY + parallelOffset,
       sourcePosition,
       targetX,
-      targetY,
+      targetY: targetY + parallelOffset,
       targetPosition,
       borderRadius: 16,
       centerX: (sourceX + targetX) / 2,
-      centerY: (sourceY + targetY) / 2
+      centerY: (sourceY + targetY) / 2 + parallelOffset
     });
 
     const edgePath = elkPath || smoothPath;
@@ -52,6 +54,8 @@ const KnowledgeEdge = memo(
       opacity: isHovered ? 1 : 0.8,
       filter: isHovered ? 'drop-shadow(0 0 4px #22c55e)' : 'none',
       transition: 'all 0.2s ease',
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
       ...style
     };
 
@@ -117,10 +121,14 @@ const KnowledgeEdge = memo(
               <div className="text-system-gray-500">Shared analysis metadata</div>
             )}
             {(sourceLabel || targetLabel) && (
-              <div className="text-[11px] text-system-gray-500 pt-1 border-t border-system-gray-200">
+              <Text
+                as="div"
+                variant="tiny"
+                className="text-system-gray-500 pt-1 border-t border-system-gray-200"
+              >
                 {sourceLabel && <div>A: {sourceLabel.slice(0, 50)}</div>}
                 {targetLabel && <div>B: {targetLabel.slice(0, 50)}</div>}
-              </div>
+              </Text>
             )}
           </BaseEdgeTooltip>
         )}
@@ -166,7 +174,8 @@ KnowledgeEdge.propTypes = {
     }),
     targetData: PropTypes.shape({
       label: PropTypes.string
-    })
+    }),
+    parallelOffset: PropTypes.number
   }),
   style: PropTypes.object,
   markerEnd: PropTypes.oneOfType([PropTypes.string, PropTypes.object])

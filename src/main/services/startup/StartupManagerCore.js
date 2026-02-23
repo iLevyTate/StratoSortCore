@@ -13,6 +13,7 @@ const { withTimeout, delay } = require('../../../shared/promiseUtils');
 const { getDataMigrationService } = require('../migration');
 const { AI_DEFAULTS } = require('../../../shared/constants');
 const { getModel } = require('../../../shared/modelRegistry');
+const { runPreflightChecks } = require('./preflightChecks');
 
 // In-process services
 const logger = createLogger('StartupManager');
@@ -214,13 +215,29 @@ class StartupManager {
     }
   }
 
-  async startup() {
+  abortStartup(reason = 'Startup aborted externally') {
+    if (this.startupController && !this.startupController.signal.aborted) {
+      this.startupController.abort(reason);
+    }
+  }
+
+  async startup(options = {}) {
+    const externalSignal = options?.signal;
     this.startupState = 'running';
     this.reportProgress('starting', 'Application starting...', 0);
 
     // Create abort controller for startup sequence
     this.startupController = new AbortController();
     const { signal } = this.startupController;
+    const onExternalAbort = () => {
+      this.abortStartup(externalSignal?.reason || 'Startup aborted by parent operation');
+    };
+
+    if (externalSignal?.aborted) {
+      onExternalAbort();
+    } else if (externalSignal) {
+      externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+    }
 
     try {
       // Run startup sequence with timeout
@@ -269,6 +286,9 @@ class StartupManager {
       });
       throw error;
     } finally {
+      if (externalSignal) {
+        externalSignal.removeEventListener('abort', onExternalAbort);
+      }
       this.startupController = null;
     }
   }
@@ -277,18 +297,36 @@ class StartupManager {
     if (signal?.aborted) return;
     logger.info('[STARTUP] Beginning internal startup sequence');
 
-    // Phase 0: Data migration (best-effort)
-    this.reportProgress('migration', 'Checking data migration status...', 5);
+    // Phase 0: Preflight checks
+    const errorsBeforePreflight = this.errors.length;
+    await runPreflightChecks({
+      reportProgress: (phase, message, progress) => this.reportProgress(phase, message, progress),
+      errors: this.errors
+    });
+    const preflightErrors = this.errors.slice(errorsBeforePreflight);
+    const criticalPreflightErrors = preflightErrors.filter((err) => err?.critical);
+    if (criticalPreflightErrors.length > 0) {
+      const preflightError = new Error('Critical pre-flight checks failed');
+      logger.error('[STARTUP] Critical pre-flight checks failed', { criticalPreflightErrors });
+      this.reportProgress('preflight', 'Critical startup checks failed', 10, {
+        critical: true,
+        error: preflightError.message
+      });
+      throw preflightError;
+    }
+
+    // Phase 1: Data migration (best-effort)
+    this.reportProgress('migration', 'Checking data migration status...', 12);
     try {
       if (signal?.aborted) throw new Error('Startup aborted');
       const migrationService = getDataMigrationService();
       const needsMigration = await migrationService.needsMigration();
       if (needsMigration) {
-        this.reportProgress('migration', 'Migrating legacy vector data...', 10);
+        this.reportProgress('migration', 'Migrating legacy vector data...', 15);
         const result = await migrationService.migrate({
           onProgress: (update) => {
             if (update?.message) {
-              this.reportProgress('migration', update.message, 10, {
+              this.reportProgress('migration', update.message, 15, {
                 progress: update.progress
               });
             }
@@ -300,15 +338,15 @@ class StartupManager {
             error: result?.errors?.[0] || 'Data migration failed',
             critical: false
           });
-          this.reportProgress('migration', 'Data migration failed (continuing)', 10, {
+          this.reportProgress('migration', 'Data migration failed (continuing)', 15, {
             warning: true,
             error: result?.errors?.[0]
           });
         } else {
-          this.reportProgress('migration', 'Data migration completed', 10);
+          this.reportProgress('migration', 'Data migration completed', 15);
         }
       } else {
-        this.reportProgress('migration', 'No legacy data migration required', 10);
+        this.reportProgress('migration', 'No legacy data migration required', 15);
       }
     } catch (error) {
       if (signal?.aborted || error.message === 'Startup aborted') throw error;
@@ -318,23 +356,23 @@ class StartupManager {
         error: error.message,
         critical: false
       });
-      this.reportProgress('migration', 'Data migration error (continuing)', 10, {
+      this.reportProgress('migration', 'Data migration error (continuing)', 15, {
         warning: true,
         error: error.message
       });
     }
 
-    // Phase 1: Services
+    // Phase 2: Services
     if (signal?.aborted) throw new Error('Startup aborted');
     await this.initializeServices(signal);
     this._verifyPhaseHealth('services', { requireVectorDb: true });
 
-    // Phase 2: Check model availability (non-blocking)
+    // Phase 3: Check model availability (non-blocking)
     if (signal?.aborted) throw new Error('Startup aborted');
     await this._checkModelAvailability();
     this._verifyPhaseHealth('models', { requireVectorDb: true });
 
-    // Phase 3: App Services (Placeholders for other initializers)
+    // Phase 4: App Services (Placeholders for other initializers)
     if (signal?.aborted) throw new Error('Startup aborted');
     this.reportProgress('app-services', 'Initializing application components...', 85);
 

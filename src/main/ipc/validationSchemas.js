@@ -14,7 +14,9 @@ const {
   NAMING_CONVENTIONS,
   CASE_CONVENTIONS,
   SMART_FOLDER_ROUTING_MODES,
-  SEPARATOR_PATTERN
+  SEPARATOR_PATTERN,
+  MODEL_NAME_PATTERN,
+  MAX_MODEL_NAME_LENGTH
 } = require('../../shared/validationConstants');
 const { collapseDuplicateProtocols } = require('../../shared/urlUtils');
 const { logger } = require('../../shared/logger');
@@ -26,14 +28,12 @@ try {
   z = require('zod');
 } catch (error) {
   if (process.env.NODE_ENV === 'test') {
-    // FIX: Use logger instead of console.warn for consistency
     logger.warn('zod import failed in validationSchemas', { error: error.message });
   }
   zodLoadError = error;
   z = null;
 }
 
-// FIX: Provide fallback validation when Zod is not available
 // This ensures basic type checking even without Zod, preventing security bypasses
 if (!z) {
   // Create simple fallback validators that provide basic type safety
@@ -273,11 +273,8 @@ if (!z) {
    */
   const modelNameSchema = z
     .string()
-    .regex(
-      /^[a-zA-Z0-9._:@/\\-]+$/,
-      'Model name must be alphanumeric with hyphens, underscores, dots, @, colons, or slashes'
-    )
-    .max(100, 'Model name too long (max 100 chars)')
+    .regex(MODEL_NAME_PATTERN, 'Model name contains invalid characters')
+    .max(MAX_MODEL_NAME_LENGTH, `Model name too long (max ${MAX_MODEL_NAME_LENGTH} chars)`)
     .nullish();
 
   const chatPersonaSchema = z.enum(CHAT_PERSONAS.map((persona) => persona.id)).nullish();
@@ -345,36 +342,40 @@ if (!z) {
       caseConvention: z.enum(CASE_CONVENTIONS).nullish(),
       separator: z.string().regex(SEPARATOR_PATTERN).nullish(),
 
-      // File size limits
+      // File size limits (must match settingsValidation.js VALIDATION_RULES)
       maxFileSize: z
         .number()
         .int()
         .min(1024 * 1024)
+        .max(1024 * 1024 * 1024)
         .nullish(),
       maxImageFileSize: z
         .number()
         .int()
         .min(1024 * 1024)
+        .max(500 * 1024 * 1024)
         .nullish(),
       maxDocumentFileSize: z
         .number()
         .int()
         .min(1024 * 1024)
+        .max(500 * 1024 * 1024)
         .nullish(),
       maxTextFileSize: z
         .number()
         .int()
         .min(1024 * 1024)
+        .max(200 * 1024 * 1024)
         .nullish(),
 
       // Processing limits
-      analysisTimeout: z.number().int().min(10000).nullish(),
-      fileOperationTimeout: z.number().int().min(1000).nullish(),
-      retryAttempts: z.number().int().min(0).nullish(),
+      analysisTimeout: z.number().int().min(10000).max(3600000).nullish(),
+      fileOperationTimeout: z.number().int().min(1000).max(3600000).nullish(),
+      retryAttempts: z.number().int().min(0).max(10).nullish(),
 
       // UI limits
-      workflowRestoreMaxAge: z.number().int().min(60000).nullish(),
-      saveDebounceMs: z.number().int().min(100).nullish(),
+      workflowRestoreMaxAge: z.number().int().min(60000).max(86400000).nullish(),
+      saveDebounceMs: z.number().int().min(100).max(10000).nullish(),
 
       // Graph-aware retrieval (GraphRAG-lite)
       graphExpansionEnabled: z.boolean().nullish(),
@@ -384,14 +385,14 @@ if (!z) {
       chunkContextMaxNeighbors: z.number().int().min(0).max(3).nullish(),
 
       // Llama engine tuning
-      llamaGpuLayers: z.number().int().min(-1).nullish(),
+      llamaGpuLayers: z.number().int().min(-1).max(256).nullish(),
       llamaContextSize: z.number().int().min(512).max(131072).nullish(),
 
       // Vector DB persistence (relative to userData)
       vectorDbPersistPath: z.string().min(1).max(200).nullish(),
 
       // Internal schema version for settings migrations
-      settingsSchemaVersion: z.number().int().min(1).nullish(),
+      settingsSchemaVersion: z.number().int().min(1).max(10000).nullish(),
 
       // Deprecated settings (kept for backward compatibility)
       smartFolderWatchEnabled: z.boolean().nullish()
@@ -717,6 +718,7 @@ if (!z) {
    */
   const chatQuerySchema = z.object({
     sessionId: z.string().min(1).max(128).optional(),
+    requestId: z.union([z.string().min(1).max(128), z.number().int().nonnegative()]).optional(),
     query: z
       .string()
       .min(2, 'Query must be at least 2 characters')
@@ -726,6 +728,18 @@ if (!z) {
     chunkTopK: z.number().int().min(1).max(2000).optional(),
     chunkWeight: z.number().min(0).max(1).optional(),
     contextFileIds: z.array(z.string().min(1).max(2048)).max(1000).optional(),
+    documentScopeItems: z
+      .array(
+        z.object({
+          id: z.string().min(1).max(2048),
+          path: z.string().min(1).max(8192),
+          name: z.string().min(1).max(2048).optional(),
+          type: z.string().min(1).max(128).optional()
+        })
+      )
+      .max(1000)
+      .optional(),
+    strictScope: z.boolean().optional().default(false),
     responseMode: z.enum(['fast', 'deep']).optional().default('fast')
   });
 
@@ -733,6 +747,14 @@ if (!z) {
    * Chat session reset parameters
    */
   const chatResetSchema = z.object({
+    sessionId: z.string().min(1).max(128).optional()
+  });
+
+  /**
+   * Chat stream cancel parameters
+   */
+  const chatCancelSchema = z.object({
+    requestId: z.union([z.string().min(1).max(128), z.number().int().nonnegative()]).optional(),
     sessionId: z.string().min(1).max(128).optional()
   });
 
@@ -752,6 +774,129 @@ if (!z) {
     text: z.string().min(1, 'Text is required for matching'),
     smartFolders: z.array(smartFolderSchema).min(1)
   });
+
+  // ===== Chat History Schemas =====
+
+  /**
+   * Chat conversation list parameters
+   */
+  const chatListConversationsSchema = z.object({
+    limit: z.number().int().min(1).max(200).optional(),
+    offset: z.number().int().min(0).optional()
+  });
+
+  /**
+   * Chat conversation ID parameter
+   */
+  const chatConversationIdSchema = z.object({
+    id: z.string().min(1, 'Conversation ID is required').max(256)
+  });
+
+  /**
+   * Chat conversation search parameter
+   */
+  const chatSearchConversationsSchema = z.object({
+    query: z.string().min(1, 'Search query is required').max(500)
+  });
+
+  // ===== System Schemas =====
+
+  /**
+   * System log input validation
+   */
+  const systemLogSchema = z.object({
+    level: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']),
+    message: z.string().min(1).max(8192),
+    data: z.record(z.string(), z.any()).optional()
+  });
+
+  /**
+   * Config path validation (dot-separated, alphanumeric + underscores)
+   */
+  const configPathSchema = z
+    .string()
+    .min(1, 'Config path is required')
+    .max(120)
+    .regex(/^[A-Za-z0-9_.-]+$/, 'Config path contains invalid characters');
+
+  // ===== Undo/Redo Schemas =====
+
+  /**
+   * History limit parameter
+   */
+  const historyLimitSchema = z.number().int().min(1).max(500).optional();
+
+  // ===== Organization Extended Schemas =====
+
+  /**
+   * Process new file input
+   */
+  const processNewSchema = z.object({
+    filePath: z.string().min(1),
+    options: z.object({}).passthrough().optional()
+  });
+
+  /**
+   * Cluster batch input
+   */
+  const clusterBatchSchema = z.object({
+    files: z.array(analysisFileSchema).min(1),
+    smartFolders: z.array(smartFolderSchema).optional()
+  });
+
+  /**
+   * Identify outliers input
+   */
+  const identifyOutliersSchema = z.object({
+    files: z.array(analysisFileSchema).min(1)
+  });
+
+  /**
+   * Cluster suggestions input
+   */
+  const clusterSuggestionsSchema = z.object({
+    file: analysisFileSchema,
+    smartFolders: z.array(smartFolderSchema).optional()
+  });
+
+  // ===== Suggestion Extended Schemas =====
+
+  /**
+   * Folder structure analysis input
+   */
+  const analyzeFolderStructureSchema = z.object({
+    files: z.array(analysisFileSchema).min(1)
+  });
+
+  /**
+   * Suggest new folder input
+   */
+  const suggestNewFolderSchema = z.object({
+    file: analysisFileSchema
+  });
+
+  // ===== Analysis History Extended Schemas =====
+
+  /**
+   * Analysis history search input
+   */
+  const analysisHistorySearchSchema = z.tuple([
+    z.string().min(1, 'Search query is required').max(500),
+    z.object({}).passthrough().optional()
+  ]);
+
+  /**
+   * Embedding policy input
+   */
+  const embeddingPolicySchema = z.object({
+    filePath: z.string().min(1),
+    policy: z.enum(['embed', 'skip', 'web_only'])
+  });
+
+  /**
+   * Analysis history export format
+   */
+  const analysisExportFormatSchema = z.enum(['json', 'csv']).optional().default('json');
 
   // ===== Backup Schemas =====
 
@@ -818,6 +963,32 @@ if (!z) {
     // Chat
     chatQuery: chatQuerySchema,
     chatReset: chatResetSchema,
+    chatCancel: chatCancelSchema,
+    chatListConversations: chatListConversationsSchema,
+    chatConversationId: chatConversationIdSchema,
+    chatSearchConversations: chatSearchConversationsSchema,
+
+    // System
+    systemLog: systemLogSchema,
+    configPath: configPathSchema,
+
+    // Undo/Redo
+    historyLimit: historyLimitSchema,
+
+    // Organization (extended)
+    processNew: processNewSchema,
+    clusterBatch: clusterBatchSchema,
+    identifyOutliers: identifyOutliersSchema,
+    clusterSuggestions: clusterSuggestionsSchema,
+
+    // Suggestions (extended)
+    analyzeFolderStructure: analyzeFolderStructureSchema,
+    suggestNewFolder: suggestNewFolderSchema,
+
+    // Analysis History (extended)
+    analysisHistorySearch: analysisHistorySearchSchema,
+    embeddingPolicy: embeddingPolicySchema,
+    analysisExportFormat: analysisExportFormatSchema,
 
     // Backup
     backupPath: backupPathSchema
@@ -826,8 +997,6 @@ if (!z) {
   module.exports = {
     z,
     schemas,
-    zodLoadError,
-    // Also export individual schemas for convenience
-    ...schemas
+    zodLoadError
   };
 }

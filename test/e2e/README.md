@@ -81,10 +81,24 @@ test/e2e/
 │   ├── globalTeardown.js   # Runs once after all tests
 │   └── index.js            # Main export file
 ├── app-launch.spec.js      # App startup tests
-├── navigation.spec.js      # Navigation tests
-├── file-import.spec.js     # File import tests
 ├── analysis-flow.spec.js   # Analysis workflow tests
+├── analysis-history.spec.js
+├── drag-drop.spec.js
 ├── error-handling.spec.js  # Error handling tests
+├── file-import.spec.js     # File import tests
+├── keyboard-navigation.spec.js
+├── last-browsed-path.spec.js
+├── menu-shortcuts.spec.js
+├── naming-strategy.spec.js
+├── navigation.spec.js      # Navigation tests
+├── notifications.spec.js
+├── organize-phase.spec.js
+├── search-modal.spec.js
+├── smart-folder-add.spec.js
+├── smart-folders.spec.js
+├── soak.spec.js
+├── undo-redo.spec.js
+├── window-state.spec.js
 └── README.md               # This file
 ```
 

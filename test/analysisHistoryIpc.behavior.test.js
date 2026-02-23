@@ -55,12 +55,12 @@ describe('AnalysisHistory IPC (behavior)', () => {
     });
     const handler = ipcMain._handlers.get(IPC_CHANNELS.ANALYSIS_HISTORY.SET_EMBEDDING_POLICY);
 
-    await expect(handler(null, { filePath: '', policy: 'embed' })).resolves.toEqual(
-      expect.objectContaining({ success: false, error: 'filePath is required' })
-    );
-    await expect(handler(null, { filePath: 'C:\\x\\a.pdf', policy: 'nope' })).resolves.toEqual(
-      expect.objectContaining({ success: false, error: expect.stringContaining('policy must be') })
-    );
+    // Validation returns structured error response with Zod details
+    const emptyPathResult = await handler(null, { filePath: '', policy: 'embed' });
+    expect(emptyPathResult.success).toBe(false);
+
+    const invalidPolicyResult = await handler(null, { filePath: 'C:\\x\\a.pdf', policy: 'nope' });
+    expect(invalidPolicyResult.success).toBe(false);
 
     await expect(handler(null, { filePath: 'C:\\x\\a.pdf', policy: 'skip' })).resolves.toEqual(
       expect.objectContaining({ success: true, updated: 1 })

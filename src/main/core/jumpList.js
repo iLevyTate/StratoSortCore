@@ -11,7 +11,6 @@ const { app, BrowserWindow, shell } = require('electron');
 const { isWindows } = require('../../shared/platformUtils');
 const { IPC_EVENTS } = require('../../shared/constants');
 const { createLogger } = require('../../shared/logger');
-// FIX: Import safeSend for validated IPC event sending
 const { safeSend } = require('../ipc/ipcWrappers');
 
 const logger = createLogger('JumpList');
@@ -37,7 +36,6 @@ function handleCommandLineTasks(args) {
       if (win) {
         win.focus();
         try {
-          // FIX: Use safeSend for validated IPC event sending
           if (!win.isDestroyed()) {
             safeSend(win.webContents, IPC_EVENTS.OPERATION_PROGRESS, {
               type: 'hint',

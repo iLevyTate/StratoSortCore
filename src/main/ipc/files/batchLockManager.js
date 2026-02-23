@@ -157,6 +157,7 @@ function releaseBatchLock(batchId) {
       clearTimeout(waiter.timeoutId);
     }
     if (waiter.settled) continue;
+    if (!waiter.batchId) continue; // Validate batchId on handoff
     nextWaiter = waiter;
     break;
   }

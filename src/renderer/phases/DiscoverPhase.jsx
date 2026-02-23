@@ -18,6 +18,7 @@ import {
   AnalysisProgress
 } from '../components/discover';
 import { FileListSkeleton } from '../components/ui/LoadingSkeleton';
+import store from '../store';
 
 import {
   useDiscoverState,
@@ -328,10 +329,47 @@ function DiscoverPhase() {
   useSettingsSubscription(
     useCallback(
       (changedSettings) => {
-        logger.info('Settings changed externally:', Object.keys(changedSettings));
-        if (changedSettings.textModel && !isAnalyzing) {
-          addNotification('AI settings saved', 'info', 2000, 'settings-changed');
+        const changedKeys = Object.keys(changedSettings || {});
+        if (changedKeys.length === 0) return;
+        logger.info('Settings changed externally:', changedKeys);
+
+        const changedLabels = [];
+        if (Object.prototype.hasOwnProperty.call(changedSettings, 'textModel')) {
+          changedLabels.push('text model');
         }
+        if (Object.prototype.hasOwnProperty.call(changedSettings, 'visionModel')) {
+          changedLabels.push('vision model');
+        }
+        if (Object.prototype.hasOwnProperty.call(changedSettings, 'embeddingModel')) {
+          changedLabels.push('embedding model');
+        }
+        if (Object.prototype.hasOwnProperty.call(changedSettings, 'analysisSettings')) {
+          changedLabels.push('analysis settings');
+        }
+
+        if (changedLabels.length === 0) return;
+
+        const targetMessage =
+          changedLabels.length === 1
+            ? `Updated ${changedLabels[0]}.`
+            : `Updated ${changedLabels.join(', ')}.`;
+
+        if (isAnalyzing) {
+          addNotification(
+            `${targetMessage} Current analysis keeps previous settings; new analysis runs will use these updates.`,
+            'info',
+            3500,
+            'settings-changed'
+          );
+          return;
+        }
+
+        addNotification(
+          `${targetMessage} New analysis runs will use these updates.`,
+          'info',
+          2500,
+          'settings-changed'
+        );
       },
       [isAnalyzing, addNotification]
     ),
@@ -384,7 +422,14 @@ function DiscoverPhase() {
     if (!isAnalyzing) return;
 
     const checkStalled = () => {
-      const progress = analysisProgressRef.current;
+      // Use Redux store directly to prevent stale reads when the window is minimized
+      // (React suspends rendering when minimized, so refs bound to props become stale)
+      const state = store.getState();
+      const isActuallyAnalyzing = state.analysis.isAnalyzing;
+
+      if (!isActuallyAnalyzing) return; // Already finished, ignore
+
+      const progress = state.analysis.progress || analysisProgressRef.current;
       const lastActivity = progress?.lastActivity || Date.now();
       const timeSinceActivity = Date.now() - lastActivity;
       const current = progress?.current || 0;
@@ -469,12 +514,13 @@ function DiscoverPhase() {
           </Inline>
 
           <div
-            className={`flex-1 flex flex-col items-center justify-center animate-fade-in text-center min-h-[200px] p-8 transition-colors duration-200 border-2 border-dashed rounded-xl ${
+            data-testid="drag-drop-zone"
+            className={`flex-1 flex flex-col items-center justify-center animate-fade-in text-center min-h-[200px] p-8 transition-colors [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] border-2 border-dashed rounded-xl ${
               isDragging ? 'border-stratosort-blue bg-stratosort-blue/5' : 'border-system-gray-200'
             }`}
             {...dragProps}
           >
-            <div className="w-16 h-16 bg-gradient-to-br from-stratosort-blue to-stratosort-indigo shadow-lg flex items-center justify-center transform transition-transform hover:scale-105 duration-300 rounded-xl mb-4">
+            <div className="w-16 h-16 bg-gradient-to-br from-stratosort-blue to-stratosort-indigo shadow-lg flex items-center justify-center transition-shadow [transition-duration:var(--motion-duration-standard)] [transition-timing-function:var(--motion-ease-standard)] hover:shadow-xl rounded-xl mb-4">
               <FolderOpen className="w-8 h-8 text-white" />
             </div>
 

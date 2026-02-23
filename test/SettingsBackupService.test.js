@@ -1,6 +1,9 @@
+const BACKUP_DIR = require('path').join('fake-user-data', 'settings-backups');
+const SETTINGS_FILE = require('path').join(BACKUP_DIR, 'settings.json');
+
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn(() => 'C:\\fake-user-data'),
+    getPath: jest.fn(() => require('path').join('fake-user-data')),
     getVersion: jest.fn(() => '2.0.0')
   }
 }));
@@ -80,7 +83,7 @@ describe('SettingsBackupService', () => {
 
   test('createBackup writes backup and returns metadata', async () => {
     const service = new SettingsBackupService({
-      backupDir: 'C:\\fake-user-data\\settings-backups',
+      backupDir: BACKUP_DIR,
       defaults: { theme: 'light' },
       loadSettings: jest.fn().mockResolvedValue({ theme: 'dark' })
     });
@@ -94,7 +97,7 @@ describe('SettingsBackupService', () => {
     mockFs.readdir.mockResolvedValue(['settings-a.json']);
     mockFs.readFile.mockRejectedValueOnce(new Error('bad json'));
     const service = new SettingsBackupService({
-      backupDir: 'C:\\fake-user-data\\settings-backups',
+      backupDir: BACKUP_DIR,
       defaults: {},
       loadSettings: jest.fn()
     });
@@ -105,7 +108,7 @@ describe('SettingsBackupService', () => {
 
   test('restoreFromBackup validates and saves settings', async () => {
     const service = new SettingsBackupService({
-      backupDir: 'C:\\fake-user-data\\settings-backups',
+      backupDir: BACKUP_DIR,
       defaults: { theme: 'light' },
       loadSettings: jest.fn()
     });
@@ -120,10 +123,7 @@ describe('SettingsBackupService', () => {
     mockFs.readFile.mockResolvedValueOnce(JSON.stringify({ ...backup, hash }));
 
     const saveSettings = jest.fn().mockResolvedValue();
-    const result = await service.restoreFromBackup(
-      'C:\\fake-user-data\\settings-backups\\settings.json',
-      saveSettings
-    );
+    const result = await service.restoreFromBackup(SETTINGS_FILE, saveSettings);
 
     expect(result.success).toBe(true);
     expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({ theme: 'dark' }));
@@ -132,7 +132,7 @@ describe('SettingsBackupService', () => {
   test('restoreFromBackup reports validation errors', async () => {
     validateSettings.mockReturnValueOnce({ valid: false, errors: ['bad'], warnings: [] });
     const service = new SettingsBackupService({
-      backupDir: 'C:\\fake-user-data\\settings-backups',
+      backupDir: BACKUP_DIR,
       defaults: {},
       loadSettings: jest.fn()
     });
@@ -145,10 +145,7 @@ describe('SettingsBackupService', () => {
     const hash = crypto.createHash('sha256').update(stableStringify(backup), 'utf8').digest('hex');
     mockFs.readFile.mockResolvedValueOnce(JSON.stringify({ ...backup, hash }));
 
-    const result = await service.restoreFromBackup(
-      'C:\\fake-user-data\\settings-backups\\settings.json',
-      jest.fn()
-    );
+    const result = await service.restoreFromBackup(SETTINGS_FILE, jest.fn());
 
     expect(result.success).toBe(false);
     expect(result.validationErrors).toEqual(['bad']);

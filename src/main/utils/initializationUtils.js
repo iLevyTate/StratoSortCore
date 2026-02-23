@@ -85,7 +85,6 @@ function createInitializer(options) {
             customLogger.info(`${serviceName} Retrying in ${Math.round(delay)}ms...`);
             await new Promise((resolve) => {
               const timer = setTimeout(resolve, delay);
-              // FIX 78: Prevent retry timer from keeping process alive during shutdown
               if (typeof timer.unref === 'function') timer.unref();
             });
           } else {

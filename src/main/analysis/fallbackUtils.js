@@ -26,7 +26,6 @@ const normalizeCategoryToSmartFolders =
     ? FolderMatchingService.matchCategoryToFolder.bind(FolderMatchingService)
     : (category, smartFolders) => {
         const folders = Array.isArray(smartFolders) ? smartFolders : [];
-        // FIX: Never return raw LLM category when no folders exist to validate against
         if (!folders.length) return 'Uncategorized';
         const normalized = String(category || '')
           .trim()
@@ -37,7 +36,6 @@ const normalizeCategoryToSmartFolders =
               .trim()
               .toLowerCase() === normalized
         );
-        // FIX: Fall back to Uncategorized folder or first folder, never the raw category
         const uncategorized = folders.find(
           (f) => String(f?.name || '').toLowerCase() === 'uncategorized'
         );
@@ -116,7 +114,6 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
           }
         }
       }
-      // FIXED Bug #25: Validate split() result before access to prevent crashes
       if (folder.path && typeof folder.path === 'string') {
         const pathParts = folder.path.toLowerCase().split(/[\\/]/);
         // Validate that split returned an array
@@ -142,7 +139,7 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
         bestMatch = folder.name;
       }
     }
-    // HIGH PRIORITY FIX (HIGH-6): Only return bestMatch if it's not null
+    // Only return bestMatch if it's not null
     // This ensures we never return null and fall through to pattern matching
     if (bestScore >= 5 && bestMatch) {
       logger.debug('[FallbackCategory] Smart folder match', {
@@ -313,7 +310,6 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
       'leave'
     ]
   };
-  // FIXED Bug #27: Add early exit optimization when perfect match found
   const categoryScores = {};
   let maxScore = 0;
   let bestCategory = null;
@@ -449,14 +445,11 @@ function getIntelligentKeywords(fileName, extension) {
 }
 
 function safeSuggestedName(fileName, extension) {
-  // CRITICAL FIX: Comprehensive input sanitization to prevent file system issues
-
   // If the filename is already just the extension or empty, use a default topic
   if (!fileName || fileName === extension) {
     return `unnamed_file${extension}`;
   }
 
-  // HIGH FIX: Use proper trailing extension removal instead of string.replace()
   // string.replace() only removes the first occurrence, which could incorrectly
   // modify filenames like "report.pdf.backup.pdf" → "report.backup.pdf" instead of "report.pdf.backup"
   let nameWithoutExt = fileName;
@@ -478,7 +471,6 @@ function safeSuggestedName(fileName, extension) {
     nameWithoutExt = nameWithoutExt.trim();
   }
 
-  // CRITICAL FIX: Handle reserved Windows file names
   const reservedNames = [
     'CON',
     'PRN',
@@ -509,7 +501,6 @@ function safeSuggestedName(fileName, extension) {
     nameWithoutExt = `${nameWithoutExt}_file`;
   }
 
-  // CRITICAL FIX: Handle leading dots (hidden files on Unix-like systems)
   // and prevent empty names
   if (!nameWithoutExt || nameWithoutExt.trim().length === 0) {
     nameWithoutExt = 'unnamed_file';
@@ -523,7 +514,6 @@ function safeSuggestedName(fileName, extension) {
     nameWithoutExt = 'unnamed_file';
   }
 
-  // CRITICAL FIX: Sanitize invalid characters (comprehensive)
   // Windows: < > : " / \ | ? *
   // Unix: /
   // Also remove control characters
@@ -538,7 +528,6 @@ function safeSuggestedName(fileName, extension) {
   // Final fallback if name is empty after sanitization
   const finalName = sanitized || 'unnamed_file';
 
-  // CRITICAL FIX: Ensure name doesn't exceed filesystem limits (255 chars typical)
   const maxLength = 200; // Leave room for extension and path components
   const truncatedName =
     finalName.length > maxLength ? finalName.substring(0, maxLength) : finalName;

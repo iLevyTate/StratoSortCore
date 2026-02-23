@@ -90,8 +90,52 @@ async function applySettingsToServices(merged, { logger }) {
 
   // Apply all Llama config changes through LlamaService to trigger proper notifications
   // skipSave: true because we're already in a save operation (settings are saved by the caller)
+  let modelUpdate = null;
   if (Object.keys(llamaConfig).length > 0) {
-    await llamaService.updateConfig(llamaConfig, { skipSave: true });
+    const beforeConfig =
+      typeof llamaService.getConfig === 'function'
+        ? await llamaService.getConfig().catch(() => null)
+        : null;
+    const updateResult = await llamaService.updateConfig(llamaConfig, { skipSave: true });
+    const afterConfig =
+      typeof llamaService.getConfig === 'function'
+        ? await llamaService.getConfig().catch(() => null)
+        : null;
+
+    const changed = {};
+    for (const key of ['textModel', 'visionModel', 'embeddingModel']) {
+      if (beforeConfig?.[key] && afterConfig?.[key] && beforeConfig[key] !== afterConfig[key]) {
+        changed[key] = {
+          from: beforeConfig[key],
+          to: afterConfig[key]
+        };
+      }
+    }
+
+    modelUpdate = {
+      requested: {
+        textModel: llamaConfig.textModel,
+        visionModel: llamaConfig.visionModel,
+        embeddingModel: llamaConfig.embeddingModel
+      },
+      changed,
+      selected: updateResult?.selected || null,
+      modelDowngraded: Boolean(updateResult?.modelDowngraded)
+    };
+
+    logger.info('[SETTINGS] Applied Llama config update', {
+      changedModelKeys: Object.keys(changed),
+      modelDowngraded: modelUpdate.modelDowngraded,
+      requestedEmbeddingModel: llamaConfig.embeddingModel,
+      selectedEmbeddingModel: modelUpdate.selected?.embedding || afterConfig?.embeddingModel || null
+    });
+
+    if (modelUpdate.modelDowngraded) {
+      logger.warn('[SETTINGS] Some requested model selections were adjusted', {
+        requested: modelUpdate.requested,
+        selected: modelUpdate.selected
+      });
+    }
   }
 
   if (typeof merged.launchOnStartup === 'boolean') {
@@ -103,6 +147,8 @@ async function applySettingsToServices(merged, { logger }) {
       logger.warn('[SETTINGS] Failed to set login item settings:', error.message);
     }
   }
+
+  return modelUpdate;
 }
 
 /**
@@ -328,7 +374,7 @@ async function handleSettingsSaveCore(settings, deps) {
     const merged = saveResult.settings || saveResult; // Backward compatibility
     const validationWarnings = saveResult.validationWarnings || [];
 
-    await applySettingsToServices(merged, { logger });
+    const modelUpdate = await applySettingsToServices(merged, { logger });
     logger.info('[SETTINGS] Saved settings');
 
     // Invalidate notification service cache to ensure new settings take effect immediately
@@ -345,6 +391,17 @@ async function handleSettingsSaveCore(settings, deps) {
     } catch (notifyErr) {
       // Non-fatal - notification service may not be initialized yet
       logger.debug('[SETTINGS] Could not invalidate notification cache:', notifyErr.message);
+    }
+
+    // Invalidate analysis limits cache so file size limits take effect immediately
+    try {
+      const { invalidateCache } = require('../analysis/analysisLimits');
+      if (typeof invalidateCache === 'function') {
+        invalidateCache();
+        logger.debug('[SETTINGS] Analysis limits cache invalidated');
+      }
+    } catch (limitErr) {
+      logger.debug('[SETTINGS] Could not invalidate analysis limits cache:', limitErr?.message);
     }
 
     // Enhanced settings propagation with error logging
@@ -364,6 +421,7 @@ async function handleSettingsSaveCore(settings, deps) {
     return {
       success: true,
       settings: merged,
+      modelUpdate,
       propagationSuccess,
       validationWarnings
     };
@@ -415,7 +473,6 @@ function registerSettingsIpc(servicesOrParams) {
           return loaded;
         } catch (error) {
           logger.error('Failed to get settings:', error);
-          // FIX HIGH-24: Return proper error structure instead of swallowing error
           return { success: false, error: error.message, settings: {} };
         }
       }
@@ -550,7 +607,6 @@ function registerSettingsIpc(servicesOrParams) {
           // Serialize export data with proper error handling
           let jsonContent;
           try {
-            // FIX: Yield to event loop before heavy serialization to prevent UI blocking
             await new Promise((resolve) => setImmediate(resolve));
             jsonContent = JSON.stringify(exportData, null, 2);
           } catch (serializeError) {
@@ -561,7 +617,6 @@ function registerSettingsIpc(servicesOrParams) {
           }
 
           // Write export file
-          // FIX: Use atomic write (temp + rename) to prevent corruption on crash
           const tempPath = `${filePath}.tmp.${Date.now()}`;
           try {
             await fs.writeFile(tempPath, jsonContent, 'utf8');
@@ -619,13 +674,11 @@ function registerSettingsIpc(servicesOrParams) {
             return canceledResponse();
           }
 
-          // FIX MED-9: Add bounds check before accessing filePaths[0]
           if (!result.filePaths || result.filePaths.length === 0) {
             return canceledResponse();
           }
           const filePath = result.filePaths[0];
 
-          // SECURITY FIX: Check file size before reading to prevent DoS
           const MAX_IMPORT_SIZE = 1 * 1024 * 1024; // 1MB limit for settings files
           const fileHandle = await fs.open(filePath, 'r');
           let fileContent;
@@ -669,7 +722,7 @@ function registerSettingsIpc(servicesOrParams) {
             throw new Error('Invalid settings file: missing or invalid settings object');
           }
 
-          // HIGH PRIORITY FIX (HIGH-14): Sanitize and validate imported settings
+          // Sanitize and validate imported settings
           // Prevents prototype pollution, command injection, and data exfiltration
           let sanitizedSettings = validateImportedSettings(importData.settings, logger);
 

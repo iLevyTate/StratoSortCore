@@ -29,8 +29,8 @@ StratoSort is organized into five phases. You move through them in order:
 1. **Welcome** — Start screen. Choose your flow.
 2. **Setup** — Create Smart Folders (the destination folders the AI routes files into). Give each
    folder a plain-language description so the AI knows what belongs there.
-3. **Discover** — Drag and drop files (or select a folder). The AI analyzes content, extracts
-   meaning, and generates organization suggestions.
+3. **Discover** — Drag and drop files, or use the Select/Scan Folder buttons to browse. The AI
+   analyzes content, extracts meaning, and generates organization suggestions.
 4. **Organize** — Review each suggestion. Accept, reject, or edit the destination and filename. Use
    Undo/Redo if you change your mind.
 5. **Complete** — See a summary of everything that was organized. Undo is still available here.
@@ -49,6 +49,9 @@ content against these descriptions to decide where it fits best.
   `Contracts`).
 - Write descriptions in plain language — pretend you're telling a coworker what goes in each folder.
 - Be specific. "Monthly bills and vendor invoices" works better than "financial stuff."
+- The app creates a single "Uncategorized" fallback folder by default on the first launch.
+- You must proactively create your own specific smart folders to instruct the AI where to sort
+  files.
 - Start with 3-5 clear folders before adding more. Overlapping descriptions confuse the AI.
 
 ### Good folder description examples

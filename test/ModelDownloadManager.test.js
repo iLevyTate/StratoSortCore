@@ -2,7 +2,7 @@ const { EventEmitter } = require('events');
 
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn(() => 'C:\\fake-user-data')
+    getPath: jest.fn(() => require('path').join('C:', 'fake-user-data'))
   }
 }));
 
@@ -183,13 +183,20 @@ describe('ModelDownloadManager', () => {
     mockFs.unlink.mockRejectedValueOnce(new Error('missing'));
 
     await expect(
-      manager._cleanupPartialFile('C:\\fake-user-data\\models\\alpha.gguf.partial')
+      manager._cleanupPartialFile(
+        require('path').join('C:', 'fake-user-data', 'models', 'alpha.gguf.partial')
+      )
     ).resolves.toBeUndefined();
   });
 
   test('downloadModel cleans partial file on size mismatch', async () => {
     const manager = new ModelDownloadManager();
-    const partialPath = 'C:\\fake-user-data\\models\\alpha.gguf.partial';
+    const partialPath = require('path').join(
+      'C:',
+      'fake-user-data',
+      'models',
+      'alpha.gguf.partial'
+    );
 
     // No partial at start, then mismatched size at finish check.
     mockFs.stat.mockRejectedValueOnce(new Error('no partial'));
@@ -264,7 +271,9 @@ describe('ModelDownloadManager', () => {
       expect.objectContaining({ success: true })
     );
     expect(https.get).toHaveBeenCalledTimes(2);
-    expect(mockFs.unlink).toHaveBeenCalledWith('C:\\fake-user-data\\models\\alpha.gguf.partial');
+    expect(mockFs.unlink).toHaveBeenCalledWith(
+      require('path').join('C:', 'fake-user-data', 'models', 'alpha.gguf.partial')
+    );
   });
 
   test('downloadModel resolves relative redirect locations', async () => {
@@ -383,7 +392,9 @@ describe('ModelDownloadManager', () => {
     await expect(manager.downloadModel('alpha.gguf')).resolves.toEqual(
       expect.objectContaining({ success: true })
     );
-    expect(mockFs.unlink).toHaveBeenCalledWith('C:\\fake-user-data\\models\\alpha.gguf.partial');
+    expect(mockFs.unlink).toHaveBeenCalledWith(
+      require('path').join('C:', 'fake-user-data', 'models', 'alpha.gguf.partial')
+    );
     expect(requestOptionsSeen[0].headers.Range).toBeUndefined();
   });
 });

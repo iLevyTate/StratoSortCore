@@ -80,7 +80,17 @@ async function replaceFileWithRetry(tempPath, filePath, options = {}) {
   // This is less "atomic" but avoids losing data when Windows denies rename.
   try {
     await fs.copyFile(tempPath, filePath);
+    const crypto = require('crypto');
+    const srcBuf = await fs.readFile(tempPath);
+    const dstBuf = await fs.readFile(filePath);
+    const srcHash = crypto.createHash('md5').update(srcBuf).digest('hex');
+    const dstHash = crypto.createHash('md5').update(dstBuf).digest('hex');
+    if (srcHash !== dstHash) {
+      throw new Error(`Atomic write copy verification failed: hash mismatch for ${filePath}`);
+    }
   } catch (copyError) {
+    // Verification failures are the primary error
+    if (copyError?.message?.includes('verification')) throw copyError;
     // Prefer the original error for debugging, but attach copy failure details.
     if (lastError) lastError.copyFailure = copyError;
     throw lastError || copyError;
@@ -205,13 +215,21 @@ async function loadJsonFile(filePath, options = {}) {
  */
 async function persistData(filePath, data, options = {}) {
   try {
-    // FIX: Guard against primitives (string, number, boolean, null, undefined).
     // Object.keys() on these returns [] which incorrectly flags them as "empty"
     // and triggers file deletion instead of persistence.
     if (data === null || data === undefined || typeof data !== 'object') {
       throw new TypeError(`persistData expects an Array or Object, got ${typeof data}`);
     }
-    const isEmpty = Array.isArray(data) ? data.length === 0 : Object.keys(data).length === 0;
+    let isEmpty = false;
+    if (Array.isArray(data)) {
+      isEmpty = data.length === 0;
+    } else if (data instanceof Map || data instanceof Set) {
+      isEmpty = data.size === 0;
+    } else if (data instanceof Date) {
+      isEmpty = false;
+    } else {
+      isEmpty = Object.keys(data).length === 0;
+    }
 
     if (isEmpty) {
       await safeUnlink(filePath);

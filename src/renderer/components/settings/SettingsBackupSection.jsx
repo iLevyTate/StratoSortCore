@@ -7,6 +7,7 @@ import SettingsCard from './SettingsCard';
 import StateMessage from '../ui/StateMessage';
 import { createLogger } from '../../../shared/logger';
 import { Text } from '../ui/Typography';
+import { getElectronAPI, settingsIpc } from '../../services/ipc';
 
 /**
  * Settings backup/restore section with import/export functionality
@@ -22,6 +23,14 @@ function SettingsBackupSection({ addNotification }) {
   const isMountedRef = useRef(false);
 
   const logger = useMemo(() => createLogger('SettingsBackupSection'), []);
+  const settingsApi = getElectronAPI()?.settings;
+  const canListBackups = typeof settingsApi?.listBackups === 'function';
+  const canCreateBackup = typeof settingsApi?.createBackup === 'function';
+  const canRestoreBackup = typeof settingsApi?.restoreBackup === 'function';
+  const canDeleteBackup = typeof settingsApi?.deleteBackup === 'function';
+  const canExportSettings = typeof settingsApi?.export === 'function';
+  const canImportSettings = typeof settingsApi?.import === 'function';
+
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -30,11 +39,14 @@ function SettingsBackupSection({ addNotification }) {
   }, []);
 
   const loadBackups = useCallback(async () => {
-    if (!window?.electronAPI?.settings?.listBackups) return;
     if (!isMountedRef.current) return;
+    if (!canListBackups) {
+      setBackups([]);
+      return;
+    }
     setIsLoading(true);
     try {
-      const res = await window.electronAPI.settings.listBackups();
+      const res = await settingsIpc.listBackups();
       if (!isMountedRef.current) return;
       if (res?.success && Array.isArray(res.backups)) {
         setBackups(res.backups);
@@ -50,18 +62,21 @@ function SettingsBackupSection({ addNotification }) {
         setIsLoading(false);
       }
     }
-  }, [logger]);
+  }, [canListBackups, logger]);
 
   useEffect(() => {
     loadBackups();
   }, [loadBackups]);
 
   const handleCreateBackup = useCallback(async () => {
-    if (!window?.electronAPI?.settings?.createBackup) return;
     if (!isMountedRef.current) return;
+    if (!canCreateBackup) {
+      addNotification('Create backup is unavailable in this build', 'error');
+      return;
+    }
     setIsCreating(true);
     try {
-      const res = await window.electronAPI.settings.createBackup();
+      const res = await settingsIpc.createBackup();
       if (!isMountedRef.current) return;
       if (res?.success) {
         addNotification('Backup created successfully', 'success');
@@ -76,15 +91,18 @@ function SettingsBackupSection({ addNotification }) {
         setIsCreating(false);
       }
     }
-  }, [addNotification, loadBackups]);
+  }, [addNotification, canCreateBackup, loadBackups]);
 
   const handleRestoreBackup = useCallback(
     async (backupPath) => {
-      if (!window?.electronAPI?.settings?.restoreBackup) return;
       if (!isMountedRef.current) return;
+      if (!canRestoreBackup) {
+        addNotification('Restore backup is unavailable in this build', 'error');
+        return;
+      }
       setIsRestoring(backupPath);
       try {
-        const res = await window.electronAPI.settings.restoreBackup(backupPath);
+        const res = await settingsIpc.restoreBackup(backupPath);
         if (!isMountedRef.current) return;
         if (res?.success) {
           addNotification('Backup restored. Reload to apply changes.', 'success');
@@ -99,16 +117,19 @@ function SettingsBackupSection({ addNotification }) {
         }
       }
     },
-    [addNotification]
+    [addNotification, canRestoreBackup]
   );
 
   const handleDeleteBackup = useCallback(
     async (backupPath) => {
-      if (!window?.electronAPI?.settings?.deleteBackup) return;
       if (!isMountedRef.current) return;
+      if (!canDeleteBackup) {
+        addNotification('Delete backup is unavailable in this build', 'error');
+        return;
+      }
       setIsDeleting(backupPath);
       try {
-        const res = await window.electronAPI.settings.deleteBackup(backupPath);
+        const res = await settingsIpc.deleteBackup(backupPath);
         if (!isMountedRef.current) return;
         if (res?.success) {
           addNotification('Backup deleted', 'success');
@@ -124,15 +145,18 @@ function SettingsBackupSection({ addNotification }) {
         }
       }
     },
-    [addNotification, loadBackups]
+    [addNotification, canDeleteBackup, loadBackups]
   );
 
   const handleExport = useCallback(async () => {
-    if (!window?.electronAPI?.settings?.export) return;
     if (!isMountedRef.current) return;
+    if (!canExportSettings) {
+      addNotification('Export settings is unavailable in this build', 'error');
+      return;
+    }
     setIsExporting(true);
     try {
-      const res = await window.electronAPI.settings.export();
+      const res = await settingsIpc.export();
       if (!isMountedRef.current) return;
       if (res?.success) {
         addNotification('Settings exported successfully', 'success');
@@ -148,14 +172,17 @@ function SettingsBackupSection({ addNotification }) {
         setIsExporting(false);
       }
     }
-  }, [addNotification]);
+  }, [addNotification, canExportSettings]);
 
   const handleImport = useCallback(async () => {
-    if (!window?.electronAPI?.settings?.import) return;
     if (!isMountedRef.current) return;
+    if (!canImportSettings) {
+      addNotification('Import settings is unavailable in this build', 'error');
+      return;
+    }
     setIsImporting(true);
     try {
-      const res = await window.electronAPI.settings.import();
+      const res = await settingsIpc.import();
       if (!isMountedRef.current) return;
       if (res?.success) {
         addNotification('Settings imported. Reload to apply changes.', 'success');
@@ -171,7 +198,7 @@ function SettingsBackupSection({ addNotification }) {
         setIsImporting(false);
       }
     }
-  }, [addNotification]);
+  }, [addNotification, canImportSettings]);
 
   const formatDate = (timestamp) => {
     if (!timestamp) return 'Unknown';
@@ -205,32 +232,29 @@ function SettingsBackupSection({ addNotification }) {
         <Button
           onClick={handleCreateBackup}
           variant="secondary"
-          disabled={isCreating}
+          disabled={isCreating || !canCreateBackup}
           size="sm"
-          className="flex items-center gap-1.5"
+          leftIcon={<Clock className="w-4 h-4" />}
         >
-          <Clock className="w-4 h-4" />
-          {isCreating ? 'Creating...' : 'Create Backup'}
+          {isCreating ? 'Creating\u2026' : 'Create Backup'}
         </Button>
         <Button
           onClick={handleExport}
           variant="secondary"
-          disabled={isExporting}
+          disabled={isExporting || !canExportSettings}
           size="sm"
-          className="flex items-center gap-1.5"
+          leftIcon={<Download className="w-4 h-4" />}
         >
-          <Download className="w-4 h-4" />
-          {isExporting ? 'Exporting...' : 'Export to File'}
+          {isExporting ? 'Exporting\u2026' : 'Export to File'}
         </Button>
         <Button
           onClick={handleImport}
           variant="secondary"
-          disabled={isImporting}
+          disabled={isImporting || !canImportSettings}
           size="sm"
-          className="flex items-center gap-1.5"
+          leftIcon={<Upload className="w-4 h-4" />}
         >
-          <Upload className="w-4 h-4" />
-          {isImporting ? 'Importing...' : 'Import from File'}
+          {isImporting ? 'Importing\u2026' : 'Import from File'}
         </Button>
       </div>
 
@@ -244,7 +268,7 @@ function SettingsBackupSection({ addNotification }) {
             {backups.map((backup) => (
               <div
                 key={backup.path || backup.name}
-                className="flex items-center justify-between gap-2 p-2 rounded-lg border border-border-soft bg-white"
+                className="flex items-center justify-between gap-2 p-2 rounded-lg border border-border-soft bg-surface-primary"
               >
                 <div className="min-w-0 flex-1">
                   <Text variant="small" className="font-medium text-system-gray-700 truncate">
@@ -262,7 +286,7 @@ function SettingsBackupSection({ addNotification }) {
                     onClick={() => handleRestoreBackup(backup.path)}
                     aria-label="Restore this backup"
                     title="Restore"
-                    disabled={isRestoring === backup.path}
+                    disabled={isRestoring === backup.path || !canRestoreBackup}
                   />
                   <IconButton
                     icon={<Trash2 className="w-4 h-4" />}
@@ -271,7 +295,7 @@ function SettingsBackupSection({ addNotification }) {
                     onClick={() => handleDeleteBackup(backup.path)}
                     aria-label="Delete this backup"
                     title="Delete"
-                    disabled={isDeleting === backup.path}
+                    disabled={isDeleting === backup.path || !canDeleteBackup}
                     className="text-stratosort-danger hover:text-stratosort-danger/80"
                   />
                 </div>

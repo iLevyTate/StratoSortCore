@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/iLevyTate/StratoSortCore/releases"><img src="https://img.shields.io/badge/version-2.0.1-blue?style=flat-square" alt="Version" /></a>
+  <a href="https://github.com/iLevyTate/StratoSortCore/releases"><img src="https://img.shields.io/badge/version-2.0.3-blue?style=flat-square" alt="Version" /></a>
   <a href="https://github.com/iLevyTate/StratoSortCore/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Personal_Use_Only-blue?style=flat-square" alt="License" /></a>
   <a href="https://github.com/iLevyTate/StratoSortCore/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/iLevyTate/StratoSortCore/ci.yml?style=flat-square&label=CI" alt="CI Status" /></a>
 </p>
@@ -182,6 +182,8 @@ See **[SECURITY.md](SECURITY.md)** for the complete security policy.
 | **[Architecture](docs/ARCHITECTURE.md)**           | System design and data flow              |
 | **[Graph Features](docs/FEATURES_GRAPH.md)**       | Knowledge Graph capabilities             |
 | **[IPC Contracts](docs/IPC_CONTRACTS.md)**         | IPC communication specifications         |
+| **[Motion System](docs/MOTION_SYSTEM.md)**         | UI animation timing and easing standards |
+| **[Release Preflight](docs/RELEASE_PREFLIGHT.md)** | Pre-tag checks for release reliability   |
 | **[Release Guide](docs/RELEASING.md)**             | Release process and checks               |
 
 ## Contributing

@@ -12,13 +12,15 @@ const electronApp = require('./electronApp');
 
 // Test fixtures and data
 const testFixtures = require('./testFixtures');
+const pageObjects = require('./pageObjects');
 
 module.exports = {
   // Electron App Helpers
   ...electronApp,
 
   // Test Fixtures
-  ...testFixtures
+  ...testFixtures,
 
-  // Page Objects removed with legacy E2E suite
+  // Page Objects
+  ...pageObjects
 };

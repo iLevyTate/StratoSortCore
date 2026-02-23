@@ -7,6 +7,23 @@ const { getLegacyUserDataPaths } = require('./userDataMigration');
 
 const logger = createLogger('CustomFolders');
 const CUSTOM_FOLDERS_FILENAME = 'custom-folders.json';
+const LEGACY_DEFAULT_FOLDER_NAMES = new Set([
+  'uncategorized',
+  'documents',
+  'images',
+  'videos',
+  'music',
+  'spreadsheets',
+  'presentations',
+  'archives',
+  // Legacy default bundle names from older builds.
+  '3d print',
+  'financial',
+  'research',
+  'work',
+  'logos',
+  'code'
+]);
 
 // Serialize concurrent save operations to prevent race conditions
 let _saveQueue = Promise.resolve();
@@ -51,14 +68,67 @@ function normalizeFolderPaths(folders) {
  */
 async function ensureUncategorizedFolder(folders) {
   const safeFolders = Array.isArray(folders) ? folders : [];
-  const hasUncategorized = safeFolders.some(
+  const documentsDir = app.getPath('documents');
+  const baseDir = path.join(documentsDir, 'StratoSort');
+  const uncategorizedIndex = safeFolders.findIndex(
     (folder) => normalizeName(folder?.name) === 'uncategorized'
   );
 
-  if (hasUncategorized) return safeFolders;
+  if (uncategorizedIndex >= 0) {
+    const existingFolder = safeFolders[uncategorizedIndex] || {};
+    const existingPath = String(existingFolder.path || '').trim();
+    if (existingPath) {
+      try {
+        const stats = await fs.stat(existingPath);
+        if (stats.isDirectory()) {
+          return safeFolders;
+        }
+        logger.warn(
+          '[STORAGE] Uncategorized path exists but is not a directory; healing to canonical path',
+          { path: existingPath }
+        );
+      } catch {
+        try {
+          await fs.mkdir(existingPath, { recursive: true });
+          logger.info('[STORAGE] Recreated missing Uncategorized directory at:', existingPath);
+          return safeFolders;
+        } catch (error) {
+          logger.warn(
+            '[STORAGE] Failed to recreate existing Uncategorized path; healing to canonical path',
+            { path: existingPath, error: error.message }
+          );
+        }
+      }
+    }
 
-  const documentsDir = app.getPath('documents');
-  const baseDir = path.join(documentsDir, 'StratoSort');
+    const canonical = createUncategorizedFolder(baseDir);
+    const healedFolder = {
+      ...canonical,
+      ...existingFolder,
+      path: canonical.path,
+      name: existingFolder.name || canonical.name,
+      isDefault: true
+    };
+    const updatedFolders = [...safeFolders];
+    updatedFolders[uncategorizedIndex] = healedFolder;
+
+    try {
+      await fs.mkdir(healedFolder.path, { recursive: true });
+      logger.info('[STORAGE] Healed Uncategorized directory at canonical path:', healedFolder.path);
+    } catch (error) {
+      logger.error('[STORAGE] Failed to create healed Uncategorized directory:', error);
+    }
+
+    try {
+      await saveCustomFolders(updatedFolders);
+      logger.info('[STORAGE] Persisted healed Uncategorized folder path');
+    } catch (error) {
+      logger.error('[STORAGE] Failed to persist healed Uncategorized folder path:', error);
+    }
+
+    return updatedFolders;
+  }
+
   const uncategorized = createUncategorizedFolder(baseDir);
 
   logger.info('[STORAGE] Adding missing Uncategorized fallback folder');
@@ -94,13 +164,64 @@ async function readCustomFoldersFile(filePath) {
   }
 }
 
-function hasCustomFolders(folders, defaultNameSet) {
+function hasCustomFolders(
+  folders,
+  defaultNameSet,
+  defaultPathByName = null,
+  { allowDefaultNameCustomPath = false } = {}
+) {
   return (Array.isArray(folders) ? folders : []).some((folder) => {
     const nameKey = normalizeName(folder?.name);
     if (!nameKey) return false;
-    if (defaultNameSet.has(nameKey)) return false;
+    if (folder?.isDefault === true) return false;
+    // Treat known default names as defaults even if legacy metadata incorrectly
+    // marked them as non-default, unless the path clearly differs from the
+    // canonical default path (which indicates a real custom folder).
+    if (defaultNameSet.has(nameKey)) {
+      const canonicalPath = defaultPathByName?.get(nameKey) || '';
+      const candidatePath = normalizeFolderPath(folder?.path);
+      if (
+        allowDefaultNameCustomPath &&
+        folder?.isDefault === false &&
+        canonicalPath &&
+        candidatePath &&
+        candidatePath !== canonicalPath
+      ) {
+        return true;
+      }
+      return false;
+    }
+    if (folder?.isDefault === false) return true;
     return true;
   });
+}
+
+function shouldPruneLegacyDefaultBundle(folders, currentDefaultNameSet) {
+  const safeFolders = Array.isArray(folders) ? folders : [];
+  if (safeFolders.length === 0) return false;
+
+  const allEntriesMarkedDefault = safeFolders.every((folder) => folder?.isDefault === true);
+  if (!allEntriesMarkedDefault) return false;
+
+  const hasLegacyOnlyDefaultName = safeFolders.some((folder) => {
+    const nameKey = normalizeName(folder?.name);
+    return (
+      nameKey && LEGACY_DEFAULT_FOLDER_NAMES.has(nameKey) && !currentDefaultNameSet.has(nameKey)
+    );
+  });
+
+  return hasLegacyOnlyDefaultName;
+}
+
+async function pruneToUncategorizedOnly(folders) {
+  const safeFolders = Array.isArray(folders) ? folders : [];
+  const uncategorizedOnly = safeFolders.filter(
+    (folder) => normalizeName(folder?.name) === 'uncategorized'
+  );
+  const prunedInput = uncategorizedOnly.length > 0 ? [uncategorizedOnly[0]] : [];
+  const ensured = await ensureUncategorizedFolder(prunedInput);
+  await saveCustomFolders(ensured);
+  return ensured;
 }
 
 function mergeFolders(currentFolders, legacyFolders) {
@@ -124,8 +245,18 @@ function mergeFolders(currentFolders, legacyFolders) {
   return merged;
 }
 
-async function recoverLegacyCustomFolders(currentFolders, defaultNameSet) {
-  if (hasCustomFolders(currentFolders, defaultNameSet)) return currentFolders;
+async function recoverLegacyCustomFolders(
+  currentFolders,
+  defaultNameSet,
+  defaultPathByName = null
+) {
+  if (
+    hasCustomFolders(currentFolders, defaultNameSet, defaultPathByName, {
+      allowDefaultNameCustomPath: true
+    })
+  ) {
+    return currentFolders;
+  }
 
   const legacyPaths = getLegacyUserDataPaths();
   const recoveredFolders = [];
@@ -136,7 +267,7 @@ async function recoverLegacyCustomFolders(currentFolders, defaultNameSet) {
     const legacyData = await readCustomFoldersFile(legacyFilePath);
     if (!legacyData || legacyData.length === 0) continue;
     const normalizedLegacy = normalizeFolderPaths(legacyData);
-    if (!hasCustomFolders(normalizedLegacy, defaultNameSet)) continue;
+    if (!hasCustomFolders(normalizedLegacy, defaultNameSet, defaultPathByName)) continue;
     recoveredFolders.push(...normalizedLegacy);
     sources.push(legacyFilePath);
   }
@@ -182,7 +313,6 @@ function createUncategorizedFolder(baseDir) {
  * Only used when the user explicitly clicks "Reset to Defaults"
  */
 function getDefaultSmartFolders(baseDir) {
-  // FIX (M-8): Use crypto.randomUUID() instead of Date.now() offsets.
   // Two calls in the same millisecond previously produced identical IDs.
   const uid = () => crypto.randomUUID().slice(0, 8);
   return [
@@ -280,32 +410,64 @@ async function loadCustomFolders() {
     const normalized = normalizeFolderPaths(parsed);
     const documentsDir = app.getPath('documents');
     const baseDir = path.join(documentsDir, 'StratoSort');
-    const defaultNameSet = new Set(
+    const currentDefaultNameSet = new Set(
       getDefaultSmartFolders(baseDir).map((folder) => normalizeName(folder.name))
     );
+    const defaultPathByName = new Map(
+      getDefaultSmartFolders(baseDir).map((folder) => [
+        normalizeName(folder.name),
+        normalizeFolderPath(folder.path)
+      ])
+    );
+    const defaultNameSet = new Set([...currentDefaultNameSet, ...LEGACY_DEFAULT_FOLDER_NAMES]);
 
-    const recovered = await recoverLegacyCustomFolders(normalized, defaultNameSet);
+    if (shouldPruneLegacyDefaultBundle(normalized, currentDefaultNameSet)) {
+      logger.warn(
+        '[STARTUP] Detected legacy default-only smart-folder bundle; pruning to fallback'
+      );
+      return await pruneToUncategorizedOnly(normalized);
+    }
+
+    const recovered = await recoverLegacyCustomFolders(
+      normalized,
+      defaultNameSet,
+      defaultPathByName
+    );
 
     // Only ensure the essential Uncategorized fallback exists
     return await ensureUncategorizedFolder(recovered);
   } catch {
     const documentsDir = app.getPath('documents');
     const baseDir = path.join(documentsDir, 'StratoSort');
-    const defaultNameSet = new Set(
+    const currentDefaultNameSet = new Set(
       getDefaultSmartFolders(baseDir).map((folder) => normalizeName(folder.name))
     );
+    const defaultPathByName = new Map(
+      getDefaultSmartFolders(baseDir).map((folder) => [
+        normalizeName(folder.name),
+        normalizeFolderPath(folder.path)
+      ])
+    );
+    const defaultNameSet = new Set([...currentDefaultNameSet, ...LEGACY_DEFAULT_FOLDER_NAMES]);
 
     const backupRestore = await restoreFromBackup();
     if (backupRestore?.success && Array.isArray(backupRestore.folders)) {
       const normalizedBackup = normalizeFolderPaths(backupRestore.folders);
+      if (shouldPruneLegacyDefaultBundle(normalizedBackup, currentDefaultNameSet)) {
+        logger.warn(
+          '[STARTUP] Detected legacy default-only smart-folder backup; pruning to fallback'
+        );
+        return await pruneToUncategorizedOnly(normalizedBackup);
+      }
       const recoveredFromBackup = await recoverLegacyCustomFolders(
         normalizedBackup,
-        defaultNameSet
+        defaultNameSet,
+        defaultPathByName
       );
       return await ensureUncategorizedFolder(recoveredFromBackup);
     }
 
-    const recoveredLegacy = await recoverLegacyCustomFolders([], defaultNameSet);
+    const recoveredLegacy = await recoverLegacyCustomFolders([], defaultNameSet, defaultPathByName);
     if (recoveredLegacy.length > 0) {
       return await ensureUncategorizedFolder(recoveredLegacy);
     }

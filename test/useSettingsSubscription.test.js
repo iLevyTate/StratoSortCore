@@ -70,6 +70,49 @@ describe('useSettingsSubscription', () => {
     expect(callback).not.toHaveBeenCalled();
   });
 
+  test('does not call callback when watched key value is unchanged', () => {
+    const callback = jest.fn();
+
+    renderHook(() => useSettingsSubscription(callback, { watchKeys: ['a'] }));
+
+    act(() => {
+      handlerRef.handler({ a: 1, b: 2 });
+    });
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenLastCalledWith({ a: 1 });
+
+    act(() => {
+      handlerRef.handler({ a: 1, b: 3 });
+    });
+
+    // Only non-watched keys changed; no callback should fire.
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
+
+  test('keeps last watched value across sparse payloads', () => {
+    const callback = jest.fn();
+
+    renderHook(() => useSettingsSubscription(callback, { watchKeys: ['a'] }));
+
+    act(() => {
+      handlerRef.handler({ a: 1, b: 2 });
+    });
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenLastCalledWith({ a: 1 });
+
+    act(() => {
+      // Sparse payload that omits watched key should not reset tracked value.
+      handlerRef.handler({ b: 3 });
+    });
+    expect(callback).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      // Re-sending same watched value should still be treated as unchanged.
+      handlerRef.handler({ a: 1 });
+    });
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
+
   test('unsubscribes on unmount', () => {
     const callback = jest.fn();
 

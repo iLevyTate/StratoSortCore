@@ -29,7 +29,6 @@ import './styles.css';
 // Fetch commonly-used data early so it's cached before components need it
 store.dispatch(fetchDocumentsPath());
 store.dispatch(fetchRedactPaths());
-// FIX: Force refresh on startup to ensure we have latest data from disk
 // This overrides potentially stale data from localStorage
 store.dispatch(fetchSmartFolders(true));
 store.dispatch(fetchSettings(true));
@@ -128,7 +127,6 @@ function applyFlexGapSupportClass() {
 
 applyFlexGapSupportClass();
 
-// FIX: Use named functions and track handler references for proper HMR cleanup
 // Store handlers in a module-level object for reliable cleanup
 const eventHandlers = {
   click: null,
@@ -273,11 +271,12 @@ function updateSplashStatus(message) {
   }
 }
 
-// FIX: Guard against multiple initializations (prevents double splash screen)
 // These flags prevent race conditions during HMR, StrictMode double-render, and rapid reloads
 let isAppInitialized = false;
 let splashRemovalInProgress = false;
 let reactRoot = null;
+const SPLASH_FADE_OUT_MS = 220;
+const SPLASH_REMOVAL_FALLBACK_MS = SPLASH_FADE_OUT_MS + 160;
 
 /**
  * Safely remove the splash screen with proper guards against double removal
@@ -303,28 +302,38 @@ function removeSplashScreen() {
     window.__STRATOSORT_CANCEL_SPLASH_TIMEOUT();
   }
 
+  // Keep removal duration aligned with renderer motion tokens for smoother startup.
+  const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  const fadeDuration = prefersReducedMotion ? 1 : SPLASH_FADE_OUT_MS;
+
   // Add fade-out animation
-  initialLoading.style.transition = 'opacity 0.3s ease-out';
+  initialLoading.style.transition = `opacity ${fadeDuration}ms ease-out`;
   initialLoading.style.pointerEvents = 'none';
   initialLoading.style.opacity = '0';
 
-  // Remove after animation completes
-  setTimeout(() => {
-    // Double-check element still exists before removing
+  let finalized = false;
+  const finalizeRemoval = () => {
+    if (finalized) return;
+    finalized = true;
+
     const element = document.getElementById('initial-loading');
     if (element) {
       element.remove();
       logger.debug('[Splash] Splash screen removed successfully');
     }
-    // Restore overflow so app scroll works (critical CSS locks it during splash)
-    document.documentElement.style.overflow = 'visible';
-    document.body.style.overflow = 'visible';
-  }, 300);
+
+    // Keep root scrolling locked and route scroll through main-content to avoid layout jumps.
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+  };
+
+  // Prefer transitionend for smoothness, with timeout fallback for reliability.
+  initialLoading.addEventListener('transitionend', finalizeRemoval, { once: true });
+  setTimeout(finalizeRemoval, SPLASH_REMOVAL_FALLBACK_MS);
 }
 
 // Wait for DOM to be ready before initializing React
 function initializeApp() {
-  // FIX: Prevent multiple initializations which can cause double splash screens
   if (isAppInitialized) {
     logger.debug('[initializeApp] Already initialized, skipping duplicate call');
     return;
@@ -332,6 +341,12 @@ function initializeApp() {
   isAppInitialized = true;
 
   try {
+    // Renderer bootstrap is alive; stop the polyfill timeout to avoid false
+    // "startup timed out" logs on slower machines while React mounts.
+    if (typeof window.__STRATOSORT_CANCEL_SPLASH_TIMEOUT === 'function') {
+      window.__STRATOSORT_CANCEL_SPLASH_TIMEOUT();
+    }
+
     updateSplashStatus('Loading dependencies...');
 
     // Debug logging in development mode
@@ -354,7 +369,6 @@ function initializeApp() {
       logger.debug('Root container found, creating React root');
     }
 
-    // FIX: Reuse existing root during HMR to prevent duplicate renders
     if (!reactRoot) {
       reactRoot = createRoot(container);
     }
@@ -372,9 +386,7 @@ function initializeApp() {
       </React.StrictMode>
     );
 
-    // FIX: Remove initial loading after first paint with proper guards
     // Using requestAnimationFrame ensures we wait for the first paint
-    // FIX: Increased delay from 50ms to 150ms to prevent double splash screen effect (Issue 3.1)
     requestAnimationFrame(() => {
       // Add delay to ensure React has fully rendered
       // This prevents flash-of-content issues on slower machines

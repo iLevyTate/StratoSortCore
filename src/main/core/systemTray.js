@@ -8,22 +8,24 @@
  */
 
 const { app, BrowserWindow, Menu, Tray, nativeImage, globalShortcut } = require('electron');
+const fs = require('fs');
 const path = require('path');
 const { isWindows, isMacOS } = require('../../shared/platformUtils');
 const { IPC_EVENTS } = require('../../shared/constants');
 const { createLogger } = require('../../shared/logger');
-// FIX: Import safeSend for validated IPC event sending
 const { safeSend } = require('../ipc/ipcWrappers');
 
 const logger = createLogger('Tray');
 
 // Resolve app root reliably in both dev (webpack bundles to dist/) and packaged builds.
-// Avoids __dirname which points to dist/ after webpack bundling.
 function _getAppRoot() {
   try {
     const appPath = app.getAppPath();
     if (appPath.endsWith('src/main') || appPath.endsWith('src\\main')) {
       return path.resolve(appPath, '../..');
+    }
+    if (appPath.endsWith('dist') || appPath.endsWith('dist\\')) {
+      return path.resolve(appPath, '..');
     }
     return appPath;
   } catch {
@@ -31,12 +33,28 @@ function _getAppRoot() {
   }
 }
 
-const getAssetPath = (...paths) => {
-  const RESOURCES_PATH = app.isPackaged
+function _getAssetPath(...pathSegments) {
+  const base = app.isPackaged
     ? path.join(process.resourcesPath, 'assets')
     : path.join(_getAppRoot(), 'assets');
-  return path.join(RESOURCES_PATH, ...paths);
-};
+  return path.join(base, ...pathSegments);
+}
+
+function getAssetPath(...pathSegments) {
+  const primary = _getAssetPath(...pathSegments);
+  if (app.isPackaged || fs.existsSync(primary)) {
+    return primary;
+  }
+  // Dev fallbacks when app.getAppPath() points elsewhere
+  const roots = [process.cwd(), path.join(__dirname, '..')];
+  for (const root of roots) {
+    const candidate = path.join(root, 'assets', ...pathSegments);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return primary;
+}
 
 let tray = null;
 let trayConfig = {
@@ -62,6 +80,8 @@ function initializeTrayConfig(config) {
  * Create the system tray
  */
 function createSystemTray() {
+  if (tray) return; // Prevent creating multiple tray icons
+
   try {
     const iconPath = getAssetPath(
       isWindows ? 'icons/win/icon.ico' : isMacOS ? 'icons/png/24x24.png' : 'icons/png/16x16.png'
@@ -103,7 +123,6 @@ async function openSemanticSearch() {
 
   if (!win) {
     // Create window if it doesn't exist
-    // FIX: createWindow() returns a Promise, so we must await it
     // before trying to use the window reference
     if (trayConfig.createWindow) {
       await trayConfig.createWindow();
@@ -118,8 +137,6 @@ async function openSemanticSearch() {
 
     // Send message to renderer to open semantic search
     // Small delay to ensure window is ready
-    // FIX: Use safeSend for validated IPC event sending
-    // FIX: Store timer ID and clear on window close to prevent stale callback
     const searchTimerId = setTimeout(() => {
       if (!win.isDestroyed()) {
         safeSend(win.webContents, IPC_EVENTS.OPEN_SEMANTIC_SEARCH);
@@ -141,7 +158,6 @@ function registerGlobalShortcut() {
 
     if (success) {
       logger.info(`[TRAY] Registered global shortcut: ${SEARCH_SHORTCUT}`);
-      // FIX CRIT-27: Ensure global shortcuts are unregistered on app quit/crash.
       // Use a dedicated flag instead of listenerCount (which includes unrelated listeners).
       if (!registerGlobalShortcut._willQuitRegistered) {
         app.on('will-quit', unregisterGlobalShortcuts);
@@ -202,10 +218,23 @@ function updateTrayMenu() {
         try {
           const settingsService = trayConfig.getSettingsService?.();
           if (settingsService) {
-            const merged = await settingsService.save({
+            const saveResult = await settingsService.save({
               autoOrganize: enable
             });
-            trayConfig.handleSettingsChanged?.(merged);
+            const normalizedSettings =
+              saveResult &&
+              typeof saveResult === 'object' &&
+              saveResult.settings &&
+              typeof saveResult.settings === 'object'
+                ? saveResult.settings
+                : saveResult && typeof saveResult === 'object'
+                  ? saveResult
+                  : null;
+            trayConfig.handleSettingsChanged?.(
+              normalizedSettings || {
+                autoOrganize: enable
+              }
+            );
           } else {
             trayConfig.handleSettingsChanged?.({ autoOrganize: enable });
           }

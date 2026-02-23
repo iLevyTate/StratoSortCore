@@ -1,14 +1,14 @@
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs').promises;
-const { app } = require('electron');
+const { app, BrowserWindow } = require('electron');
 const { getInstance: getLlamaService } = require('../services/LlamaService');
 const { getTextModel } = require('../llamaUtils');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
 const { withAbortableTimeout, delay } = require('../../shared/promiseUtils');
 const { AI_DEFAULTS } = require('../../shared/constants');
 const { enhanceSmartFolderWithLLM } = require('../services/SmartFoldersLLMService');
-const { createHandler, safeHandle, z } = require('./ipcWrappers');
+const { createHandler, safeHandle, safeSend, z } = require('./ipcWrappers');
 const { extractAndParseJSON } = require('../utils/jsonRepair');
 const { cosineSimilarity } = require('../../shared/vectorMath');
 const { isNotFoundError } = require('../../shared/errorClassifier');
@@ -22,10 +22,133 @@ const {
 const { ALLOWED_APP_PATHS } = require('../../shared/securityConfig');
 const { validateFileOperationPathSync } = require('../../shared/pathSanitization');
 
-// FIX: Import centralized error codes for consistent error handling
 const { ERROR_CODES } = require('../../shared/errorHandlingUtils');
 
 const { isUNCPath } = require('../../shared/crossPlatformUtils');
+
+/**
+ * Compare filesystem paths with platform-aware case sensitivity.
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+function areEquivalentPaths(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const normA = path.resolve(a);
+  const normB = path.resolve(b);
+  if (process.platform === 'win32') {
+    return normA.toLowerCase() === normB.toLowerCase();
+  }
+  return normA === normB;
+}
+
+function getFolderEmbeddingId(folder, folderMatcher) {
+  if (!folder || typeof folder !== 'object') return null;
+  if (typeof folder.id === 'string' && folder.id.trim()) return folder.id;
+  if (typeof folderMatcher?.generateFolderId === 'function') {
+    try {
+      const generated = folderMatcher.generateFolderId(folder);
+      return typeof generated === 'string' && generated.trim() ? generated : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Keep vector DB folder embeddings in sync with smart folder configuration.
+ * This is intentionally non-fatal: folder config writes must not fail because
+ * background embedding sync could not complete.
+ */
+async function syncSmartFolderEmbeddings({
+  previousFolders = [],
+  nextFolders = [],
+  logger,
+  reason = 'unknown'
+}) {
+  try {
+    const folderMatcher = FolderMatchingService.getInstance();
+    if (!folderMatcher) return;
+
+    if (typeof folderMatcher.initialize === 'function') {
+      await folderMatcher.initialize().catch((err) => {
+        logger.warn('[SMART-FOLDERS] Embedding sync init warning:', err.message);
+      });
+    }
+
+    const validNextFolders = (Array.isArray(nextFolders) ? nextFolders : []).filter(
+      (folder) => folder && typeof folder.name === 'string' && folder.name.trim()
+    );
+
+    let upsertCount = 0;
+    if (typeof folderMatcher.batchUpsertFolders === 'function' && validNextFolders.length > 0) {
+      const upsertResult = await folderMatcher.batchUpsertFolders(validNextFolders, {
+        // Smart-folder config writes must refresh embeddings even if this session has
+        // already upserted these IDs (name/description/path can change).
+        forceRefresh: true
+      });
+      upsertCount = Number(upsertResult?.count) || 0;
+      const skipped = Array.isArray(upsertResult?.skipped) ? upsertResult.skipped : [];
+      const hasHardFailure =
+        upsertResult?.requiresRebuild === true ||
+        Boolean(upsertResult?.error) ||
+        skipped.some((entry) => {
+          const err = entry?.error;
+          return Boolean(err) && err !== 'already_upserted_this_session';
+        });
+      if (hasHardFailure) {
+        logger.warn('[SMART-FOLDERS] Embedding sync degraded', {
+          reason,
+          folders: validNextFolders.length,
+          upserted: upsertCount,
+          skipped: skipped.length,
+          error: upsertResult?.error || null,
+          requiresRebuild: upsertResult?.requiresRebuild === true
+        });
+      }
+    }
+
+    const previousIds = new Set(
+      (Array.isArray(previousFolders) ? previousFolders : [])
+        .map((folder) => getFolderEmbeddingId(folder, folderMatcher))
+        .filter(Boolean)
+    );
+    const nextIds = new Set(
+      (Array.isArray(nextFolders) ? nextFolders : [])
+        .map((folder) => getFolderEmbeddingId(folder, folderMatcher))
+        .filter(Boolean)
+    );
+    const deletedIds = [...previousIds].filter((id) => !nextIds.has(id));
+
+    let deletedCount = 0;
+    if (deletedIds.length > 0) {
+      const vectorDbService = folderMatcher.vectorDbService;
+      if (typeof vectorDbService?.batchDeleteFolders === 'function') {
+        const deleteResult = await vectorDbService.batchDeleteFolders(deletedIds);
+        deletedCount = Number(deleteResult?.count) || 0;
+      } else if (typeof vectorDbService?.deleteFolderEmbedding === 'function') {
+        for (const id of deletedIds) {
+          const deleteResult = await vectorDbService.deleteFolderEmbedding(id);
+          if (deleteResult?.success) deletedCount++;
+        }
+      } else {
+        logger.debug(
+          '[SMART-FOLDERS] Embedding sync: vector DB delete API unavailable, skipping deletes'
+        );
+      }
+    }
+
+    logger.info('[SMART-FOLDERS] Embedding sync complete', {
+      reason,
+      folders: validNextFolders.length,
+      upserted: upsertCount,
+      deleted: deletedCount
+    });
+  } catch (error) {
+    logger.warn('[SMART-FOLDERS] Embedding sync skipped due to error:', error.message);
+  }
+}
 
 /**
  * CRITICAL SECURITY FIX: Sanitize and validate folder paths to prevent path traversal attacks
@@ -241,7 +364,6 @@ function registerSmartFoldersIpc(servicesOrParams) {
             // Embed the query text
             // embedText handles capping, model selection, and caching automatically
 
-            // FIX: Enrich input text if it looks like a filename (has extension)
             // This ensures preview matches align with background analysis
             let queryText = text;
             // Simple extension check: dot followed by 1-5 alphanumeric chars at end of string
@@ -393,7 +515,6 @@ Rules:
               errorCode: ERROR_CODES.INVALID_INPUT
             };
 
-          // FIX: Prevent saving empty array - at minimum Uncategorized must exist
           if (folders.length === 0) {
             logger.warn('[SMART-FOLDERS] Rejecting save of empty folders array');
             return {
@@ -403,7 +524,6 @@ Rules:
             };
           }
 
-          // FIX: Ensure Uncategorized folder is always preserved
           const hasUncategorized = folders.some(
             (f) => f.isDefault && f.name?.toLowerCase() === 'uncategorized'
           );
@@ -416,7 +536,6 @@ Rules:
             };
           }
 
-          // FIX: Sanitize and validate all folder paths before saving
           for (const folder of folders) {
             if (folder.path) {
               try {
@@ -461,6 +580,12 @@ Rules:
           try {
             setCustomFolders(folders);
             await saveCustomFolders(folders);
+            await syncSmartFolderEmbeddings({
+              previousFolders: originalFolders,
+              nextFolders: folders,
+              logger,
+              reason: 'save'
+            });
             logger.info('[SMART-FOLDERS] Saved Smart Folders:', folders.length);
             return { success: true, folders: getCustomFolders() };
           } catch (saveError) {
@@ -495,7 +620,6 @@ Rules:
               errorCode: ERROR_CODES.INVALID_INPUT
             };
 
-          // FIX: Prevent saving empty array - at minimum Uncategorized must exist
           if (folders.length === 0) {
             logger.warn('[SMART-FOLDERS] Rejecting update with empty folders array');
             return {
@@ -505,7 +629,6 @@ Rules:
             };
           }
 
-          // FIX: Ensure Uncategorized folder is always preserved
           const hasUncategorized = folders.some(
             (f) => f.isDefault && f.name?.toLowerCase() === 'uncategorized'
           );
@@ -518,7 +641,6 @@ Rules:
             };
           }
 
-          // FIX: Sanitize and validate all folder paths before updating
           for (const folder of folders) {
             if (folder.path) {
               try {
@@ -563,6 +685,12 @@ Rules:
           try {
             setCustomFolders(folders);
             await saveCustomFolders(folders);
+            await syncSmartFolderEmbeddings({
+              previousFolders: originalFolders,
+              nextFolders: folders,
+              logger,
+              reason: 'update-custom'
+            });
             logger.info('[SMART-FOLDERS] Updated Custom Folders:', folders.length);
             return { success: true, folders: getCustomFolders() };
           } catch (saveError) {
@@ -611,7 +739,6 @@ Rules:
               errorCode: ERROR_CODES.FOLDER_NOT_FOUND
             };
           if (updatedFolder.name) {
-            // Fix for issue where " > Subfolder" might be appended
             if (updatedFolder.name.includes(' > ')) {
               updatedFolder.name = updatedFolder.name.split(' > ')[0].trim();
             }
@@ -645,7 +772,6 @@ Rules:
               }
               const parentDir = path.dirname(normalizedPath);
 
-              // FIX: Auto-create parent directory if it doesn't exist (Issue 3.1-A, 3.1-B)
               try {
                 const parentStats = await fs.stat(parentDir);
                 if (!parentStats.isDirectory()) {
@@ -675,19 +801,65 @@ Rules:
             }
           }
           const originalFolder = { ...customFolders[folderIndex] };
-          if (updatedFolder.path && updatedFolder.path !== originalFolder.path) {
+          const originalFolders = customFolders.map((folder) => ({ ...folder }));
+          if (updatedFolder.path && !areEquivalentPaths(updatedFolder.path, originalFolder.path)) {
             try {
               const oldPath = originalFolder.path;
               const newPath = updatedFolder.path;
-              const oldStats = await fs.stat(oldPath);
-              if (!oldStats.isDirectory())
+              let oldExists = false;
+              let oldIsDirectory = false;
+              let newExists = false;
+              let newIsDirectory = false;
+
+              try {
+                const oldStats = await fs.stat(oldPath);
+                oldExists = true;
+                oldIsDirectory = oldStats.isDirectory();
+              } catch (oldErr) {
+                if (oldErr?.code !== 'ENOENT') throw oldErr;
+              }
+
+              try {
+                const newStats = await fs.stat(newPath);
+                newExists = true;
+                newIsDirectory = newStats.isDirectory();
+              } catch (newErr) {
+                if (newErr?.code !== 'ENOENT') throw newErr;
+              }
+
+              if (newExists && !newIsDirectory) {
+                return {
+                  success: false,
+                  error: 'Target path exists but is not a directory',
+                  errorCode: ERROR_CODES.INVALID_PATH
+                };
+              }
+
+              if (oldExists && !oldIsDirectory) {
                 return {
                   success: false,
                   error: 'Original path is not a directory',
                   errorCode: ERROR_CODES.ORIGINAL_NOT_DIRECTORY
                 };
-              await fs.rename(oldPath, newPath);
-              logger.info(`[SMART-FOLDERS] Renamed directory "${oldPath}" -> "${newPath}"`);
+              }
+
+              if (oldExists && oldIsDirectory && !newExists) {
+                await fs.rename(oldPath, newPath);
+                logger.info(`[SMART-FOLDERS] Renamed directory "${oldPath}" -> "${newPath}"`);
+              } else if (!newExists) {
+                // Source folder was removed externally; create destination so folder remains valid.
+                await fs.mkdir(newPath, { recursive: true });
+                logger.info(
+                  '[SMART-FOLDERS] Source directory missing during edit, created destination directory instead:',
+                  { oldPath, newPath }
+                );
+              } else {
+                // Destination already exists and is a directory; treat as a repoint.
+                logger.info(
+                  '[SMART-FOLDERS] Destination directory already exists, updating smart folder path without rename:',
+                  { oldPath, newPath }
+                );
+              }
             } catch (renameErr) {
               logger.error('[SMART-FOLDERS] Directory rename failed:', renameErr.message);
               return {
@@ -706,6 +878,12 @@ Rules:
             };
             setCustomFolders(customFolders);
             await saveCustomFolders(customFolders);
+            await syncSmartFolderEmbeddings({
+              previousFolders: originalFolders,
+              nextFolders: customFolders,
+              logger,
+              reason: 'edit'
+            });
             logger.info('[SMART-FOLDERS] Edited Smart Folder:', folderId);
             return {
               success: true,
@@ -752,7 +930,6 @@ Rules:
               errorCode: ERROR_CODES.FOLDER_NOT_FOUND
             };
 
-          // FIX: Prevent deleting the Uncategorized default folder
           const folderToDelete = customFolders[folderIndex];
           if (folderToDelete.isDefault && folderToDelete.name?.toLowerCase() === 'uncategorized') {
             logger.warn('[SMART-FOLDERS] Rejecting deletion of Uncategorized folder');
@@ -769,6 +946,12 @@ Rules:
             const updated = customFolders.filter((f) => f.id !== folderId);
             setCustomFolders(updated);
             await saveCustomFolders(updated);
+            await syncSmartFolderEmbeddings({
+              previousFolders: originalFolders,
+              nextFolders: updated,
+              logger,
+              reason: 'delete'
+            });
             logger.info('[SMART-FOLDERS] Deleted Smart Folder:', folderId);
             // Note: We intentionally do NOT delete the physical directory.
             // The UI promises "This will not delete the physical directory or its files."
@@ -796,7 +979,6 @@ Rules:
     })
   );
 
-  // FIX: Generate description for smart folder using AI (Issue 2.5)
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SMART_FOLDERS.GENERATE_DESCRIPTION,
@@ -903,7 +1085,6 @@ Now generate a description for "${folderName}":`;
               errorCode: ERROR_CODES.INVALID_FOLDER_PATH
             };
 
-          // CRITICAL FIX: Sanitize folder name to remove any accidental path separators or suffixes
           // This addresses an issue where names like "Work > Project Management Templates" were being created
           let sanitizedName = folder.name.trim();
           if (sanitizedName.includes(' > ')) {
@@ -944,7 +1125,6 @@ Now generate a description for "${folderName}":`;
               error: `A smart folder with name "${existingFolder.name}" or path "${existingFolder.path}" already exists`,
               errorCode: ERROR_CODES.FOLDER_ALREADY_EXISTS
             };
-          // FIX: Auto-create parent directory if it doesn't exist (Issue 3.1-A, 3.1-B)
           const parentDir = path.dirname(normalizedPath);
           try {
             const parentStats = await fs.stat(parentDir);
@@ -990,81 +1170,124 @@ Now generate a description for "${folderName}":`;
             };
           }
 
-          let llmEnhancedData = {};
-          try {
-            const llmAnalysis = await enhanceSmartFolderWithLLM(
-              folder,
-              customFolders,
-              getTextModel
-            );
-            if (llmAnalysis && !llmAnalysis.error) llmEnhancedData = llmAnalysis;
-          } catch (e) {
-            logger.warn(
-              '[SMART-FOLDERS] LLM enhancement failed, continuing with basic data:',
-              e.message
-            );
-          }
-
-          const descriptionFromLlm =
-            (typeof llmEnhancedData.improvedDescription === 'string' &&
-              llmEnhancedData.improvedDescription.trim()) ||
-            (typeof llmEnhancedData.enhancedDescription === 'string' &&
-              llmEnhancedData.enhancedDescription.trim()) ||
-            '';
-          const keywordsFromLlm = Array.isArray(llmEnhancedData.suggestedKeywords)
-            ? llmEnhancedData.suggestedKeywords
-                .map((v) => String(v || '').trim())
-                .filter(Boolean)
-                .slice(0, 12)
-            : [];
-          const semanticTagsFromLlm = Array.isArray(llmEnhancedData.semanticTags)
-            ? llmEnhancedData.semanticTags
-                .map((v) => String(v || '').trim())
-                .filter(Boolean)
-                .slice(0, 12)
-            : [];
-          const existingFolderNameLookup = new Map(
-            customFolders
-              .filter((f) => f && typeof f.name === 'string' && f.name.trim())
-              .map((f) => [f.name.toLowerCase(), f.name])
-          );
-          const relatedFoldersFromLlm = Array.isArray(llmEnhancedData.relatedFolders)
-            ? llmEnhancedData.relatedFolders
-                .map((v) => String(v || '').trim())
-                .filter(Boolean)
-                .map((name) => existingFolderNameLookup.get(name.toLowerCase()) || null)
-                .filter(Boolean)
-                .slice(0, 8)
-            : [];
-          const confidenceFromLlm = Number(llmEnhancedData.confidence);
-          const normalizedConfidence = Number.isFinite(confidenceFromLlm)
-            ? Math.max(
-                0,
-                Math.min(1, confidenceFromLlm > 1 ? confidenceFromLlm / 100 : confidenceFromLlm)
-              )
-            : 0.8;
-          const categoryFromLlm =
-            typeof llmEnhancedData.suggestedCategory === 'string' &&
-            llmEnhancedData.suggestedCategory.trim()
-              ? llmEnhancedData.suggestedCategory.trim().toLowerCase().slice(0, 60)
-              : 'general';
           const newFolder = {
             id: `sf-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
             name: sanitizedName,
             path: normalizedPath,
-            description:
-              descriptionFromLlm ||
-              folder.description?.trim() ||
-              `Smart folder for ${sanitizedName}`,
-            keywords: keywordsFromLlm,
-            category: categoryFromLlm,
+            description: folder.description?.trim() || `Smart folder for ${sanitizedName}`,
+            keywords: [],
+            category: 'general',
             isDefault: folder.isDefault || false,
             createdAt: new Date().toISOString(),
-            semanticTags: semanticTagsFromLlm,
-            relatedFolders: relatedFoldersFromLlm,
-            confidenceScore: normalizedConfidence,
+            semanticTags: [],
+            relatedFolders: [],
+            confidenceScore: 0.8,
             usageCount: 0,
             lastUsed: null
+          };
+
+          const runBackgroundLlmEnhancement = () => {
+            enhanceSmartFolderWithLLM(folder, customFolders, getTextModel)
+              .then(async (llmAnalysis) => {
+                if (!llmAnalysis || llmAnalysis.error) return;
+                try {
+                  // Get fresh state and skip if the folder was deleted.
+                  const currentFolders = getCustomFolders();
+                  const folderIndex = currentFolders.findIndex((f) => f.id === newFolder.id);
+                  if (folderIndex === -1) return;
+
+                  const descriptionFromLlm =
+                    (typeof llmAnalysis.improvedDescription === 'string' &&
+                      llmAnalysis.improvedDescription.trim()) ||
+                    (typeof llmAnalysis.enhancedDescription === 'string' &&
+                      llmAnalysis.enhancedDescription.trim()) ||
+                    '';
+                  const keywordsFromLlm = Array.isArray(llmAnalysis.suggestedKeywords)
+                    ? llmAnalysis.suggestedKeywords
+                        .map((v) => String(v || '').trim())
+                        .filter(Boolean)
+                        .slice(0, 12)
+                    : [];
+                  const semanticTagsFromLlm = Array.isArray(llmAnalysis.semanticTags)
+                    ? llmAnalysis.semanticTags
+                        .map((v) => String(v || '').trim())
+                        .filter(Boolean)
+                        .slice(0, 12)
+                    : [];
+
+                  const existingFolderNameLookup = new Map(
+                    currentFolders
+                      .filter((f) => f && typeof f.name === 'string' && f.name.trim())
+                      .map((f) => [f.name.toLowerCase(), f.name])
+                  );
+                  const relatedFoldersFromLlm = Array.isArray(llmAnalysis.relatedFolders)
+                    ? llmAnalysis.relatedFolders
+                        .map((v) => String(v || '').trim())
+                        .filter(Boolean)
+                        .map((name) => existingFolderNameLookup.get(name.toLowerCase()) || null)
+                        .filter(Boolean)
+                        .slice(0, 8)
+                    : [];
+
+                  const confidenceFromLlm = Number(llmAnalysis.confidence);
+                  const normalizedConfidence = Number.isFinite(confidenceFromLlm)
+                    ? Math.max(
+                        0,
+                        Math.min(
+                          1,
+                          confidenceFromLlm > 1 ? confidenceFromLlm / 100 : confidenceFromLlm
+                        )
+                      )
+                    : 0.8;
+
+                  const categoryFromLlm =
+                    typeof llmAnalysis.suggestedCategory === 'string' &&
+                    llmAnalysis.suggestedCategory.trim()
+                      ? llmAnalysis.suggestedCategory.trim().toLowerCase().slice(0, 60)
+                      : 'general';
+
+                  const originalFoldersSnapshot = [...currentFolders];
+                  const updatedFolder = {
+                    ...currentFolders[folderIndex],
+                    description: descriptionFromLlm || currentFolders[folderIndex].description,
+                    keywords: keywordsFromLlm,
+                    category: categoryFromLlm,
+                    semanticTags: semanticTagsFromLlm,
+                    relatedFolders: relatedFoldersFromLlm,
+                    confidenceScore: normalizedConfidence,
+                    updatedAt: new Date().toISOString()
+                  };
+
+                  currentFolders[folderIndex] = updatedFolder;
+                  setCustomFolders(currentFolders);
+                  await saveCustomFolders(currentFolders);
+                  await syncSmartFolderEmbeddings({
+                    previousFolders: originalFoldersSnapshot,
+                    nextFolders: currentFolders,
+                    logger,
+                    reason: 'add-llm-enhancement'
+                  });
+
+                  const win =
+                    typeof BrowserWindow?.getAllWindows === 'function'
+                      ? BrowserWindow.getAllWindows()[0]
+                      : null;
+                  if (win && !win.isDestroyed()) {
+                    safeSend(win.webContents, IPC_CHANNELS.SYSTEM.LOG, {
+                      type: 'info',
+                      message: `Smart folder "${updatedFolder.name}" has been enhanced by AI`
+                    });
+                  }
+                } catch (updateErr) {
+                  logger.error(
+                    '[SMART-FOLDERS] Background LLM folder update failed:',
+                    updateErr.message
+                  );
+                }
+              })
+              .catch((e) => {
+                logger.warn('[SMART-FOLDERS] LLM enhancement failed in background:', e.message);
+              });
           };
 
           let directoryCreated = false;
@@ -1111,6 +1334,13 @@ Now generate a description for "${folderName}":`;
             customFolders.push(newFolder);
             setCustomFolders(customFolders);
             await saveCustomFolders(customFolders);
+            await syncSmartFolderEmbeddings({
+              previousFolders: originalFolders,
+              nextFolders: customFolders,
+              logger,
+              reason: 'add'
+            });
+            runBackgroundLlmEnhancement();
             logger.info(
               '[SMART-FOLDERS] Added folder:',
               newFolder.id,
@@ -1127,8 +1357,7 @@ Now generate a description for "${folderName}":`;
                 ? 'Smart folder created successfully'
                 : 'Smart folder added (directory already existed)',
               directoryCreated,
-              directoryExisted,
-              llmEnhanced: !!llmEnhancedData.enhancedDescription
+              directoryExisted
             };
           } catch (saveError) {
             setCustomFolders(originalFolders);
@@ -1281,9 +1510,16 @@ Now generate a description for "${folderName}":`;
       handler: async () => {
         try {
           logger.info('[SMART-FOLDERS] Resetting to default smart folders');
+          const originalFolders = [...getCustomFolders()];
           const { resetToDefaultFolders } = require('../core/customFolders');
           const defaultFolders = await resetToDefaultFolders();
           setCustomFolders(defaultFolders);
+          await syncSmartFolderEmbeddings({
+            previousFolders: originalFolders,
+            nextFolders: defaultFolders,
+            logger,
+            reason: 'reset-to-defaults'
+          });
           logger.info('[SMART-FOLDERS] Reset complete, created', defaultFolders.length, 'folders');
           return {
             success: true,
@@ -1359,7 +1595,6 @@ Now generate a description for "${folderName}":`;
       schema: schemaVoid,
       handler: async () => {
         try {
-          // FIX: Call getter function to get current watcher instance
           const smartFolderWatcher = getSmartFolderWatcher?.();
           if (!smartFolderWatcher) {
             return {
@@ -1395,7 +1630,6 @@ Now generate a description for "${folderName}":`;
       schema: schemaVoid,
       handler: async () => {
         try {
-          // FIX: Call getter function to get current watcher instance
           const smartFolderWatcher = getSmartFolderWatcher?.();
           if (!smartFolderWatcher) {
             return {
@@ -1440,7 +1674,6 @@ Now generate a description for "${folderName}":`;
       schema: schemaVoid,
       handler: async () => {
         try {
-          // FIX: Call getter function to get current watcher instance
           const smartFolderWatcher = getSmartFolderWatcher?.();
           if (!smartFolderWatcher) {
             return {

@@ -119,7 +119,6 @@ function createIpcSanitizer({ log }) {
 
     cleaned = cleaned.replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '');
 
-    // FIX: Do NOT strip generic HTML tags, truncate at '<', or entity-encode < and >.
     // IPC data is rendered through React JSX which auto-escapes, so entity encoding
     // is unnecessary. The previous code corrupted user text like "size < 10MB",
     // search queries with comparison operators, and folder descriptions.
@@ -160,7 +159,22 @@ function createIpcSanitizer({ log }) {
           (typeof process !== 'undefined' && process.platform === 'win32');
         const invalidCharsPattern = isWin ? /[<>"|?*]/g : /[<>"]/g;
         let sanitized = stripped.replace(invalidCharsPattern, '');
-        const parts = sanitized.split(/[\\/]+/).filter((segment) => segment.length > 0);
+
+        // Decode percent-encoded sequences before traversal check to catch
+        // encoded variants like %2e%2e, %2E%2E, or double-encoded forms
+        let decoded = sanitized;
+        try {
+          let prev;
+          do {
+            prev = decoded;
+            decoded = decodeURIComponent(decoded);
+          } while (decoded !== prev);
+        } catch {
+          // If decoding fails, use the original sanitized value
+          decoded = sanitized;
+        }
+
+        const parts = decoded.split(/[\\/]+/).filter((segment) => segment.length > 0);
         const hasTraversal = parts.some((segment) => segment === '..');
         if (hasTraversal) {
           log.warn('[SecureIPC] Blocked path traversal attempt in file path:', {

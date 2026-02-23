@@ -1,8 +1,10 @@
 import React, { memo, useMemo } from 'react';
 import { BaseEdge, getSmoothStepPath, EdgeLabelRenderer } from 'reactflow';
 import PropTypes from 'prop-types';
+import { Zap } from 'lucide-react';
 import BaseEdgeTooltip from './BaseEdgeTooltip';
 import { useElkPath, useEdgeHover } from './useEdgeInteraction';
+import { Text } from '../ui/Typography';
 
 /**
  * Custom edge component for similarity connections with hover tooltip
@@ -23,18 +25,19 @@ const SimilarityEdge = memo(
   }) => {
     const { isHovered, handleMouseEnter, handleMouseLeave } = useEdgeHover();
     const elkPath = useElkPath(data);
+    const parallelOffset = Number(data?.parallelOffset || 0);
 
     // Fallback to ReactFlow's path routing if ELK path is missing
     const [smoothPath, smoothLabelX, smoothLabelY] = getSmoothStepPath({
       sourceX,
-      sourceY,
+      sourceY: sourceY + parallelOffset,
       sourcePosition,
       targetX,
-      targetY,
+      targetY: targetY + parallelOffset,
       targetPosition,
       borderRadius: 16, // Smoother corners
       centerX: (sourceX + targetX) / 2,
-      centerY: (sourceY + targetY) / 2
+      centerY: (sourceY + targetY) / 2 + parallelOffset
     });
 
     const edgePath = elkPath || smoothPath;
@@ -42,7 +45,7 @@ const SimilarityEdge = memo(
     // For label position, if we have a custom path, we might want to calculate it more precisely
     // But for now, using the smooth step midpoint is a reasonable approximation
     const labelX = smoothLabelX;
-    const labelY = smoothLabelY;
+    const labelY = smoothLabelY + parallelOffset;
 
     const isCrossCluster = data?.kind === 'cross_cluster';
     const similarity = data?.similarity ?? 0;
@@ -190,7 +193,9 @@ const SimilarityEdge = memo(
       strokeDasharray: primaryType === 'similarity' || primaryType === 'cross' ? '4 4' : 'none', // Dash only purely similar edges
       opacity: isHovered ? 1 : primaryType === 'similarity' ? 0.6 : 0.8,
       filter: isHovered ? `drop-shadow(0 0 4px ${strokeColor})` : 'none',
-      transition: 'all 0.2s ease'
+      transition: 'all 0.2s ease',
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round'
     };
 
     const compactLabelText =
@@ -204,6 +209,7 @@ const SimilarityEdge = memo(
     const showCompactBadge =
       !tooltipsEnabled &&
       (isCrossCluster || commonTags.length > 0 || sameCategory || similarityPercent >= 65);
+    const isSurpriseEdge = data?.isSurprise === true;
 
     return (
       <>
@@ -236,8 +242,28 @@ const SimilarityEdge = memo(
               }}
               className="nodrag nopan"
             >
-              <span className="px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-700 border border-slate-200 font-medium whitespace-nowrap">
+              <span className="px-1.5 py-0.5 rounded-full bg-system-gray-50 text-system-gray-700 border border-system-gray-200 font-medium whitespace-nowrap">
                 {compactLabelText}
+              </span>
+            </div>
+          </EdgeLabelRenderer>
+        )}
+
+        {/* Surprise badge for high-similarity, distant-folder connections */}
+        {isSurpriseEdge && (
+          <EdgeLabelRenderer>
+            <div
+              style={{
+                position: 'absolute',
+                transform: `translate(-50%, -50%) translate(${labelX + 20}px,${labelY - 16}px)`,
+                pointerEvents: 'none',
+                zIndex: 11
+              }}
+              className="nodrag nopan"
+            >
+              <span className="inline-flex items-center gap-1 rounded-full border border-stratosort-accent/30 bg-stratosort-accent/10 px-1.5 py-0.5 text-xs font-medium text-stratosort-accent">
+                <Zap className="h-2.5 w-2.5" />
+                Surprise
               </span>
             </div>
           </EdgeLabelRenderer>
@@ -262,12 +288,12 @@ const SimilarityEdge = memo(
                   ${isHovered ? 'scale-110 z-20' : 'scale-100'}
                   ${
                     primaryType === 'tag'
-                      ? 'bg-blue-50 border-blue-200 text-blue-700'
+                      ? 'bg-stratosort-blue/10 border-stratosort-blue/30 text-stratosort-blue'
                       : primaryType === 'category'
-                        ? 'bg-violet-50 border-violet-200 text-violet-700'
+                        ? 'bg-stratosort-purple/10 border-stratosort-purple/30 text-stratosort-purple'
                         : primaryType === 'content'
-                          ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                          : 'bg-white border-slate-200 text-slate-500'
+                          ? 'bg-stratosort-success/10 border-stratosort-success/30 text-stratosort-success'
+                          : 'bg-white border-system-gray-200 text-system-gray-500'
                   }
                 `}
                 onMouseEnter={tooltipsEnabled ? handleMouseEnter : undefined}
@@ -288,26 +314,26 @@ const SimilarityEdge = memo(
             badgeText={labelText}
             badgeColorClass={
               primaryType === 'tag'
-                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                ? 'bg-stratosort-blue/10 text-stratosort-blue border border-stratosort-blue/30'
                 : primaryType === 'category'
-                  ? 'bg-violet-50 text-violet-700 border border-violet-200'
+                  ? 'bg-stratosort-purple/10 text-stratosort-purple border border-stratosort-purple/30'
                   : primaryType === 'content'
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                    ? 'bg-stratosort-success/10 border-stratosort-success/30 text-stratosort-success'
                     : primaryType === 'cross'
-                      ? 'bg-slate-50 text-slate-700 border border-slate-200'
-                      : 'bg-slate-100 text-slate-500 border border-slate-200'
+                      ? 'bg-system-gray-50 text-system-gray-700 border border-system-gray-200'
+                      : 'bg-system-gray-100 text-system-gray-500 border border-system-gray-200'
             }
             title={
               badgeTitle || (primaryType === 'cross' ? 'Cluster Bridge' : 'Content Similarity')
             }
             headerColorClass={
               primaryType === 'tag'
-                ? 'text-blue-600'
+                ? 'text-stratosort-blue'
                 : primaryType === 'category'
-                  ? 'text-violet-600'
+                  ? 'text-stratosort-purple'
                   : primaryType === 'cross'
-                    ? 'text-slate-600'
-                    : 'text-emerald-600'
+                    ? 'text-system-gray-600'
+                    : 'text-stratosort-success'
             }
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
@@ -316,10 +342,10 @@ const SimilarityEdge = memo(
               <>
                 <div className="flex items-center gap-2">
                   <span className="text-system-gray-500">Similarity:</span>
-                  <span className="font-medium text-emerald-600">{similarityPercent}%</span>
+                  <span className="font-medium text-stratosort-success">{similarityPercent}%</span>
                   <div className="flex-1 h-1.5 bg-system-gray-200 rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-emerald-500 rounded-full"
+                      className="h-full bg-stratosort-success rounded-full"
                       style={{ width: `${similarityPercent}%` }}
                     />
                   </div>
@@ -328,7 +354,7 @@ const SimilarityEdge = memo(
                 {commonTags.length > 0 && (
                   <div>
                     <span className="text-system-gray-500">Common tags: </span>
-                    <span className="text-blue-600">
+                    <span className="text-stratosort-blue">
                       {commonTags.slice(0, 4).join(', ')}
                       {commonTags.length > 4 && ` +${commonTags.length - 4} more`}
                     </span>
@@ -338,34 +364,38 @@ const SimilarityEdge = memo(
                 {sameCategory && (
                   <div>
                     <span className="text-system-gray-500">Category: </span>
-                    <span className="text-purple-600">{sourceCategory}</span>
+                    <span className="text-stratosort-purple">{sourceCategory}</span>
                   </div>
                 )}
 
                 {hasSubjects && (
                   <div className="space-y-0.5">
                     {sourceSubject && (
-                      <div className="text-[11px]">
+                      <Text as="div" variant="tiny">
                         <span className="text-system-gray-500">A: </span>
-                        <span className="text-amber-600 truncate">
+                        <span className="text-stratosort-accent truncate">
                           {sourceSubject.slice(0, 40)}
                         </span>
-                      </div>
+                      </Text>
                     )}
                     {targetSubject && (
-                      <div className="text-[11px]">
+                      <Text as="div" variant="tiny">
                         <span className="text-system-gray-500">B: </span>
-                        <span className="text-amber-600 truncate">
+                        <span className="text-stratosort-accent truncate">
                           {targetSubject.slice(0, 40)}
                         </span>
-                      </div>
+                      </Text>
                     )}
                   </div>
                 )}
 
-                <div className="text-system-gray-500 italic text-[11px] pt-1 border-t border-system-gray-200">
+                <Text
+                  as="div"
+                  variant="tiny"
+                  className="text-system-gray-500 italic pt-1 border-t border-system-gray-200"
+                >
                   {explanation}
-                </div>
+                </Text>
               </>
             ) : (
               <>
@@ -374,14 +404,14 @@ const SimilarityEdge = memo(
                   <span className="font-medium text-system-gray-700">{similarityPercent}%</span>
                 </div>
                 {Array.isArray(data?.sharedTerms) && data.sharedTerms.length > 0 && (
-                  <div className="text-[11px] text-system-gray-600">
+                  <Text as="div" variant="tiny" className="text-system-gray-600">
                     Shared terms: {data.sharedTerms.slice(0, 4).join(', ')}
-                  </div>
+                  </Text>
                 )}
                 {data?.bridgeCount > 0 && (
-                  <div className="text-[11px] text-system-gray-600">
+                  <Text as="div" variant="tiny" className="text-system-gray-600">
                     Bridge files: {data.bridgeCount}
-                  </div>
+                  </Text>
                 )}
               </>
             )}
@@ -417,7 +447,9 @@ SimilarityEdge.propTypes = {
       tags: PropTypes.arrayOf(PropTypes.string),
       category: PropTypes.string,
       subject: PropTypes.string
-    })
+    }),
+    isSurprise: PropTypes.bool,
+    parallelOffset: PropTypes.number
   }),
   style: PropTypes.object,
   markerEnd: PropTypes.oneOfType([PropTypes.string, PropTypes.object])

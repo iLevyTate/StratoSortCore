@@ -9,7 +9,30 @@ permissions:
   contents: write
 
 jobs:
+  quality-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20.x
+          cache: 'npm'
+      - name: Install Dependencies
+        run: npm ci
+      - name: Check formatting
+        run: npm run format:check
+      - name: Lint
+        run: npm run lint
+      - name: Run tests with coverage
+        run: npm run test:coverage
+      - name: Verify IPC handlers
+        run: npm run verify:ipc-handlers
+      - name: Build
+        run: npm run build
+
   build-release:
+    needs: quality-gates
     runs-on: windows-latest
 
     steps:
@@ -25,8 +48,81 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Windows installer
+      - name: Rebuild native modules for Electron runtime
+        run: npx --no electron-builder install-app-deps
+
+      - name: Verify native module loading
+        run: npm run verify:native-modules
+
+      - name: Detect Windows release mode
+        id: windows-release-mode
+        shell: pwsh
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: |
+          if (-not [string]::IsNullOrWhiteSpace($env:CSC_LINK) -and -not [string]::IsNullOrWhiteSpace($env:CSC_KEY_PASSWORD)) {
+            "signed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding UTF8
+            Write-Host "::notice::Using signed Windows release mode."
+          }
+          else {
+            "signed=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding UTF8
+            Write-Host "::warning::Windows signing secrets not configured. Building unsigned beta artifacts."
+          }
+
+      - name: Clean release output directory
+        shell: pwsh
+        run: |
+          $target = Join-Path $PWD "release/build"
+          if (-not (Test-Path $target)) { return }
+
+          for ($i = 0; $i -lt 6; $i++) {
+            try {
+              Remove-Item -Path $target -Recurse -Force -ErrorAction Stop
+              break
+            }
+            catch {
+              if ($i -eq 5) { throw }
+              Start-Sleep -Seconds 3
+            }
+          }
+
+      - name: Build Windows installer [signed]
+        if: steps.windows-release-mode.outputs.signed == 'true'
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: true
         run: npm run dist:win
+
+      - name: Build Windows installer [unsigned beta]
+        if: steps.windows-release-mode.outputs.signed != 'true'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npm run dist:win
+
+      - name: Verify packaged Windows artifacts
+        run: node scripts/verify-packaged-artifacts.js --platform=win
+
+      - name: Verify Windows updater metadata
+        run: node scripts/verify-updater-metadata.js --platform=win --build-root=release/build
+
+      - name: Verify Authenticode signatures
+        if: steps.windows-release-mode.outputs.signed == 'true'
+        shell: pwsh
+        run: |
+          $executables = Get-ChildItem release/build -File -ErrorAction Stop |
+            Where-Object { $_.Name -match '^StratoSortCore-Setup-.*\.exe$|^StratoSortCore-.*-win-.*\.exe$' }
+          if (-not $executables -or $executables.Count -eq 0) {
+            throw "No Windows executables found to verify signature."
+          }
+
+          foreach ($file in $executables) {
+            $signature = Get-AuthenticodeSignature $file.FullName
+            if ($signature.Status -ne 'Valid') {
+              throw "Invalid signature status '$($signature.Status)' for $($file.Name)"
+            }
+          }
 
       - name: Generate SHA256 checksums
         run: |

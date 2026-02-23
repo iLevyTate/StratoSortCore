@@ -38,7 +38,6 @@ async function getLlamaInstance() {
   if (llamaInstance) return llamaInstance;
 
   const { getLlama } = await import(/* webpackIgnore: true */ 'node-llama-cpp');
-  // FIX: Import GPUMonitor dynamically to avoid circular deps or load issues in worker
   const { GPUMonitor } = require('../services/GPUMonitor');
   const { initLlamaWithBackend } = require('../utils/llamaBackendSelector');
   const gpuMonitor = new GPUMonitor();
@@ -147,7 +146,37 @@ async function ensureModelLoaded({ modelPath, gpuLayers }) {
   }
 }
 
+/**
+ * Clean up GPU resources (model + context) before worker termination.
+ * Call via pool.run({ type: 'cleanup' }) before pool.destroy().
+ */
+async function cleanup() {
+  if (context) {
+    try {
+      await context.dispose();
+    } catch {
+      /* ignore */
+    }
+    context = null;
+  }
+  if (model) {
+    try {
+      await model.dispose();
+    } catch {
+      /* ignore */
+    }
+    model = null;
+  }
+  currentModelPath = null;
+  currentGpuLayers = null;
+  llamaInstance = null;
+}
+
 module.exports = async function runEmbeddingTask(payload = {}) {
+  if (payload?.type === 'cleanup') {
+    await cleanup();
+    return { cleaned: true };
+  }
   const { text, modelPath, gpuLayers = 'auto' } = payload || {};
   if (typeof text !== 'string') {
     const error = new Error('Embedding text must be a string');

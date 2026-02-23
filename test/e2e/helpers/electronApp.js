@@ -30,13 +30,17 @@ const DEFAULT_LAUNCH_OPTIONS = {
   env: {
     ...process.env,
     NODE_ENV: 'development',
+    // Enable startup behavior optimized for deterministic E2E launch timing
+    STRATOSORT_E2E: '1',
     // Disable hardware acceleration for more stable CI testing
     ELECTRON_DISABLE_GPU: '1',
     // Enable logging for debugging
-    ELECTRON_ENABLE_LOGGING: '1'
+    ELECTRON_ENABLE_LOGGING: '1',
+    // Force launch to bypass single instance lock during testing
+    STRATOSORT_FORCE_LAUNCH: '1'
   },
-  // Timeout for app launch (30 seconds)
-  timeout: 30000
+  // Timeout for app launch (startup can be slower on CI runners)
+  timeout: 60000
 };
 
 /**
@@ -58,11 +62,16 @@ async function launchApp(options = {}) {
     }
   };
 
-  // Add args for headless mode if not headed
+  // Add args for CI / headless mode if not headed
   // Use relative path from APP_ROOT so app.getAppPath() returns correct root
+  // On Linux CI with xvfb, omit --headless so Electron creates a real window
+  // (xvfb provides a virtual display; --headless can prevent window creation)
   const args = [MAIN_ENTRY_RELATIVE];
   if (!options.headed) {
-    args.push('--disable-gpu');
+    args.push('--disable-gpu', '--no-sandbox');
+    if (process.platform !== 'linux' || !process.env.CI) {
+      args.push('--headless');
+    }
   }
 
   console.log('[E2E] Launching Electron app...');

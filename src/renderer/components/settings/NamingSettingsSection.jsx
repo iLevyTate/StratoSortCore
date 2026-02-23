@@ -1,12 +1,9 @@
 import React, { useCallback } from 'react';
 import PropTypes from 'prop-types';
 import Select from '../ui/Select';
-import Input from '../ui/Input';
 import SettingRow from './SettingRow';
 import SettingsCard from './SettingsCard';
-
-// Characters that could break file paths - used for separator validation
-const UNSAFE_SEPARATOR_CHARS = /[/\\:*?"<>|]/;
+import { normalizeSeparator } from '../../../shared/namingConventions';
 
 /**
  * NamingSettingsSection - Settings section for file naming conventions
@@ -14,6 +11,8 @@ const UNSAFE_SEPARATOR_CHARS = /[/\\:*?"<>|]/;
  * These settings are used by DownloadWatcher and SmartFolderWatcher.
  */
 function NamingSettingsSection({ settings, setSettings }) {
+  const separatorValue = normalizeSeparator(settings.separator ?? '-');
+
   const updateSetting = useCallback(
     (key, value) => {
       setSettings((prev) => ({
@@ -40,12 +39,7 @@ function NamingSettingsSection({ settings, setSettings }) {
   );
 
   const handleSeparatorChange = useCallback(
-    (e) => {
-      const { value } = e.target;
-      if (value === '' || !UNSAFE_SEPARATOR_CHARS.test(value)) {
-        updateSetting('separator', value);
-      }
-    },
+    (e) => updateSetting('separator', e.target.value),
     [updateSetting]
   );
 
@@ -107,16 +101,20 @@ function NamingSettingsSection({ settings, setSettings }) {
           layout="col"
           label="Separator"
           className="h-full"
-          description="Letters, numbers, dash or underscore."
+          description="none, dash, dot, or underscore."
         >
-          <Input
+          <Select
             id="settings-separator"
-            value={settings.separator || '-'}
+            value={separatorValue}
             onChange={handleSeparatorChange}
-            placeholder="-"
             aria-label="Separator character"
             className="w-full"
-          />
+          >
+            <option value="">none (no separator)</option>
+            <option value="-">- (dash)</option>
+            <option value=".">. (dot)</option>
+            <option value="_">_ (underscore)</option>
+          </Select>
         </SettingRow>
       </div>
     </SettingsCard>

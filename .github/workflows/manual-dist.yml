@@ -54,8 +54,46 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate installer assets
+        shell: pwsh
+        run: |
+          if (Test-Path assets/stratosort-logo.png) {
+            npm run generate:assets
+          } else {
+            Write-Host "::notice::Source logo not found - icons will use defaults if not pre-committed"
+          }
+
+      - name: Rebuild native modules for Electron runtime
+        run: npx --no electron-builder install-app-deps
+
+      - name: Verify native module loading
+        run: npm run verify:native-modules
+
+      - name: Clean release output directory
+        shell: pwsh
+        run: |
+          $target = Join-Path $PWD "release/build"
+          if (-not (Test-Path $target)) { return }
+
+          for ($i = 0; $i -lt 6; $i++) {
+            try {
+              Remove-Item -Path $target -Recurse -Force -ErrorAction Stop
+              break
+            }
+            catch {
+              if ($i -eq 5) { throw }
+              Start-Sleep -Seconds 3
+            }
+          }
+
       - name: Build Windows distribution
         run: npm run dist:win
+
+      - name: Verify packaged Windows artifacts
+        run: node scripts/verify-packaged-artifacts.js --platform=win
+
+      - name: Verify Windows updater metadata
+        run: node scripts/verify-updater-metadata.js --platform=win --build-root=release/build
 
       - name: Generate SHA256 checksums
         run: |
@@ -98,19 +136,39 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --include=optional
+
+      - name: Generate installer assets
+        run: |
+          if [ -f assets/stratosort-logo.png ]; then
+            npm run generate:assets
+          else
+            echo "::notice::Source logo not found - icons will use defaults if not pre-committed"
+          fi
+
+      - name: Rebuild native modules for Electron runtime
+        run: npx --no electron-builder install-app-deps
+
+      - name: Verify native module loading
+        run: npm run verify:native-modules
+
+      - name: Clean release output directory
+        run: |
+          rm -rf release/build
 
       - name: Build macOS distribution
         run: npm run dist:mac
+
+      - name: Verify packaged macOS artifacts
+        run: node scripts/verify-packaged-artifacts.js --platform=mac
+
+      - name: Verify macOS updater metadata
+        run: node scripts/verify-updater-metadata.js --platform=mac --build-root=release/build
 
       - name: Generate SHA256 checksums
         run: |
           cd release/build
           rm -f checksums-macos.sha256
-
-          if [ -f latest.yml ]; then
-            mv latest.yml latest-macos.yml
-          fi
 
           for f in StratoSortCore-*.dmg StratoSortCore-*.zip; do
             if [ -f "$f" ]; then
@@ -186,6 +244,10 @@ jobs:
               base="$(basename "$f")"
               target="release-upload/final/$base"
               if [ -e "$target" ]; then
+                if [[ "$base" == latest*.yml ]]; then
+                  echo "Conflicting updater metadata filename detected: $base"
+                  exit 1
+                fi
                 target="release-upload/final/macos-$base"
               fi
               cp "$f" "$target"

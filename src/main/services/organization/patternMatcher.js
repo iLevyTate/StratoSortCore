@@ -136,9 +136,12 @@ class PatternMatcher {
       accepted
     });
 
-    // Update user patterns if accepted
-    if (accepted && suggestion) {
-      this._updatePattern(file, suggestion, now);
+    if (suggestion) {
+      if (accepted) {
+        this._updatePattern(file, suggestion, now);
+      } else {
+        this._penalizePattern(file, suggestion);
+      }
     }
 
     // Trim history if too large
@@ -184,6 +187,29 @@ class PatternMatcher {
     data.count++;
     data.confidence = Math.min(1.0, data.confidence + 0.1);
     data.lastUsed = now;
+  }
+
+  /**
+   * Reduce confidence of a pattern when user rejects a matching suggestion.
+   * Removes the pattern entirely if confidence drops below a usable threshold.
+   * @private
+   */
+  _penalizePattern(file, suggestion) {
+    const pattern = this.extractPattern(file, suggestion);
+    const data = this.userPatterns.get(pattern);
+    if (!data) return;
+
+    data.confidence = Math.max(0, data.confidence - 0.15);
+
+    if (data.confidence < 0.1) {
+      this.userPatterns.delete(pattern);
+      logger.debug('[PatternMatcher] Removed pattern after repeated rejections', { pattern });
+    } else {
+      logger.debug('[PatternMatcher] Penalized pattern confidence', {
+        pattern,
+        newConfidence: data.confidence
+      });
+    }
   }
 
   /**
@@ -236,7 +262,7 @@ class PatternMatcher {
   checkMemoryUsage() {
     try {
       const patternSize = JSON.stringify(Array.from(this.userPatterns.entries())).length;
-      // MED-19: Account for object overhead (approx 2x raw string size)
+      // Account for object overhead (approx 2x raw string size)
       const estimatedMemoryMB = (patternSize * 2) / (1024 * 1024);
 
       if (estimatedMemoryMB > this.maxMemoryMB) {

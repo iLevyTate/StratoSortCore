@@ -36,7 +36,6 @@ function bringWindowToForeground(win) {
     win.moveTop();
     win.show();
     win.setAlwaysOnTop(true);
-    // FIX: Store timer ID and clear on window close to prevent stale callback
     const alwaysOnTopTimerId = setTimeout(() => {
       if (win && !win.isDestroyed()) {
         win.setAlwaysOnTop(false);

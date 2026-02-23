@@ -255,7 +255,6 @@ function getAbsoluteDefaultLocation(defaultLocation) {
   try {
     return app.getPath('documents');
   } catch {
-    // FIX HIGH-53: Unsafe default location fallback - prevent using CWD
     try {
       return app.getPath('temp');
     } catch {
@@ -293,7 +292,6 @@ function buildDestinationPath(file, suggestion, defaultLocation, preserveNames) 
     folderPath = path.join(absoluteDefaultLocation, folderName);
   }
 
-  // FIX: Ensure absolute path for folderPath
   // If we got a relative path from suggestion.path (e.g. from a strategy that didn't match an existing folder),
   // we must anchor it to defaultLocation to avoid creating folders in the application working directory.
   if (folderPath && !path.isAbsolute(folderPath)) {
@@ -303,14 +301,12 @@ function buildDestinationPath(file, suggestion, defaultLocation, preserveNames) 
   let fileName = preserveNames ? file.name : file.analysis?.suggestedName || file.name;
   const originalExt = path.extname(file.name);
 
-  // FIX H-6: Sanitize fileName to prevent path traversal attacks
   if (typeof fileName === 'string') {
     fileName = sanitizePath(fileName);
   } else {
     fileName = '';
   }
 
-  // FIX HIGH-55: Handle empty filename after sanitization
   if (!fileName || fileName.trim().length === 0) {
     fileName = `unnamed_file_${Date.now()}`;
     // Add extension back if available

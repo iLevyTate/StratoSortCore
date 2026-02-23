@@ -184,7 +184,7 @@ describe('systemTray', () => {
 
     test('auto-sort toggle calls settings service', async () => {
       const mockSettingsService = {
-        save: jest.fn().mockResolvedValue({ autoOrganize: true })
+        save: jest.fn().mockResolvedValue({ settings: { autoOrganize: true } })
       };
       const handleSettingsChanged = jest.fn();
 
@@ -202,7 +202,9 @@ describe('systemTray', () => {
       expect(mockSettingsService.save).toHaveBeenCalledWith({
         autoOrganize: true
       });
-      expect(handleSettingsChanged).toHaveBeenCalled();
+      expect(handleSettingsChanged).toHaveBeenCalledWith({
+        autoOrganize: true
+      });
     });
 
     test('auto-sort toggle handles missing settings service', async () => {
@@ -211,6 +213,28 @@ describe('systemTray', () => {
       systemTray.initializeTrayConfig({
         getDownloadWatcher: jest.fn().mockReturnValue(null),
         getSettingsService: jest.fn().mockReturnValue(null),
+        handleSettingsChanged
+      });
+
+      systemTray.updateTrayMenu();
+
+      const autoSortItem = capturedMenuTemplate.find((item) => item.label === 'Resume Auto-Sort');
+      await autoSortItem.click();
+
+      expect(handleSettingsChanged).toHaveBeenCalledWith({
+        autoOrganize: true
+      });
+    });
+
+    test('auto-sort toggle accepts legacy settings service response shape', async () => {
+      const mockSettingsService = {
+        save: jest.fn().mockResolvedValue({ autoOrganize: true })
+      };
+      const handleSettingsChanged = jest.fn();
+
+      systemTray.initializeTrayConfig({
+        getDownloadWatcher: jest.fn().mockReturnValue(null),
+        getSettingsService: jest.fn().mockReturnValue(mockSettingsService),
         handleSettingsChanged
       });
 

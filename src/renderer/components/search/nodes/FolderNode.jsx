@@ -10,29 +10,31 @@ const FolderNode = memo(({ data, selected }) => {
   return (
     <div
       className={`
-        relative px-3 py-2 rounded-lg border-2 shadow-sm min-w-[140px] max-w-[200px]
+        relative px-3 py-2 rounded-lg border-2 shadow-sm w-[220px] min-h-[84px] overflow-hidden
         transition-colors duration-200 cursor-pointer
         ${
           selected
-            ? 'border-amber-500 bg-amber-50 shadow-md ring-2 ring-amber-200'
-            : 'border-amber-300 bg-white hover:border-amber-400 hover:shadow-md'
+            ? 'border-stratosort-accent bg-stratosort-accent/10 shadow-md ring-2 ring-stratosort-accent/30'
+            : 'border-stratosort-accent/50 bg-white hover:border-stratosort-accent/70 hover:shadow-md'
         }
       `}
       title={label}
     >
-      <Handle type="target" position={Position.Left} className="!bg-amber-500 !w-2 !h-2" />
+      <Handle type="target" position={Position.Left} className="!bg-stratosort-accent !w-2 !h-2" />
       <div className="flex items-start gap-2">
-        <Folder className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+        <Folder className="w-4 h-4 text-stratosort-accent shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-medium text-system-gray-900 truncate">{label}</div>
+          <div className="text-xs font-medium text-system-gray-900 clamp-2 break-all leading-snug">
+            {label}
+          </div>
           {memberCount > 0 && (
-            <div className="text-[10px] text-system-gray-500 mt-0.5">
+            <div className="text-xs text-system-gray-500 mt-0.5">
               {memberCount} file{memberCount === 1 ? '' : 's'}
             </div>
           )}
         </div>
       </div>
-      <Handle type="source" position={Position.Right} className="!bg-amber-500 !w-2 !h-2" />
+      <Handle type="source" position={Position.Right} className="!bg-stratosort-accent !w-2 !h-2" />
     </div>
   );
 });

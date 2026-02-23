@@ -5,7 +5,6 @@ import { StatusBadge } from '../ui';
 import { Text } from '../ui/Typography';
 import { UI_VIRTUALIZATION } from '../../../shared/constants';
 
-// FIX L-2: Use centralized constants for virtualization
 const ITEM_HEIGHT = UI_VIRTUALIZATION.PROCESSED_FILES_ITEM_HEIGHT;
 const VIRTUALIZATION_THRESHOLD = UI_VIRTUALIZATION.THRESHOLD;
 
@@ -42,7 +41,6 @@ const ProcessedFileRow = memo(function ProcessedFileRow({ index, style, data }) 
 
   if (!file) return null;
 
-  // FIX L-1: Add null checks for optional file properties
   const originalName = file.originalName || 'Unknown';
   const newName = file.newName || 'Unknown';
   const smartFolder = file.smartFolder || 'Unknown folder';
@@ -102,11 +100,15 @@ function VirtualizedProcessedFiles({ files, isLoading = false }) {
 
   if (isLoading) {
     return (
-      <div className="space-y-3" role="status" aria-label="Loading organized files">
+      <div
+        className="space-y-3 animate-loading-fade"
+        role="status"
+        aria-label="Loading organized files"
+      >
         {[...Array(3)].map((_, i) => (
           <div
             key={i}
-            className="h-16 rounded-xl border border-border-soft bg-system-gray-100 animate-pulse"
+            className="h-16 rounded-xl border border-border-soft bg-system-gray-100 animate-pulse animate-loading-content"
           />
         ))}
       </div>
@@ -137,7 +139,6 @@ function VirtualizedProcessedFiles({ files, isLoading = false }) {
   return (
     <div className="space-y-4 max-h-viewport-sm overflow-y-auto modern-scrollbar">
       {files.map((file) => {
-        // FIX L-1: Add null checks for optional file properties
         const originalName = file.originalName || 'Unknown';
         const newName = file.newName || 'Unknown';
         const smartFolder = file.smartFolder || 'Unknown folder';

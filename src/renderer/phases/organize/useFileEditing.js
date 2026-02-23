@@ -212,7 +212,6 @@ export function useFileEditing({ onEditChange } = {}) {
 export function useFileSelection(totalFiles) {
   const [selectedFiles, setSelectedFiles] = useState(new Set());
 
-  // PERF FIX: Use functional update pattern to avoid dependency on selectedFiles
   // This keeps toggleFileSelection stable across renders, preventing unnecessary re-renders
   // of memoized child components like ReadyFileItem
   const toggleFileSelection = useCallback((index) => {
@@ -223,7 +222,6 @@ export function useFileSelection(totalFiles) {
     });
   }, []);
 
-  // PERF FIX: Use functional update pattern here too
   const selectAllFiles = useCallback(() => {
     setSelectedFiles((prev) =>
       prev.size === totalFiles
@@ -260,7 +258,6 @@ export function useBulkOperations({
   const [bulkEditMode, setBulkEditMode] = useState(false);
   const [bulkCategory, setBulkCategory] = useState('');
 
-  // FIX: Use refs to always get latest values and prevent stale closures
   const selectedFilesRef = useRef(selectedFiles);
   const editingFilesRef = useRef(editingFiles);
   const bulkCategoryRef = useRef(bulkCategory);
@@ -286,7 +283,6 @@ export function useBulkOperations({
   // Initialize debounced function once - uses refs for latest values
   useEffect(() => {
     debouncedBulkCategoryChangeRef.current = debounce(() => {
-      // FIX: Read from refs to get latest values at execution time, not call time
       const category = bulkCategoryRef.current;
       const selected = selectedFilesRef.current;
       const edits = editingFilesRef.current;
@@ -313,7 +309,6 @@ export function useBulkOperations({
     };
   }, [setEditingFiles, setSelectedFiles]); // Only stable setters needed
 
-  // FIX: Simplified - just triggers the debounced function which reads from refs
   const applyBulkCategoryChange = useCallback(() => {
     if (!bulkCategoryRef.current) return;
     debouncedBulkCategoryChangeRef.current?.();
@@ -336,9 +331,7 @@ export function useBulkOperations({
 export function useProcessedFiles(organizedFiles) {
   const [processedFileIds, setProcessedFileIds] = useState(new Set());
 
-  // FIX Issue-5/6: Normalize paths consistently for Windows/Unix compatibility
   // This ensures undo/redo operations work correctly regardless of path separators or case
-  // FIX: Only lowercase on Windows — Linux filesystems are case-sensitive
   const normalizePath = useCallback((p) => {
     const normalized = (p || '').replace(/[\\/]+/g, '/');
     return isWindows ? normalized.toLowerCase() : normalized;

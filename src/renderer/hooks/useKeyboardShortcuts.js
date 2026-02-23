@@ -1,10 +1,10 @@
 import { useEffect, useCallback, useMemo, useRef } from 'react';
 import { createLogger } from '../../shared/logger';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
-import { toggleSettings, setPhase } from '../store/slices/uiSlice';
+import { toggleSettings, setPhase, canTransitionTo } from '../store/slices/uiSlice';
 import { useNotification } from '../contexts/NotificationContext';
 import { useUndoRedo } from '../components/UndoRedoSystem';
-import { PHASES, PHASE_TRANSITIONS, PHASE_METADATA } from '../../shared/constants';
+import { PHASES, PHASE_METADATA, PHASE_ORDER } from '../../shared/constants';
 import { TIMEOUTS } from '../../shared/performanceConstants';
 
 const logger = createLogger('useKeyboardShortcuts');
@@ -13,14 +13,12 @@ export function useKeyboardShortcuts() {
   const currentPhase = useAppSelector((state) => state.ui.currentPhase);
   const showSettings = useAppSelector((state) => state.ui.showSettings);
   const { addNotification } = useNotification();
-  // FIX: Use the React UndoRedo system instead of direct IPC calls
   // This ensures state callbacks (onUndo/onRedo) are invoked, updating UI properly
   const { undo: undoAction, redo: redoAction, canUndo, canRedo } = useUndoRedo();
 
   // Use refs to avoid re-attaching event listeners when these values change
   const showSettingsRef = useRef(showSettings);
   const currentPhaseRef = useRef(currentPhase);
-  // FIX: Use refs for undo/redo to prevent event listener re-attachment
   const undoActionRef = useRef(undoAction);
   const redoActionRef = useRef(redoAction);
   const canUndoRef = useRef(canUndo);
@@ -46,11 +44,9 @@ export function useKeyboardShortcuts() {
     canRedoRef.current = canRedo;
   }, [canRedo]);
 
-  // CRITICAL FIX: Memoize actions to prevent event listener re-attachment on every render
   const handleToggleSettings = useCallback(() => dispatch(toggleSettings()), [dispatch]);
   const handleAdvancePhase = useCallback((phase) => dispatch(setPhase(phase)), [dispatch]);
 
-  // CRITICAL FIX: Use useMemo for stable actions object reference
   const actions = useMemo(
     () => ({
       toggleSettings: handleToggleSettings,
@@ -60,10 +56,8 @@ export function useKeyboardShortcuts() {
   );
 
   useEffect(() => {
-    // MEDIUM FIX: Make handler async to properly await undo/redo calls
     const handleKeyDown = async (event) => {
       // Ctrl/Cmd + Z for Undo
-      // FIX: Use React UndoRedo system instead of direct IPC to ensure UI state updates
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey) {
         event.preventDefault();
         try {
@@ -83,7 +77,6 @@ export function useKeyboardShortcuts() {
       }
 
       // Ctrl/Cmd + Shift + Z for Redo (also support Ctrl+Y on Windows)
-      // FIX: Use React UndoRedo system instead of direct IPC to ensure UI state updates
       if (
         (event.ctrlKey || event.metaKey) &&
         ((event.key.toLowerCase() === 'z' && event.shiftKey) || event.key.toLowerCase() === 'y')
@@ -121,13 +114,11 @@ export function useKeyboardShortcuts() {
         const phase = currentPhaseRef.current;
         if (event.key === 'ArrowLeft') {
           event.preventDefault();
-          // FIX: Add null check to prevent crash if PHASES is undefined
-          const phases = PHASES ? Object.values(PHASES) : [];
+          const phases = PHASE_ORDER || (PHASES ? Object.values(PHASES) : []);
           const currentIndex = phases.indexOf(phase);
           if (currentIndex > 0) {
             const previousPhase = phases[currentIndex - 1];
-            const allowedTransitions = PHASE_TRANSITIONS[phase] || [];
-            if (allowedTransitions.includes(previousPhase)) {
+            if (canTransitionTo(phase, previousPhase)) {
               actions.advancePhase(previousPhase);
               addNotification(
                 `Navigated to ${PHASE_METADATA[previousPhase]?.title || previousPhase}`,
@@ -140,13 +131,11 @@ export function useKeyboardShortcuts() {
 
         if (event.key === 'ArrowRight') {
           event.preventDefault();
-          // FIX: Add null check to prevent crash if PHASES is undefined
-          const phases = PHASES ? Object.values(PHASES) : [];
+          const phases = PHASE_ORDER || (PHASES ? Object.values(PHASES) : []);
           const currentIndex = phases.indexOf(phase);
           if (currentIndex < phases.length - 1) {
             const nextPhase = phases[currentIndex + 1];
-            const allowedTransitions = PHASE_TRANSITIONS[phase] || [];
-            if (allowedTransitions.includes(nextPhase)) {
+            if (canTransitionTo(phase, nextPhase)) {
               actions.advancePhase(nextPhase);
               addNotification(
                 `Navigated to ${PHASE_METADATA[nextPhase]?.title || nextPhase}`,

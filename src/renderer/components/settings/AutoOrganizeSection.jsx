@@ -53,7 +53,7 @@ function AutoOrganizeSection({ settings, setSettings }) {
       </SettingRow>
 
       <SettingRow
-        label="Smart folder routing"
+        label="Smart Folder Routing"
         description="Auto mode uses LLM-only when embeddings are missing, then shifts to hybrid or embedding-first as embeddings become healthy."
       >
         <Select

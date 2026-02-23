@@ -47,6 +47,7 @@ function OrganizePhase() {
   const { executeAction } = useUndoRedo();
   const [viewingFileDetails, setViewingFileDetails] = React.useState(null);
   const redactPaths = useAppSelector((state) => Boolean(state?.system?.redactPaths));
+  const currentPhase = useAppSelector((state) => state.ui.currentPhase);
   const detailHeaderPath = useMemo(() => {
     const rawPath = viewingFileDetails?.path || viewingFileDetails?.analysis?.path || '';
     const displayPath = rawPath
@@ -173,6 +174,7 @@ function OrganizePhase() {
       unmarkFilesAsProcessed,
       actions,
       phaseData,
+      currentPhase,
       addNotification,
       executeAction,
       dispatch,
@@ -196,15 +198,17 @@ function OrganizePhase() {
 
   useEffect(() => {
     const handleBatchResultsChunk = (event) => {
-      const { results, chunk, total } = event.detail || {};
-      if (results && Array.isArray(results)) {
+      const { results, chunk } = event.detail || {};
+      // Main sends 'chunk'; ipcMiddleware normalizes to chunk; support both for compatibility
+      const items = Array.isArray(chunk) ? chunk : Array.isArray(results) ? results : [];
+      if (items.length > 0) {
         logger.debug('[OrganizePhase] Received batch results chunk', {
-          chunk,
-          total,
-          resultCount: results.length
+          chunkIndex: event.detail?.chunkIndex,
+          totalChunks: event.detail?.totalChunks,
+          resultCount: items.length
         });
-        results.forEach((result) => {
-          if (result.success && result.path) {
+        items.forEach((result) => {
+          if (result?.success && result.path) {
             markFilesAsProcessed([result.originalPath || result.path]);
           }
         });
@@ -412,12 +416,20 @@ function OrganizePhase() {
               )}
             </div>
             {unprocessedFiles.length > 0 && (
-              <button
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
                 onClick={selectAllFiles}
-                className="text-sm text-stratosort-blue hover:text-stratosort-blue/80 font-medium transition-colors"
+                aria-label={
+                  selectedFiles.size === unprocessedFiles.length
+                    ? 'Deselect all files'
+                    : 'Select all files'
+                }
+                className="text-stratosort-blue hover:text-stratosort-blue/80 font-medium"
               >
                 {selectedFiles.size === unprocessedFiles.length ? 'Deselect All' : 'Select All'}
-              </button>
+              </Button>
             )}
           </div>
 
@@ -485,8 +497,11 @@ function OrganizePhase() {
                       moved to the same destination. Rename the files below to resolve:
                     </Text>
                     <ul className="mt-2 space-y-1 text-system-gray-700">
-                      {organizeConflicts.slice(0, 3).map((conflict, idx) => (
-                        <li key={idx} className="flex items-start gap-1">
+                      {organizeConflicts.slice(0, 3).map((conflict) => (
+                        <li
+                          key={conflict.destination || conflict.files?.[0]?.fileName}
+                          className="flex items-start gap-1"
+                        >
                           <span className="text-stratosort-warning">•</span>
                           <Text as="span" variant="tiny" className="truncate">
                             <strong>{conflict.files.map((f) => f.fileName).join(', ')}</strong>

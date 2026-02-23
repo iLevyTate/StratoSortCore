@@ -1,11 +1,9 @@
 import React, { memo, useCallback, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import Select from '../ui/Select';
-import Input from '../ui/Input';
 import { Text } from '../ui/Typography';
 import { logger } from '../../../shared/logger';
-
-const UNSAFE_SEPARATOR_CHARS = /[/\\:*?"<>|]/;
+import { normalizeSeparator } from '../../../shared/namingConventions';
 
 const NamingSettings = memo(function NamingSettings({
   namingConvention,
@@ -26,15 +24,8 @@ const NamingSettings = memo(function NamingSettings({
     (e) => setCaseConvention(e.target.value),
     [setCaseConvention]
   );
-  const handleSeparatorChange = useCallback(
-    (e) => {
-      const { value } = e.target;
-      if (value === '' || !UNSAFE_SEPARATOR_CHARS.test(value)) {
-        setSeparator(value);
-      }
-    },
-    [setSeparator]
-  );
+  const handleSeparatorChange = useCallback((e) => setSeparator(e.target.value), [setSeparator]);
+  const normalizedSeparator = normalizeSeparator(separator);
 
   // Skip saving on initial mount to avoid overwriting stored settings with prop defaults
   const isFirstRender = useRef(true);
@@ -101,17 +92,21 @@ const NamingSettings = memo(function NamingSettings({
       </Select>
 
       <div>
-        <Input
+        <Select
           label="Separator"
           id="separator"
-          value={separator}
+          value={normalizedSeparator}
           onChange={handleSeparatorChange}
-          placeholder="-"
           aria-label="Separator character"
           aria-describedby="separator-hint"
-        />
+        >
+          <option value="">none (no separator)</option>
+          <option value="-">- (dash)</option>
+          <option value=".">. (dot)</option>
+          <option value="_">_ (underscore)</option>
+        </Select>
         <Text id="separator-hint" variant="tiny" className="mt-1.5 text-system-gray-500">
-          Use letters, numbers, dash or underscore. Avoid / \\ : * ? &quot; &lt; &gt; |.
+          Choose one: none, dash, dot, or underscore.
         </Text>
       </div>
     </div>

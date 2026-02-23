@@ -39,7 +39,6 @@ function parseRuleFromText(text) {
   const normalized = normalizeText(text);
   if (!normalized) return { rules: [], targetFolder: null };
 
-  // FIX 89: Add word boundaries to prevent matching "to" inside words like "photos"
   const ruleMatch = normalized.match(
     /(.+?)\s*(?:->|=>|\bshould go to\b|\bgoes to\b|\bgo to\b|\bto\b)\s*(.+)$/i
   );

@@ -13,12 +13,13 @@ jest.mock('../src/shared/constants', () => ({
     COMPLETE: 'complete'
   },
   PHASE_TRANSITIONS: {
-    welcome: ['setup'],
+    welcome: ['setup', 'discover'],
     setup: ['welcome', 'discover'],
-    discover: ['setup', 'organize'],
-    organize: ['discover', 'complete'],
-    complete: ['welcome']
-  }
+    discover: ['welcome', 'setup', 'organize'],
+    organize: ['welcome', 'discover', 'complete'],
+    complete: ['welcome', 'discover', 'organize']
+  },
+  PHASE_ORDER: ['welcome', 'setup', 'discover', 'organize', 'complete']
 }));
 
 // Mock logger
@@ -111,14 +112,29 @@ describe('uiSlice', () => {
       expect(result.navigationError).toBeNull();
     });
 
-    test('tracks invalid transition but allows it', () => {
+    test('blocks invalid transition and tracks error', () => {
       const state = { ...initialState, currentPhase: 'welcome' };
 
       // Direct transition from welcome to organize is not in PHASE_TRANSITIONS
       const result = uiReducer(state, setPhase('organize'));
 
-      expect(result.currentPhase).toBe('organize');
+      expect(result.currentPhase).toBe('welcome');
       expect(result.navigationError).toContain('Invalid phase transition');
+    });
+
+    test('recovers from invalid current phase and applies requested valid phase', () => {
+      const state = {
+        ...initialState,
+        currentPhase: 'corrupted-phase',
+        previousPhase: 'welcome',
+        navigationError: 'stale'
+      };
+
+      const result = uiReducer(state, setPhase('setup'));
+
+      expect(result.currentPhase).toBe('setup');
+      expect(result.previousPhase).toBeNull();
+      expect(result.navigationError).toBeNull();
     });
 
     test('clears previous navigation error', () => {
@@ -411,6 +427,7 @@ describe('uiSlice', () => {
         expect(
           NAVIGATION_RULES.canGoNext({ currentPhase: 'setup' }, { hasSmartFolders: false })
         ).toBe(false);
+        expect(NAVIGATION_RULES.canGoNext({ currentPhase: 'setup' }, {})).toBe(false);
       });
 
       test('checks hasAnalyzedFiles for discover phase', () => {
@@ -438,7 +455,7 @@ describe('uiSlice', () => {
 
     describe('getAllowedTransitions', () => {
       test('returns allowed transitions for phase', () => {
-        expect(NAVIGATION_RULES.getAllowedTransitions('welcome')).toEqual(['setup']);
+        expect(NAVIGATION_RULES.getAllowedTransitions('welcome')).toEqual(['setup', 'discover']);
         expect(NAVIGATION_RULES.getAllowedTransitions('setup')).toContain('discover');
       });
 
@@ -469,7 +486,9 @@ describe('uiSlice', () => {
     describe('canTransitionTo', () => {
       test('allows valid transitions', () => {
         expect(canTransitionTo('welcome', 'setup')).toBe(true);
+        expect(canTransitionTo('welcome', 'discover')).toBe(true);
         expect(canTransitionTo('setup', 'discover')).toBe(true);
+        expect(canTransitionTo('complete', 'organize')).toBe(true);
       });
 
       test('allows same phase transition', () => {

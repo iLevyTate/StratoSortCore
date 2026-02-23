@@ -152,7 +152,7 @@ function GraphRetrievalSection({ settings, setSettings }) {
       description="Configure GraphRAG-lite expansion and contextual chunk retrieval."
     >
       <SettingRow
-        label="Enable graph expansion"
+        label="Enable Graph Expansion"
         description="Use relationship edges to pull related files into search results."
       >
         <Switch
@@ -162,7 +162,7 @@ function GraphRetrievalSection({ settings, setSettings }) {
       </SettingRow>
 
       <SettingRow
-        label="Graph expansion weight"
+        label="Graph Expansion Weight"
         description="How much graph neighbors can influence ranking."
       >
         <div className="w-full space-y-2">
@@ -196,7 +196,7 @@ function GraphRetrievalSection({ settings, setSettings }) {
       </SettingRow>
 
       <SettingRow
-        label="Graph neighbors limit"
+        label="Graph Neighbors Limit"
         description="Maximum number of neighbor files added per query."
         layout="col"
       >
@@ -219,7 +219,7 @@ function GraphRetrievalSection({ settings, setSettings }) {
       </SettingRow>
 
       <SettingRow
-        label="Contextual chunk expansion"
+        label="Contextual Chunk Expansion"
         description="Include adjacent chunks around the best chunk match."
       >
         <Switch
@@ -229,7 +229,7 @@ function GraphRetrievalSection({ settings, setSettings }) {
       </SettingRow>
 
       <SettingRow
-        label="Adjacent chunks"
+        label="Adjacent Chunks"
         description="How many neighboring chunks to include on each side."
         layout="col"
       >
@@ -252,7 +252,7 @@ function GraphRetrievalSection({ settings, setSettings }) {
       </SettingRow>
 
       <SettingRow
-        label="Knowledge graph status"
+        label="Knowledge Graph Status"
         description="Shows the local relationship index status built from analysis history."
         layout="col"
       >

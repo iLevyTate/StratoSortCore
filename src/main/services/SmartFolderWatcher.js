@@ -49,9 +49,11 @@ const {
   getInstance: getLearningFeedbackService,
   FEEDBACK_SOURCES
 } = require('./organization/learningFeedback');
-const { withTimeout } = require('../../shared/promiseUtils');
+const { withTimeout, delay } = require('../../shared/promiseUtils');
 const { shouldEmbed } = require('./embedding/embeddingGate');
 const { resetLlamaCircuit } = require('./LlamaResilience');
+const { clearSmartFolderUpsertCache } = require('../analysis/semanticFolderMatcher');
+const { CONCURRENCY } = require('../../shared/performanceConstants');
 
 const logger = typeof createLogger === 'function' ? createLogger('SmartFolderWatcher') : baseLogger;
 if (typeof createLogger !== 'function' && logger?.setContext) {
@@ -120,10 +122,8 @@ class SmartFolderWatcher {
     this.isStarting = false;
     this.watchedPaths = new Set();
 
-    // FIX M3: Promise deduplication for concurrent start() calls
     this._startPromise = null;
 
-    // FIX M-6: Flag to prevent timer callbacks during shutdown
     this._isStopping = false;
 
     // Processing state
@@ -139,9 +139,12 @@ class SmartFolderWatcher {
     this.maxDebounceWaitMs = 5000;
     this.stabilityThreshold = 3000; // 3 seconds - file must be stable for this long
     this.queueProcessInterval = 2000; // Process queue every 2 seconds
-    this.maxConcurrentAnalysis = 2; // Max files to analyze at once
+    this.maxConcurrentAnalysis = 2; // Max files to analyze at once (synced from settings)
     this._moveDetectionWindowMs = MOVE_DETECTION_WINDOW_MS;
     this._moveMtimeToleranceMs = MOVE_MTIME_TOLERANCE_MS;
+
+    // Sync concurrency from settings (non-blocking)
+    this._syncConcurrencyFromSettingsService();
 
     // Timers
     this.queueTimer = null;
@@ -162,6 +165,46 @@ class SmartFolderWatcher {
   }
 
   /**
+   * Apply settings updates (called when renderer saves settings)
+   * @param {Object} settings
+   */
+  applySettings(settings) {
+    if (!settings || typeof settings !== 'object') return;
+    const val = settings.maxConcurrentAnalysis;
+    const num = Number(val);
+    if (Number.isFinite(num)) {
+      this.maxConcurrentAnalysis = Math.min(
+        CONCURRENCY.MAX_WORKERS,
+        Math.max(CONCURRENCY.MIN_WORKERS, Math.round(num))
+      );
+    }
+  }
+
+  /**
+   * Sync maxConcurrentAnalysis from SettingsService (best effort, non-blocking)
+   * @private
+   */
+  async _syncConcurrencyFromSettingsService() {
+    try {
+      if (!this.settingsService?.load) return;
+      const loaded = await this.settingsService.load();
+      const val = loaded?.maxConcurrentAnalysis;
+      const num = Number(val);
+      if (Number.isFinite(num)) {
+        this.maxConcurrentAnalysis = Math.min(
+          CONCURRENCY.MAX_WORKERS,
+          Math.max(CONCURRENCY.MIN_WORKERS, Math.round(num))
+        );
+      }
+    } catch (error) {
+      logger.debug(
+        '[SMART-FOLDER-WATCHER] Failed to sync concurrency from settings:',
+        error?.message
+      );
+    }
+  }
+
+  /**
    * Start watching smart folders
    * Smart folder watching is always enabled - files added to smart folders are automatically analyzed
    * @returns {Promise<boolean>} True if started successfully
@@ -173,7 +216,6 @@ class SmartFolderWatcher {
     }
     this._isStopping = false;
 
-    // FIX M3: Return existing start promise if one is in progress
     // This prevents race condition where concurrent callers get false
     if (this._startPromise) {
       logger.debug('[SMART-FOLDER-WATCHER] Returning existing start promise');
@@ -201,7 +243,6 @@ class SmartFolderWatcher {
       // Get smart folders to watch
       const folders = this.getSmartFolders();
 
-      // FIX Issue-3: Provide detailed, user-friendly error messages when start fails
       if (!folders || folders.length === 0) {
         const errorMsg =
           'No smart folders configured. Please add smart folders in the Setup phase first.';
@@ -262,7 +303,6 @@ class SmartFolderWatcher {
       });
 
       // Handle deleted files (external deletion via File Explorer)
-      // FIX: Prevents ghost entries when files are deleted outside the app
       this.watcher.on('unlink', (filePath) => {
         this._handleFileDeletion(filePath);
       });
@@ -275,7 +315,6 @@ class SmartFolderWatcher {
       // Wait for chokidar to finish its initial scan before returning.
       // This ensures isRunning is true and the watcher is fully operational
       // before callers act on the start() result.
-      // FIX: Remove cross-listeners after resolution to prevent error handler
       // from calling reject() on an already-resolved promise (listener leak)
       await new Promise((resolve, reject) => {
         const readyHandler = () => {
@@ -335,7 +374,7 @@ class SmartFolderWatcher {
       logger.debug('[SMART-FOLDER-WATCHER] Waiting for in-flight queue processing to finish...');
       const deadline = Date.now() + 30000;
       while (this.isProcessingQueue && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 200));
+        await delay(200);
       }
       if (this.isProcessingQueue) {
         logger.warn('[SMART-FOLDER-WATCHER] Timed out waiting for queue processing during stop');
@@ -350,7 +389,6 @@ class SmartFolderWatcher {
     }
     this.pendingAnalysis.clear();
 
-    // FIX MED-6: Clear pending move detection timeouts to prevent
     // callbacks firing after watcher is stopped
     for (const candidate of this._pendingMoveCandidates.values()) {
       if (candidate.timeoutId) {
@@ -459,7 +497,6 @@ class SmartFolderWatcher {
    * @private
    */
   _handleFileEvent(eventType, filePath, stats) {
-    // FIX: Skip files recently operated on by any watcher (prevents infinite loops)
     const tracker = getFileOperationTracker();
     if (tracker.wasRecentlyOperated(filePath)) {
       logger.debug('[SMART-FOLDER-WATCHER] Skipping recently-operated file:', filePath);
@@ -519,7 +556,6 @@ class SmartFolderWatcher {
    * @private
    */
   async _queueFileForAnalysis(filePath, mtime, eventType, stats) {
-    // Fix: Cleanup any existing timeout to prevent memory leaks or race conditions
     const pending = this.pendingAnalysis.get(filePath);
     if (pending && pending.timeout) {
       clearTimeout(pending.timeout);
@@ -595,7 +631,6 @@ class SmartFolderWatcher {
         this.stats.queueDropped++;
         this._queueDropsSinceLog++;
 
-        // FIX: Log specific warning if we dropped a retry item
         if (dropped.retryCount > 0) {
           logger.warn(
             '[SMART-FOLDER-WATCHER] Dropped retried analysis item due to queue pressure',
@@ -606,7 +641,6 @@ class SmartFolderWatcher {
           );
         }
 
-        // FIX P1-2: Notify user about dropped items so they know analysis was skipped
         // We rate limit this notification to avoid spamming
         const now = Date.now();
         if (
@@ -695,7 +729,6 @@ class SmartFolderWatcher {
       return false;
     }
 
-    // FIX: When multiple candidates match, try base-name match to disambiguate
     let match;
     if (matches.length > 1) {
       const newBaseName = path.basename(filePath).toLowerCase();
@@ -1046,7 +1079,6 @@ class SmartFolderWatcher {
       });
 
       // Get smart folders for categorization
-      // FIX H-4: Guard against null/undefined from getSmartFolders()
       const smartFolders = this.getSmartFolders() || [];
       const folderCategories = smartFolders.map((f) => ({
         name: f.name,
@@ -1082,7 +1114,12 @@ class SmartFolderWatcher {
         // notification, learning feedback) since they already ran on the original pass.
         // Only re-attempt the embedding.
         if (isEmbeddingRetry) {
-          this._embedAnalyzedFile(filePath, result).catch((embedErr) => {
+          try {
+            // Embedding retry should only retry embedding and then stop.
+            // Do not run analysis side effects or stats updates.
+            await this._embedAnalyzedFile(filePath, result);
+            logger.debug('[SMART-FOLDER-WATCHER] Embedding retry succeeded', { filePath });
+          } catch (embedErr) {
             logger.warn('[SMART-FOLDER-WATCHER] Embedding retry failed again', {
               filePath,
               error: embedErr.message
@@ -1100,8 +1137,8 @@ class SmartFolderWatcher {
                 retryCount
               });
             }
-          });
-          // Skip to stats update and return
+          }
+          return;
         }
 
         // Apply user's naming convention to the suggested name (unless explicitly disabled)
@@ -1117,7 +1154,7 @@ class SmartFolderWatcher {
             const settings = await this.settingsService.load();
             const namingSettings = {
               convention: settings.namingConvention || 'keep-original',
-              separator: settings.separator || '-',
+              separator: settings.separator ?? '-',
               dateFormat: settings.dateFormat || 'YYYY-MM-DD',
               caseConvention: settings.caseConvention
             };
@@ -1181,7 +1218,8 @@ class SmartFolderWatcher {
           'filename_fallback',
           'extension_fallback',
           'filename',
-          'failed'
+          'failed',
+          'pdf_no_text'
         ]);
         const isFallbackOnly =
           !isEmbeddingRetry &&
@@ -1290,7 +1328,6 @@ class SmartFolderWatcher {
               logger
             });
 
-            // FIX P1-2: Invalidate BM25 index after analysis so new files are searchable immediately
             // This triggers a rebuild on the next search instead of waiting 15 minutes
             if (!this._isStopping) {
               try {
@@ -1320,20 +1357,43 @@ class SmartFolderWatcher {
 
         logger.info('[SMART-FOLDER-WATCHER] Analysis complete:', filePath);
 
-        // FIX: Record operation to prevent infinite loops with other watchers
         getFileOperationTracker().recordOperation(filePath, 'analyze', 'smartFolderWatcher');
-
-        // Skip learning feedback and notification for embedding-only retries
-        // (these already ran on the original analysis pass)
-        if (!isEmbeddingRetry) {
-          // Record implicit learning feedback - file in smart folder = positive signal
-          await this._recordLearningFeedback(filePath, result);
-        }
 
         // Send notification about the analyzed file
         const fileName = path.basename(filePath);
         const analysis = result.analysis || result;
         const confidence = deriveWatcherConfidencePercent(analysis);
+        let confidenceThreshold = 75;
+
+        try {
+          const settings = await this.settingsService.load();
+          confidenceThreshold = Math.round((settings?.confidenceThreshold ?? 0.75) * 100);
+        } catch (settingsErr) {
+          logger.debug(
+            '[SMART-FOLDER-WATCHER] Could not load confidence threshold; using default:',
+            settingsErr.message
+          );
+        }
+
+        // Skip learning feedback for fallback-only or low-confidence analyses.
+        // This prevents noisy fallback classification from polluting placement learning.
+        if (!isEmbeddingRetry) {
+          if (isFallbackOnly || confidence < confidenceThreshold) {
+            logger.debug(
+              '[SMART-FOLDER-WATCHER] Skipping learning feedback for non-actionable analysis',
+              {
+                fileName,
+                extractionMethod: analysis?.extractionMethod || null,
+                confidence,
+                threshold: confidenceThreshold,
+                reason: isFallbackOnly ? 'fallback_only' : 'low_confidence'
+              }
+            );
+          } else {
+            // Record implicit learning feedback - file in smart folder = positive signal
+            await this._recordLearningFeedback(filePath, result);
+          }
+        }
 
         if (this.notificationService && !isEmbeddingRetry) {
           // Notify about file analysis
@@ -1343,19 +1403,13 @@ class SmartFolderWatcher {
           });
 
           // Check if confidence is below threshold for auto-organization
-          try {
-            const settings = await this.settingsService.load();
-            const threshold = Math.round((settings.confidenceThreshold ?? 0.75) * 100);
-            if (confidence < threshold) {
-              await this.notificationService.notifyLowConfidence(
-                fileName,
-                confidence,
-                threshold,
-                analysis.category || null
-              );
-            }
-          } catch (settingsErr) {
-            logger.debug('[SMART-FOLDER-WATCHER] Could not check threshold:', settingsErr.message);
+          if (confidence < confidenceThreshold) {
+            await this.notificationService.notifyLowConfidence(
+              fileName,
+              confidence,
+              confidenceThreshold,
+              analysis.category || null
+            );
           }
         }
       } else {
@@ -1371,7 +1425,6 @@ class SmartFolderWatcher {
           error: error.message
         });
         this.stats.errors++;
-        // FIX: Re-throw error to trigger retry logic in _processQueue
         throw error;
       }
     } finally {
@@ -1427,7 +1480,6 @@ class SmartFolderWatcher {
       return;
     }
 
-    // FIX: Verify file still exists before embedding (prevents ghost embeddings)
     try {
       await fs.stat(filePath);
     } catch (statError) {
@@ -1440,7 +1492,6 @@ class SmartFolderWatcher {
       // For other stat errors, continue and let embedding logic handle it
     }
 
-    // FIX: Reuse precomputed embedding from document analysis to avoid duplicate embed+upsert.
     // Documents: applyUnifiedFolderMatching already embeds and either enqueues or attaches vector.
     // Images: have a different embedding path (image analysis block), so we skip reuse for them.
     const precomputed =
@@ -1517,14 +1568,12 @@ class SmartFolderWatcher {
         return [];
       })();
       const keywords = normalizeKeywords(rawKeywords);
-      // FIX: Use purpose as fallback for summary if missing (common in fallback analysis)
       const summary = analysis.summary || analysis.description || analysis.purpose || '';
       const learningService = getLearningFeedbackService();
       const resolvedSmartFolder = learningService?.findContainingSmartFolder?.(filePath) || null;
       const category = resolvedSmartFolder?.name || analysis.category || 'Uncategorized';
       const subject =
         analysis.subject || analysis.suggestedName || analysis.project || analysis.entity || '';
-      // FIX: Extract confidence score - normalize to 0-100 integer
       const rawConfidence = analysis.confidence ?? analysisResult.confidence ?? 0;
       const confidence =
         typeof rawConfidence === 'number'
@@ -1533,7 +1582,6 @@ class SmartFolderWatcher {
             : Math.round(rawConfidence * 100)
           : 0;
 
-      // FIX: Include more context for richer embeddings and conversations
       const purpose = analysis.purpose || '';
       const entity = analysis.entity || '';
       const project = analysis.project || '';
@@ -1569,7 +1617,6 @@ class SmartFolderWatcher {
       }
       const embedding = await this.folderMatcher.embedText(textToEmbed);
 
-      // FIX: Throw error on embedding failure to prevent "analyzed but not embedded" state
       // This ensures the file is retried later instead of being marked as done
       if (!embedding || !embedding.vector || !Array.isArray(embedding.vector)) {
         throw new Error('Failed to generate embedding vector');
@@ -1655,7 +1702,6 @@ class SmartFolderWatcher {
         const extractedText = analysis.extractedText || '';
         if (extractedText.trim().length >= CHUNKING.MIN_TEXT_LENGTH) {
           try {
-            // FIX P2-2: Delete old chunks before creating new ones (for re-analysis)
             // This prevents orphaned chunks when file content changes
             if (typeof this.vectorDbService.deleteFileChunks === 'function') {
               await this.vectorDbService.deleteFileChunks(fileId);
@@ -1689,7 +1735,6 @@ class SmartFolderWatcher {
                     charStart: c.charStart,
                     charEnd: c.charEnd,
                     snippet,
-                    // FIX P0-3: Store embedding model version for mismatch detection
                     model: chunkEmbedding.model || 'unknown'
                   },
                   document: snippet
@@ -1721,7 +1766,6 @@ class SmartFolderWatcher {
         }
       }
     } catch (error) {
-      // FIX: Propagate error so analysis is not marked as complete
       logger.warn('[SMART-FOLDER-WATCHER] Failed to embed file:', {
         filePath,
         error: error.message
@@ -1754,6 +1798,18 @@ class SmartFolderWatcher {
 
       // Extract analysis data
       const analysis = analysisResult?.analysis || analysisResult || {};
+      const extractionMethod = String(analysis?.extractionMethod || '').toLowerCase();
+
+      // Defensive guard: never learn from fallback/no-content analyses.
+      if (
+        analysis?._isFallback ||
+        extractionMethod === 'pdf_no_text' ||
+        extractionMethod === 'failed' ||
+        extractionMethod === 'filename' ||
+        extractionMethod.includes('fallback')
+      ) {
+        return;
+      }
 
       // Record the implicit feedback
       await learningService.recordFilePlacement({
@@ -1824,7 +1880,24 @@ class SmartFolderWatcher {
     }
 
     const entry = await this.analysisHistoryService.getAnalysisByPath(filePath);
-    if (!entry || !Number.isFinite(entry.fileSize) || !Number.isFinite(entry.lastModified)) {
+
+    // Parse persisted metadata strictly to avoid false-positive move matches from malformed values.
+    const parsedSize = Number(entry?.fileSize);
+    const parseLastModified = (value) => {
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+      if (typeof value !== 'string') return null;
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+
+      const numeric = Number(trimmed);
+      if (Number.isFinite(numeric)) return numeric;
+
+      const parsedDate = Date.parse(trimmed);
+      return Number.isFinite(parsedDate) ? parsedDate : null;
+    };
+    const parsedLastModified = parseLastModified(entry?.lastModified);
+
+    if (!entry || !Number.isFinite(parsedSize) || !Number.isFinite(parsedLastModified)) {
       return false;
     }
 
@@ -1836,8 +1909,8 @@ class SmartFolderWatcher {
 
     const candidate = {
       oldPath: filePath,
-      size: entry.fileSize,
-      mtimeMs: entry.lastModified,
+      size: parsedSize,
+      mtimeMs: parsedLastModified,
       ext: path.extname(filePath).toLowerCase(),
       baseName: path.basename(filePath),
       createdAt: Date.now(),
@@ -1900,7 +1973,6 @@ class SmartFolderWatcher {
           await this.vectorDbService.batchDeleteFileEmbeddings(idsToDelete);
         } else {
           // Fallback to individual deletes
-          // FIX H-9: Wrap each delete in try-catch to continue on failure
           for (const id of idsToDelete) {
             try {
               await this.vectorDbService.deleteFileEmbedding(id);
@@ -1916,7 +1988,6 @@ class SmartFolderWatcher {
         }
 
         // Delete associated chunks
-        // FIX H-9: Wrap each chunk delete in try-catch to continue on failure
         if (typeof this.vectorDbService.deleteFileChunks === 'function') {
           for (const id of idsToDelete) {
             try {
@@ -1932,7 +2003,6 @@ class SmartFolderWatcher {
       }
 
       // Remove from analysis history
-      // FIX MEDIUM-6: Wrap in try-catch for consistent error handling with other operations
       if (this.analysisHistoryService?.removeEntriesByPath) {
         try {
           await this.analysisHistoryService.removeEntriesByPath(filePath);
@@ -1988,7 +2058,7 @@ class SmartFolderWatcher {
    */
   async _reconcileOrphanedEntries() {
     // Let the system settle after startup before sweeping
-    await new Promise((r) => setTimeout(r, 5000));
+    await delay(5000);
 
     if (this._isStopping || !this.isRunning) return;
 
@@ -2035,7 +2105,7 @@ class SmartFolderWatcher {
 
       // Yield every 50 files to avoid blocking the event loop
       if (checked % 50 === 0) {
-        await new Promise((r) => setTimeout(r, 100));
+        await delay(100);
       }
     }
 
@@ -2078,7 +2148,6 @@ class SmartFolderWatcher {
       queueLength: this.analysisQueue.length,
       processingCount: this.processingFiles.size,
       stats: { ...this.stats },
-      // FIX: Include last error for better debugging when start fails
       lastStartError: this._lastStartError || null
     };
   }
@@ -2221,15 +2290,15 @@ class SmartFolderWatcher {
       resetLlamaCircuit(modelType);
     }
 
-    // Clear the embedding cache so stale embeddings aren't used for
-    // semantic folder matching during forced reanalysis
+    // Reset folder matching caches so embeddings are re-persisted into
+    // the now-empty vector DB (resetAll() was called before this)
     try {
-      if (this.folderMatcher?.embeddingCache?.clear) {
-        this.folderMatcher.embeddingCache.clear();
-        logger.debug('[SMART-FOLDER-WATCHER] Cleared embedding cache for reanalysis');
+      if (this.folderMatcher?.resetForReanalysis) {
+        this.folderMatcher.resetForReanalysis();
       }
+      clearSmartFolderUpsertCache(this.folderMatcher);
     } catch (cacheErr) {
-      logger.debug('[SMART-FOLDER-WATCHER] Could not clear embedding cache:', cacheErr?.message);
+      logger.debug('[SMART-FOLDER-WATCHER] Could not reset folder matcher:', cacheErr?.message);
     }
 
     let scanned = 0;

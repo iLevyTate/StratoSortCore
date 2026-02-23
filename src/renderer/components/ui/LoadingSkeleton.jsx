@@ -246,11 +246,11 @@ export const SmartFolderSkeleton = SmartFolderListSkeleton;
 export function LazyLoadingSpinner({ message = 'Loading...' }) {
   return (
     <div
-      className="flex items-center justify-center py-12 animate-skeleton-enter"
+      className="flex items-center justify-center py-12 animate-loading-fade"
       role="status"
       aria-label={message}
     >
-      <div className="text-center">
+      <div className="text-center animate-loading-content">
         <div className="animate-spin w-12 h-12 border-4 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-8" />
         <Text variant="small" className="text-system-gray-700">
           {message}
@@ -271,12 +271,12 @@ export function ModalLoadingOverlay({ message = 'Loading...', inline = false }) 
   // IMPORTANT: inline overlays should never block clicks on modal controls (close/back buttons),
   // otherwise a slow IPC call can make the UI feel "stuck".
   const containerClass = inline
-    ? 'absolute inset-0 z-40 flex items-center justify-center bg-white/80 backdrop-blur-sm pointer-events-none'
-    : 'fixed inset-0 bg-black/40 flex items-center justify-center z-modal animate-modal-backdrop pointer-events-none';
+    ? 'absolute inset-0 z-40 flex items-center justify-center bg-white/80 backdrop-blur-sm pointer-events-none animate-loading-fade'
+    : 'fixed inset-0 bg-black/40 flex items-center justify-center z-modal animate-modal-backdrop animate-loading-fade pointer-events-none';
 
   return (
     <div className={containerClass} role="status" aria-label={message}>
-      <div className="bg-white rounded-xl shadow-xl px-8 py-6 text-center animate-modal-enter pointer-events-none">
+      <div className="bg-white rounded-xl shadow-xl px-8 py-6 text-center animate-modal-enter animate-loading-content pointer-events-none">
         <div className="animate-spin w-10 h-10 border-3 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-3" />
         <Text variant="small" className="text-system-gray-600">
           {message}

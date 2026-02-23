@@ -36,26 +36,47 @@ test.describe('File Import', () => {
   });
 
   test('should display file drop zone on Discover phase', async () => {
+    // Wait a little bit for rendering if needed
+    await window.waitForTimeout(1000);
+
     // Look for drag-drop zone or file selection area
     const dropZone = window.locator(
       '[data-testid="drag-drop-zone"], .drag-drop-zone, [class*="drop"]'
     );
+
+    // Wait for the element to be visible
     const dropZoneVisible = await dropZone.isVisible().catch(() => false);
+    if (!dropZoneVisible) {
+      await dropZone.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+    }
 
     // Also check for alternative file selection UI
     const selectButton = window.locator(
       'button:has-text("Select"), button:has-text("Choose"), button:has-text("Browse")'
     );
-    const selectButtonVisible = await selectButton
+
+    let selectButtonVisible = await selectButton
       .first()
       .isVisible()
       .catch(() => false);
+    if (!selectButtonVisible) {
+      await selectButton
+        .first()
+        .waitFor({ state: 'visible', timeout: 5000 })
+        .catch(() => {});
+      selectButtonVisible = await selectButton
+        .first()
+        .isVisible()
+        .catch(() => false);
+    }
 
-    console.log('[Test] Drop zone visible:', dropZoneVisible);
+    const finalDropZoneVisible = await dropZone.isVisible().catch(() => false);
+
+    console.log('[Test] Drop zone visible:', finalDropZoneVisible);
     console.log('[Test] Select button visible:', selectButtonVisible);
 
     // At least one way to select files should be available
-    expect(dropZoneVisible || selectButtonVisible).toBe(true);
+    expect(finalDropZoneVisible || selectButtonVisible).toBe(true);
   });
 
   test('should show file selection instructions', async () => {
@@ -204,16 +225,27 @@ test.describe('File Import - Directory Selection', () => {
   test('should have folder selection option', async () => {
     // Navigate to Discover
     await nav.goToPhase(PHASES.DISCOVER);
-    await window.waitForTimeout(500);
+    await window.waitForTimeout(1000);
 
     // Look for folder/directory selection option
     const folderOption = window.locator(
-      'button:has-text("Folder"), button:has-text("Directory"), button:has-text("Browse Folder")'
+      'button:has-text("Folder"), button:has-text("Directory"), button:has-text("Scan Folder")'
     );
-    const exists = await folderOption
+
+    let exists = await folderOption
       .first()
       .isVisible()
       .catch(() => false);
+    if (!exists) {
+      await folderOption
+        .first()
+        .waitFor({ state: 'visible', timeout: 5000 })
+        .catch(() => {});
+      exists = await folderOption
+        .first()
+        .isVisible()
+        .catch(() => false);
+    }
 
     console.log('[Test] Folder selection option visible:', exists);
     // This is informational - folder selection might be combined with file selection

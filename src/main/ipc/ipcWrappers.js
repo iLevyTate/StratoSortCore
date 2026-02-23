@@ -52,7 +52,6 @@ let z;
 try {
   z = require('zod');
 } catch (error) {
-  // FIX: Log warning instead of silently swallowing the error
   // This aids debugging when Zod fails to load (e.g., missing module)
   logger.warn('[IPC] Zod not available, skipping schema validation:', error.message);
   z = null;
@@ -225,7 +224,6 @@ function withValidation(logger, schema, handler, options = {}) {
   }
 
   if (schema && !z) {
-    // SECURITY FIX: Fail-closed — reject requests when schema validation is required
     // but Zod is unavailable, rather than passing unvalidated data through.
     warnMissingZod(context);
     return withErrorLogging(
@@ -333,7 +331,6 @@ function withServiceCheck({
   fallbackResponse = null,
   context = 'IPC'
 }) {
-  // FIX: Reuse extracted helper function to avoid duplication
   const serviceCheckHandler = _createServiceCheckHandler({
     logger,
     serviceName,
@@ -432,7 +429,6 @@ function createHandler({
   }
 
   // Add service check if configured
-  // FIX: Reuse _createServiceCheckHandler to avoid code duplication (DRY principle)
   if (serviceName && getService) {
     wrappedHandler = _createServiceCheckHandler({
       logger,
@@ -482,7 +478,6 @@ function createHandler({
 
   if (schema && !z) {
     warnMissingZod(context);
-    // SECURITY FIX: Fail-closed — if a schema was explicitly requested but Zod is
     // unavailable, reject all requests rather than silently passing unvalidated data.
     wrappedHandler = async () => {
       logger?.error?.(`[${context}] Blocking request: Zod validation required but not available`);
@@ -552,7 +547,6 @@ function registerHandlers({ ipcMain, logger, handlers, context = 'IPC' }) {
       context,
       ...config
     });
-    // CRITICAL FIX: Use registry for targeted cleanup instead of direct ipcMain.handle
     registerHandler(ipcMain, channel, handler);
   }
 }

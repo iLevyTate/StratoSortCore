@@ -42,16 +42,20 @@ class IpcRateLimiter {
 
     this.rateLimiter.set(channel, channelData);
 
-    // Schedule cleanup asynchronously to prevent race conditions
+    // Schedule cleanup with a short delay to batch multiple checks into one cleanup pass.
+    // The flag ensures only one cleanup is pending at a time.
     if (
       this.rateLimiter.size > this.perfLimits.RATE_LIMIT_CLEANUP_THRESHOLD &&
       !this._cleanupScheduled
     ) {
       this._cleanupScheduled = true;
       setTimeout(() => {
-        this._cleanupRateLimiter();
-        this._cleanupScheduled = false;
-      }, 0);
+        try {
+          this._cleanupRateLimiter();
+        } finally {
+          this._cleanupScheduled = false;
+        }
+      }, 100);
     }
 
     return true;

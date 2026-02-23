@@ -65,7 +65,7 @@
         background: white;
         border-radius: 20px;
         box-shadow: 0 8px 32px rgba(79, 139, 255, 0.15), 0 2px 8px rgba(0, 0, 0, 0.05);
-        animation: splash-float 3s ease-in-out infinite;
+        animation: none;
       }
       .splash-title {
         margin: 0 0 0.5rem 0;
@@ -125,8 +125,8 @@
         font-weight: 500;
       }
       @keyframes splash-pulse {
-        0%, 100% { opacity: 0.5; transform: scale(1); }
-        50% { opacity: 0.8; transform: scale(1.05); }
+        0%, 100% { opacity: 0.5; }
+        50% { opacity: 0.8; }
       }
       @keyframes splash-float {
         0%, 100% { transform: translateY(0); }

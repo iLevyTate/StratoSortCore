@@ -45,7 +45,6 @@ function registerKnowledgeIpc(servicesOrParams) {
       return integration.relationshipIndex;
     }
 
-    // FIX 81: Cache fallback instance and guard against null analysisHistory
     const analysisHistoryService = integration?.analysisHistory;
     if (!analysisHistoryService) return null;
     if (!_cachedFallbackService) {

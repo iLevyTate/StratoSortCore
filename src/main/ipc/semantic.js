@@ -362,7 +362,6 @@ async function verifyReanalyzeModelsAvailable(logger) {
 
 // Module-level reference to SearchService for cross-module access
 // Module-level reference to SearchService for cross-module access
-// FIX: Use container resolution instead of manual reference
 
 /**
  * Get the SearchService instance (if initialized)
@@ -382,7 +381,6 @@ function getClusteringServiceInstance() {
   return getClusteringService();
 }
 
-// FIX P0-2: Rebuild operation lock to prevent concurrent rebuilds
 // This prevents data corruption when user clicks rebuild multiple times
 let _rebuildLock = {
   isLocked: false,
@@ -455,11 +453,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
   const { getServiceIntegration } = container;
 
   // Use container-resolved services
-  // FIX: Use singleton pattern via ServiceContainer
 
   // SearchService and ClusteringService are resolved lazily via getters defined at module scope
 
-  // CRITICAL FIX: Use proper state machine to prevent race conditions
   // State machine prevents concurrent re-initialization attempts
   const INIT_STATES = {
     PENDING: 'pending',
@@ -470,7 +466,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
   let initState = INIT_STATES.PENDING;
   let initPromise = null;
-  // FIX: Add mutex flag to prevent race conditions during state transitions
   let initMutexLocked = false;
   let initFailureReason = null;
   let initFailedAt = null;
@@ -507,9 +502,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
       return initPromise;
     }
 
-    // FIX: Use mutex to prevent race condition during FAILED -> IN_PROGRESS transition
     // This ensures only one caller can reset and start a new initialization
-    // FIX P0-2: Add max wait time to prevent infinite recursion
     if (initMutexLocked) {
       // Another caller is handling the state transition, wait with timeout
       const maxWaitMs = 30000; // 30 second max wait
@@ -570,7 +563,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
             await getOramaService().initialize();
 
-            // CRITICAL FIX: MUST await FolderMatchingService initialization
             await getFolderMatcher().initialize();
 
             logger.info('[SEMANTIC] Initialization complete');
@@ -615,7 +607,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
         }
       })();
     } finally {
-      // FIX: Release mutex after promise is created
       // The promise will continue to run, but other callers can now wait on it
       initMutexLocked = false;
     }
@@ -623,14 +614,12 @@ function registerEmbeddingsIpc(servicesOrParams) {
     return initPromise;
   }
 
-  // FIX: Removed arbitrary setTimeout - handlers now trigger initialization on-demand
   // with proper retry logic and exponential backoff in ensureInitialized().
   // This eliminates the race condition where users interact before the 5s delay.
   // Each handler calls ensureInitialized() which has built-in retry with backoff.
   //
   // Start background initialization after a shorter delay to pre-warm the service
   // but handlers will work correctly even if called before this completes.
-  // FIX: Store timer ID so it can be cleared if the module is torn down
   // before the pre-warm fires (prevents stale callback after shutdown).
   let _preWarmTimerId = null;
   if (process.env.NODE_ENV !== 'test') {
@@ -687,7 +676,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
       handler: async () => {
         const initErr = await safeEnsureInit();
         if (initErr) return initErr;
-        // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
         const lockResult = acquireRebuildLock('REBUILD_FOLDERS');
         if (!lockResult.acquired) {
           return {
@@ -698,7 +686,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
         }
 
         try {
-          // FIX: Verify embedding model is available before starting
           const modelCheck = await verifyEmbeddingModelAvailable(logger);
           if (!modelCheck.available) {
             return {
@@ -719,9 +706,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
               message: 'No smart folders to embed'
             };
           }
-
-          // SAFE: resetFolders() only deletes/recreates the collection, not the DB directory
-          await getOramaService().resetFolders();
 
           // Track successes and failures
           const results = { success: 0, failed: 0, errors: [] };
@@ -763,11 +747,49 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
           const validPayloads = folderPayloads.filter((p) => p !== null);
 
-          // Only upsert if we have valid payloads
-          let upsertedCount = 0;
-          if (validPayloads.length > 0) {
-            const folderResult = await getOramaService().batchUpsertFolders(validPayloads);
-            upsertedCount = folderResult?.count ?? folderResult ?? 0;
+          // Do not mutate the existing folder index when every embedding generation fails.
+          if (validPayloads.length === 0) {
+            return {
+              success: false,
+              folders: 0,
+              total: smartFolders.length,
+              succeeded: 0,
+              failed: results.failed,
+              errors: results.errors.slice(0, 5),
+              model: modelCheck.model,
+              errorCode: 'REBUILD_FAILED_NO_VALID_FOLDERS',
+              message: `All ${results.failed} folder embeddings failed. Existing folder index left unchanged.`
+            };
+          }
+
+          const oramaService = getOramaService();
+          const previousFolders =
+            typeof oramaService.getAllFolders === 'function'
+              ? await oramaService.getAllFolders()
+              : [];
+          const desiredFolderIds = new Set(
+            validPayloads.map((payload) => payload.id).filter(Boolean)
+          );
+          const staleFolderIds = previousFolders
+            .map((entry) => entry?.id)
+            .filter((id) => typeof id === 'string' && id.length > 0 && !desiredFolderIds.has(id));
+
+          // Upsert first, then delete stale IDs. This avoids wipe-first data loss on generation failures.
+          const folderResult = await oramaService.batchUpsertFolders(validPayloads);
+          const upsertedCount = folderResult?.count ?? folderResult ?? 0;
+
+          if (staleFolderIds.length > 0) {
+            if (typeof oramaService.batchDeleteFolders === 'function') {
+              await oramaService.batchDeleteFolders(staleFolderIds);
+            } else if (typeof oramaService.deleteFolderEmbedding === 'function') {
+              for (const folderId of staleFolderIds) {
+                await oramaService.deleteFolderEmbedding(folderId);
+              }
+            } else {
+              logger.debug(
+                '[EMBEDDINGS] Folder rebuild could not remove stale folder IDs; delete API unavailable'
+              );
+            }
           }
 
           // Record which model/dimensions were used for the index (for UI mismatch warnings)
@@ -809,7 +831,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
             errorCode: e.code || 'REBUILD_FAILED'
           };
         } finally {
-          // FIX P0-2: Always release lock when done
           releaseRebuildLock(lockResult.token);
         }
       }
@@ -832,7 +853,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
       handler: async () => {
         const initErr = await safeEnsureInit();
         if (initErr) return initErr;
-        // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
         const lockResult = acquireRebuildLock('REBUILD_FILES');
         if (!lockResult.acquired) {
           return {
@@ -843,7 +863,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
         }
 
         try {
-          // FIX: Verify embedding model is available before starting
           const modelCheck = await verifyEmbeddingModelAvailable(logger);
           if (!modelCheck.available) {
             return {
@@ -869,7 +888,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
           // Load all history entries (bounded by service defaults if any)
           const allEntries = await historyService.getRecentAnalysis(Number.MAX_SAFE_INTEGER);
 
-          // FIX #17: Validate allEntries is an array to prevent crash
           if (!Array.isArray(allEntries)) {
             logger.warn('[EMBEDDINGS] getRecentAnalysis returned non-array:', typeof allEntries);
             return {
@@ -956,12 +974,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
           const chunkPayloads = [];
           const embeddingService = getParallelEmbeddingService();
 
-          // FIX: Yield every N entries to prevent UI blocking during large rebuilds
           const YIELD_EVERY_N = 50;
           let processedCount = 0;
 
           for (const entry of allEntries) {
-            // FIX: Yield to event loop periodically to prevent UI blocking
             processedCount++;
             if (processedCount % YIELD_EVERY_N === 0) {
               await new Promise((resolve) => setImmediate(resolve));
@@ -1090,7 +1106,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
                         charStart: c.charStart,
                         charEnd: c.charEnd,
                         snippet,
-                        // FIX P0-3: Store embedding model version for mismatch detection
                         model: chunkModel || 'unknown'
                       },
                       document: snippet,
@@ -1153,7 +1168,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
               fileResults.persistFailed += batch.length;
               logger.warn('[EMBEDDINGS] Failed to batch upsert files:', e.message);
             }
-            // FIX: Yield between batches to prevent UI blocking
             await new Promise((resolve) => setImmediate(resolve));
           }
           fileResults.persisted = rebuilt;
@@ -1168,7 +1182,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
             } catch (e) {
               logger.warn('[EMBEDDINGS] Failed to batch upsert file chunks:', e.message);
             }
-            // FIX: Yield between batches to prevent UI blocking
             await new Promise((resolve) => setImmediate(resolve));
           }
 
@@ -1224,7 +1237,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
             errorCode: e.code || 'REBUILD_FAILED'
           };
         } finally {
-          // FIX P0-2: Always release lock when done
           releaseRebuildLock(lockResult.token);
         }
       }
@@ -1247,7 +1259,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
       handler: async (_event, options = {}) => {
         const initErr = await safeEnsureInit();
         if (initErr) return initErr;
-        // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
         const lockResult = acquireRebuildLock('FULL_REBUILD');
         if (!lockResult.acquired) {
           return {
@@ -1497,7 +1508,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
                             charStart: chunk.charStart,
                             charEnd: chunk.charEnd,
                             snippet,
-                            // FIX P0-3: Store embedding model version for mismatch detection
                             model: chunkModel || 'unknown'
                           },
                           document: snippet,
@@ -1590,7 +1600,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
               );
             }
           }
-          // FIX P0-2: Always release lock when done
           releaseRebuildLock(lockResult.token);
         }
       }
@@ -1610,7 +1619,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
       context,
       schema: schemaObjectOptional,
       handler: async (_event, options = {}) => {
-        // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
         const lockResult = acquireRebuildLock('REANALYZE_ALL');
         if (!lockResult.acquired) {
           return {
@@ -1709,7 +1717,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
             errorCode: 'REANALYZE_ALL_FAILED'
           };
         } finally {
-          // FIX P0-2: Always release lock when done
           releaseRebuildLock(lockResult.token);
         }
       }
@@ -1934,7 +1941,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
       handler: async (event, { fileId, topK = SEARCH.DEFAULT_TOP_K_SIMILAR }) => {
         const initErr = await safeEnsureInit();
         if (initErr) return initErr;
-        // HIGH PRIORITY FIX: Add timeout and validation (addresses HIGH-11)
+        // Add timeout and validation
         const QUERY_TIMEOUT = TIMEOUTS.SEMANTIC_QUERY;
         const { MAX_TOP_K } = LIMITS;
 
@@ -1952,7 +1959,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
           }
 
           // Create timeout promise
-          // FIX: Store timeout ID to clear it after race resolves
           let timeoutId;
           const timeoutPromise = new Promise((_, reject) => {
             timeoutId = setTimeout(
@@ -1969,7 +1975,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
               timeoutPromise
             ]);
           } finally {
-            // FIX: Always clear timeout to prevent memory leak
             if (timeoutId) clearTimeout(timeoutId);
           }
 
@@ -2096,10 +2101,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
               ? settings.chunkContextMaxNeighbors
               : undefined;
 
-          // FIX P1-7: Verify embedding model for vector/hybrid modes
           // BM25-only mode doesn't need embeddings
           let effectiveMode = mode;
-          let fallbackReason = null; // FIX C-3: Track fallback reason for UI notification
+          let fallbackReason = null;
           if (mode !== 'bm25') {
             const modelCheck = await verifyEmbeddingModelAvailable(logger);
             if (!modelCheck.available) {
@@ -2112,7 +2116,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
                   model: modelCheck.model
                 };
               }
-              // FIX P1-8: Hybrid mode can fall back to BM25-only
               logger.warn(
                 '[EMBEDDINGS] Embedding model unavailable, falling back to BM25-only search',
                 {
@@ -2121,7 +2124,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
                 }
               );
               effectiveMode = 'bm25';
-              // FIX C-3: Capture reason for UI banner
               fallbackReason = modelCheck.error?.includes('not running')
                 ? 'AI engine unavailable - using keyword search only'
                 : `Embedding model unavailable: ${modelCheck.error}`;
@@ -2167,7 +2169,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
           if (!result.success) {
             const requiresRebuild = isDimensionMismatchError({ message: result.error });
-            // FIX P1-8: If hybrid/vector search fails, try BM25 fallback
             if (effectiveMode !== 'bm25') {
               logger.warn('[EMBEDDINGS] Search failed, attempting BM25 fallback', {
                 originalMode: effectiveMode,
@@ -2206,7 +2207,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
             queryMeta: result.queryMeta, // Include query processing info (corrections, synonyms)
             meta: {
               ...result.meta,
-              // FIX C-3: Include fallback info for UI banner
               ...(effectiveMode !== mode && {
                 fallback: true,
                 originalMode: mode,
@@ -2222,7 +2222,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
             timeout: e.message.includes('timeout')
           });
 
-          // FIX P1-8: Last resort - try BM25 fallback on exception
           if (mode !== 'bm25') {
             try {
               const service = await getSearchService();
@@ -2355,7 +2354,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
                 const scores = [];
                 for (let i = 0; i < ids.length; i += 1) {
                   const vec = embeddings[i];
-                  // FIX P0-3: Skip files with missing/invalid embeddings to prevent crash
                   if (!Array.isArray(vec) || vec.length === 0) continue;
                   const fileVector = padOrTruncateVector(vec, queryVector.length);
                   if (!Array.isArray(fileVector) || fileVector.length !== queryVector.length)
@@ -2572,7 +2570,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
           return result;
         } catch (e) {
           logger.error('[EMBEDDINGS] Cluster computation failed:', e);
-          // FIX P2-12: Enrich error message with operation context
           return {
             success: false,
             error: `Cluster computation failed: ${e.message}`,
@@ -2609,7 +2606,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
           };
         } catch (e) {
           logger.error('[EMBEDDINGS] Get clusters failed:', e);
-          // FIX P2-12: Enrich error message with operation context
           return {
             success: false,
             error: `Failed to retrieve clusters: ${e.message}`,
@@ -2676,7 +2672,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
           };
         } catch (e) {
           logger.error('[EMBEDDINGS] Get cluster members failed:', e);
-          // FIX P2-12: Enrich error message with operation context
           return {
             success: false,
             error: `Failed to get members of cluster ${clusterId}: ${e.message}`,
@@ -2752,13 +2747,69 @@ function registerEmbeddingsIpc(servicesOrParams) {
           };
         } catch (e) {
           logger.error('[EMBEDDINGS] Get similarity edges failed:', e);
-          // FIX P2-12: Enrich error message with operation context
           return {
             success: false,
             error: `Failed to compute similarity edges: ${e.message}`,
             operation: 'GET_SIMILARITY_EDGES',
             edges: []
           };
+        }
+      }
+    })
+  );
+
+  /**
+   * Find files by paths
+   * Resolves file paths to vector DB IDs and metadata
+   */
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.EMBEDDINGS.FIND_FILES_BY_PATHS,
+    createHandler({
+      logger,
+      context,
+      schema: schemaObjectOptional,
+      handler: async (event, { paths } = {}) => {
+        try {
+          if (!Array.isArray(paths) || paths.length === 0) {
+            return { success: true, results: [] };
+          }
+
+          await getOramaService().initialize();
+          const results = [];
+
+          // Import utility to generate IDs
+          const { getFileEmbeddingId } = require('../utils/fileIdUtils');
+          const { SUPPORTED_IMAGE_EXTENSIONS } = require('../../shared/constants');
+
+          // Process paths in parallel
+          await Promise.all(
+            paths.map(async (p) => {
+              try {
+                const ext = path.extname(p).toLowerCase();
+                const isImage = SUPPORTED_IMAGE_EXTENSIONS.includes(ext);
+                const type = isImage ? 'image' : 'file';
+                const id = getFileEmbeddingId(p, type);
+
+                const doc = await getOramaService().getFile(id);
+                if (doc) {
+                  results.push({
+                    path: doc.filePath,
+                    id: id,
+                    name: doc.fileName,
+                    type: type
+                  });
+                }
+              } catch {
+                // Ignore
+              }
+            })
+          );
+
+          return { success: true, results };
+        } catch (e) {
+          logger.error('[EMBEDDINGS] Find files by paths failed:', e);
+          return { success: false, error: e.message };
         }
       }
     })
@@ -2820,7 +2871,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
           return { success: true, metadata };
         } catch (e) {
           logger.error('[EMBEDDINGS] Get file metadata failed:', e);
-          // FIX P2-12: Enrich error message with operation context
           return {
             success: false,
             error: `Failed to retrieve file metadata: ${e.message}`,
@@ -2876,7 +2926,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
           return result;
         } catch (e) {
           logger.error('[EMBEDDINGS] Find duplicates failed:', e);
-          // FIX P2-12: Enrich error message with operation context
           return {
             success: false,
             error: `Failed to find duplicate files: ${e.message}`,
@@ -2893,7 +2942,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
   const { app } = require('electron');
   app.once('before-quit', async () => {
     try {
-      // FIX: Wait for any pending initialization to complete before cleanup
       // This prevents cleanup from racing with in-progress initialization
       if (initState === INIT_STATES.IN_PROGRESS && initPromise) {
         try {
@@ -2906,7 +2954,6 @@ function registerEmbeddingsIpc(servicesOrParams) {
         }
       }
 
-      // FIX: Clear module-level service references to prevent memory leaks
       // (No-op: references managed by container)
 
       await getOramaService().cleanup();

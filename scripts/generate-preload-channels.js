@@ -2,14 +2,14 @@
 /**
  * Generate Preload Channels Script
  *
- * This script generates the IPC_CHANNELS constant for preload.js from the
- * centralized definition in src/shared/constants.js.
+ * This script generates the IPC_CHANNELS and IPC_EVENTS constants for preload.js
+ * from the centralized definitions in src/shared/constants.js.
  *
  * The preload script runs in a sandboxed environment and cannot use require()
  * to import from shared modules. This script solves the duplication problem by:
- * 1. Reading the IPC_CHANNELS from shared/constants.js
- * 2. Generating a JavaScript string representation
- * 3. Optionally updating preload.js with the generated channels
+ * 1. Reading IPC_CHANNELS and IPC_EVENTS from shared/constants.js
+ * 2. Generating JavaScript string representations
+ * 3. Optionally updating preload.js with the generated constants
  *
  * Usage:
  *   node scripts/generate-preload-channels.js [--check] [--update]
@@ -27,31 +27,27 @@ const path = require('path');
 const CONSTANTS_PATH = path.join(__dirname, '../src/shared/constants.js');
 const PRELOAD_PATH = path.join(__dirname, '../src/preload/preload.js');
 
-// Markers in preload.js for the IPC_CHANNELS block
+// Markers in preload.js for the generated block
 const START_MARKER = '// === START GENERATED IPC_CHANNELS ===';
 const END_MARKER = '// === END GENERATED IPC_CHANNELS ===';
 
 /**
- * Load IPC_CHANNELS from shared constants
+ * Load IPC_CHANNELS and IPC_EVENTS from shared constants
  */
 function loadChannels() {
   // Clear require cache to ensure fresh load
   delete require.cache[require.resolve(CONSTANTS_PATH)];
-  const { IPC_CHANNELS } = require(CONSTANTS_PATH);
-  return IPC_CHANNELS;
+  const { IPC_CHANNELS, IPC_EVENTS } = require(CONSTANTS_PATH);
+  return { IPC_CHANNELS, IPC_EVENTS };
 }
 
 /**
- * Generate JavaScript code for IPC_CHANNELS
+ * Generate JavaScript code for a nested object constant (IPC_CHANNELS)
  */
-function generateChannelsCode(channels) {
-  const indent = '  ';
-  let code = `${START_MARKER}\n`;
-  code += `// Auto-generated from src/shared/constants.js\n`;
-  code += `// Run 'npm run generate:channels' to update\n`;
-  code += `const IPC_CHANNELS = {\n`;
+function generateNestedObjectCode(varName, obj, indent) {
+  let code = `const ${varName} = {\n`;
 
-  const categories = Object.entries(channels);
+  const categories = Object.entries(obj);
   categories.forEach(([category, endpoints], categoryIndex) => {
     const isLastCategory = categoryIndex === categories.length - 1;
     code += `${indent}// ${category}\n`;
@@ -69,6 +65,36 @@ function generateChannelsCode(channels) {
     }
   });
   code += `};\n`;
+  return code;
+}
+
+/**
+ * Generate JavaScript code for a flat object constant (IPC_EVENTS)
+ */
+function generateFlatObjectCode(varName, obj, indent) {
+  let code = `const ${varName} = {\n`;
+
+  const entries = Object.entries(obj);
+  entries.forEach(([name, value], index) => {
+    const isLast = index === entries.length - 1;
+    code += `${indent}${name}: '${value}'${isLast ? '' : ','}\n`;
+  });
+
+  code += `};\n`;
+  return code;
+}
+
+/**
+ * Generate the complete code block for both IPC_CHANNELS and IPC_EVENTS
+ */
+function generateChannelsCode({ IPC_CHANNELS, IPC_EVENTS }) {
+  const indent = '  ';
+  let code = `${START_MARKER}\n`;
+  code += `// Auto-generated from src/shared/constants.js\n`;
+  code += `// Run 'npm run generate:channels' to update\n`;
+  code += generateNestedObjectCode('IPC_CHANNELS', IPC_CHANNELS, indent);
+  code += `\n`;
+  code += generateFlatObjectCode('IPC_EVENTS', IPC_EVENTS, indent);
   code += `${END_MARKER}`;
 
   return code;
@@ -130,8 +156,8 @@ function findHardcodedChannels(preloadContent) {
  * Check if channels are in sync
  */
 function checkSync() {
-  const channels = loadChannels();
-  const newCode = generateChannelsCode(channels);
+  const constants = loadChannels();
+  const newCode = generateChannelsCode(constants);
 
   const preloadContent = fs.readFileSync(PRELOAD_PATH, 'utf8');
   const currentBlock = extractCurrentChannels(preloadContent);
@@ -143,12 +169,12 @@ function checkSync() {
   }
 
   if (currentBlock.trim() !== newCode.trim()) {
-    console.error('ERROR: IPC_CHANNELS in preload.js is out of sync with constants.js');
+    console.error('ERROR: IPC_CHANNELS/IPC_EVENTS in preload.js is out of sync with constants.js');
     console.error('Run "npm run generate:channels -- --update" to sync');
     return false;
   }
 
-  console.log('OK: IPC_CHANNELS are in sync');
+  console.log('OK: IPC_CHANNELS and IPC_EVENTS are in sync');
   return true;
 }
 
@@ -156,21 +182,18 @@ function checkSync() {
  * Update preload.js with new channels
  */
 function updatePreload() {
-  const channels = loadChannels();
-  const newCode = generateChannelsCode(channels);
+  const constants = loadChannels();
+  const newCode = generateChannelsCode(constants);
 
   let preloadContent = fs.readFileSync(PRELOAD_PATH, 'utf8');
   const currentBlock = extractCurrentChannels(preloadContent);
 
   if (currentBlock) {
-    // Replace existing generated block
     preloadContent = preloadContent.replace(currentBlock, newCode);
   } else {
-    // Look for hardcoded channels to replace
     const hardcoded = findHardcodedChannels(preloadContent);
 
     if (hardcoded) {
-      // Replace hardcoded block with generated block
       preloadContent =
         preloadContent.slice(0, hardcoded.start) + newCode + preloadContent.slice(hardcoded.end);
 
@@ -184,7 +207,7 @@ function updatePreload() {
   }
 
   fs.writeFileSync(PRELOAD_PATH, preloadContent, 'utf8');
-  console.log('Updated preload.js with IPC_CHANNELS from constants.js');
+  console.log('Updated preload.js with IPC_CHANNELS and IPC_EVENTS from constants.js');
   return true;
 }
 
@@ -192,8 +215,8 @@ function updatePreload() {
  * Print generated channels to stdout
  */
 function printChannels() {
-  const channels = loadChannels();
-  const code = generateChannelsCode(channels);
+  const constants = loadChannels();
+  const code = generateChannelsCode(constants);
   console.log(code);
 }
 

@@ -95,7 +95,6 @@ function createFailedItemHandler(config) {
       }
     }
 
-    // FIX Bug 5: Delete and re-insert to maintain true LRU ordering
     // Map maintains insertion order, so updating an existing key doesn't move it
     // By deleting first then re-inserting, the item moves to the end (most recently used)
     if (existing) {
@@ -139,7 +138,6 @@ function createFailedItemHandler(config) {
       itemType: item.id.startsWith('folder:') ? 'folder' : 'file'
     };
 
-    // FIX P1-3: Ensure room exists BEFORE adding to prevent exceeding bounds
     // Use while loop to handle case where multiple concurrent calls could fill queue
     // The previous if-based pruning could leave queue at exactly maxDeadLetterSize
     while (deadLetterQueue.length >= maxDeadLetterSize) {
@@ -179,8 +177,9 @@ function createFailedItemHandler(config) {
       const backoffMs = RETRY.BACKOFF_BASE_MS * 2 ** (data.retryCount - 1);
 
       if (now - data.lastAttempt >= backoffMs) {
-        data.lastAttempt = now;
         itemsToRetry.push(data.item);
+        // Update lastAttempt after collecting (not before dedup check in caller)
+        data.lastAttempt = now;
       }
     }
 
@@ -201,7 +200,7 @@ function createFailedItemHandler(config) {
       if (deduped.length === 0) {
         return;
       }
-      logger.info(`[EmbeddingQueue] Re-queuing ${itemsToRetry.length} failed items for retry`);
+      logger.info(`[EmbeddingQueue] Re-queuing ${deduped.length} failed items for retry`);
       // Prepend to queue for priority processing
       // Use splice(0, 0, ...batch) in chunks to avoid stack overflow and O(n*m) unshift loop
       queue.splice(0, 0, ...deduped);

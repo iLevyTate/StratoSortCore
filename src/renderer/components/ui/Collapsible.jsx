@@ -93,8 +93,12 @@ const Collapsible = memo(function Collapsible({
         <Text as="div" variant="tiny" className="flex items-center gap-3 text-system-gray-500">
           <button
             type="button"
-            className="p-1.5 rounded-md border border-border-soft bg-white/80 hover:bg-system-gray-100 hover:border-system-gray-300 text-system-gray-600 hover:text-system-gray-800 transition-all flex items-center justify-center"
-            style={{ transitionDuration: 'var(--duration-fast)' }}
+            className="p-1.5 rounded-md border border-border-soft bg-white/80 hover:bg-system-gray-100 hover:border-system-gray-300 text-system-gray-600 hover:text-system-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 flex items-center justify-center"
+            style={{
+              transitionProperty: 'background-color, border-color, color, box-shadow',
+              transitionDuration: 'var(--motion-duration-fast)',
+              transitionTimingFunction: 'var(--motion-ease-standard)'
+            }}
             onClick={toggle}
             aria-expanded={isOpen}
             aria-controls={contentId}
@@ -102,9 +106,11 @@ const Collapsible = memo(function Collapsible({
             title={isOpen ? 'Collapse section' : 'Expand section'}
           >
             <ChevronRight
-              className="w-4 h-4 transition-transform"
+              className="w-4 h-4"
               style={{
-                transitionDuration: 'var(--duration-normal)',
+                transitionProperty: 'transform',
+                transitionDuration: 'var(--motion-duration-standard)',
+                transitionTimingFunction: 'var(--motion-ease-emphasized)',
                 transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)'
               }}
             />

@@ -17,20 +17,33 @@ import { useState, useCallback, useMemo } from 'react';
  * the caller should fall back to ReactFlow's built-in pathing.
  *
  * @param {Array|null|undefined} elkSections - ELK edge sections from layout
+ * @param {number} parallelOffset - Perpendicular pixel offset for multi-edges
  * @returns {string|null} SVG path string or null
  */
-export function buildElkPath(elkSections) {
+export function buildElkPath(elkSections, parallelOffset = 0) {
   if (!elkSections || elkSections.length === 0) return null;
+
+  // Shift all ELK points along a single edge-normal so parallel relations do not
+  // render directly on top of each other for the same source/target pair.
+  const firstSection = elkSections[0];
+  const lastSection = elkSections[elkSections.length - 1];
+  const dx = (lastSection?.endPoint?.x ?? 0) - (firstSection?.startPoint?.x ?? 0);
+  const dy = (lastSection?.endPoint?.y ?? 0) - (firstSection?.startPoint?.y ?? 0);
+  const length = Math.hypot(dx, dy) || 1;
+  const normalX = -dy / length;
+  const normalY = dx / length;
+  const shiftX = normalX * parallelOffset;
+  const shiftY = normalY * parallelOffset;
 
   return elkSections
     .map((section) => {
-      let pathStr = `M ${section.startPoint.x},${section.startPoint.y}`;
+      let pathStr = `M ${section.startPoint.x + shiftX},${section.startPoint.y + shiftY}`;
       if (section.bendPoints) {
         section.bendPoints.forEach((bp) => {
-          pathStr += ` L ${bp.x},${bp.y}`;
+          pathStr += ` L ${bp.x + shiftX},${bp.y + shiftY}`;
         });
       }
-      pathStr += ` L ${section.endPoint.x},${section.endPoint.y}`;
+      pathStr += ` L ${section.endPoint.x + shiftX},${section.endPoint.y + shiftY}`;
       return pathStr;
     })
     .join(' ');
@@ -43,7 +56,10 @@ export function buildElkPath(elkSections) {
  * @returns {string|null} Memoized SVG path string or null
  */
 export function useElkPath(data) {
-  return useMemo(() => buildElkPath(data?.elkSections), [data?.elkSections]);
+  return useMemo(
+    () => buildElkPath(data?.elkSections, Number(data?.parallelOffset || 0)),
+    [data?.elkSections, data?.parallelOffset]
+  );
 }
 
 /**

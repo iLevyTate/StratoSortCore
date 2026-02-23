@@ -1,7 +1,6 @@
 const fs = require('fs').promises;
 const path = require('path');
 const { app } = require('electron');
-// FIX: Add logger for error reporting
 const { createLogger } = require('../../shared/logger');
 const { isNotFoundError } = require('../../shared/errorClassifier');
 const { RETRY } = require('../../shared/performanceConstants');
@@ -37,7 +36,6 @@ class ProcessingStateService {
     // Track consecutive save failures for error monitoring
     this._consecutiveSaveFailures = 0;
     this._maxConsecutiveFailures = 3;
-    // FIX: Track last save error so callers can check if save failed
     this._lastSaveError = null;
 
     // Periodic cleanup interval reference (set during initialize, cleared on destroy)
@@ -76,7 +74,6 @@ class ProcessingStateService {
       return Promise.resolve();
     }
 
-    // FIX: Store promise and clear in external finally block (not inside the async body)
     // to prevent the promise reference from being nulled before callers can observe it.
     this._initPromise = this._doInitialize();
     try {
@@ -457,7 +454,6 @@ class ProcessingStateService {
     };
     this.state.analysis.lastUpdated = now;
     const result = await this.saveState();
-    // FIX HIGH-73: Log error if saveState fails (silent error fix)
     if (!result.success) {
       logger.error('[ProcessingStateService] Failed to save analysis error state:', result.error);
     }
@@ -537,7 +533,6 @@ class ProcessingStateService {
   async markOrganizeOpStarted(batchId, index) {
     await this.initialize();
     const batch = this.state.organize.batches[batchId];
-    // FIX: Add bounds checking to prevent TypeError on invalid index
     if (!batch?.operations || index < 0 || index >= batch.operations.length) return;
     batch.operations[index].status = 'in_progress';
     batch.operations[index].error = null;
@@ -548,7 +543,6 @@ class ProcessingStateService {
   async markOrganizeOpDone(batchId, index, updatedOp = null) {
     await this.initialize();
     const batch = this.state.organize.batches[batchId];
-    // FIX: Add bounds checking to prevent TypeError on invalid index
     if (!batch?.operations || index < 0 || index >= batch.operations.length) return;
     if (updatedOp) {
       batch.operations[index] = { ...batch.operations[index], ...updatedOp };
@@ -562,7 +556,6 @@ class ProcessingStateService {
   async markOrganizeOpError(batchId, index, errorMessage) {
     await this.initialize();
     const batch = this.state.organize.batches[batchId];
-    // FIX: Add bounds checking to prevent TypeError on invalid index
     if (!batch?.operations || index < 0 || index >= batch.operations.length) return;
     batch.operations[index].status = 'failed';
     batch.operations[index].error = errorMessage || 'Unknown organize error';

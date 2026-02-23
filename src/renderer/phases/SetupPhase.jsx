@@ -212,9 +212,6 @@ function SetupPhase() {
         } else {
           showSuccess(`Added smart folder: ${newFolder.name}`);
         }
-        if (result.llmEnhanced) {
-          showInfo('Smart folder enhanced with AI suggestions', 5000);
-        }
         await loadSmartFolders();
         return true;
       }
@@ -470,7 +467,7 @@ function SetupPhase() {
       <div className="flex-1 min-h-0 relative">
         {showSkeletonLayer && (
           <div
-            className={`transition-opacity duration-200 ${
+            className={`transition-opacity [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] ${
               isLoading ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0'
             }`}
             aria-hidden={!isLoading}
@@ -480,12 +477,15 @@ function SetupPhase() {
         )}
 
         <div
-          className={`transition-opacity duration-200 ${
+          className={`transition-opacity [transition-duration:var(--motion-duration-fast)] [transition-timing-function:var(--motion-ease-standard)] ${
             contentVisible ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0'
           }`}
         >
           {smartFolders.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-8 text-center">
+            <div
+              data-testid="smart-folders-empty-state"
+              className="flex flex-col items-center justify-center p-8 text-center"
+            >
               <StateMessage
                 icon={Folder}
                 size="lg"
@@ -509,6 +509,7 @@ function SetupPhase() {
           ) : (
             <div
               ref={listContainerRef}
+              data-testid="folder-list"
               className={`h-full pb-2 ${
                 isListScrollable ? 'overflow-y-auto modern-scrollbar' : 'overflow-hidden'
               }`}

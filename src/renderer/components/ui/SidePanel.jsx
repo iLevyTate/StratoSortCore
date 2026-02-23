@@ -7,8 +7,9 @@ import { Heading, Text } from './Typography';
 
 // Animation durations in ms
 const ANIMATION = {
-  ENTER: 250,
-  EXIT: 200
+  // Keep in sync with motion tokens used by CSS animation classes.
+  ENTER: 220,
+  EXIT: 140
 };
 
 const SidePanel = memo(function SidePanel({
@@ -23,6 +24,7 @@ const SidePanel = memo(function SidePanel({
   closeOnEsc = true,
   showOverlay = false,
   closeOnOverlayClick = true,
+  closeDisabled = false,
   className = ''
 }) {
   const panelRef = useRef(null);
@@ -70,7 +72,7 @@ const SidePanel = memo(function SidePanel({
   }, []);
 
   useEffect(() => {
-    if (!isVisible || !closeOnEsc) return undefined;
+    if (!isVisible || !closeOnEsc || closeDisabled) return undefined;
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
         onClose();
@@ -78,7 +80,7 @@ const SidePanel = memo(function SidePanel({
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isVisible, closeOnEsc, onClose]);
+  }, [isVisible, closeOnEsc, closeDisabled, onClose]);
 
   if (!isVisible) return null;
 
@@ -99,8 +101,8 @@ const SidePanel = memo(function SidePanel({
     <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 'var(--z-modal)' }}>
       {showOverlay && (
         <div
-          className={`absolute inset-0 bg-black/25 backdrop-blur-[1px] pointer-events-auto ${overlayAnimation}`}
-          onClick={closeOnOverlayClick && !isClosing ? onClose : undefined}
+          className={`absolute inset-0 bg-black/25 backdrop-blur-[1px] ${closeOnOverlayClick && !isClosing && !closeDisabled ? 'pointer-events-auto' : 'pointer-events-none'} ${overlayAnimation}`}
+          onClick={closeOnOverlayClick && !isClosing && !closeDisabled ? onClose : undefined}
           aria-hidden="true"
         />
       )}
@@ -116,7 +118,7 @@ const SidePanel = memo(function SidePanel({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-system-gray-100">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-system-gray-100">
           <div className="min-w-0">
             <Heading as="h3" variant="h5" id={titleId} className="text-system-gray-900">
               {title}
@@ -132,13 +134,14 @@ const SidePanel = memo(function SidePanel({
             variant="ghost"
             size="sm"
             aria-label="Close panel"
-            className="text-system-gray-400 hover:text-system-gray-600 -mr-1"
+            className="text-system-gray-400 hover:text-system-gray-600 -mr-2"
             icon={<X className="w-5 h-5" />}
+            disabled={closeDisabled || isClosing}
           />
         </div>
-        <div className="p-5 overflow-y-auto custom-scrollbar flex-1 min-h-0">{children}</div>
+        <div className="p-6 overflow-y-auto custom-scrollbar flex-1 min-h-0">{children}</div>
         {footer && (
-          <div className="px-5 py-4 bg-system-gray-50 border-t border-system-gray-100 flex justify-end gap-cozy">
+          <div className="px-6 py-4 bg-system-gray-50 border-t border-system-gray-100 flex justify-end gap-cozy">
             {footer}
           </div>
         )}
@@ -161,6 +164,7 @@ SidePanel.propTypes = {
   closeOnEsc: PropTypes.bool,
   showOverlay: PropTypes.bool,
   closeOnOverlayClick: PropTypes.bool,
+  closeDisabled: PropTypes.bool,
   className: PropTypes.string
 };
 

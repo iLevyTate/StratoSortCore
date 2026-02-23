@@ -138,12 +138,19 @@ class ModelAccessCoordinator {
         return;
       }
       // Phase 2: lock acquired but still running.
-      // Do not force release here: the holder may still be mutating model state.
-      logger.warn('[Coordinator] Load lock held past timeout; waiting for holder to release', {
+      // Schedule a force-release safety net at 2x the timeout to prevent permanent deadlock
+      // if the holder crashes or hangs without releasing.
+      logger.warn('[Coordinator] Load lock held past timeout; scheduling force-release', {
         modelType,
         timeoutMs,
-        safetyMode: 'no-force-release'
+        forceReleaseMs: timeoutMs
       });
+      setTimeout(() => {
+        if (!released) {
+          logger.error('[Coordinator] Force-releasing stuck load lock', { modelType });
+          releaseLock('force-release-deadlock');
+        }
+      }, timeoutMs);
     }, timeoutMs);
 
     try {
@@ -184,7 +191,6 @@ class ModelAccessCoordinator {
     const queue = this._getInferenceQueue(modelType);
     const startTime = Date.now();
 
-    // FIX Bug #38: Check total load (queued + pending) against max limit
     // queue.size only counts waiting items, queue.pending counts active items
     if (queue.size + queue.pending >= MAX_INFERENCE_QUEUE) {
       const error = new Error('Inference queue full');

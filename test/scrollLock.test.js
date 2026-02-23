@@ -42,4 +42,42 @@ describe('scrollLock', () => {
 
     main.remove();
   });
+
+  test('lock ids are idempotent and do not over-increment', () => {
+    const main = document.createElement('div');
+    main.id = 'main-content';
+    document.body.appendChild(main);
+    document.body.style.overflow = 'auto';
+
+    const { lockAppScroll, unlockAppScroll } = loadModule();
+
+    lockAppScroll('settings-panel');
+    lockAppScroll('settings-panel');
+
+    expect(document.body.style.overflow).toBe('hidden');
+
+    unlockAppScroll('settings-panel');
+    expect(document.body.style.overflow).toBe('auto');
+
+    main.remove();
+  });
+
+  test('unlocking unknown id does not release active lock', () => {
+    const main = document.createElement('div');
+    main.id = 'main-content';
+    document.body.appendChild(main);
+    document.body.style.overflow = 'auto';
+
+    const { lockAppScroll, unlockAppScroll } = loadModule();
+
+    lockAppScroll('settings-panel');
+    unlockAppScroll('modal-unknown');
+
+    expect(document.body.style.overflow).toBe('hidden');
+
+    unlockAppScroll('settings-panel');
+    expect(document.body.style.overflow).toBe('auto');
+
+    main.remove();
+  });
 });

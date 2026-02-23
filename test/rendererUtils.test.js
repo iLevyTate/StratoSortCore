@@ -51,8 +51,32 @@ describe('renderer utils (score/format/drag)', () => {
     };
 
     const result = extractDroppedFiles(dataTransfer);
-    expect(result.paths).toEqual(['C:\\\\a.txt', 'b.txt', 'C:/c.txt']);
+    expect(result.paths).toEqual(['C:\\\\a.txt', 'C:/c.txt']);
+    expect(result.unresolvedNames).toEqual(['b.txt']);
     expect(result.fileList).toHaveLength(1);
     expect(result.itemFiles).toHaveLength(1);
+  });
+
+  test('extractDroppedFiles resolves renderer-missing file paths via preload helper', () => {
+    const originalElectronApi = window.electronAPI;
+    window.electronAPI = {
+      files: {
+        getPathForDroppedFile: (file) => (file?.name === 'b.txt' ? 'C:\\\\resolved\\\\b.txt' : '')
+      }
+    };
+
+    try {
+      const dataTransfer = {
+        files: [{ name: 'a.txt' }],
+        items: [{ kind: 'file', getAsFile: () => ({ name: 'b.txt' }) }],
+        getData: () => ''
+      };
+
+      const result = extractDroppedFiles(dataTransfer);
+      expect(result.paths).toEqual(['C:\\\\resolved\\\\b.txt']);
+      expect(result.unresolvedNames).toEqual(['a.txt']);
+    } finally {
+      window.electronAPI = originalElectronApi;
+    }
   });
 });

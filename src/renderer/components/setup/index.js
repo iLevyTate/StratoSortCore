@@ -3,13 +3,11 @@ import PropTypes from 'prop-types';
 import { CheckCircle, AlertTriangle, Clock } from 'lucide-react';
 import Button from '../ui/Button';
 import { Heading, Text } from '../ui/Typography';
-// FIX: Import useSafeState to prevent state updates on unmounted components
 import { useSafeState } from '../../utils/reactEdgeCaseUtils';
 import { DEFAULT_AI_MODELS } from '../../../shared/constants';
 
 export default function FirstRunWizard({ onComplete }) {
   const [step, setStep] = useState(0);
-  // FIX: Use useSafeState for hostOk to prevent React warning when async
   // testConnection returns after component unmounts
   const [hostOk, setHostOk] = useSafeState(null);
   const [pulling, setPulling] = useState(false);

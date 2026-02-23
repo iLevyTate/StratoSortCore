@@ -11,6 +11,7 @@ const {
   formatDate,
   applyCaseConvention,
   generatePreviewName,
+  generateSuggestedNameFromAnalysis: buildSuggestedNameFromAnalysis,
   extractExtension,
   extractFileName,
   makeUniqueFileName
@@ -43,197 +44,13 @@ function generateSuggestedNameFromAnalysis({
   settings,
   fileTimestamps
 }) {
-  const safeOriginalName = String(originalFileName || '').trim();
-  if (!safeOriginalName) return '';
-
-  const extension = safeOriginalName.includes('.') ? `.${safeOriginalName.split('.').pop()}` : '';
-  const originalBase = safeOriginalName.replace(/\.[^/.]+$/, '');
-
-  const convention = settings?.convention || 'keep-original';
-  const separator = settings?.separator ?? '-';
-  const dateFormat = settings?.dateFormat || 'YYYY-MM-DD';
-  const caseConvention = settings?.caseConvention;
-
-  const escapeRegExp = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-  const stripTrailingDateToken = (subject, token) => {
-    if (!subject || !token) return subject;
-    const t = String(token).trim();
-    if (!t) return subject;
-
-    // Remove one or more occurrences of the date token at the end, allowing common separators
-    const re = new RegExp(`(?:[\\s._-]*${escapeRegExp(t)})+$`);
-    const stripped = String(subject)
-      .replace(re, '')
-      .replace(/[\s._-]+$/g, '')
-      .trim();
-    return stripped || subject;
-  };
-
-  const stripGenericTrailingDate = (subject) => {
-    if (!subject) return subject;
-    // Remove trailing YYYY-MM-DD or YYYYMMDD (one or more), allowing separators
-    const re = /(?:[\s._-]*(?:\d{4}-\d{2}-\d{2}|\d{8}))+$/;
-    const stripped = String(subject)
-      .replace(re, '')
-      .replace(/[\s._-]+$/g, '')
-      .trim();
-    return stripped || subject;
-  };
-
-  const rawProject =
-    typeof analysis?.project === 'string' && analysis.project.trim()
-      ? analysis.project.trim()
-      : 'Project';
-
-  const rawCategory =
-    typeof analysis?.category === 'string' && analysis.category.trim()
-      ? analysis.category.trim()
-      : 'Category';
-
-  // Reasonable date range: 1970-01-01 to 100 years in the future
-  const MIN_DATE_MS = 0; // Unix epoch
-  const MAX_DATE_MS = Date.now() + 100 * 365 * 24 * 60 * 60 * 1000; // 100 years from now
-
-  const isReasonableDate = (d) => {
-    if (!d || Number.isNaN(d.getTime())) return false;
-    const ms = d.getTime();
-    return ms >= MIN_DATE_MS && ms <= MAX_DATE_MS;
-  };
-
-  const parseDateLike = (value) => {
-    if (!value) return null;
-    if (value instanceof Date && !Number.isNaN(value.getTime())) {
-      return isReasonableDate(value) ? value : null;
-    }
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      const d = new Date(value);
-      return isReasonableDate(d) ? d : null;
-    }
-    if (typeof value !== 'string') return null;
-    const raw = value.trim();
-    if (!raw) return null;
-    // If date is in YYYY-MM-DD, parse without timezone shifting.
-    const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (m) {
-      const local = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-      return Number.isNaN(local.getTime()) ? null : local;
-    }
-    // If date is in YYYYMMDD, parse without timezone shifting.
-    const m2 = raw.match(/^(\d{4})(\d{2})(\d{2})$/);
-    if (m2) {
-      const local = new Date(Number(m2[1]), Number(m2[2]) - 1, Number(m2[3]));
-      return Number.isNaN(local.getTime()) ? null : local;
-    }
-    const parsed = new Date(raw);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  };
-
-  const parseDateFromFileName = (nameBase) => {
-    const s = String(nameBase || '');
-    // Prefer YYYY-MM-DD if present
-    const m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
-    if (m) {
-      const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-      return Number.isNaN(d.getTime()) ? null : d;
-    }
-    // Then YYYYMMDD
-    const m2 = s.match(/(\d{4})(\d{2})(\d{2})/);
-    if (m2) {
-      const d = new Date(Number(m2[1]), Number(m2[2]) - 1, Number(m2[3]));
-      return Number.isNaN(d.getTime()) ? null : d;
-    }
-    return null;
-  };
-
-  // Date source priority:
-  // 1) date already present in original filename
-  // 2) file modified time (real metadata)
-  // 3) file created time (real metadata)
-  // 4) analysis.date (last resort; can be hallucinated by LLM)
-  // 5) today
-  const fileNameDate = parseDateFromFileName(originalBase);
-  const modifiedDate = parseDateLike(fileTimestamps?.modified);
-  const createdDate = parseDateLike(fileTimestamps?.created);
-  const analysisDate = parseDateLike(analysis?.date);
-  const effectiveDate = fileNameDate || modifiedDate || createdDate || analysisDate || new Date();
-
-  const formattedDate = formatDate(effectiveDate, dateFormat);
-
-  // Extract suggested name from analysis, with max length enforcement
-  const MAX_SUBJECT_LENGTH = 50; // Maximum characters for the subject/name portion
-  let rawSubject =
-    typeof analysis?.suggestedName === 'string' && analysis.suggestedName.trim()
-      ? analysis.suggestedName.trim().replace(/\.[^/.]+$/, '')
-      : originalBase;
-
-  // If the naming convention already adds a date, strip trailing date tokens from the LLM subject
-  // so we don't end up with "...-2023-04-19-2023-04-19".
-  const conventionAddsDate = ['subject-date', 'date-subject', 'project-subject-date'].includes(
-    convention
-  );
-  if (conventionAddsDate) {
-    rawSubject = stripTrailingDateToken(rawSubject, formattedDate);
-    rawSubject = stripTrailingDateToken(rawSubject, analysis?.date);
-    rawSubject = stripGenericTrailingDate(rawSubject);
-  }
-
-  // Truncate overly long subjects intelligently (at word boundary if possible)
-  if (rawSubject.length > MAX_SUBJECT_LENGTH) {
-    // Try to break at a word boundary (space, hyphen, underscore)
-    const truncated = rawSubject.slice(0, MAX_SUBJECT_LENGTH);
-    const lastBreak = Math.max(
-      truncated.lastIndexOf(' '),
-      truncated.lastIndexOf('-'),
-      truncated.lastIndexOf('_')
-    );
-    rawSubject = lastBreak > MAX_SUBJECT_LENGTH * 0.5 ? truncated.slice(0, lastBreak) : truncated;
-  }
-
-  // Keep filenames safe across platforms. (Windows particularly)
-  const sanitizeToken = (value) =>
-    String(value || '')
-      .trim()
-      // Replace underscores with spaces to allow case conventions to work properly
-      .replace(/[_]/g, ' ')
-      .replace(/[\\/:*?"<>|]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-  const subject = sanitizeToken(rawSubject) || originalBase;
-  const project = sanitizeToken(rawProject) || 'Project';
-  const category = sanitizeToken(rawCategory) || 'Category';
-
-  // FIX: Consolidated switch -- date-based cases were previously empty with logic
-  // duplicated as if-checks after the switch. Now all cases set `base` directly.
-  let base;
-  switch (convention) {
-    case 'subject-date':
-      base = `${subject}${separator}${formattedDate}`;
-      break;
-    case 'date-subject':
-      base = `${formattedDate}${separator}${subject}`;
-      break;
-    case 'project-subject-date':
-      base = `${project}${separator}${subject}${separator}${formattedDate}`;
-      break;
-    case 'category-subject':
-      base = `${category}${separator}${subject}`;
-      break;
-    case 'keep-original':
-      // Preserve the original filename's base; still apply case convention if provided
-      base = originalBase;
-      break;
-    default:
-      base = subject;
-      break;
-  }
-
-  const finalBase = caseConvention ? applyCaseConvention(base, caseConvention) : base;
-  const fullName = `${finalBase}${extension}`;
-
-  // FIX: Validate filename length doesn't exceed filesystem limits
-  return enforceFileNameLength(fullName, extension);
+  const suggestedName = buildSuggestedNameFromAnalysis({
+    originalFileName,
+    analysis,
+    settings,
+    fileTimestamps
+  });
+  return enforceFileNameLength(suggestedName);
 }
 
 /**

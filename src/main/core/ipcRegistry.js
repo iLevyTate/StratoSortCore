@@ -75,9 +75,11 @@ function registerHandler(ipcMain, channel, handler) {
     }
   }
 
-  // FIX: CRITICAL - Wrap handler with shutdown gate to prevent access to destroyed services
   const wrappedHandler = async (event, ...args) => {
+    const operationId = `${channel}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    _inFlightOperations.add(operationId);
     if (_isShuttingDown) {
+      _inFlightOperations.delete(operationId);
       logger.debug(`[REGISTRY] Rejecting IPC call during shutdown: ${channel}`);
       return {
         success: false,
@@ -87,8 +89,6 @@ function registerHandler(ipcMain, channel, handler) {
         }
       };
     }
-    const operationId = `${channel}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    _inFlightOperations.add(operationId);
     try {
       return await handler(event, ...args);
     } finally {
@@ -132,14 +132,14 @@ function registerListener(ipcMain, channel, listener) {
     throw new Error('Listener must be a function');
   }
 
-  // FIX: Wrap listener with shutdown gate like handlers to prevent access to destroyed services
   const wrappedListener = (event, ...args) => {
+    const operationId = `${channel}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    _inFlightOperations.add(operationId);
     if (_isShuttingDown) {
+      _inFlightOperations.delete(operationId);
       logger.debug(`[REGISTRY] Ignoring IPC listener during shutdown: ${channel}`);
       return;
     }
-    const operationId = `${channel}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    _inFlightOperations.add(operationId);
     try {
       const result = listener(event, ...args);
       if (result && typeof result.then === 'function') {
@@ -159,7 +159,6 @@ function registerListener(ipcMain, channel, listener) {
     registry.listeners.set(channel, new Set());
   }
   registry.listeners.get(channel).add(wrappedListener);
-  // FIX: Store mapping from original to wrapped for removeListener lookup
   registry.listenerWrappers.set(listener, wrappedListener);
   logger.debug(`[REGISTRY] Listener registered: ${channel}`);
 }
@@ -197,7 +196,6 @@ function removeHandler(ipcMain, channel) {
  */
 function removeListener(ipcMain, channel, listener) {
   const channelListeners = registry.listeners.get(channel);
-  // FIX: Look up the wrapped listener from the original
   const wrappedListener = registry.listenerWrappers.get(listener);
 
   if (!channelListeners || !wrappedListener || !channelListeners.has(wrappedListener)) {
@@ -207,7 +205,6 @@ function removeListener(ipcMain, channel, listener) {
   try {
     ipcMain.removeListener(channel, wrappedListener);
     channelListeners.delete(wrappedListener);
-    // FIX: Clean up the wrapper mapping
     registry.listenerWrappers.delete(listener);
 
     // Clean up empty channel entry
@@ -314,7 +311,6 @@ module.exports = {
   getStats,
   hasHandler,
   hasListeners,
-  // FIX: Shutdown gate control
   setShuttingDown,
   isShuttingDown,
   waitForInFlightOperations

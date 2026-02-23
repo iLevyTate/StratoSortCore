@@ -27,7 +27,11 @@ This repository is configured with automated dependency updates and release buil
 
 ### 3. CI (`.github/workflows/ci.yml`)
 
-- Runs formatting, lint, unit tests, and build
+- **lint-and-format**: format:check, lint
+- **test**: Jest with coverage (matrix: Windows, Ubuntu, macOS), enforces 50% thresholds
+- **build**: Production build (Windows)
+- **ipc-contract-check**: generate:channels:check, verify:ipc-handlers
+- **e2e**: Playwright E2E tests (Ubuntu)
 - Triggered on pushes and PRs to main/master/develop
 
 ### 4. Windows Release Builds (`.github/workflows/release.yml`)
@@ -35,40 +39,42 @@ This repository is configured with automated dependency updates and release buil
 #### Automatic Releases
 
 - **Triggers on version tags** (e.g., `v1.0.0`, `v2.1.3`)
-- Installs dependencies and rebuilds native modules
+- **Quality gates first**: format:check, lint, test:coverage, verify:ipc-handlers, build (must pass
+  before packaging)
 - Builds Windows installer
-- Publishes to GitHub Releases with `checksums.sha256`
+- Publishes to GitHub Releases with `checksums-windows.sha256`
 
 To create a release:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
 #### Manual Builds
 
 - Go to Actions → "Windows Dist (Manual)" → Run workflow
-- Artifacts and `checksums.sha256` are uploaded to the workflow run
+- Artifacts and `checksums-windows.sha256` are uploaded to the workflow run
 
 ## Build Outputs
 
 ### Windows
 
-- **NSIS Installer**: `StratoSort-<version>-win-x64.exe`
-- **Portable**: `StratoSort-<version>-win-x64.portable.exe`
-- **Checksums**: `checksums.sha256`
+- **NSIS Installer**: `StratoSortCore-Setup-<version>.exe`
+- **Portable**: `StratoSortCore-<version>-win-x64.exe`
+- **Checksums**: `checksums-windows.sha256`
 - **Updater metadata**: `latest.yml`, `*.blockmap`
 
 ### macOS (manual only)
 
-- **DMG**: `StratoSort-<version>-mac-<arch>.dmg`
-- **ZIP**: `StratoSort-<version>-mac-<arch>.zip`
+- **DMG**: `StratoSortCore-<version>-mac-arm64.dmg`
+- **ZIP**: `StratoSortCore-<version>-mac-arm64.zip`
+- **Checksums**: `checksums-macos.sha256`
 
 ### Linux (manual only)
 
-- **AppImage**: `StratoSort-<version>-linux-x64.AppImage`
-- **DEB**: `StratoSort-<version>-linux-x64.deb`
+- **AppImage**: `StratoSortCore-<version>-linux-x64.AppImage`
+- **DEB**: `StratoSortCore-<version>-linux-x64.deb`
 
 ## Configuration Files
 
@@ -76,7 +82,15 @@ git push origin v1.0.0
 
 - Configures build outputs and installer settings
 - Publishing is handled by GitHub Actions; build commands use `--publish never`
-- Clean artifact naming: `StratoSort-${version}-${os}-${arch}.${ext}`
+- Artifact naming follows `electron-builder.json` conventions for each target.
+
+## Next Release References
+
+Before cutting the next tag, confirm these docs stay aligned:
+
+1. `README.md` version badge and release links
+2. `CHANGELOG.md` new version section + `[Unreleased]` compare base
+3. `docs/RELEASING.md` checklist and artifact naming
 
 ## Required Secrets
 

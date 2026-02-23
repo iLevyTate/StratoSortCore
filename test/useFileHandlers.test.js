@@ -327,7 +327,7 @@ describe('useFileHandlers', () => {
       });
 
       expect(mockAddNotification).toHaveBeenCalledWith(
-        'Skipped 1 item without a usable absolute path',
+        'Skipped 1 item because no stable absolute path was available',
         'warning',
         2500,
         'drop-missing-path'

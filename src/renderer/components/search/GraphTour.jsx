@@ -154,10 +154,13 @@ const GraphTour = ({ isOpen, onComplete = null, forceShow = false }) => {
         {/* Progress dots */}
         <div className="flex justify-center gap-2 pb-4">
           {TOUR_STEPS.map((_, idx) => (
-            <button
+            <Button
               key={idx}
+              type="button"
+              variant="ghost"
+              size="xs"
               onClick={() => setCurrentStep(idx)}
-              className={`w-2 h-2 rounded-full transition-all ${
+              className={`w-2 h-2 min-w-0 p-0 rounded-full transition-all ${
                 idx === currentStep
                   ? 'bg-stratosort-blue w-6'
                   : 'bg-system-gray-300 hover:bg-system-gray-400'
@@ -180,7 +183,7 @@ const GraphTour = ({ isOpen, onComplete = null, forceShow = false }) => {
                 type="checkbox"
                 checked={dontShowAgain}
                 onChange={(e) => setDontShowAgain(e.target.checked)}
-                className="rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue"
+                className="rounded-md border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue"
               />
               <EyeOff className="w-3.5 h-3.5" />
               <span>Don&apos;t show this again</span>
@@ -209,12 +212,7 @@ const GraphTour = ({ isOpen, onComplete = null, forceShow = false }) => {
                   <span>Back</span>
                 </Button>
               )}
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleNext}
-                className="bg-stratosort-blue hover:bg-blue-700"
-              >
+              <Button variant="primary" size="sm" onClick={handleNext}>
                 {isLastStep ? (
                   'Get Started'
                 ) : (

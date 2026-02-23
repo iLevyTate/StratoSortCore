@@ -1,4 +1,4 @@
-const { BrowserWindow, shell, app } = require('electron');
+const { BrowserWindow, shell, app, nativeImage } = require('electron');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
@@ -12,6 +12,7 @@ const { isDevelopment, getEnvBool } = require('../../shared/configDefaults');
 
 const isDev = isDevelopment();
 const isMac = process.platform === 'darwin';
+const isWindows = process.platform === 'win32';
 
 function getAppRootPath() {
   // Works in both dev (repo root) and packaged (app.asar)
@@ -38,6 +39,49 @@ const getAssetPath = (...paths) => {
     : path.join(getAppRootPath(), 'assets');
   return path.join(base, ...paths);
 };
+
+function getWindowIconCandidatePaths() {
+  // In dev, app.getAppPath() can occasionally point to an unexpected location;
+  // add fallbacks from process.cwd() (npm run dev) and __dirname (webpack → dist/)
+  const devFallbackRoots = app.isPackaged
+    ? []
+    : [
+        process.cwd(),
+        path.join(__dirname, '..') // dist/ -> project root when bundled
+      ].filter(Boolean);
+
+  const fallbackPath = (filePath) =>
+    devFallbackRoots.flatMap((root) => path.join(root, 'assets', filePath));
+
+  if (isWindows) {
+    const primary = [getAssetPath('icons', 'win', 'icon.ico'), getAssetPath('stratosort-logo.png')];
+    const fallbacks = fallbackPath(path.join('icons', 'win', 'icon.ico')).concat(
+      fallbackPath('stratosort-logo.png')
+    );
+    return [...primary, ...fallbacks];
+  }
+
+  if (process.platform === 'linux') {
+    const primary = [
+      getAssetPath('icons', 'png', '512x512.png'),
+      getAssetPath('stratosort-logo.png')
+    ];
+    const fallbacks = fallbackPath(path.join('icons', 'png', '512x512.png')).concat(
+      fallbackPath('stratosort-logo.png')
+    );
+    return [...primary, ...fallbacks];
+  }
+
+  // macOS
+  const primary = [
+    getAssetPath('icons', 'png', '512x512.png'),
+    getAssetPath('stratosort-logo.png')
+  ];
+  const fallbacks = fallbackPath(path.join('icons', 'png', '512x512.png')).concat(
+    fallbackPath('stratosort-logo.png')
+  );
+  return [...primary, ...fallbacks];
+}
 
 function getPreloadPath() {
   // In dev and in packaged builds, main/preload are emitted to `dist/`
@@ -171,6 +215,7 @@ function startLocalRendererServer(rendererRootPath) {
     });
 
     server.once('error', reject);
+    server.unref(); // Don't keep process alive just for dev server
     server.listen(0, '127.0.0.1', () => {
       const address = server.address();
       if (!address || typeof address !== 'object' || typeof address.port !== 'number') {
@@ -211,7 +256,6 @@ function createMainWindow() {
     isFullScreen: mainWindowState.isFullScreen
   });
 
-  // FIX: Check if saved bounds are near-maximized and reset to defaults (Issue 3.2)
   // This prevents the maximize button from only changing size by ~1px
   // Improved threshold: Only reset if VERY close to maximized (within 20px) to avoid
   // resetting users who intentionally want large windows.
@@ -247,6 +291,35 @@ function createMainWindow() {
     );
   }
 
+  // Load app icon with platform-specific preference order.
+  const iconPaths = getWindowIconCandidatePaths();
+  let appIcon;
+  try {
+    for (const iconPath of iconPaths) {
+      if (!fs.existsSync(iconPath)) {
+        continue;
+      }
+
+      const candidate = nativeImage.createFromPath(iconPath);
+      if (candidate.isEmpty()) {
+        logger.warn('App icon loaded but image is empty', { iconPath });
+        continue;
+      }
+
+      appIcon = candidate;
+      logger.debug('App icon loaded', { iconPath, size: candidate.getSize() });
+      break;
+    }
+
+    if (!appIcon) {
+      logger.warn('No usable app icon found, using Electron default', {
+        attemptedPaths: iconPaths
+      });
+    }
+  } catch (err) {
+    logger.warn('Failed to load app icon', { attemptedPaths: iconPaths, error: err.message });
+  }
+
   const win = new BrowserWindow({
     x: windowX,
     y: windowY,
@@ -271,23 +344,29 @@ function createMainWindow() {
       allowRunningInsecureContent: false,
       experimentalFeatures: false,
       backgroundThrottling: false,
-      devTools: isDev,
+      devTools: isDev || getEnvBool('FORCE_DEV_TOOLS'),
       hardwareAcceleration: true,
       enableWebGL: true,
       safeDialogs: true,
-      // CRITICAL FIX: Add offscreen to prevent Mojo interface errors
       offscreen: false,
-      // CRITICAL FIX: Disable features that can cause Mojo errors
       webviewTag: false,
       nodeIntegrationInWorker: false,
       nodeIntegrationInSubFrames: false
     },
-    icon: getAssetPath('stratosort-logo.png'),
+    ...(appIcon ? { icon: appIcon } : {}),
     show: false,
     autoHideMenuBar: true // Keep menu accessible via Alt while preserving a clean chrome
   });
 
   logger.debug('BrowserWindow created');
+
+  if (appIcon && typeof win.setIcon === 'function') {
+    try {
+      win.setIcon(appIcon);
+    } catch (error) {
+      logger.debug('Failed to force-apply BrowserWindow icon', { error: error.message });
+    }
+  }
 
   // Manage window state with cleanup tracking
   mainWindowState.manage(win);
@@ -299,7 +378,6 @@ function createMainWindow() {
     win.maximize();
   }
 
-  // FIX: Force electron-window-state to save immediately on close
   // The library uses debounced saves which may not complete if window closes quickly
   // We call saveState() directly to ensure state is persisted synchronously
   win.on('close', () => {
@@ -330,7 +408,6 @@ function createMainWindow() {
     }
   });
 
-  // CRITICAL FIX: Add longer delay and webContents readiness check to prevent Mojo errors
   // Wait for webContents to be fully ready before loading content
   let rendererStaticServer = null;
   let isWindowClosed = false;
@@ -407,8 +484,6 @@ function createMainWindow() {
     }
   };
 
-  // CRITICAL FIX: Ensure webContents is ready before loading
-  // FIX: Store timer ID so it can be cleared if window is destroyed before it fires
   let _loadTimerId = null;
   const scheduleLoad = () => {
     _loadTimerId = setTimeout(loadContent, TIMEOUTS.WINDOW_LOAD_DELAY);
@@ -456,15 +531,15 @@ function createMainWindow() {
   });
 
   win.once('ready-to-show', () => {
-    // FIX: Track all nested timer IDs so they can be cleared on window close
     const pendingTimers = [];
     const track = (id) => {
       pendingTimers.push(id);
       return id;
     };
-    win.once('closed', () => pendingTimers.forEach(clearTimeout));
+    const clearPendingTimers = () => pendingTimers.forEach(clearTimeout);
+    win.once('closed', clearPendingTimers);
+    win.once('destroy', clearPendingTimers);
 
-    // CRITICAL FIX: Add delay before showing window to prevent Mojo interface errors
     track(
       setTimeout(() => {
         if (!win.isDestroyed()) {
@@ -485,7 +560,6 @@ function createMainWindow() {
                 // Auto-open DevTools in development mode or when forced via env var
                 // Opened after window is ready to ensure detached window displays properly
                 if (isDev || getEnvBool('FORCE_DEV_TOOLS')) {
-                  // FIX: Listen for devtools-opened event to bring main window to foreground
                   // This ensures we act after DevTools has fully opened and stolen focus
                   win.webContents.once('devtools-opened', () => {
                     // Small delay to let DevTools finish rendering
@@ -532,13 +606,12 @@ function createMainWindow() {
   });
 
   // Capture renderer console output for diagnosis (always enabled)
-  // Electron 40 still passes positional args (deprecated); fall back to event properties
-  win.webContents.on('console-message', (event, levelArg, messageArg, lineArg, sourceIdArg) => {
-    const level = typeof levelArg === 'number' ? levelArg : (event?.level ?? 0);
-    const message =
-      typeof messageArg === 'string' ? messageArg : (event?.message ?? String(messageArg));
-    const line = typeof lineArg === 'number' ? lineArg : (event?.line ?? 0);
-    const sourceId = typeof sourceIdArg === 'string' ? sourceIdArg : (event?.sourceId ?? '');
+  // Electron 40+ passes properties on the event object
+  win.webContents.on('console-message', (event) => {
+    const level = event.level ?? 0;
+    const message = event.message ?? '';
+    const line = event.line ?? 0;
+    const sourceId = event.sourceId ?? '';
     const prefix = '[RENDERER]';
     const meta = { line, sourceId: sourceId ? sourceId.split('/').pop() : '' };
 
@@ -547,11 +620,16 @@ function createMainWindow() {
         ? message.trim().replace(/^['"](.*)['"]$/, '$1')
         : String(message);
 
+    const truncatedMessage =
+      normalizedMessage.length > 8192
+        ? normalizedMessage.substring(0, 8192) + '...[truncated]'
+        : normalizedMessage;
+
     // Pino's browser logger calls console.* with structured objects which serialise
     // as "[object Object]" through Electron's console-message event. Chromium may
     // wrap the literal value in quotes, so normalize first and drop both forms.
     // Structured log payloads are already forwarded via window.electronAPI.system.log.
-    if (normalizedMessage === '[object Object]') {
+    if (truncatedMessage === '[object Object]') {
       // Prevent Chromium from echoing noisy raw console payloads to the terminal.
       if (typeof event?.preventDefault === 'function') {
         event.preventDefault();
@@ -560,11 +638,11 @@ function createMainWindow() {
     }
 
     if (level >= 3) {
-      logger.error(`${prefix} ${normalizedMessage}`, meta);
+      logger.error(`${prefix} ${truncatedMessage}`, meta);
     } else if (level >= 2) {
-      logger.warn(`${prefix} ${normalizedMessage}`, meta);
+      logger.warn(`${prefix} ${truncatedMessage}`, meta);
     } else {
-      logger.info(`${prefix} ${normalizedMessage}`, meta);
+      logger.info(`${prefix} ${truncatedMessage}`, meta);
     }
   });
 
@@ -580,7 +658,6 @@ function createMainWindow() {
       .catch(() => {});
 
     // Delayed health check: verify the app fully rendered after 5s
-    // FIX: Store timer ID for cleanup on window close
     const _healthCheckTimerId = setTimeout(() => {
       if (win.isDestroyed()) return;
       win.webContents
@@ -602,7 +679,13 @@ function createMainWindow() {
         })
         .catch(() => {});
     }, 5000);
-    win.once('closed', () => clearTimeout(_healthCheckTimerId));
+    const clearHealthCheck = () => {
+      if (_healthCheckTimerId) {
+        clearTimeout(_healthCheckTimerId);
+      }
+    };
+    win.once('closed', clearHealthCheck);
+    win.once('destroy', clearHealthCheck);
   });
 
   // Block navigation attempts within the app (e.g., dropped links or external redirects)
@@ -625,7 +708,6 @@ function createMainWindow() {
   // Deny all permission requests by default, but allow clipboard access
   try {
     win.webContents.session.setPermissionRequestHandler((_wc, permission, callback) => {
-      // FIX: Allow clipboard read/write permissions for features like "Copy Path"
       if (permission === 'clipboard-read' || permission === 'clipboard-sanitized-write') {
         callback(true);
         return;

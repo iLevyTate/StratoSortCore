@@ -38,12 +38,17 @@ export function useDragAndDrop(onFilesDropped) {
       e.stopPropagation();
       setIsDragging(false);
 
-      // FIX: Add null check for dataTransfer to prevent crashes
       if (!e.dataTransfer) {
         return;
       }
 
-      const { paths: uniquePaths, fileList, itemFiles } = extractDroppedFiles(e.dataTransfer);
+      const {
+        paths,
+        unresolvedNames = [],
+        fileList,
+        itemFiles
+      } = extractDroppedFiles(e.dataTransfer);
+      const uniquePaths = Array.from(new Set([...paths, ...unresolvedNames]));
 
       if (uniquePaths.length > 0 && onFilesDropped) {
         const fileObjects = uniquePaths.map((pathValue) => ({

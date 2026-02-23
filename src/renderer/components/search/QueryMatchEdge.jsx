@@ -2,7 +2,7 @@ import React, { memo, useCallback, useMemo } from 'react';
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from 'reactflow';
 import PropTypes from 'prop-types';
 import BaseEdgeTooltip from './BaseEdgeTooltip';
-import { useEdgeHover } from './useEdgeInteraction';
+import { useEdgeHover, useElkPath } from './useEdgeInteraction';
 
 /**
  * Custom edge component for query-to-file match connections
@@ -22,25 +22,27 @@ const QueryMatchEdge = memo(
     markerEnd
   }) => {
     const { isHovered, handleMouseEnter, handleMouseLeave } = useEdgeHover();
+    const elkPath = useElkPath(data);
+    const parallelOffset = Number(data?.parallelOffset || 0);
 
     // Get the edge path
     // Position label 75% along the path (much closer to target file) to clearly associate score with file
-    const [edgePath, labelX, labelY] = getSmoothStepPath({
+    const [smoothPath, labelX, labelY] = getSmoothStepPath({
       sourceX,
-      sourceY,
+      sourceY: sourceY + parallelOffset,
       sourcePosition,
       targetX,
-      targetY,
+      targetY: targetY + parallelOffset,
       targetPosition,
       borderRadius: 8,
       centerX: (sourceX + targetX * 3) / 4,
-      centerY: (sourceY + targetY * 3) / 4
+      centerY: (sourceY + targetY * 3) / 4 + parallelOffset
     });
+    const edgePath = elkPath || smoothPath;
 
     const score = data?.score ?? 0;
     const scorePercent = Math.round(score * 100);
     const matchDetails = useMemo(() => data?.matchDetails || {}, [data?.matchDetails]);
-    // Fix: Depend on matchDetails object to ensure updates when parent changes
     const sources = useMemo(() => matchDetails.sources || [], [matchDetails]);
     const tooltipsEnabled = data?.showEdgeTooltips !== false;
 
@@ -100,25 +102,27 @@ const QueryMatchEdge = memo(
       return reasons;
     }, [matchDetails, sources]);
 
-    // Dynamic styling based on hover
+    // Dynamic styling based on hover (uses theme stratosort-indigo)
     const edgeStyle = {
       ...style,
-      stroke: isHovered ? '#4f46e5' : '#6366f1',
+      stroke: 'var(--color-stratosort-indigo)',
       strokeWidth: isHovered ? 2.5 : 2,
       opacity: isHovered ? 1 : 0.8,
-      filter: isHovered ? 'drop-shadow(0 0 4px rgba(99, 102, 241, 0.5))' : 'none',
-      transition: 'all 0.2s ease'
+      filter: isHovered ? 'drop-shadow(0 0 4px rgba(79, 70, 229, 0.5))' : 'none',
+      transition: 'all 0.2s ease',
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round'
     };
 
     const reasons = buildMatchReasons();
 
     // Color mapping for reason types
     const typeColors = {
-      keyword: 'text-amber-600',
-      tag: 'text-blue-600',
-      category: 'text-purple-600',
-      field: 'text-cyan-600',
-      semantic: 'text-emerald-600',
+      keyword: 'text-stratosort-accent',
+      tag: 'text-stratosort-blue',
+      category: 'text-stratosort-purple',
+      field: 'text-stratosort-indigo',
+      semantic: 'text-stratosort-success',
       default: 'text-system-gray-500'
     };
 
@@ -155,7 +159,7 @@ const QueryMatchEdge = memo(
               }}
               className="nodrag nopan"
             >
-              <span className="px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200 font-medium whitespace-nowrap">
+              <span className="px-1.5 py-0.5 rounded-full bg-stratosort-indigo/10 text-stratosort-indigo border border-stratosort-indigo/30 font-medium whitespace-nowrap">
                 {scorePercent}%
               </span>
             </div>
@@ -170,20 +174,22 @@ const QueryMatchEdge = memo(
             labelY={labelY}
             badgeText={`${scorePercent}%`}
             badgeColorClass={
-              isHovered ? 'bg-indigo-500 text-white' : 'bg-indigo-100 text-indigo-700'
+              isHovered
+                ? 'bg-stratosort-indigo text-white'
+                : 'bg-stratosort-indigo/10 text-stratosort-indigo'
             }
             title="Why this matched"
-            headerColorClass="text-indigo-600"
+            headerColorClass="text-stratosort-indigo"
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
           >
             {/* Match score */}
             <div className="flex items-center gap-2">
               <span className="text-system-gray-500">Relevance:</span>
-              <span className="font-medium text-indigo-600">{scorePercent}%</span>
+              <span className="font-medium text-stratosort-indigo">{scorePercent}%</span>
               <div className="flex-1 h-1.5 bg-system-gray-200 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-indigo-500 rounded-full"
+                  className="h-full bg-stratosort-indigo rounded-full"
                   style={{ width: `${scorePercent}%` }}
                 />
               </div>
@@ -203,7 +209,7 @@ const QueryMatchEdge = memo(
 
             {/* Source indicator */}
             {sources.length > 0 && (
-              <div className="text-system-gray-400 text-[10px] pt-1 border-t border-system-gray-200">
+              <div className="text-system-gray-400 text-xs pt-1 border-t border-system-gray-200">
                 Match sources: {sources.join(' + ')}
               </div>
             )}
@@ -234,7 +240,8 @@ QueryMatchEdge.propTypes = {
       queryTermsInTags: PropTypes.arrayOf(PropTypes.string),
       queryTermsInCategory: PropTypes.bool,
       sources: PropTypes.arrayOf(PropTypes.string)
-    })
+    }),
+    parallelOffset: PropTypes.number
   }),
   style: PropTypes.object,
   markerEnd: PropTypes.oneOfType([PropTypes.string, PropTypes.object])

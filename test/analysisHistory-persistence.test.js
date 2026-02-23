@@ -87,6 +87,9 @@ describe('persistence', () => {
       fs.rename.mockRejectedValue(eperm);
       fs.copyFile.mockResolvedValue();
       fs.unlink.mockResolvedValue();
+      // Hash verification reads both temp and target - must return same content
+      const fileContent = Buffer.from('{}');
+      fs.readFile.mockResolvedValue(fileContent);
 
       await expect(
         persistence.atomicWriteFile('/path/to/file.json', '{}')

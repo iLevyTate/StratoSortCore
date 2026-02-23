@@ -200,4 +200,29 @@ describe('ipc services', () => {
 
     await expect(systemIpc.getConfigValue('path')).rejects.toThrow('nope');
   });
+
+  test('systemIpc.exportLogs returns successful result', async () => {
+    const api = {
+      system: {
+        exportLogs: jest.fn().mockResolvedValue({ success: true, filePath: '/tmp/logs.zip' })
+      }
+    };
+    requireElectronAPI.mockReturnValue(api);
+
+    await expect(systemIpc.exportLogs()).resolves.toEqual({
+      success: true,
+      filePath: '/tmp/logs.zip'
+    });
+  });
+
+  test('systemIpc.exportLogs throws on error response', async () => {
+    const api = {
+      system: {
+        exportLogs: jest.fn().mockResolvedValue({ success: false, error: 'export failed' })
+      }
+    };
+    requireElectronAPI.mockReturnValue(api);
+
+    await expect(systemIpc.exportLogs()).rejects.toThrow('export failed');
+  });
 });

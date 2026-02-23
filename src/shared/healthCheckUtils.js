@@ -6,22 +6,12 @@
  * @module shared/healthCheckUtils
  */
 
-// FIX: Robust logger import with fallback for cross-process safety
 let logger;
 try {
-  const loggerModule = require('./logger');
-  logger = loggerModule.createLogger
-    ? loggerModule.createLogger('HealthCheck')
-    : loggerModule.logger;
+  const { createSafeLogger } = require('./logger');
+  logger = createSafeLogger('HealthCheck');
 } catch {
-  logger = {
-    debug: () => {},
-    info: () => {},
-    // eslint-disable-next-line no-console
-    warn: console.warn.bind(console, '[HealthCheck]'),
-    // eslint-disable-next-line no-console
-    error: console.error.bind(console, '[HealthCheck]')
-  };
+  logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
 }
 
 /**
@@ -90,7 +80,6 @@ function createHealthCheckInterval(options) {
         timeoutId = setTimeout(() => {
           reject(new Error(`Health check timeout after ${timeoutMs}ms`));
         }, timeoutMs);
-        // FIX: Unref timeout so it doesn't prevent process exit during shutdown
         if (typeof timeoutId.unref === 'function') timeoutId.unref();
       });
 

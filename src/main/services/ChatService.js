@@ -47,19 +47,72 @@ const RESPONSE_MODES = {
 };
 
 class ChatService {
-  constructor({ searchService, vectorDbService, embeddingService, llamaService, settingsService }) {
+  constructor({
+    searchService,
+    vectorDbService,
+    embeddingService,
+    llamaService,
+    settingsService,
+    chatHistoryStore
+  }) {
     this.searchService = searchService;
     this.vectorDbService = vectorDbService;
     this.embeddingService = embeddingService;
     this.llamaService = llamaService;
     this.settingsService = settingsService;
-    this.sessions = new Map();
+    this.chatHistoryStore = chatHistoryStore;
+    this.sessions = new Map(); // Keep for legacy/fallback or cache
+    this.activeStreamControllers = new Map(); // request/session keyed AbortControllers
   }
 
   async resetSession(sessionId) {
     if (sessionId) {
       this.sessions.delete(sessionId);
+      const key = String(sessionId);
+      for (const [streamKey, streamState] of this.activeStreamControllers) {
+        if (String(streamState?.sessionId || '') === key) {
+          try {
+            streamState.controller?.abort();
+          } catch {
+            // Ignore abort errors
+          }
+          this.activeStreamControllers.delete(streamKey);
+        }
+      }
     }
+  }
+
+  async cancelStreamingRequest({ requestId, sessionId } = {}) {
+    if (requestId !== undefined && requestId !== null) {
+      const key = `req:${String(requestId)}`;
+      const streamState = this.activeStreamControllers.get(key);
+      if (streamState?.controller) {
+        streamState.controller.abort();
+        this.activeStreamControllers.delete(key);
+        return { canceled: true, by: 'requestId' };
+      }
+    }
+
+    if (sessionId) {
+      const sessionKey = String(sessionId);
+      let canceledAny = false;
+      for (const [key, streamState] of this.activeStreamControllers) {
+        if (String(streamState?.sessionId || '') === sessionKey) {
+          try {
+            streamState.controller?.abort();
+          } catch {
+            // Ignore abort errors
+          }
+          this.activeStreamControllers.delete(key);
+          canceledAny = true;
+        }
+      }
+      if (canceledAny) {
+        return { canceled: true, by: 'sessionId' };
+      }
+    }
+
+    return { canceled: false };
   }
 
   async query({
@@ -70,6 +123,7 @@ class ChatService {
     chunkTopK = DEFAULTS.chunkTopK,
     chunkWeight = DEFAULTS.chunkWeight,
     contextFileIds = [],
+    strictScope = false,
     responseMode = 'fast'
   }) {
     const cleanQuery = typeof query === 'string' ? query.trim() : '';
@@ -97,33 +151,29 @@ class ChatService {
       const memory = await this._getSessionMemory(sessionId);
       const history = await this._getHistoryText(memory);
 
-      const prompt = `
-You are StratoSort, a friendly local AI assistant that helps users explore, search, and understand the files on their machine. Everything runs 100% on-device.
+      const prompt = `You are StratoSort, a friendly local AI assistant. You help users search, explore, and understand the files on their machine. Everything runs on-device — no data leaves their computer.
 
-The user said: "${cleanQuery}"
-Conversation history:
-${history || '(none)'}
+${history ? `Conversation so far:\n${history}\n` : ''}User: "${cleanQuery}"
 
-Guidelines:
-- Be warm, concise, and conversational — like a helpful colleague, not a research paper.
-- If they greet you, greet them back naturally.
-- If they ask what you can do or how to use you, explain your capabilities in plain language:
-  you can search their indexed documents by meaning, answer questions about file contents,
-  find related files, summarize documents, and help organize their workspace.
-- Suggest 2-3 specific things they could try, phrased as natural questions.
+Respond warmly and naturally. If they greet you or check if you are working, greet them back and briefly mention what you can do. Suggest 2-3 things they could try as follow-up questions.
 
-Return ONLY valid JSON:
-{
-  "modelAnswer": [{ "text": "Your conversational response here." }],
-  "documentAnswer": [],
-  "followUps": ["A natural follow-up the user might ask"]
-}`;
+Example output:
+{"modelAnswer":[{"text":"Hey there! I'm up and running. I can search your documents by meaning, answer questions about your files, find related documents, and help organize your workspace. What would you like to explore?"}],"documentAnswer":[],"followUps":["Summarize my most recent documents","What topics do my files cover?","Find files related to taxes"]}
+
+Now respond as JSON:`;
 
       try {
         const result = await this.llamaService.analyzeText(prompt, { format: 'json' });
         if (result?.success) {
           const parsed = this._parseResponse(result.response, []);
-          await this._saveMemoryTurn(memory, cleanQuery, this._formatForMemory(parsed));
+          await this._saveMemoryTurn(memory, cleanQuery, {
+            text: this._formatForMemory(parsed),
+            documentAnswer: parsed.documentAnswer || [],
+            modelAnswer: parsed.modelAnswer || [],
+            sources: [],
+            followUps: parsed.followUps || [],
+            meta: { retrievalSkipped: true }
+          });
           return { success: true, response: parsed, sources: [], meta: { retrievalSkipped: true } };
         }
       } catch (err) {
@@ -132,71 +182,53 @@ Return ONLY valid JSON:
       // Fall through to normal flow if something fails
     }
 
-    logger.info('[ChatService] Query received', {
-      sessionId: sessionId || 'default',
-      queryLength: cleanQuery.length,
+    const {
+      retrieval,
+      prompt,
+      holisticIntent,
+      correctionIntent,
+      comparisonIntent,
+      gapAnalysisIntent,
+      contradictions,
+      forcedResponseMode,
+      memory
+    } = await this._runRetrieval({
+      sessionId,
+      cleanQuery,
       topK,
       mode,
       chunkTopK,
       chunkWeight,
-      contextFileCount: Array.isArray(contextFileIds) ? contextFileIds.length : 0
-    });
-
-    const memory = await this._getSessionMemory(sessionId);
-    const history = await this._getHistoryText(memory);
-    const holisticIntent = this._isHolisticSynthesisQuery(cleanQuery);
-    const correctionIntent = this._isCorrectionFeedback(cleanQuery);
-
-    const forcedResponseMode = holisticIntent && responseMode !== 'deep' ? 'deep' : responseMode;
-    const modeConfig = RESPONSE_MODES[forcedResponseMode] || RESPONSE_MODES.fast;
-    const effectiveTopK = holisticIntent ? Math.max(topK, HOLISTIC_MIN_TOPK) : topK;
-    const effectiveChunkTopK = holisticIntent
-      ? Math.max(
-          Number.isInteger(chunkTopK) && chunkTopK > 0 ? chunkTopK : modeConfig.chunkTopK,
-          HOLISTIC_MIN_CHUNK_TOPK
-        )
-      : Number.isInteger(chunkTopK) && chunkTopK > 0
-        ? chunkTopK
-        : modeConfig.chunkTopK;
-    const effectiveChunkWeight = holisticIntent
-      ? Math.max(
-          typeof chunkWeight === 'number' ? chunkWeight : modeConfig.chunkWeight,
-          HOLISTIC_MIN_CHUNK_WEIGHT
-        )
-      : typeof chunkWeight === 'number'
-        ? chunkWeight
-        : modeConfig.chunkWeight;
-    const effectiveRerank = Boolean(modeConfig.rerank || holisticIntent);
-
-    const retrieval = await this._retrieveSources(cleanQuery, {
-      topK: effectiveTopK,
-      mode,
-      chunkTopK: effectiveChunkTopK,
-      chunkWeight: effectiveChunkWeight,
       contextFileIds,
-      expandSynonyms: modeConfig.expandSynonyms,
-      correctSpelling: modeConfig.correctSpelling,
-      rerank: effectiveRerank
+      strictScope,
+      responseMode
     });
 
-    logger.debug('[ChatService] Retrieval completed', {
-      resultCount: retrieval?.sources?.length || 0,
-      mode: retrieval?.meta?.mode || mode,
-      contextBoosted: Boolean(retrieval?.meta?.contextBoosted),
-      queryMeta: retrieval?.meta?.queryMeta ? Object.keys(retrieval.meta.queryMeta) : []
-    });
-
-    const persona = await this._getPersona();
-    const prompt = this._buildPrompt({
-      query: cleanQuery,
-      history,
-      sources: retrieval.sources,
-      persona,
-      intent: {
-        holisticIntent,
-        correctionIntent
-      }
-    });
+    if (strictScope && (!retrieval.sources || retrieval.sources.length === 0)) {
+      const abstention = {
+        documentAnswer: [],
+        modelAnswer: [
+          {
+            text: 'I cannot find this information in the selected documents. Try broadening your document scope or rephrasing your question.'
+          }
+        ],
+        followUps: []
+      };
+      await this._saveMemoryTurn(memory, cleanQuery, {
+        text: abstention.modelAnswer[0].text,
+        documentAnswer: [],
+        modelAnswer: abstention.modelAnswer,
+        sources: [],
+        followUps: [],
+        meta: { ...retrieval.meta, strictScopeAbstention: true }
+      });
+      return {
+        success: true,
+        response: abstention,
+        sources: [],
+        meta: { ...retrieval.meta, strictScopeAbstention: true }
+      };
+    }
 
     const llamaResult = await this.llamaService.analyzeText(prompt, {
       format: 'json'
@@ -217,7 +249,23 @@ Return ONLY valid JSON:
     if (!retrieval?.sources?.length) {
       parsed.documentAnswer = [];
     }
-    let assistantForMemory = this._formatForMemory(parsed, retrieval.sources);
+    const queryMeta = {
+      ...retrieval.meta,
+      responseMode: forcedResponseMode,
+      holisticIntent,
+      correctionIntent,
+      comparisonIntent,
+      gapAnalysisIntent,
+      contradictions
+    };
+    let assistantForMemory = {
+      text: this._formatForMemory(parsed, retrieval.sources),
+      documentAnswer: parsed.documentAnswer,
+      modelAnswer: parsed.modelAnswer,
+      sources: retrieval.sources,
+      followUps: parsed.followUps || [],
+      meta: queryMeta
+    };
 
     // Smart fallback if model returns nothing (improves UX)
     if (parsed.documentAnswer.length === 0 && parsed.modelAnswer.length === 0) {
@@ -236,7 +284,14 @@ Return ONLY valid JSON:
         });
       }
       // Re-format for memory since we added a fallback response
-      assistantForMemory = this._formatForMemory(parsed, retrieval.sources);
+      assistantForMemory = {
+        text: this._formatForMemory(parsed, retrieval.sources),
+        documentAnswer: parsed.documentAnswer,
+        modelAnswer: parsed.modelAnswer,
+        sources: retrieval.sources,
+        followUps: parsed.followUps || [],
+        meta: queryMeta
+      };
       await this._saveMemoryTurn(memory, cleanQuery, assistantForMemory);
     } else {
       await this._saveMemoryTurn(memory, cleanQuery, assistantForMemory);
@@ -250,33 +305,477 @@ Return ONLY valid JSON:
         ...retrieval.meta,
         responseMode: forcedResponseMode,
         holisticIntent,
-        correctionIntent
+        correctionIntent,
+        comparisonIntent,
+        gapAnalysisIntent,
+        contradictions
       }
+    };
+  }
+
+  async queryStreaming({
+    sessionId,
+    requestId,
+    query,
+    topK = DEFAULTS.topK,
+    mode = DEFAULTS.mode,
+    chunkTopK = DEFAULTS.chunkTopK,
+    chunkWeight = DEFAULTS.chunkWeight,
+    contextFileIds = [],
+    strictScope = false,
+    responseMode = 'fast',
+    documentScopeItems = [],
+    onEvent
+  }) {
+    const cleanQuery = typeof query === 'string' ? query.trim() : '';
+    if (!cleanQuery || cleanQuery.length < 2) {
+      if (onEvent) onEvent({ type: 'error', error: 'Query must be at least 2 characters' });
+      return;
+    }
+
+    if (!this.llamaService) {
+      if (onEvent) onEvent({ type: 'error', error: 'Chat service unavailable' });
+      return;
+    }
+
+    const streamKey =
+      requestId !== undefined && requestId !== null
+        ? `req:${String(requestId)}`
+        : `session:${String(sessionId || 'default')}`;
+    const existingStream = this.activeStreamControllers.get(streamKey);
+    if (existingStream?.controller) {
+      try {
+        existingStream.controller.abort();
+      } catch {
+        // Ignore abort errors
+      }
+    }
+    const streamController = new AbortController();
+    this.activeStreamControllers.set(streamKey, {
+      controller: streamController,
+      sessionId: sessionId || 'default'
+    });
+
+    // Short-circuit for pure chitchat
+    try {
+      if (this._isConversational(cleanQuery)) {
+        if (onEvent) onEvent({ type: 'status', text: 'Thinking...' });
+        const memory = await this._getSessionMemory(sessionId);
+        memory._documentScope = documentScopeItems || [];
+        const history = await this._getHistoryText(memory);
+
+        const prompt = `You are StratoSort, a friendly local AI assistant. You help users search, explore, and understand the files on their machine. Everything runs on-device — no data leaves their computer.
+
+${history ? `Conversation so far:\n${history}\n` : ''}User: "${cleanQuery}"
+
+Respond warmly and naturally. If they greet you or check if you are working, greet them back and briefly mention what you can do. Suggest 2-3 things they could try as follow-up questions.
+
+Example output:
+{"modelAnswer":[{"text":"Hey there! I'm up and running. I can search your documents by meaning, answer questions about your files, find related documents, and help organize your workspace. What would you like to explore?"}],"documentAnswer":[],"followUps":["Summarize my most recent documents","What topics do my files cover?","Find files related to taxes"]}
+
+Now respond as JSON:`;
+
+        let fullResponse = '';
+        try {
+          let tokenCount = 0;
+          await this.llamaService.generateTextStreaming({
+            prompt,
+            signal: streamController.signal,
+            onToken: (token) => {
+              fullResponse += token;
+              tokenCount++;
+              if (tokenCount % 20 === 0 && onEvent) {
+                onEvent({ type: 'status', text: 'Generating response...' });
+              }
+            }
+          });
+
+          const parsed = this._parseResponse(fullResponse, []);
+          await this._saveMemoryTurn(memory, cleanQuery, {
+            text: this._formatForMemory(parsed),
+            documentAnswer: parsed.documentAnswer || [],
+            modelAnswer: parsed.modelAnswer || [],
+            sources: [],
+            followUps: parsed.followUps || [],
+            meta: { retrievalSkipped: true }
+          });
+
+          // Emit final parsed prose as a single chunk, then structured done
+          const proseText = [
+            ...(parsed.modelAnswer || []).map((a) => a.text),
+            ...(parsed.documentAnswer || []).map((a) => a.text)
+          ]
+            .filter(Boolean)
+            .join('\n\n');
+          if (proseText && onEvent) {
+            onEvent({ type: 'chunk', text: proseText });
+          }
+          if (onEvent)
+            onEvent({
+              type: 'done',
+              response: parsed,
+              sources: [],
+              meta: { retrievalSkipped: true }
+            });
+        } catch (err) {
+          logger.warn('[ChatService] Conversational streaming failed:', err);
+          try {
+            const isAbort = err?.name === 'AbortError';
+            if (onEvent)
+              onEvent({
+                type: 'error',
+                error: isAbort ? 'Generation canceled' : 'Conversational response failed'
+              });
+          } catch (eventErr) {
+            logger.warn('[ChatService] onEvent callback also failed:', eventErr?.message);
+          }
+        }
+        return;
+      }
+      if (onEvent) onEvent({ type: 'status', text: 'Searching documents...' });
+
+      const {
+        retrieval,
+        prompt,
+        holisticIntent,
+        correctionIntent,
+        comparisonIntent,
+        gapAnalysisIntent,
+        contradictions,
+        forcedResponseMode,
+        memory
+      } = await this._runRetrieval({
+        sessionId,
+        cleanQuery,
+        topK,
+        mode,
+        chunkTopK,
+        chunkWeight,
+        contextFileIds,
+        strictScope,
+        responseMode
+      });
+      memory._documentScope = documentScopeItems || [];
+
+      if (onEvent) {
+        onEvent({
+          type: 'status',
+          text: `Found ${retrieval.sources.length} relevant sources...`
+        });
+      }
+
+      if (strictScope && (!retrieval.sources || retrieval.sources.length === 0)) {
+        const abstentionText =
+          'I cannot find this information in the selected documents. Try broadening your document scope or rephrasing your question.';
+        const abstention = {
+          documentAnswer: [],
+          modelAnswer: [{ text: abstentionText }],
+          followUps: []
+        };
+        // Persist the abstention so it survives conversation reload
+        await this._saveMemoryTurn(memory, cleanQuery, {
+          text: abstentionText,
+          documentAnswer: [],
+          modelAnswer: abstention.modelAnswer,
+          sources: [],
+          followUps: [],
+          meta: { ...retrieval.meta, strictScopeAbstention: true }
+        });
+        if (onEvent) {
+          onEvent({ type: 'chunk', text: abstentionText });
+          onEvent({
+            type: 'done',
+            response: abstention,
+            sources: [],
+            meta: { ...retrieval.meta, strictScopeAbstention: true }
+          });
+        }
+        return;
+      }
+
+      let fullResponse = '';
+      let tokenCount = 0;
+      await this.llamaService.generateTextStreaming({
+        prompt,
+        signal: streamController.signal,
+        onToken: (token) => {
+          fullResponse += token;
+          tokenCount++;
+          if (tokenCount % 20 === 0 && onEvent) {
+            onEvent({ type: 'status', text: 'Analyzing documents...' });
+          }
+        }
+      });
+
+      const parsed = this._parseResponse(fullResponse, retrieval.sources);
+      if (!retrieval?.sources?.length) {
+        parsed.documentAnswer = [];
+      }
+
+      // Smart fallback logic (mirrors query())
+      if (parsed.documentAnswer.length === 0 && parsed.modelAnswer.length === 0) {
+        const dropped = retrieval.meta?.droppedLowRelevance || 0;
+        let fallbackText = '';
+        if (retrieval.sources.length === 0 && dropped === 0) {
+          fallbackText =
+            "I didn't find any documents matching your query. Try rephrasing with different keywords, or ask about a topic that's in your indexed files.";
+        } else if (retrieval.sources.length === 0 && dropped > 0) {
+          fallbackText = `I found ${dropped} document${dropped > 1 ? 's' : ''} but none were relevant enough to your question. Try more specific keywords or a different angle.`;
+        } else {
+          fallbackText = `I found ${retrieval.sources.length} related document${retrieval.sources.length > 1 ? 's' : ''} but couldn't extract a specific answer. You can explore the sources below directly.`;
+        }
+        parsed.modelAnswer.push({ text: fallbackText });
+      }
+
+      // Emit final parsed prose as a single chunk for UI display (after fallback)
+      const proseText = [
+        ...(parsed.documentAnswer || []).map((a) => a.text),
+        ...(parsed.modelAnswer || []).map((a) => a.text)
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+      if (proseText && onEvent) {
+        onEvent({ type: 'chunk', text: proseText });
+      }
+
+      const assistantForMemory = {
+        text: this._formatForMemory(parsed, retrieval.sources),
+        documentAnswer: parsed.documentAnswer,
+        modelAnswer: parsed.modelAnswer,
+        sources: retrieval.sources,
+        followUps: parsed.followUps || [],
+        meta: {
+          ...retrieval.meta,
+          responseMode: forcedResponseMode,
+          holisticIntent,
+          comparisonIntent,
+          gapAnalysisIntent,
+          contradictions
+        }
+      };
+      await this._saveMemoryTurn(memory, cleanQuery, assistantForMemory);
+
+      if (onEvent) {
+        onEvent({
+          type: 'done',
+          response: parsed,
+          sources: retrieval.sources,
+          meta: {
+            ...retrieval.meta,
+            responseMode: forcedResponseMode,
+            holisticIntent,
+            correctionIntent,
+            comparisonIntent,
+            gapAnalysisIntent,
+            contradictions
+          }
+        });
+      }
+    } catch (error) {
+      logger.error('[ChatService] Streaming query failed:', error);
+      const isAbort = error?.name === 'AbortError';
+      if (!isAbort) {
+        try {
+          const memory = await this._getSessionMemory(sessionId);
+          if (this.chatHistoryStore && memory?.sessionId) {
+            let conv = this.chatHistoryStore.getConversation(memory.sessionId);
+            if (!conv) {
+              // Use documentScopeItems from the outer scope instead of memory._documentScope,
+              // which is empty on a fresh _getSessionMemory() call in the error path.
+              this.chatHistoryStore.createConversation(
+                (typeof cleanQuery === 'string' ? cleanQuery.slice(0, 50) : '') ||
+                  'New Conversation',
+                documentScopeItems || [],
+                memory.sessionId
+              );
+            }
+            this.chatHistoryStore.addMessage(memory.sessionId, {
+              role: 'user',
+              text: cleanQuery
+            });
+            this.chatHistoryStore.addMessage(memory.sessionId, {
+              role: 'assistant',
+              text: '',
+              modelAnswer: [
+                { text: `Error: ${error.message || 'Response failed'}. Please try again.` }
+              ]
+            });
+          }
+        } catch (saveErr) {
+          logger.warn('[ChatService] Failed to save error turn:', saveErr.message);
+        }
+      }
+      if (onEvent)
+        onEvent({
+          type: 'error',
+          error: isAbort ? 'Generation canceled' : error.message || 'Streaming failed'
+        });
+    } finally {
+      this.activeStreamControllers.delete(streamKey);
+    }
+  }
+
+  async _runRetrieval({
+    sessionId,
+    cleanQuery,
+    topK,
+    mode,
+    chunkTopK,
+    chunkWeight,
+    contextFileIds,
+    strictScope = false,
+    responseMode
+  }) {
+    logger.info('[ChatService] Retrieval started', {
+      sessionId: sessionId || 'default',
+      queryLength: cleanQuery.length,
+      topK,
+      mode,
+      chunkTopK,
+      chunkWeight,
+      contextFileCount: Array.isArray(contextFileIds) ? contextFileIds.length : 0
+    });
+
+    const memory = await this._getSessionMemory(sessionId);
+    const history = await this._getHistoryText(memory);
+    const holisticIntent = this._isHolisticSynthesisQuery(cleanQuery);
+    const correctionIntent = this._isCorrectionFeedback(cleanQuery);
+    const comparisonIntent = this._isComparisonQuery(cleanQuery);
+    const gapAnalysisIntent = this._isGapAnalysisQuery(cleanQuery);
+
+    // Precompute embedding to share between hybridSearch and _scoreContextFiles
+    // This saves a redundant inference call when context files are present.
+    let precomputedEmbedding = null;
+    if (this.embeddingService && mode !== 'bm25') {
+      try {
+        const normalizedQuery = cleanQuery.trim().replace(/\s+/g, ' ');
+        const res = await this.embeddingService.embedText(normalizedQuery);
+        precomputedEmbedding = res?.vector || null;
+      } catch (e) {
+        logger.warn('[ChatService] Failed to precompute embedding', { error: e.message });
+      }
+    }
+
+    const forcedResponseMode =
+      (holisticIntent || comparisonIntent || gapAnalysisIntent) && responseMode !== 'deep'
+        ? 'deep'
+        : responseMode;
+    const modeConfig = RESPONSE_MODES[forcedResponseMode] || RESPONSE_MODES.fast;
+    const needsBroadRetrieval = holisticIntent || comparisonIntent || gapAnalysisIntent;
+    const effectiveTopK = needsBroadRetrieval ? Math.max(topK, HOLISTIC_MIN_TOPK) : topK;
+    const effectiveChunkTopK = needsBroadRetrieval
+      ? Math.max(
+          Number.isInteger(chunkTopK) && chunkTopK > 0 ? chunkTopK : modeConfig.chunkTopK,
+          HOLISTIC_MIN_CHUNK_TOPK
+        )
+      : Number.isInteger(chunkTopK) && chunkTopK > 0
+        ? chunkTopK
+        : modeConfig.chunkTopK;
+    const effectiveChunkWeight = needsBroadRetrieval
+      ? Math.max(
+          typeof chunkWeight === 'number' ? chunkWeight : modeConfig.chunkWeight,
+          HOLISTIC_MIN_CHUNK_WEIGHT
+        )
+      : typeof chunkWeight === 'number'
+        ? chunkWeight
+        : modeConfig.chunkWeight;
+    const effectiveRerank = Boolean(modeConfig.rerank || needsBroadRetrieval);
+
+    const retrieval = await this._retrieveSources(cleanQuery, {
+      topK: effectiveTopK,
+      mode,
+      chunkTopK: effectiveChunkTopK,
+      chunkWeight: effectiveChunkWeight,
+      contextFileIds,
+      expandSynonyms: modeConfig.expandSynonyms,
+      correctSpelling: modeConfig.correctSpelling,
+      rerank: effectiveRerank,
+      precomputedEmbedding
+    });
+
+    logger.debug('[ChatService] Retrieval completed', {
+      resultCount: retrieval?.sources?.length || 0,
+      mode: retrieval?.meta?.mode || mode,
+      contextBoosted: Boolean(retrieval?.meta?.contextBoosted),
+      queryMeta: retrieval?.meta?.queryMeta ? Object.keys(retrieval.meta.queryMeta) : []
+    });
+
+    const contradictions = this._detectContradictions(retrieval.sources);
+
+    const persona = await this._getPersona();
+    const prompt = this._buildPrompt({
+      query: cleanQuery,
+      history,
+      sources: retrieval.sources,
+      persona,
+      intent: {
+        holisticIntent,
+        correctionIntent,
+        comparisonIntent,
+        gapAnalysisIntent
+      },
+      strictScope,
+      contradictions
+    });
+
+    return {
+      history,
+      retrieval,
+      persona,
+      prompt,
+      holisticIntent,
+      correctionIntent,
+      comparisonIntent,
+      gapAnalysisIntent,
+      contradictions,
+      forcedResponseMode,
+      memory
     };
   }
 
   async _getSessionMemory(sessionId) {
     const key = sessionId || 'default';
-    if (this.sessions.has(key)) {
-      return this.sessions.get(key);
+
+    if (this.chatHistoryStore) {
+      try {
+        return { sessionId: key };
+      } catch (error) {
+        logger.warn('[ChatService] Failed to access history store:', error.message);
+        // Fallback to in-memory
+      }
     }
 
-    // Evict oldest session if at capacity (Map maintains insertion order)
+    if (this.sessions.has(key)) {
+      const session = this.sessions.get(key);
+      session._lastAccessedAt = Date.now();
+      return session;
+    }
+
+    const STALE_MS = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    for (const [sk, sv] of this.sessions) {
+      if (now - (sv._lastAccessedAt || 0) > STALE_MS) {
+        this.sessions.delete(sk);
+      }
+    }
+
+    // Evict oldest session if still at capacity (Map maintains insertion order)
     if (this.sessions.size >= MAX_SESSIONS) {
       const oldestKey = this.sessions.keys().next().value;
       this.sessions.delete(oldestKey);
     }
 
-    const memory = await this._createMemory();
+    const memory = this._createMemory();
+    memory._lastAccessedAt = Date.now();
     this.sessions.set(key, memory);
     return memory;
   }
 
-  async _createMemory() {
-    return this._createFallbackMemory();
-  }
-
-  _createFallbackMemory() {
+  /**
+   * Create a simple in-memory conversation buffer.
+   * @returns {Object} Memory object with loadMemoryVariables and saveContext
+   */
+  _createMemory() {
     const maxTurns = Math.max(1, DEFAULTS.memoryWindow);
     const lines = [];
 
@@ -301,6 +800,50 @@ Return ONLY valid JSON:
   }
 
   async _getHistoryText(memory) {
+    if (this.chatHistoryStore && memory?.sessionId) {
+      try {
+        const conv = this.chatHistoryStore.getConversation(memory.sessionId);
+        if (!conv) return '';
+        const messages = conv.messages.slice(-(DEFAULTS.memoryWindow * 2));
+        return messages
+          .map((m) => {
+            const role = m.role === 'user' ? 'User' : 'Assistant';
+            let text = m.text;
+            if (m.role === 'assistant' && !text) {
+              const docs =
+                m.documentAnswer
+                  ?.map((d) => d.text)
+                  .filter(Boolean)
+                  .join('\n') || '';
+              const model =
+                m.modelAnswer
+                  ?.map((d) => d.text)
+                  .filter(Boolean)
+                  .join('\n') || '';
+              text = [docs, model].filter(Boolean).join('\n');
+            }
+            if (
+              m.role === 'assistant' &&
+              text &&
+              Array.isArray(m.sources) &&
+              m.sources.length > 0
+            ) {
+              for (const source of m.sources) {
+                const sourceId = source?.id;
+                const sourceName = source?.name;
+                if (!sourceId || !sourceName) continue;
+                const escapedId = String(sourceId).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                text = text.replace(new RegExp(`\\[${escapedId}\\]`, 'g'), `[${sourceName}]`);
+              }
+            }
+            return `${role}: ${text}`;
+          })
+          .join('\n');
+      } catch (error) {
+        logger.warn('[ChatService] Failed to load history from store:', error.message);
+      }
+    }
+
     try {
       const vars = await memory.loadMemoryVariables({});
       return typeof vars?.history === 'string' ? vars.history : '';
@@ -311,15 +854,78 @@ Return ONLY valid JSON:
   }
 
   async _saveMemoryTurn(memory, input, output) {
-    try {
-      await memory.saveContext({ input }, { output });
-    } catch (error) {
-      logger.debug('[ChatService] Failed to save memory:', error.message);
+    if (this.chatHistoryStore && memory?.sessionId) {
+      try {
+        // Ensure conversation exists, passing sessionId so the store uses it
+        let conv = this.chatHistoryStore.getConversation(memory.sessionId);
+        const isFirstTurn = !conv;
+        if (!conv) {
+          this.chatHistoryStore.createConversation(
+            (typeof input === 'string' ? input.slice(0, 50) : '') || 'New Conversation',
+            memory._documentScope || [],
+            memory.sessionId
+          );
+        }
+
+        // Persist user turn
+        this.chatHistoryStore.addMessage(memory.sessionId, {
+          role: 'user',
+          text: typeof input === 'string' ? input : ''
+        });
+
+        const assistantMessage = {
+          role: 'assistant',
+          text: typeof output === 'string' ? output : output?.text || ''
+        };
+        if (output && typeof output === 'object' && !Array.isArray(output)) {
+          assistantMessage.text = output.text || '';
+          assistantMessage.documentAnswer = output.documentAnswer || [];
+          assistantMessage.modelAnswer = output.modelAnswer || [];
+          assistantMessage.sources = output.sources || [];
+          assistantMessage.followUps = output.followUps || [];
+          assistantMessage.meta = output.meta || {};
+        }
+        this.chatHistoryStore.addMessage(memory.sessionId, assistantMessage);
+
+        // Also fixes legacy conversations stuck with "New Chat" title.
+        if (this.chatHistoryStore.updateTitle) {
+          const currentTitle = isFirstTurn ? null : conv?.title || '';
+          const needsTitleUpdate =
+            isFirstTurn || currentTitle === 'New Chat' || currentTitle === 'New Conversation';
+
+          if (needsTitleUpdate && typeof input === 'string' && input.trim()) {
+            const betterTitle =
+              input.trim().length > 60 ? input.trim().slice(0, 57) + '...' : input.trim();
+            this.chatHistoryStore.updateTitle(memory.sessionId, betterTitle);
+          }
+        }
+
+        return;
+      } catch (error) {
+        logger.warn('[ChatService] Failed to persist turn:', error.message);
+      }
+    }
+
+    // Fallback to in-memory saveContext for sessions without ChatHistoryStore
+    if (typeof memory?.saveContext === 'function') {
+      try {
+        await memory.saveContext({ input }, { output });
+      } catch (error) {
+        logger.debug('[ChatService] Failed to save memory:', error.message);
+      }
     }
   }
 
   _isConversational(query) {
-    // Exact-match greetings / closers
+    // Chat queries shouldn't be conversational if they're over 100 chars.
+    if (query.length > 100) return false;
+    const clean = query
+      .toLowerCase()
+      .replace(/[^\w\s]/g, '')
+      .trim();
+    if (!clean) return false;
+
+    // Exact-match greetings / closers / status checks
     const exactPhrases = new Set([
       'hello',
       'hi',
@@ -339,8 +945,14 @@ Return ONLY valid JSON:
       'howdy',
       'bye',
       'goodbye',
-      'see ya'
+      'see ya',
+      'test',
+      'testing',
+      'you there',
+      'anyone there',
+      'is anyone there'
     ]);
+    if (exactPhrases.has(clean)) return true;
 
     // Pattern-match capability / meta questions (safe, bounded patterns)
     const capabilityPatterns = [
@@ -354,16 +966,102 @@ Return ONLY valid JSON:
       /^what (?:kind|type) of\b.*\bhelp\b/,
       /^how do i use\b/
     ];
+    if (capabilityPatterns.some((rx) => rx.test(clean))) return true;
 
-    // FIX: Truncate before regex to prevent ReDoS on very long untrusted input.
-    // Chat queries shouldn't be conversational if they're over 100 chars.
-    if (query.length > 100) return false;
-    const clean = query
-      .toLowerCase()
-      .replace(/[^\w\s]/g, '')
-      .trim();
-    if (exactPhrases.has(clean)) return true;
-    return capabilityPatterns.some((rx) => rx.test(clean));
+    // Status-check patterns: "are you up and running", "are you there", etc.
+    // These are meta queries about the assistant, not document queries.
+    if (
+      /^are you\s+(?:up|there|alive|working|online|ready|awake|listening|ok|okay|running)\b/.test(
+        clean
+      )
+    )
+      return true;
+    if (/^(?:you|u)\s+(?:there|up|alive|working|ready|awake)\b/.test(clean)) return true;
+
+    return false;
+  }
+
+  _isComparisonQuery(query) {
+    const q = String(query || '').toLowerCase();
+    if (!q || q.length > 300) return false;
+    return (
+      /\bcompar(?:e|ing|ison)\b/.test(q) ||
+      /\bdifferences?\s+between\b/.test(q) ||
+      /\bhow\s+(?:does|do)\s+.+\s+differ\b/.test(q) ||
+      /\bvs\.?\b/.test(q) ||
+      /\bside[\s-]by[\s-]side\b/.test(q) ||
+      /\bcontrast\b/.test(q)
+    );
+  }
+
+  _isGapAnalysisQuery(query) {
+    const q = String(query || '').toLowerCase();
+    if (!q || q.length > 300) return false;
+    return (
+      /\bgap(?:s)?\s+(?:in|analysis)\b/.test(q) ||
+      /\bwhat(?:'s|\s+is)\s+missing\b/.test(q) ||
+      /\bwhat\s+(?:questions?|topics?)\s+(?:can't|cannot|aren't|are\s+not)\b/.test(q) ||
+      /\bnot\s+covered\b/.test(q) ||
+      /\bonly\s+(?:one|1|single)\s+source\b/.test(q) ||
+      /\bcoverage\b/.test(q) ||
+      /\bblind\s+spots?\b/.test(q)
+    );
+  }
+
+  _detectContradictions(sources) {
+    if (!sources || sources.length < 2) return [];
+
+    const contradictions = [];
+
+    for (let i = 0; i < sources.length - 1; i++) {
+      for (let j = i + 1; j < sources.length; j++) {
+        const a = sources[i];
+        const b = sources[j];
+
+        // Check for shared entities/tags that might indicate topical overlap
+        const aTags = new Set([
+          ...(a.tags || []).map((t) => t.toLowerCase()),
+          ...(a.entity ? [a.entity.toLowerCase()] : []),
+          ...(a.category ? [a.category.toLowerCase()] : [])
+        ]);
+        const bTags = new Set([
+          ...(b.tags || []).map((t) => t.toLowerCase()),
+          ...(b.entity ? [b.entity.toLowerCase()] : []),
+          ...(b.category ? [b.category.toLowerCase()] : [])
+        ]);
+
+        const sharedTopics = [...aTags].filter((t) => bTags.has(t));
+        if (sharedTopics.length === 0) continue;
+
+        // Check for date divergence (different dates suggest potential evolution/contradiction)
+        const aDate = a.documentDate || '';
+        const bDate = b.documentDate || '';
+        const hasDifferentDates = aDate && bDate && aDate !== bDate;
+
+        // Only flag as potential contradiction if there's topical overlap
+        // AND some signal of divergence (different dates, different entities, etc.)
+        if (hasDifferentDates || (a.entity && b.entity && a.entity !== b.entity)) {
+          contradictions.push({
+            docA: {
+              id: a.id,
+              name: a.name,
+              date: aDate,
+              snippet: (a.snippet || a.summary || '').slice(0, 200)
+            },
+            docB: {
+              id: b.id,
+              name: b.name,
+              date: bDate,
+              snippet: (b.snippet || b.summary || '').slice(0, 200)
+            },
+            sharedTopics,
+            reason: hasDifferentDates ? 'different_dates' : 'different_entities'
+          });
+        }
+      }
+    }
+
+    return contradictions.slice(0, 5);
   }
 
   _isHolisticSynthesisQuery(query) {
@@ -395,7 +1093,17 @@ Return ONLY valid JSON:
 
   async _retrieveSources(
     query,
-    { topK, mode, chunkTopK, chunkWeight, contextFileIds, expandSynonyms, correctSpelling, rerank }
+    {
+      topK,
+      mode,
+      chunkTopK,
+      chunkWeight,
+      contextFileIds,
+      expandSynonyms,
+      correctSpelling,
+      rerank,
+      precomputedEmbedding
+    }
   ) {
     const meta = {
       retrievalAvailable: true
@@ -451,6 +1159,7 @@ Return ONLY valid JSON:
         expandSynonyms,
         correctSpelling,
         rerank,
+        precomputedEmbedding,
         ...retrievalSettings
       });
     } catch (error) {
@@ -481,7 +1190,6 @@ Return ONLY valid JSON:
 
     const baseResults = Array.isArray(searchResults.results) ? searchResults.results : [];
 
-    // FIX Bug #28: Wrap chunkSearch in try/catch to prevent chat crash on index failure
     let chunkResults;
     try {
       chunkResults = await this.searchService.chunkSearch(
@@ -513,7 +1221,11 @@ Return ONLY valid JSON:
 
     let finalResults = baseResults.slice(0, topK);
     if (Array.isArray(contextFileIds) && contextFileIds.length > 0) {
-      const contextScores = await this._scoreContextFiles(query, contextFileIds);
+      const contextScores = await this._scoreContextFiles(
+        query,
+        contextFileIds,
+        precomputedEmbedding
+      );
       const contextRanked = contextScores
         .sort((a, b) => (b.score || 0) - (a.score || 0))
         .slice(0, topK);
@@ -529,7 +1241,15 @@ Return ONLY valid JSON:
     // the LLM prompt gets summary, purpose, entity, extractedText, etc. — not just
     // the bare-bones fields stored in the vector DB.
     if (this.searchService && typeof this.searchService.enrichResults === 'function') {
-      this.searchService.enrichResults(finalResults);
+      const enrichmentSafeResults = finalResults.map((result) => ({
+        ...result,
+        metadata:
+          result && typeof result.metadata === 'object' && result.metadata !== null
+            ? { ...result.metadata }
+            : {}
+      }));
+      this.searchService.enrichResults(enrichmentSafeResults);
+      finalResults = enrichmentSafeResults;
     }
 
     const sources = finalResults.map((result, index) => {
@@ -659,7 +1379,7 @@ Return ONLY valid JSON:
     };
   }
 
-  async _scoreContextFiles(query, fileIds) {
+  async _scoreContextFiles(query, fileIds, precomputedEmbedding = null) {
     try {
       if (!this.embeddingService || !this.vectorDbService) return [];
       const cleanIds = fileIds
@@ -668,7 +1388,13 @@ Return ONLY valid JSON:
 
       if (cleanIds.length === 0) return [];
 
-      const embedResult = await this.embeddingService.embedText(query);
+      let embedResult;
+      if (precomputedEmbedding) {
+        embedResult = { vector: precomputedEmbedding };
+      } else {
+        embedResult = await this.embeddingService.embedText(query);
+      }
+
       if (!embedResult?.vector?.length) return [];
 
       await this.vectorDbService.initialize();
@@ -694,9 +1420,10 @@ Return ONLY valid JSON:
         const doc = fileDocs[i];
         const vec = doc?.embedding;
         if (!Array.isArray(vec) || vec.length === 0) continue;
-        if (vec.length !== queryVector.length) continue;
+        const normalizedVec = this._padOrTruncateVector(vec, queryVector.length);
+        if (!normalizedVec?.length) continue;
 
-        const similarity = cosineSimilarity(queryVector, vec);
+        const similarity = cosineSimilarity(queryVector, normalizedVec);
         scored.push({
           id: cleanIds[i],
           score: similarity,
@@ -732,7 +1459,6 @@ Return ONLY valid JSON:
     }
   }
 
-  // FIX: Use shared padOrTruncateVector from vectorMath.js to eliminate duplication
   _padOrTruncateVector(vector, expectedDim) {
     return padOrTruncateVector(vector, expectedDim);
   }
@@ -749,7 +1475,15 @@ Return ONLY valid JSON:
     return getChatPersonaOrDefault();
   }
 
-  _buildPrompt({ query, history, sources, persona, intent = {} }) {
+  _buildPrompt({
+    query,
+    history,
+    sources,
+    persona,
+    intent = {},
+    strictScope = false,
+    contradictions = []
+  }) {
     // Build source context using the raw semantic score (actual cosine
     // similarity) for all quality decisions. High-similarity sources get
     // full extracted text; marginal sources get metadata only.
@@ -792,6 +1526,39 @@ Return ONLY valid JSON:
       : '(no persona guidance)';
     const holisticIntent = Boolean(intent?.holisticIntent);
     const correctionIntent = Boolean(intent?.correctionIntent);
+    const comparisonIntent = Boolean(intent?.comparisonIntent);
+    const gapAnalysisIntent = Boolean(intent?.gapAnalysisIntent);
+
+    const contradictionContext =
+      contradictions.length > 0
+        ? `\nPOTENTIAL CONFLICTS DETECTED:\n${contradictions
+            .map(
+              (c) =>
+                `- ${c.docA.name}${c.docA.date ? ` (${c.docA.date})` : ''} vs ${c.docB.name}${c.docB.date ? ` (${c.docB.date})` : ''}: shared topics [${c.sharedTopics.join(', ')}]. Note these discrepancies in your answer with both citations [${c.docA.id}] and [${c.docB.id}].`
+            )
+            .join('\n')}\n`
+        : '';
+
+    const comparisonRules = comparisonIntent
+      ? `
+Comparison constraints:
+- The user is asking for a comparison. Structure your documentAnswer as a comparison.
+- For each topic or dimension, describe what each document says with inline citations.
+- If a document does not address a topic, explicitly state that it is absent (gap signal).
+- Use the JSON format, but make each documentAnswer item cover one comparison dimension.
+`.trim()
+      : '';
+
+    const gapAnalysisRules = gapAnalysisIntent
+      ? `
+Gap analysis constraints:
+- The user is asking about coverage gaps.
+- Categorize topics into: well-covered (3+ sources), thin-covered (1 source), and gaps (not covered).
+- For each category, list the specific topics with their source citations.
+- Suggest search terms or document types that could fill identified gaps.
+`.trim()
+      : '';
+
     const synthesisRules = holisticIntent
       ? `
 Holistic constraints:
@@ -808,6 +1575,10 @@ Correction constraints:
 - Do not repeat previous assistant claims unless supported by the current document evidence.
 `.trim()
       : '';
+
+    const strictInstruction = strictScope
+      ? `STRICT SCOPE ENFORCED: You must ONLY answer using the provided Document sources. If the answer is not in the documents, state "I cannot find this information in the selected documents." Do NOT use outside knowledge.`
+      : `If no sources are provided, or they are clearly unrelated to the question, respond helpfully in 'modelAnswer': acknowledge you did not find matching documents and suggest what the user could try instead. Do NOT fabricate document-based claims.`;
 
     return `
 You are StratoSort, a friendly local AI assistant that helps users explore and understand their documents. Everything runs 100% on-device.
@@ -826,7 +1597,7 @@ ${sourcesText || '(no documents found)'}
 Return ONLY valid JSON with this shape:
 {
   "documentAnswer": [
-    { "text": "answer grounded in documents", "citations": ["doc-1", "doc-2"] }
+    { "text": "Answer with [doc-1] inline citations [doc-2] after each claim.", "citations": ["doc-1", "doc-2"] }
   ],
   "modelAnswer": [
     { "text": "answer using model knowledge or conversational glue" }
@@ -837,15 +1608,18 @@ Return ONLY valid JSON with this shape:
 Rules:
 1. Answer the user's question directly and naturally — like a knowledgeable colleague, not a research report.
 2. Each source has a relevance percentage. Prioritize high-relevance sources; treat low-relevance ones (< 50%) as background context only.
-3. Use 'documentAnswer' for claims directly backed by sources, with citations. Use 'modelAnswer' for general knowledge, helpful context, or conversational responses.
+3. Use 'documentAnswer' for claims directly backed by sources. Place [doc-N] markers inline in your text immediately after the specific claim they support. Every factual claim from a document MUST have an inline citation.
 4. Write in flowing prose. NEVER start with "The provided documents do not..." or similar hedging.
-5. If no sources are provided, or they are clearly unrelated to the question, respond helpfully in 'modelAnswer': acknowledge you did not find matching documents and suggest what the user could try instead. Do NOT fabricate document-based claims.
+5. ${strictInstruction}
 6. Weave document metadata (Project, Entity, Date, Type) into your answer naturally when it adds value.
 7. Be concise. One clear paragraph is better than multiple fragmented bullet sections.
 8. Generate 1-3 natural follow-up questions grounded in what you know about the user's documents. Avoid generic questions like "Can you provide more context?" — instead suggest specific things they might search for.
 9. If the query is casual or about your capabilities, respond warmly in 'modelAnswer' and leave 'documentAnswer' empty.
 ${synthesisRules}
 ${correctionRules}
+${comparisonRules}
+${gapAnalysisRules}
+${contradictionContext}
 `.trim();
   }
 

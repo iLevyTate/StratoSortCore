@@ -4,10 +4,9 @@ const { createReadStream } = require('fs');
 const { FileProcessingError } = require('../errors/AnalysisError');
 const { createLogger } = require('../../shared/logger');
 const { LIMITS } = require('../../shared/constants');
-// FIX P3-2: Import withTimeout for extraction timeout handling
+const { getAnalysisLimits } = require('./analysisLimits');
 const { withTimeout } = require('../../shared/promiseUtils');
 
-// FIX P3-2: Timeout constants for extraction operations to prevent indefinite hangs
 const EXTRACTION_TIMEOUTS = {
   PDF: 120000, // 2 minutes for PDF (can be slow for large files)
   DOCX: 60000, // 1 minute for DOCX
@@ -17,13 +16,28 @@ const EXTRACTION_TIMEOUTS = {
   DEFAULT: 60000 // 1 minute default
 };
 
-// FIX CRITICAL: Logger must be declared before use in the XMLParser try-catch below
 // Previously, logger was referenced at line 25 but declared at line 32, causing a
 // ReferenceError (Temporal Dead Zone) when fast-xml-parser was missing.
 const logger = createLogger('DocumentExtractors');
 
 let unpdfRenderer = null;
 let unpdfRendererInit = null;
+let sharpModule = null;
+let sharpLoadAttempted = false;
+
+function getSharp() {
+  if (sharpLoadAttempted) return sharpModule;
+  sharpLoadAttempted = true;
+  try {
+    sharpModule = require('sharp');
+  } catch (error) {
+    logger.warn('[OCR] sharp unavailable, image preprocessing disabled', {
+      error: error.message
+    });
+    sharpModule = null;
+  }
+  return sharpModule;
+}
 
 function ensurePromiseResolversPolyfill() {
   if (typeof Promise.withResolvers === 'function') return;
@@ -44,13 +58,15 @@ async function getUnpdfRenderer() {
   unpdfRendererInit = (async () => {
     let definePDFJSModule;
     let renderPageAsImage;
+    let getDocumentProxy;
     try {
-      ({ definePDFJSModule, renderPageAsImage } = require('unpdf'));
+      ({ definePDFJSModule, renderPageAsImage, getDocumentProxy } = require('unpdf'));
     } catch (requireError) {
       try {
         const mod = await import('unpdf');
         definePDFJSModule = mod.definePDFJSModule || mod.default?.definePDFJSModule;
         renderPageAsImage = mod.renderPageAsImage || mod.default?.renderPageAsImage;
+        getDocumentProxy = mod.getDocumentProxy || mod.default?.getDocumentProxy;
       } catch (importError) {
         logger.warn('[OCR] unpdf renderer unavailable', {
           error: importError.message || requireError.message
@@ -80,7 +96,7 @@ async function getUnpdfRenderer() {
       }
     }
 
-    unpdfRenderer = { renderPageAsImage };
+    unpdfRenderer = { renderPageAsImage, getDocumentProxy };
     return unpdfRenderer;
   })();
   return unpdfRendererInit;
@@ -169,18 +185,25 @@ function cleanWhitespace(text) {
 
 /**
  * Check file size and enforce memory limits
+ * Uses maxDocumentFileSize from settings when available
  * @param {string} filePath - Path to file
  * @param {string} fileName - Name of file for error messages
+ * @param {number} [maxSizeOverride] - Optional override; when omitted, loads from settings
  * @throws {FileProcessingError} If file exceeds size limit
  */
-async function checkFileSize(filePath, fileName) {
+async function checkFileSize(filePath, fileName, maxSizeOverride) {
   try {
     const stats = await fs.stat(filePath);
-    if (stats.size > LIMITS.MAX_FILE_SIZE) {
+    let maxSize = maxSizeOverride;
+    if (maxSize == null || !Number.isFinite(maxSize)) {
+      const limits = await getAnalysisLimits();
+      maxSize = limits.maxDocumentFileSize ?? LIMITS.MAX_FILE_SIZE;
+    }
+    if (stats.size > maxSize) {
       throw new FileProcessingError('FILE_TOO_LARGE', fileName, {
-        suggestion: `File size ${(stats.size / 1024 / 1024).toFixed(1)}MB exceeds limit of ${LIMITS.MAX_FILE_SIZE / 1024 / 1024}MB`,
+        suggestion: `File size ${(stats.size / 1024 / 1024).toFixed(1)}MB exceeds limit of ${(maxSize / 1024 / 1024).toFixed(1)}MB`,
         fileSize: stats.size,
-        maxSize: LIMITS.MAX_FILE_SIZE
+        maxSize
       });
     }
     return stats.size;
@@ -396,7 +419,13 @@ async function extractContentStreaming(filePath) {
       safeResolve(chunks.join(''));
     });
 
-    stream.on('error', safeReject);
+    stream.on('error', (error) => {
+      if (error.code === 'ERR_STREAM_PREMATURE_CLOSE' && totalLength >= MAX_CONTENT_LENGTH) {
+        safeResolve(chunks.join(''));
+      } else {
+        safeReject(error);
+      }
+    });
 
     stream.on('close', () => {
       // Handle early termination
@@ -418,7 +447,6 @@ async function extractTextFromPdf(filePath, fileName) {
   let dataBuffer;
   try {
     const rawBuffer = await fs.readFile(filePath);
-    // FIX: unpdf (pdf.js) requires Uint8Array, not Node.js Buffer.
     // Buffer is a Uint8Array subclass but pdf.js does a strict instanceof check.
     dataBuffer = new Uint8Array(rawBuffer.buffer, rawBuffer.byteOffset, rawBuffer.byteLength);
     let extractText;
@@ -471,11 +499,9 @@ async function extractTextFromPdf(filePath, fileName) {
 }
 
 async function ocrPdfIfNeeded(filePath) {
-  const sharp = require('sharp');
   let pdfBuffer;
   let rasterPng;
 
-  // FIX P1-8: OCR memory constraints to prevent memory exhaustion
   // Cap density to 150 DPI (was 200) - still good for OCR, but reduces memory 44%
   // Add max dimensions to prevent huge images from 200+ page PDFs
   const OCR_DENSITY = 150; // DPI for rasterization
@@ -488,12 +514,16 @@ async function ocrPdfIfNeeded(filePath) {
       logger.debug('[OCR] Skipping PDF OCR - tesseract unavailable');
       return '';
     }
+    const sharp = getSharp();
+    if (!sharp) {
+      logger.debug('[OCR] Skipping PDF OCR preprocessing - sharp unavailable');
+      return '';
+    }
 
     // Fixed: Check file size before OCR processing (OCR is very memory intensive)
     const stats = await fs.stat(filePath);
     // OCR has stricter limits due to image processing overhead
     if (stats.size > OCR_MAX_FILE_SIZE) {
-      // FIX: Log the skip reason instead of silently returning
       logger.info('[OCR] Skipping OCR - file exceeds size limit', {
         filePath,
         fileSize: stats.size,
@@ -504,7 +534,6 @@ async function ocrPdfIfNeeded(filePath) {
 
     pdfBuffer = await fs.readFile(filePath);
 
-    // FIX P1-8: Use lower density and resize to constrain memory usage
     // A 40MB PDF at 200 DPI could become 150MB+ PNG, causing OOM
     let sharpPipeline = sharp(pdfBuffer, { density: OCR_DENSITY });
 
@@ -578,7 +607,6 @@ async function ocrPdfIfNeeded(filePath) {
     rasterPng = null;
     return result;
   } catch (error) {
-    // FIX: Log error details instead of silently returning empty string
     logger.warn('[OCR] OCR processing failed', {
       filePath,
       error: error.message,
@@ -611,27 +639,53 @@ async function ocrPdfWithCanvasRenderer(pdfBuffer, options = {}) {
   }
 
   const canvasImport = () => Promise.resolve(canvasModule);
-  const dataBuffer = new Uint8Array(pdfBuffer.buffer, pdfBuffer.byteOffset, pdfBuffer.byteLength);
+  // Important: create a standalone copy (not a view over Node Buffer memory),
+  // then reuse a PDFDocumentProxy where available so transfer/detach behavior
+  // in PDF.js workers does not break page 2+ renders.
+  const sourceData = Uint8Array.from(pdfBuffer);
+  let pdfDoc = null;
+  if (typeof renderer.getDocumentProxy === 'function') {
+    try {
+      pdfDoc = await renderer.getDocumentProxy(sourceData);
+    } catch (error) {
+      logger.debug(
+        '[OCR] Failed to create shared PDF document proxy; using per-page data fallback',
+        {
+          error: error.message
+        }
+      );
+      pdfDoc = null;
+    }
+  }
   const MAX_PAGES = 3;
   const SCALE = 1.5;
 
   let combinedText = '';
-  for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
-    try {
-      const rendered = await renderer.renderPageAsImage(dataBuffer, pageNumber, {
-        canvasImport,
-        scale: SCALE
-      });
-      const imageBuffer = Buffer.from(rendered);
-      const ocrResult = await recognizeIfAvailable(null, imageBuffer, options);
-      if (ocrResult.success && ocrResult.text && ocrResult.text.trim()) {
-        combinedText += `${ocrResult.text.trim()}\n\n`;
+  try {
+    for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
+      try {
+        const renderTarget = pdfDoc || Uint8Array.from(sourceData);
+        const rendered = await renderer.renderPageAsImage(renderTarget, pageNumber, {
+          canvasImport,
+          scale: SCALE
+        });
+        const imageBuffer = Buffer.from(rendered);
+        const ocrResult = await recognizeIfAvailable(null, imageBuffer, options);
+        if (ocrResult.success && ocrResult.text && ocrResult.text.trim()) {
+          combinedText += `${ocrResult.text.trim()}\n\n`;
+        }
+      } catch (error) {
+        logger.debug('[OCR] PDF page render failed', {
+          pageNumber,
+          error: error.message
+        });
       }
-    } catch (error) {
-      logger.debug('[OCR] PDF page render failed', {
-        pageNumber,
-        error: error.message
-      });
+    }
+  } finally {
+    try {
+      await pdfDoc?.destroy?.();
+    } catch {
+      // Ignore cleanup errors from PDF.js proxy teardown.
     }
   }
 
@@ -667,7 +721,6 @@ async function extractTextFromDoc(filePath) {
 
 async function extractImagesFromOfficeArchiveAndOcr(filePath, mediaPathPrefix) {
   const AdmZip = require('adm-zip');
-  const sharp = require('sharp');
   const OCR_MAX_WIDTH = 2480; // ~A4 at 150 DPI
   const OCR_MAX_HEIGHT = 3508; // ~A4 at 150 DPI
   const OCR_MAX_BYTES = 20 * 1024 * 1024; // 20MB limit per image
@@ -675,6 +728,11 @@ async function extractImagesFromOfficeArchiveAndOcr(filePath, mediaPathPrefix) {
   try {
     if (!(await isTesseractAvailable())) {
       logger.debug('[OFFICE-OCR] Skipping OCR - tesseract unavailable');
+      return '';
+    }
+    const sharp = getSharp();
+    if (!sharp) {
+      logger.debug('[OFFICE-OCR] Skipping image preprocessing - sharp unavailable');
       return '';
     }
 
@@ -939,7 +997,6 @@ async function extractTextFromXlsx(filePath) {
   try {
     workbook = await XLSX.fromFileAsync(filePath);
 
-    // CRITICAL FIX: Validate workbook structure
     if (!workbook || typeof workbook.sheets !== 'function') {
       throw new Error('Invalid workbook structure: sheets() method not available');
     }
@@ -953,7 +1010,6 @@ async function extractTextFromXlsx(filePath) {
 
     for (const sheet of sheets) {
       try {
-        // CRITICAL FIX: Add null checks and validate usedRange structure
         if (!sheet || typeof sheet.usedRange !== 'function') {
           logger.warn('[XLSX] Sheet missing usedRange method, skipping', {
             sheetName: sheet?.name() || 'unknown'
@@ -969,7 +1025,6 @@ async function extractTextFromXlsx(filePath) {
           continue;
         }
 
-        // CRITICAL FIX: Validate that value() method exists and returns valid data
         if (typeof usedRange.value !== 'function') {
           logger.warn('[XLSX] usedRange missing value() method, trying alternative extraction', {
             sheetName: sheet?.name() || 'unknown'
@@ -1085,7 +1140,6 @@ async function extractTextFromXlsx(filePath) {
 
   allText = allText.trim();
   if (!allText) {
-    // CRITICAL FIX: Try fallback extraction using officeParser before giving up
     try {
       logger.info(
         primaryMethodFailed
@@ -1131,10 +1185,8 @@ async function extractTextFromPptx(filePath) {
   let primaryMethodFailed = false;
 
   try {
-    // CRITICAL FIX: Add better error handling for officeParser
     const result = await parseOfficeFile(officeParser, filePath);
 
-    // CRITICAL FIX: Validate result structure
     if (result === null || result === undefined) {
       throw new Error('officeParser returned null or undefined');
     }
@@ -1172,7 +1224,6 @@ async function extractTextFromPptx(filePath) {
   }
 
   if (!text || text.trim().length === 0) {
-    // CRITICAL FIX: Try alternative extraction method before giving up
     logger.warn(
       primaryMethodFailed
         ? '[PPTX] Trying ZIP-based extraction after primary failure'
@@ -1188,7 +1239,6 @@ async function extractTextFromPptx(filePath) {
         const name = entry.entryName.toLowerCase();
         if (name.startsWith('ppt/slides/slide') && name.endsWith('.xml')) {
           try {
-            // FIX MED-4: Add null check before calling .toString()
             const entryData = entry.getData();
             if (!entryData) {
               logger.debug('[PPTX] Entry getData() returned null', { entry: name });
@@ -1473,7 +1523,6 @@ function chunkTextForAnalysis(
   };
 }
 
-// FIX P3-2: Timeout-wrapped extraction functions to prevent indefinite hangs
 // These wrappers ensure extraction operations don't block the pipeline forever
 
 /**
@@ -1539,7 +1588,6 @@ async function extractTextFromPptxWithTimeout(filePath) {
 }
 
 module.exports = {
-  // FIX P3-2: Export timeout-wrapped versions as primary exports
   // These prevent extraction operations from hanging indefinitely
   extractTextFromPdf: extractTextFromPdfWithTimeout,
   ocrPdfIfNeeded: ocrPdfWithTimeout,
@@ -1566,7 +1614,7 @@ module.exports = {
   extractPlainTextFromXml,
   extractPlainTextFromRtf,
   extractPlainTextFromHtml,
-  // MED-4: Streaming support for large files
+  // Streaming support for large files
   extractContentWithSizeCheck,
   extractContentStreaming,
   extractContentBuffered,

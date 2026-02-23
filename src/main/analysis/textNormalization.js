@@ -81,7 +81,6 @@ function normalizeForModel(text, maxLength) {
 
   let result = String(text);
 
-  // CRITICAL FIX: Truncate BEFORE regex operations to prevent buffer overflow
   // Processing very large strings with complex regex can cause catastrophic backtracking
   if (typeof maxLength === 'number' && maxLength > 0) {
     // First, do a rough truncation at 4x the target to be safe

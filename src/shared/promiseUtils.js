@@ -29,7 +29,6 @@ const logger = createLogger('PromiseUtils');
 function delay(ms) {
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, ms);
-    // FIX: Actually unref the timer as documented, so it doesn't
     // prevent process exit during shutdown retry/batch operations
     if (typeof timer.unref === 'function') timer.unref();
   });

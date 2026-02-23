@@ -22,6 +22,11 @@ jest.mock('../src/shared/constants', () => ({
     DISCOVER: 'discover',
     ORGANIZE: 'organize',
     COMPLETE: 'complete'
+  },
+  DEFAULT_AI_MODELS: {
+    TEXT_ANALYSIS: 'qwen3:0.6b',
+    IMAGE_ANALYSIS: 'gemma3:latest',
+    EMBEDDING: 'embeddinggemma'
   }
 }));
 

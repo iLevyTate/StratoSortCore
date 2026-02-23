@@ -9,13 +9,12 @@ import {
   Loader2,
   Minus,
   Square,
-  X,
-  ShieldCheck
+  X
 } from 'lucide-react';
-import { PHASES, PHASE_TRANSITIONS, PHASE_METADATA, PHASE_ORDER } from '../../shared/constants';
+import { PHASES, PHASE_METADATA, PHASE_ORDER } from '../../shared/constants';
 import { createLogger } from '../../shared/logger';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
-import { setPhase, toggleSettings } from '../store/slices/uiSlice';
+import { setPhase, toggleSettings, canTransitionTo } from '../store/slices/uiSlice';
 import { updateHealth } from '../store/slices/systemSlice';
 import { useFloatingSearch } from '../contexts/FloatingSearchContext';
 import UpdateIndicator from './UpdateIndicator';
@@ -33,10 +32,10 @@ const HomeIcon = memo(function HomeIcon({ className = '' }) {
 });
 HomeIcon.propTypes = { className: PropTypes.string };
 
-const CogIcon = memo(function CogIcon({ className = '' }) {
+const SettingsIcon = memo(function SettingsIcon({ className = '' }) {
   return <Settings className={className} aria-hidden="true" />;
 });
-CogIcon.propTypes = { className: PropTypes.string };
+SettingsIcon.propTypes = { className: PropTypes.string };
 
 const SearchIcon = memo(function SearchIcon({ className = '' }) {
   return <Search className={className} aria-hidden="true" />;
@@ -53,28 +52,22 @@ const CheckCircleIcon = memo(function CheckCircleIcon({ className = '' }) {
 });
 CheckCircleIcon.propTypes = { className: PropTypes.string };
 
-const SettingsIcon = memo(function SettingsIcon({ className = '' }) {
-  return <Settings className={className} aria-hidden="true" />;
-});
-SettingsIcon.propTypes = { className: PropTypes.string };
-
 const SpinnerIcon = memo(function SpinnerIcon({ className = '' }) {
   return <Loader2 className={`animate-spin ${className}`} aria-hidden="true" />;
 });
 SpinnerIcon.propTypes = { className: PropTypes.string };
 
-// FIX: Add null check for PHASES to prevent crash during module initialization
 const PHASE_ICONS = PHASES
   ? {
       [PHASES.WELCOME]: HomeIcon,
-      [PHASES.SETUP]: CogIcon,
+      [PHASES.SETUP]: SettingsIcon,
       [PHASES.DISCOVER]: SearchIcon,
       [PHASES.ORGANIZE]: FolderIcon,
       [PHASES.COMPLETE]: CheckCircleIcon
     }
   : {
       welcome: HomeIcon,
-      setup: CogIcon,
+      setup: SettingsIcon,
       discover: SearchIcon,
       organize: FolderIcon,
       complete: CheckCircleIcon
@@ -125,23 +118,6 @@ ConnectionIndicator.propTypes = {
 };
 
 /**
- * Local privacy badge - communicates air-gapped / 100% on-device positioning
- */
-const LocalPrivacyBadge = memo(function LocalPrivacyBadge() {
-  return (
-    <div
-      className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-wide uppercase border border-stratosort-success/40 bg-stratosort-success/10 text-stratosort-success select-none shadow-sm"
-      title="Your data never leaves this device. All AI runs on your machine."
-      role="status"
-      aria-label="100% Local - Your data never leaves this device"
-    >
-      <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={2.5} aria-hidden="true" />
-      <span>100% Local</span>
-    </div>
-  );
-});
-
-/**
  * Brand logo and name
  */
 const Brand = memo(function Brand({ status }) {
@@ -152,20 +128,19 @@ const Brand = memo(function Brand({ status }) {
           S
         </div>
         {/* Connection indicator overlaid on logo */}
-        <div className="absolute -bottom-0.5 -right-0.5 p-0.5 bg-white rounded-full shadow-sm">
+        <div className="absolute -bottom-0.5 -right-0.5 p-0.5 bg-white/90 rounded-full shadow-sm">
           <ConnectionIndicator status={status} />
         </div>
       </div>
       <div className="hidden sm:flex sm:items-center sm:gap-3 leading-tight">
         <div>
-          <Text as="p" variant="small" className="font-semibold text-system-gray-900">
+          <Text as="span" variant="small" className="block font-semibold text-system-gray-900">
             StratoSort
           </Text>
-          <Text as="p" variant="tiny" className="text-system-gray-500">
+          <Text as="span" variant="tiny" className="block">
             Cognitive file flow
           </Text>
         </div>
-        <LocalPrivacyBadge />
       </div>
     </div>
   );
@@ -253,19 +228,14 @@ const NavTab = memo(function NavTab({
       ) : (
         IconComponent && (
           <IconComponent
-            className={`phase-nav-icon flex-shrink-0 transition-colors duration-200
-              ${isActive || isHovered ? 'text-stratosort-blue' : 'text-current opacity-70'}
-            `}
+            className={`phase-nav-icon flex-shrink-0 ${isActive || isHovered ? 'text-stratosort-blue' : 'text-current opacity-70'}`}
           />
         )
       )}
       {/* FIX: Always show label, with clear size/line-height for visibility */}
       <span className="phase-nav-label">{label}</span>
 
-      {/* Active indicator */}
-      {isActive && !showSpinner && (
-        <span className="absolute -bottom-px left-1/2 h-0.5 w-6 -translate-x-1/2 rounded-full bg-stratosort-blue" />
-      )}
+      {/* Active state is conveyed via phase-nav-tab-active (bg, border, text color) */}
     </button>
   );
 });
@@ -294,7 +264,11 @@ const NavActions = memo(function NavActions({ onSettingsClick }) {
         variant="secondary"
         size="sm"
         leftIcon={<SearchIcon className="h-4 w-4" />}
-        className={`shadow-sm ${isWidgetOpen ? 'bg-stratosort-blue/10 border-stratosort-blue/30 text-stratosort-blue hover:bg-stratosort-blue/15' : ''}`}
+        className={
+          isWidgetOpen
+            ? 'bg-stratosort-blue/10 border-stratosort-blue/30 text-stratosort-blue hover:bg-stratosort-blue/15'
+            : ''
+        }
         aria-label={isWidgetOpen ? 'Close Search Widget' : 'Open Search Widget (Ctrl+K)'}
         title={isWidgetOpen ? 'Close Search Widget' : 'Search files (Ctrl+K)'}
       >
@@ -397,49 +371,50 @@ const WindowControls = memo(function WindowControls() {
 
   return (
     <div
-      className="flex items-center overflow-hidden rounded-xl border border-white/50 bg-white/75 shadow-sm backdrop-blur-sm"
+      className="flex items-center overflow-hidden rounded-full border border-white/50 bg-white/75 shadow-sm backdrop-blur-sm"
       style={{ WebkitAppRegion: 'no-drag' }}
     >
-      <button
-        type="button"
+      <IconButton
+        icon={<Minus className="h-4 w-4" />}
+        size="sm"
+        variant="ghost"
         onClick={handleMinimize}
-        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue/70"
+        className="h-9 w-11 rounded-none rounded-l-full text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 [transition-duration:var(--duration-normal)]"
         aria-label="Minimize window"
         title="Minimize"
-      >
-        <Minus className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
+      />
+      <IconButton
+        icon={
+          isMaximized ? (
+            <svg
+              className="h-3.5 w-3.5"
+              viewBox="0 0 10 10"
+              fill="none"
+              stroke="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M3,1v2H1v6h6V7h2V1H3z M2,8V4h4v4H2z M8,6h-1V3H4V2h4V6z" />
+            </svg>
+          ) : (
+            <Square className="h-3.5 w-3.5" />
+          )
+        }
+        size="sm"
+        variant="ghost"
         onClick={handleToggleMaximize}
-        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue/70"
+        className="h-9 w-11 rounded-none text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 [transition-duration:var(--duration-normal)]"
         aria-label={isMaximized ? 'Restore window' : 'Maximize window'}
         title={isMaximized ? 'Restore' : 'Maximize'}
-      >
-        {isMaximized ? (
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 10 10"
-            fill="none"
-            stroke="currentColor"
-            aria-hidden="true"
-          >
-            <path d="M3,1v2H1v6h6V7h2V1H3z M2,8V4h4v4H2z M8,6h-1V3H4V2h4V6z" />
-          </svg>
-        ) : (
-          <Square className="h-3.5 w-3.5" />
-        )}
-      </button>
-      <button
-        type="button"
+      />
+      <IconButton
+        icon={<X className="h-4 w-4" />}
+        size="sm"
+        variant="ghost"
         onClick={handleClose}
-        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-white hover:bg-stratosort-danger transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue/70"
+        className="h-9 w-11 rounded-none rounded-r-full text-system-gray-500 hover:text-white hover:bg-stratosort-danger [transition-duration:var(--duration-normal)]"
         aria-label="Close window"
         title="Close"
-      >
-        <X className="h-4 w-4" />
-      </button>
+      />
     </div>
   );
 });
@@ -452,8 +427,6 @@ function NavigationBar() {
   const dispatch = useAppDispatch();
   const currentPhase = useAppSelector((state) => state.ui.currentPhase);
   const isOrganizing = useAppSelector((state) => state.ui.isOrganizing);
-  // FIX: Use analysis slice as single source of truth for isAnalyzing
-  const isAnalyzing = useAppSelector((state) => state.analysis.isAnalyzing);
   const isLoading = useAppSelector((state) => state.ui.isLoading);
   const health = useAppSelector((state) => state.system.health);
   const connectionStatus = useMemo(() => {
@@ -582,22 +555,7 @@ function NavigationBar() {
     (newPhase) => {
       if (!newPhase || typeof newPhase !== 'string') return;
 
-      const order = PHASE_ORDER || ['welcome', 'setup', 'discover', 'organize', 'complete'];
-      const currentIndex = order.indexOf(currentPhase);
-      const newPhaseIndex = order.indexOf(newPhase);
-
-      // Allow navigation if:
-      // 1. It's the current phase (no-op but allowed)
-      // 2. It's a previous phase (backward navigation)
-      // 3. It's the immediate next phase (forward progress)
-      // 4. Or if it's explicitly in the allowed transitions list (legacy/graph support)
-
-      const allowedTransitions = PHASE_TRANSITIONS[currentPhase];
-      const isExplicitlyAllowed = allowedTransitions && allowedTransitions.includes(newPhase);
-      const isSequential = newPhaseIndex === currentIndex + 1;
-      const isBackward = newPhaseIndex < currentIndex;
-
-      if (newPhase === currentPhase || isBackward || isSequential || isExplicitlyAllowed) {
+      if (newPhase === currentPhase || canTransitionTo(currentPhase, newPhase)) {
         actions.advancePhase(newPhase);
       }
     },
@@ -609,8 +567,8 @@ function NavigationBar() {
     actions.toggleSettings();
   }, [actions]);
 
-  // Check if navigation should be blocked
-  const isBlockedByOperation = isOrganizing || isAnalyzing || isLoading;
+  // Keep top-level navigation responsive; analysis state can become stale.
+  const isBlockedByOperation = isOrganizing || isLoading;
   // Only show a nav spinner for loading states other than analysis to avoid duplicate indicators
   const navSpinnerActive = isOrganizing || isLoading;
 
@@ -618,14 +576,15 @@ function NavigationBar() {
     <header
       className={`
         fixed inset-x-0 top-0 z-[100]
+        border-b border-border-soft/60
         backdrop-blur-xl backdrop-saturate-150
         transition-all duration-300 ease-out
         ${isScrolled ? 'bg-white/95 shadow-md' : 'bg-white/85 shadow-sm'}
       `}
       style={{
         WebkitAppRegion: 'drag',
+        zIndex: 'var(--z-header)',
         isolation: 'isolate',
-        borderBottom: '1px solid rgba(226, 232, 240, 0.6)',
         willChange: 'auto'
       }}
     >
@@ -638,38 +597,19 @@ function NavigationBar() {
           <Brand status={connectionStatus} />
         </div>
 
-        {/* Center: Phase Navigation - Absolute center relative to viewport width */}
-        {/* pointer-events-none on wrapper so it doesn't block Brand/Actions; */}
-        {/* the inner <nav> restores pointer-events via .phase-nav CSS class. */}
+        {/* Center: Phase Navigation - layered center; nav gets pointer-events-auto so it receives clicks */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <nav
-            className="phase-nav max-w-[64vw] xl:max-w-[44rem]"
+            className="phase-nav max-w-[64vw] xl:max-w-[44rem] pointer-events-auto"
             style={{ WebkitAppRegion: 'no-drag' }}
             aria-label="Phase navigation"
           >
             {(PHASE_ORDER || ['welcome', 'setup', 'discover', 'organize', 'complete']).map(
               (phase) => {
-                const order = PHASE_ORDER || [
-                  'welcome',
-                  'setup',
-                  'discover',
-                  'organize',
-                  'complete'
-                ];
-                const currentIndex = order.indexOf(currentPhase);
-                const phaseIndex = order.indexOf(phase);
                 const isActive = phase === currentPhase;
 
-                // Calculate navigation permissions
-                const allowedTransitions = PHASE_TRANSITIONS[currentPhase];
-                const isExplicitlyAllowed =
-                  allowedTransitions && allowedTransitions.includes(phase);
-                const isBackward = phaseIndex < currentIndex;
-                const isSequential = phaseIndex === currentIndex + 1;
-
                 const canNavigate =
-                  (isActive || isBackward || isSequential || isExplicitlyAllowed) &&
-                  !isBlockedByOperation;
+                  (isActive || canTransitionTo(currentPhase, phase)) && !isBlockedByOperation;
 
                 return (
                   <NavTab

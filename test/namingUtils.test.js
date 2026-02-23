@@ -110,11 +110,19 @@ const runNamingTests = (moduleName, modulePath) => {
         caseConvention: 'kebab-case'
       };
 
-      test('keeps original name', () => {
+      test('keeps original name when case convention is unset', () => {
         const result = namingUtils.generatePreviewName('MyFile.txt', {
           ...baseSettings,
           convention: 'keep-original',
           caseConvention: undefined
+        });
+        expect(result).toBe('MyFile.txt');
+      });
+
+      test('keep-original ignores case convention in preview', () => {
+        const result = namingUtils.generatePreviewName('MyFile.txt', {
+          ...baseSettings,
+          convention: 'keep-original'
         });
         expect(result).toBe('MyFile.txt');
       });
@@ -177,6 +185,27 @@ const runNamingTests = (moduleName, modulePath) => {
         });
         expect(result).toContain('_');
       });
+
+      test('supports dot separator with kebab-case', () => {
+        const result = namingUtils.generatePreviewName('My File.txt', {
+          ...baseSettings,
+          convention: 'subject-date',
+          separator: '.',
+          caseConvention: 'kebab-case'
+        });
+        expect(result).toMatch(/my\.file\.\d{4}\.\d{2}\.\d{2}\.txt/);
+      });
+
+      test('supports no separator with kebab-case', () => {
+        const result = namingUtils.generatePreviewName('My File.txt', {
+          ...baseSettings,
+          convention: 'subject-date',
+          separator: '',
+          caseConvention: 'kebab-case',
+          dateFormat: 'YYYYMMDD'
+        });
+        expect(result).toMatch(/myfile\d{8}\.txt/);
+      });
     });
 
     describe('generateSuggestedNameFromAnalysis', () => {
@@ -207,7 +236,7 @@ const runNamingTests = (moduleName, modulePath) => {
         const result = namingUtils.generateSuggestedNameFromAnalysis({
           originalFileName: 'photo.jpg',
           analysis: { category: 'Research', suggestedName: 'Microscopy Image' },
-          settings: { ...settings, convention: 'category-subject', separator: '_' }
+          settings: { ...settings, convention: 'category-subject', separator: '-' }
         });
 
         // kebab-case normalizes any separators to dashes
@@ -218,7 +247,7 @@ const runNamingTests = (moduleName, modulePath) => {
         const result = namingUtils.generateSuggestedNameFromAnalysis({
           originalFileName: 'My Original Name.txt',
           analysis: { suggestedName: 'Ignored' },
-          settings: { ...settings, convention: 'keep-original', caseConvention: undefined }
+          settings: { ...settings, convention: 'keep-original', caseConvention: 'kebab-case' }
         });
 
         expect(result).toBe('My Original Name.txt');

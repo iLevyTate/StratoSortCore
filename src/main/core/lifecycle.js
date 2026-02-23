@@ -104,14 +104,17 @@ async function verifyShutdownCleanup() {
  * @returns {Promise<void>}
  */
 let _quitCleanupStarted = false;
-async function handleBeforeQuit() {
-  // FIX: Guard against re-entrant quit (CMD+Q, dock quit, app.quit() overlap)
+async function handleBeforeQuit(event) {
   if (_quitCleanupStarted) return;
   _quitCleanupStarted = true;
 
+  // Prevent the default quit so async cleanup can complete
+  if (event?.preventDefault) {
+    event.preventDefault();
+  }
+
   lifecycleConfig.setIsQuitting?.(true);
 
-  // FIX: CRITICAL - Enable IPC shutdown gate immediately to prevent new handler calls
   // This must happen before any cleanup to prevent handlers accessing destroyed services
   try {
     const { setShuttingDown, waitForInFlightOperations } = require('./ipcRegistry');
@@ -129,9 +132,8 @@ async function handleBeforeQuit() {
     logger.warn('[SHUTDOWN] Could not set IPC shutdown gate:', e.message);
   }
 
-  // HIGH PRIORITY FIX (HIGH-2): Add hard timeout for all cleanup operations
+  // Add hard timeout for all cleanup operations
   // Prevents hanging on shutdown and ensures app quits even if cleanup fails
-  // FIX: Increased from 5s to 12s - legacy external shutdown can be slow, plus services need time, plus buffer
   const CLEANUP_TIMEOUT = 12000; // 12 seconds max for all cleanup
   const cleanupStartTime = Date.now();
 
@@ -220,7 +222,6 @@ async function handleBeforeQuit() {
 
     // Clean up AI engine resources
     try {
-      // FIX Bug #11: Removed redundant llamaUtils.cleanup() which caused triple model dispose
       // LlamaService shutdown is handled by ServiceIntegration via the container
 
       // Clean up worker pools
@@ -254,7 +255,6 @@ async function handleBeforeQuit() {
     }
 
     // Fixed: Clean up settings service file watcher
-    // FIX: Await shutdown - settingsService.shutdown() is async and closes file watchers
     const settingsService = lifecycleConfig.getSettingsService?.();
     if (settingsService) {
       try {
@@ -264,7 +264,6 @@ async function handleBeforeQuit() {
         logger.error('[CLEANUP] Failed to shut down settings service:', error);
       }
     } else {
-      // FIX 2.5: Warn when settings service wasn't available for shutdown
       // This helps identify initialization failures that could leak file watchers
       logger.warn(
         '[CLEANUP] Settings service not available for shutdown - may indicate initialization failure'
@@ -278,7 +277,6 @@ async function handleBeforeQuit() {
     } catch {
       // Silently ignore destroy errors on quit
     }
-    // FIX: Verification moved outside cleanup promise to avoid nested timeout issues
   })(); // Close cleanup promise wrapper
 
   // Race cleanup against timeout
@@ -298,13 +296,15 @@ async function handleBeforeQuit() {
     }
   }
 
-  // FIX: Post-shutdown verification runs AFTER cleanup completes (not nested inside)
   // This avoids the previous issue where 10s verification was nested inside 12s cleanup timeout
   try {
     await verifyShutdownCleanup();
   } catch (verifyError) {
     logger.warn('[SHUTDOWN-VERIFY] Verification failed:', verifyError.message);
   }
+
+  // Cleanup complete — now exit the app (bypasses before-quit to avoid re-entrance)
+  app.exit(0);
 }
 
 /**
@@ -337,7 +337,6 @@ function handleActivate(createWindow) {
   }
 }
 
-// FIX: Track unhandled errors for monitoring
 let _unhandledExceptionCount = 0;
 let _unhandledRejectionCount = 0;
 

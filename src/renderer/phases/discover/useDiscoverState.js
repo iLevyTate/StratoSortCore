@@ -43,7 +43,6 @@ export function useDiscoverState() {
   const fileStates = useAppSelector((state) => state.files.fileStates);
   const namingConventionState = useAppSelector((state) => state.files.namingConvention);
   const currentPhase = useAppSelector((state) => state.ui.currentPhase);
-  // FIX H-3: Get organizedFiles to filter out already-organized files from Discover phase
   const organizedFiles = useAppSelector((state) => state.files.organizedFiles);
 
   // Destructure naming convention
@@ -53,7 +52,6 @@ export function useDiscoverState() {
   const { separator } = namingConventionState;
 
   // Refs to keep track of latest state for stable callbacks
-  // PERF FIX: Update refs synchronously during render instead of using 5 separate useEffect hooks.
   // This is safe because ref assignments are idempotent and don't cause side effects.
   // This eliminates 5 effect scheduling/cleanup cycles per state change.
   const selectedFilesRef = useRef(selectedFiles);
@@ -103,7 +101,6 @@ export function useDiscoverState() {
     [dispatch]
   );
 
-  // FIX: Only dispatch to analysisSlice - single source of truth for isAnalyzing
   const setIsAnalyzing = useCallback(
     (val) => {
       if (val) {
@@ -275,7 +272,7 @@ export function useDiscoverState() {
     separator,
     namingSettings,
     currentPhase,
-    organizedFiles, // FIX H-3: Expose for filtering in Discover phase
+    organizedFiles,
 
     // Setters
     setSelectedFiles,

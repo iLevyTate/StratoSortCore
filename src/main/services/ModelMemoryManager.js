@@ -2,6 +2,7 @@
 
 const os = require('os');
 const { createLogger } = require('../../shared/logger');
+const { delay } = require('../../shared/promiseUtils');
 
 const logger = createLogger('ModelMemoryManager');
 
@@ -30,12 +31,35 @@ class ModelMemoryManager {
     this._maxMemoryUsage = this._calculateMaxMemory();
     this._currentMemoryUsage = 0;
 
-    // Model size estimates (in bytes)
+    // Default model size estimates (in bytes) used when actual file size is unknown.
+    // These are conservative upper-bound estimates including KV cache and runtime overhead.
+    // Actual file sizes are used when available via updateModelSizeEstimate().
     this._modelSizeEstimates = {
       embedding: 200 * 1024 * 1024, // ~200MB (nomic-embed ~140MB + KV/runtime overhead)
       text: 4 * 1024 * 1024 * 1024, // ~4GB
       vision: 5 * 1024 * 1024 * 1024 // ~5GB
     };
+  }
+
+  /**
+   * Update model size estimate from actual file size.
+   * Should be called after model files are resolved to improve memory budget accuracy.
+   * Adds ~30% overhead for KV cache and runtime buffers.
+   * @param {string} modelType - 'text' | 'vision' | 'embedding'
+   * @param {number} fileSizeBytes - Actual model file size in bytes
+   */
+  updateModelSizeEstimate(modelType, fileSizeBytes) {
+    if (!fileSizeBytes || !Number.isFinite(fileSizeBytes) || fileSizeBytes <= 0) return;
+    // Add ~30% overhead for KV cache, context buffers, and runtime allocations
+    const estimatedUsage = Math.ceil(fileSizeBytes * 1.3);
+    const oldEstimate = this._modelSizeEstimates[modelType];
+    this._modelSizeEstimates[modelType] = estimatedUsage;
+    logger.debug('[Memory] Updated model size estimate from file', {
+      modelType,
+      fileSizeMB: Math.round(fileSizeBytes / 1024 / 1024),
+      estimatedUsageMB: Math.round(estimatedUsage / 1024 / 1024),
+      oldEstimateMB: oldEstimate ? Math.round(oldEstimate / 1024 / 1024) : 'none'
+    });
   }
 
   /**
@@ -292,7 +316,7 @@ class ModelMemoryManager {
       logger.info('[Memory] Waiting for active refs before unload', { type: modelType, refs });
       const deadline = Date.now() + 5000;
       while ((this._activeRefs.get(modelType) || 0) > 0 && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 100));
+        await delay(100);
       }
       if ((this._activeRefs.get(modelType) || 0) > 0) {
         logger.warn('[Memory] Unload timeout — keeping model loaded due to active refs', {

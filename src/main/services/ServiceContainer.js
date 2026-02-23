@@ -335,7 +335,6 @@ class ServiceContainer {
     const rawInitPromise = _asyncResolutionStore.run(currentChain, async () => {
       const instance = await registration.factory(this);
 
-      // FIX M4: Check shutdown state after async factory completes
       // If shutdown started while we were awaiting, discard the instance
       if (this._isShuttingDown) {
         logger.warn(`[ServiceContainer] Service '${name}' resolved during shutdown, discarding`);
@@ -439,7 +438,6 @@ class ServiceContainer {
   clearInstance(name) {
     const registration = this._registrations.get(name);
     if (registration && registration.lifetime === ServiceLifetime.SINGLETON) {
-      // FIX: Check if async resolution is in progress to prevent race condition
       // Clearing during resolution would cause duplicate instances to be created
       if (this._initPromises.has(name)) {
         logger.warn(
@@ -448,7 +446,6 @@ class ServiceContainer {
         return false;
       }
 
-      // FIX CRIT-31: Double check registration after check
       const wasCleared = registration.instance !== null;
       registration.instance = null;
       registration.initializing = false; // Reset initializing flag too
@@ -519,7 +516,6 @@ class ServiceContainer {
     const order = shutdownOrder || [];
 
     for (const serviceName of order) {
-      // FIX HIGH-71: Verify service exists before attempting shutdown
       if (!this._registrations.has(serviceName)) {
         logger.warn(
           `[ServiceContainer] Service '${serviceName}' in shutdown order but not registered, skipping`
@@ -548,7 +544,6 @@ class ServiceContainer {
       await Promise.allSettled(remainingServices);
     }
 
-    // FIX M4: Wait for in-flight async resolutions before clearing registrations
     // This prevents resolutions from completing after container is cleared
     if (this._initPromises.size > 0) {
       logger.debug(
@@ -612,12 +607,13 @@ const ServiceIds = {
   FOLDER_MATCHING: 'folderMatching',
   ORGANIZATION_SUGGESTION: 'organizationSuggestion',
   AUTO_ORGANIZE: 'autoOrganize',
-  CLUSTERING: 'clustering', // FIX: Added as separate DI entry to avoid circular dependency
+  CLUSTERING: 'clustering',
   LEARNING_FEEDBACK: 'learningFeedback', // Records implicit feedback from file organization
   RELATIONSHIP_INDEX: 'relationshipIndex',
 
   // State services
   ANALYSIS_HISTORY: 'analysisHistory',
+  CHAT_HISTORY_STORE: 'chatHistoryStore',
   UNDO_REDO: 'undoRedo',
   PROCESSING_STATE: 'processingState',
 
@@ -650,10 +646,9 @@ const SHUTDOWN_ORDER = [
   ServiceIds.LEARNING_FEEDBACK, // Depends on suggestion service, must shutdown before it
   ServiceIds.AUTO_ORGANIZE,
   ServiceIds.ORGANIZATION_SUGGESTION,
-  ServiceIds.CLUSTERING, // FIX: HIGH - Added to shutdown order (was missing, causing improper cleanup)
+  ServiceIds.CLUSTERING,
   ServiceIds.PARALLEL_EMBEDDING,
   ServiceIds.FOLDER_MATCHING,
-  // FIX L4: Add notification service (depends on settings, user-facing)
   ServiceIds.NOTIFICATION_SERVICE,
   // Second: Core infrastructure services
   ServiceIds.EMBEDDING_CACHE,
@@ -662,9 +657,9 @@ const SHUTDOWN_ORDER = [
   ServiceIds.VISION_SERVICE,
   ServiceIds.LLAMA_SERVICE,
   ServiceIds.ORAMA_VECTOR,
-  // FIX L4: Add analysis cache (caching layer, before state services)
   ServiceIds.ANALYSIS_CACHE,
   // Third: State management services
+  ServiceIds.CHAT_HISTORY_STORE,
   ServiceIds.PROCESSING_STATE,
   ServiceIds.UNDO_REDO,
   ServiceIds.ANALYSIS_HISTORY,

@@ -42,6 +42,7 @@ jest.mock('../src/shared/logger', () => {
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
   createHandler: jest.fn(({ handler }) => handler),
   safeHandle: jest.fn(),
+  safeSend: jest.fn(),
   withErrorLogging: jest.fn((logger, handler) => {
     // If handler is passed as second arg, return it (wrapped)
     // If called with just logger, return a wrapper function
@@ -225,14 +226,17 @@ describe('Smart Folders IPC', () => {
     test('adds a new folder successfully', async () => {
       const handler = getHandler(IPC_CHANNELS.SMART_FOLDERS.ADD);
       const { enhanceSmartFolderWithLLM } = require('../src/main/services/SmartFoldersLLMService');
-      const newFolder = { name: 'Projects', path: 'C:\\Users\\Test\\Documents\\Projects' };
-      enhanceSmartFolderWithLLM.mockResolvedValueOnce({
-        improvedDescription: 'Project files and planning docs',
-        suggestedKeywords: ['project', 'planning'],
-        suggestedCategory: 'work',
-        confidence: 92,
-        relatedFolders: ['Work', 'MadeUpFolder']
+      let resolveEnhancement;
+      const enhancementDone = new Promise((resolve) => {
+        resolveEnhancement = resolve;
       });
+      const folderState = [...mockFoldersService.getCustomFolders()];
+      mockFoldersService.getCustomFolders.mockImplementation(() => folderState);
+      mockFoldersService.setCustomFolders.mockImplementation((nextFolders) => {
+        folderState.splice(0, folderState.length, ...nextFolders);
+      });
+      const newFolder = { name: 'Projects', path: 'C:\\Users\\Test\\Documents\\Projects' };
+      enhanceSmartFolderWithLLM.mockReturnValueOnce(enhancementDone);
 
       // Mock path check sequence:
       // 1. Parent dir check (succeeds)
@@ -260,12 +264,31 @@ describe('Smart Folders IPC', () => {
       expect(mockFoldersService.saveCustomFolders).toHaveBeenCalled();
 
       // Check that the new folder was added
-      const savedFolders = mockFoldersService.setCustomFolders.mock.calls[0][0];
-      expect(savedFolders).toHaveLength(3); // 2 existing + 1 new
-      expect(savedFolders[2].name).toBe('Projects');
-      expect(savedFolders[2].description).toBe('Project files and planning docs');
-      expect(savedFolders[2].confidenceScore).toBeCloseTo(0.92, 2);
-      expect(savedFolders[2].relatedFolders).toEqual(['Work']);
+      const initialSavedFolders = mockFoldersService.setCustomFolders.mock.calls[0][0];
+      expect(initialSavedFolders).toHaveLength(3); // 2 existing + 1 new
+      expect(initialSavedFolders[2].name).toBe('Projects');
+
+      resolveEnhancement({
+        improvedDescription: 'Project files and planning docs',
+        suggestedKeywords: ['project', 'planning'],
+        suggestedCategory: 'work',
+        confidence: 92,
+        relatedFolders: ['Work', 'MadeUpFolder']
+      });
+      await enhancementDone;
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        if (mockFoldersService.setCustomFolders.mock.calls.length > 1) break;
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+
+      expect(mockFoldersService.setCustomFolders.mock.calls.length).toBeGreaterThan(1);
+      const finalSavedFolders =
+        mockFoldersService.setCustomFolders.mock.calls[
+          mockFoldersService.setCustomFolders.mock.calls.length - 1
+        ][0];
+      expect(finalSavedFolders[2].description).toBe('Project files and planning docs');
+      expect(finalSavedFolders[2].confidenceScore).toBeCloseTo(0.92, 2);
+      expect(finalSavedFolders[2].relatedFolders).toEqual(['Work']);
     });
 
     test('validates folder name characters', async () => {

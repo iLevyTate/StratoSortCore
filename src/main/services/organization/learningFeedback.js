@@ -60,7 +60,6 @@ const SOURCE_CONFIDENCE_WEIGHTS = Object.freeze({
 function buildFileMetadata(filePath, analysis = null) {
   const fileName = path.basename(filePath);
   const extension = path.extname(filePath).toLowerCase().replace('.', '');
-  // FIX LOW-9: Removed unused _dirName variable
   // If parent directory pattern matching is needed later, add it then
 
   return {
@@ -87,7 +86,6 @@ function buildFolderSuggestion(smartFolder, confidenceWeight = 1.0) {
     return null;
   }
 
-  // FIX MED-7: Handle edge cases where name is falsy and path.basename returns empty
   // This can happen if path ends with a separator (e.g., '/documents/')
   let folderName = smartFolder.name;
   if (!folderName) {
@@ -125,7 +123,6 @@ class LearningFeedbackService {
 
     // Debounce tracking to prevent duplicate learning for the same file
     this._recentlyLearned = new Map(); // filePath -> timestamp
-    // FIX LOW-10: Use centralized constant
     this._dedupeWindowMs = DEBOUNCE.LEARNING_DEDUPE_WINDOW;
 
     // Stats for monitoring
@@ -190,7 +187,6 @@ class LearningFeedbackService {
       return false;
     }
 
-    // FIX MEDIUM-7: Validate that smartFolder is still registered
     // This prevents accumulating stale patterns for removed/renamed folders
     if (!this._isValidSmartFolder(smartFolder)) {
       logger.debug('[LearningFeedback] Folder not in registered smart folders', {

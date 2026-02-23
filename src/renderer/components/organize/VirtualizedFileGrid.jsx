@@ -7,7 +7,6 @@ import { Text } from '../ui/Typography';
 import { joinPath } from '../../utils/platform';
 import { UI_VIRTUALIZATION } from '../../../shared/constants';
 
-// FIX L-2: Use centralized constants for virtualization
 const DEFAULT_ROW_HEIGHT = UI_VIRTUALIZATION.FILE_GRID_ROW_HEIGHT;
 // Use locally defined padding for better visual separation
 const MEASUREMENT_PADDING = 32;
@@ -53,27 +52,22 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({ index, style, data
 
   for (let col = 0; col < columnsPerRow; col++) {
     const fileIndex = startIndex + col;
-    // FIX: Strict bounds checking
     if (fileIndex >= files.length) break;
 
     const file = files[fileIndex];
-    // FIX: Defensive check for undefined file
     if (!file) continue;
 
     const fileWithEdits = getFileWithEdits(file, fileIndex);
     const rawCategory = editingFiles[fileIndex]?.category || fileWithEdits.analysis?.category;
     const smartFolder = findSmartFolderForCategory(rawCategory);
-    // FIX: Never display a raw LLM category that doesn't match any smart folder.
     // Fall back to "Uncategorized" to prevent showing/targeting non-existent folders.
     const uncategorizedFolder = findSmartFolderForCategory('Uncategorized');
     const resolvedFolder = smartFolder || uncategorizedFolder;
     const currentCategory = resolvedFolder?.name || 'Uncategorized';
     const isSelected = selectedFiles.has(fileIndex);
     const stateDisplay = getFileStateDisplay(file.path, !!file.analysis);
-    // FIX: Validate defaultLocation before joinPath to prevent invalid paths
     // An empty defaultLocation would produce paths like '/Finance' instead of 'C:\Users\...\Finance'
     const safeDefaultLocation = defaultLocation && defaultLocation.trim() ? defaultLocation : null;
-    // FIX: Always derive destination from a validated smart folder, never from raw category
     const destination = resolvedFolder?.path
       ? resolvedFolder.path
       : safeDefaultLocation
@@ -172,7 +166,6 @@ function VirtualizedFileGrid({
     [defaultLocation]
   );
 
-  // Fix: Use ref to measure actual container dimensions
   const containerRef = React.useRef(null);
   const [dimensions, setDimensions] = useState({ width: containerWidth, height: 600 });
   const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_HEIGHT);
@@ -183,7 +176,6 @@ function VirtualizedFileGrid({
     let isActive = true;
     let rafId = null;
 
-    // FIX: Use requestAnimationFrame to debounce resize callbacks
     // This prevents state updates from firing during the resize observer callback
     // which can cause "ResizeObserver loop limit exceeded" errors and memory leaks
     const observer = new ResizeObserver((entries) => {
@@ -248,12 +240,10 @@ function VirtualizedFileGrid({
     const fileWithEdits = getFileWithEdits(file, sampleIndex);
     const rawCategory = safeEditingFiles[sampleIndex]?.category || fileWithEdits.analysis?.category;
     const smartFolder = findSmartFolderForCategory(rawCategory);
-    // FIX: Same validation as row renderer - never use raw LLM category
     const uncategorizedFolder = findSmartFolderForCategory('Uncategorized');
     const resolvedFolder = smartFolder || uncategorizedFolder;
     const currentCategory = resolvedFolder?.name || 'Uncategorized';
     const stateDisplay = getFileStateDisplay(file.path, !!file.analysis);
-    // FIX: Validate defaultLocation before joinPath to prevent invalid paths
     const resolvedDefaultLocation =
       safeDefaultLocation && safeDefaultLocation.trim() ? safeDefaultLocation : null;
     const destination = resolvedFolder?.path
@@ -318,7 +308,6 @@ function VirtualizedFileGrid({
   // Calculate optimal list height based on file count (data-aware sizing)
   const listHeight = useMemo(() => {
     // Use measured height or fallback to viewport calculation
-    // FIX: Use full available height instead of fractional calculation
     const availableHeight =
       dimensions.height || (typeof window !== 'undefined' ? window.innerHeight : 900);
     return availableHeight;
@@ -326,9 +315,16 @@ function VirtualizedFileGrid({
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-auto-fit-md gap-4" role="status" aria-label="Loading files">
+      <div
+        className="grid grid-cols-auto-fit-md gap-4 animate-loading-fade"
+        role="status"
+        aria-label="Loading files"
+      >
         {[...Array(6)].map((_, i) => (
-          <div key={i} className="h-64 rounded-xl bg-system-gray-100 animate-pulse" />
+          <div
+            key={i}
+            className="h-64 rounded-xl bg-system-gray-100 animate-pulse animate-loading-content"
+          />
         ))}
       </div>
     );
@@ -395,7 +391,6 @@ function VirtualizedFileGrid({
 
   // For smaller lists, render normally without virtualization overhead
   // Use auto-fit grid that adapts to content amount
-  // FIX: Remove place-content-center to prevent cutoff on small screens/tall content
   // Added p-6 (padding all around) to ensure shadows are not cut off and provide breathing room
   return (
     <div
@@ -406,7 +401,6 @@ function VirtualizedFileGrid({
         const fileWithEdits = getFileWithEdits(file, index);
         const rawCategory = safeEditingFiles[index]?.category || fileWithEdits.analysis?.category;
         const smartFolder = findSmartFolderForCategory(rawCategory);
-        // FIX: Never use raw LLM category - always resolve to an existing smart folder
         const uncategorizedFolder = findSmartFolderForCategory('Uncategorized');
         const resolvedFolder = smartFolder || uncategorizedFolder;
         const currentCategory = resolvedFolder?.name || 'Uncategorized';

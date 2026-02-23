@@ -27,36 +27,26 @@ const preloadPhases = () => {
   load(() => import('./SettingsPanel'));
 };
 
-// Optimized page transitions with GPU acceleration
-// Subtle slide + opacity for refined phase transitions (no slide when reduced motion preferred)
+// Refined, premium-feel phase transitions (subtle opacity-only, no gimmicky motion)
 const pageVariants = (reducedMotion) => ({
   initial: {
-    opacity: 0,
-    y: reducedMotion ? 0 : 6
+    opacity: 0
   },
   in: {
     opacity: 1,
-    y: 0,
     transition: {
-      duration: reducedMotion ? 0.1 : 0.22,
-      ease: [0.16, 1, 0.3, 1]
+      duration: reducedMotion ? 0.08 : 0.24,
+      ease: [0.22, 1, 0.36, 1]
     }
   },
   out: {
     opacity: 0,
-    y: reducedMotion ? 0 : -4,
     transition: {
-      duration: reducedMotion ? 0.08 : 0.15,
+      duration: reducedMotion ? 0.06 : 0.16,
       ease: [0.4, 0, 0.2, 1]
     }
   }
 });
-
-const pageTransition = {
-  type: 'tween',
-  ease: [0.16, 1, 0.3, 1],
-  duration: 0.2
-};
 
 function PhaseRenderer() {
   const currentPhase = useAppSelector((state) => state.ui.currentPhase);
@@ -79,7 +69,6 @@ function PhaseRenderer() {
   }, [currentPhase]);
 
   // Fixed: Wrap each phase with PhaseErrorBoundary for isolated error handling
-  // FIX: Add null checks for PHASES to prevent crash if undefined
   const renderCurrentPhase = () => {
     switch (currentPhase) {
       case PHASES?.WELCOME ?? 'welcome':
@@ -132,12 +121,7 @@ function PhaseRenderer() {
               animate="in"
               exit="out"
               variants={pageVariants(Boolean(shouldReduceMotion))}
-              transition={pageTransition}
               className="w-full flex-1 flex flex-col"
-              style={{
-                willChange: 'opacity, transform',
-                backfaceVisibility: 'hidden'
-              }}
             >
               {renderCurrentPhase()}
             </motion.div>
@@ -153,7 +137,10 @@ function PhaseRenderer() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.15, ease: [0.4, 0, 0.2, 1] }}
+                transition={{
+                  duration: shouldReduceMotion ? 0.05 : 0.22,
+                  ease: [0.22, 1, 0.36, 1]
+                }}
               >
                 <SettingsPanel />
               </motion.div>

@@ -54,6 +54,7 @@ jest.mock('../src/shared/promiseUtils', () => ({
     const controller = new AbortController();
     return fn(controller);
   }),
+  withTimeout: jest.fn(async (promise) => promise),
   Semaphore: jest.fn()
 }));
 
@@ -98,7 +99,7 @@ describe('documentLlm – extended', () => {
     if (result.error) {
       // Repair may fail in test env without full LLM — just verify error is graceful
       expect(result.keywords).toEqual([]);
-      expect(result.confidence).toBeGreaterThanOrEqual(60);
+      expect(result.confidence).toBe(0);
     } else {
       expect(result.suggestedName).toBeDefined();
     }
@@ -309,7 +310,7 @@ describe('documentLlm – extended', () => {
 
     expect(result.error).toMatch(/AI engine error|GPU out of memory/i);
     expect(result.keywords).toEqual([]);
-    expect(result.confidence).toBe(60);
+    expect(result.confidence).toBe(0);
   });
 
   // ─── Cache hit path ────────────────────────────────────────

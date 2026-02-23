@@ -349,7 +349,9 @@ class CacheInvalidationBus extends EventEmitter {
    * @private
    */
   _notifySubscribers(event) {
-    for (const [name, subscriber] of this._subscribers) {
+    // Snapshot subscribers before iterating so that a subscriber can safely
+    // unsubscribe (remove itself) during notification without skipping others.
+    for (const [name, subscriber] of Array.from(this._subscribers)) {
       try {
         // Call specific handler if available
         if (event.type === InvalidationType.PATH_CHANGED && subscriber.onPathChange) {
@@ -406,7 +408,6 @@ class CacheInvalidationBus extends EventEmitter {
       this._batchTimer = null;
     }
 
-    // FIX: Flush pending invalidations BEFORE setting _stopped and clearing
     // subscribers, so cascading invalidations from flush are still delivered.
     if (this._batchQueue.length > 0) {
       this._flushBatchQueue();

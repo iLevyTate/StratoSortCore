@@ -259,6 +259,17 @@ async function handleDuplicateMove({
     }
   }
 
+  // Re-verify destination still exists before deleting source (TOCTOU guard)
+  try {
+    await fs.access(duplicatePath);
+  } catch {
+    logger?.warn?.('[DEDUP] Destination disappeared before source unlink, aborting', {
+      source: sourcePath,
+      destination: duplicatePath
+    });
+    return null;
+  }
+
   const unlink = typeof unlinkFn === 'function' ? unlinkFn : fs.unlink;
   await unlink(sourcePath);
 

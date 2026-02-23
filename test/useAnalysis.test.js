@@ -5,6 +5,18 @@
 
 import { renderHook, act } from '@testing-library/react';
 
+// Mock react-redux
+jest.mock('react-redux', () => ({
+  useStore: jest.fn(() => ({
+    getState: jest.fn(() => ({
+      analysis: {
+        isAnalyzing: false,
+        progress: null
+      }
+    }))
+  }))
+}));
+
 // Mock dependencies
 jest.mock('../src/shared/logger', () => {
   const logger = {
@@ -396,7 +408,9 @@ describe('useAnalysis', () => {
       expect(mockSetFileStates).toHaveBeenCalledWith({});
       expect(mockSetAnalysisProgress).toHaveBeenCalledWith({
         current: 0,
-        total: 0
+        total: 0,
+        currentFile: '',
+        lastActivity: 0
       });
       expect(mockSetCurrentAnalysisFile).toHaveBeenCalledWith('');
     });

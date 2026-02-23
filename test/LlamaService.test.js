@@ -48,7 +48,8 @@ jest.mock('../src/main/services/GPUMonitor', () => ({
 }));
 
 const mockSettings = {
-  getAll: jest.fn()
+  getAll: jest.fn(),
+  load: jest.fn()
 };
 
 jest.mock('../src/main/services/SettingsService', () => ({
@@ -94,7 +95,7 @@ describe('LlamaService', () => {
   describe('_loadConfig', () => {
     test('uses settings when available', async () => {
       const service = new LlamaService();
-      mockSettings.getAll.mockReturnValue({
+      mockSettings.load.mockResolvedValue({
         textModel: 'text.gguf',
         visionModel: 'vision.gguf',
         embeddingModel: 'embed.gguf',
@@ -111,9 +112,7 @@ describe('LlamaService', () => {
 
     test('falls back to defaults on error', async () => {
       const service = new LlamaService();
-      mockSettings.getAll.mockImplementation(() => {
-        throw new Error('boom');
-      });
+      mockSettings.load.mockRejectedValue(new Error('boom'));
 
       await service._loadConfig();
 
@@ -150,7 +149,7 @@ describe('LlamaService', () => {
   });
 
   describe('updateConfig', () => {
-    test('downgrades to default embedding model when requested model is not allowed', async () => {
+    test('accepts unrecognized embedding model with warning (no downgrade)', async () => {
       const service = new LlamaService();
       service._ensureConfigLoaded = jest.fn().mockResolvedValue(undefined);
 
@@ -160,8 +159,9 @@ describe('LlamaService', () => {
       );
 
       expect(res.success).toBe(true);
-      expect(res.modelDowngraded).toBe(true);
-      expect(service._selectedModels.embedding).toBe(AI_DEFAULTS.EMBEDDING.MODEL);
+      // Source code was updated to accept unrecognized models instead of downgrading
+      expect(res.modelDowngraded).toBeFalsy();
+      expect(service._selectedModels.embedding).toBe('not-a-real-text-model.gguf');
     });
 
     test('emits model-change events for changed model types', async () => {

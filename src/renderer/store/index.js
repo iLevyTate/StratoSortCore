@@ -6,7 +6,7 @@ import systemReducer from './slices/systemSlice';
 import ipcMiddleware, { markStoreReady } from './middleware/ipcMiddleware';
 import persistenceMiddleware from './middleware/persistenceMiddleware';
 import { migrateState } from './migrations';
-import { PHASES } from '../../shared/constants';
+import { PHASES, PHASE_ORDER } from '../../shared/constants';
 import { logger } from '../../shared/logger';
 
 // Helper to serialize file objects loaded from localStorage
@@ -36,7 +36,6 @@ const serializeLoadedFile = (file) => {
 };
 
 const serializeLoadedFiles = (files) => {
-  // FIX: Handle null/undefined and non-array inputs safely
   if (files == null) return [];
   if (!Array.isArray(files)) {
     logger.warn('[Store] serializeLoadedFiles received non-array input, returning empty array');
@@ -54,7 +53,10 @@ const validateLoadedState = (state) => {
   if (!state || typeof state !== 'object') return null;
 
   if (state.ui) {
-    if (typeof state.ui.currentPhase !== 'string') {
+    if (
+      typeof state.ui.currentPhase !== 'string' ||
+      !(PHASE_ORDER || []).includes(state.ui.currentPhase)
+    ) {
       state.ui.currentPhase = PHASES?.WELCOME ?? 'welcome';
     }
   }
@@ -93,10 +95,8 @@ const loadState = () => {
       if (legacyState) {
         try {
           const parsedLegacy = JSON.parse(legacyState);
-          // FIX: Ensure all slice properties have explicit defaults for complete state
           return {
             ui: {
-              // FIX: Add null check for PHASES to prevent crash during module initialization
               currentPhase: parsedLegacy.currentPhase || (PHASES?.WELCOME ?? 'welcome'),
               previousPhase: null,
               sidebarOpen: true,
@@ -133,8 +133,7 @@ const loadState = () => {
               results: serializeLoadedFiles(parsedLegacy.phaseData?.analysisResults || []),
               isAnalyzing: false,
               analysisProgress: { current: 0, total: 0, lastActivity: 0 },
-              currentAnalysisFile: '',
-              stats: null
+              currentAnalysisFile: ''
             }
           };
         } catch {
@@ -160,16 +159,18 @@ const loadState = () => {
     const STATE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
     const parsedTimestamp = Number(parsed.timestamp);
     const hasValidTimestamp = Number.isFinite(parsedTimestamp);
-    const stateAgeMs = hasValidTimestamp ? Date.now() - parsedTimestamp : Number.POSITIVE_INFINITY;
+    // Default missing timestamps to current time rather than POSITIVE_INFINITY.
+    // This gives migrated or legacy states one more session before TTL applies,
+    // and the next save will write a proper timestamp.
+    const stateAgeMs = hasValidTimestamp ? Date.now() - parsedTimestamp : 0;
 
     if (!hasValidTimestamp) {
       logger.warn(
-        '[Store] Persisted state missing/invalid timestamp; expiring session state defensively'
+        '[Store] Persisted state missing/invalid timestamp; treating as fresh for this session'
       );
     }
 
     if (stateAgeMs > STATE_TTL_MS) {
-      // FIX: Store flag so UI can notify user their state was expired
       // This prevents silent data loss confusion
       window.__STRATOSORT_STATE_EXPIRED__ = true;
       window.__STRATOSORT_STATE_EXPIRED_AGE_HOURS__ = hasValidTimestamp
@@ -214,8 +215,7 @@ const loadState = () => {
           isAnalyzing: false,
           analysisProgress: { current: 0, total: 0, lastActivity: 0 },
           currentAnalysisFile: '',
-          results: [],
-          stats: null
+          results: []
         },
         system: {
           metrics: { cpu: 0, memory: 0, uptime: 0 },
@@ -238,11 +238,9 @@ const loadState = () => {
       };
     }
 
-    // FIX CRIT-4: Explicitly set defaults for ALL slice properties to prevent null/undefined
     // from persisted state overriding slice initial state defaults
     return {
       ui: {
-        // FIX: Add null check for PHASES to prevent crash during module initialization
         currentPhase: parsed.ui?.currentPhase || (PHASES?.WELCOME ?? 'welcome'),
         previousPhase: parsed.ui?.previousPhase || null,
         sidebarOpen: parsed.ui?.sidebarOpen !== false, // default true
@@ -267,7 +265,7 @@ const loadState = () => {
         organizedFiles: serializeLoadedFiles(parsed.files?.organizedFiles || []),
         smartFolders: parsed.files?.smartFolders || [],
         smartFoldersLoading: false,
-        smartFoldersError: null, // FIX: Missing error state
+        smartFoldersError: null,
         fileStates: parsed.files?.fileStates || {},
         namingConvention: parsed.files?.namingConvention || {
           convention: 'subject-date',
@@ -359,7 +357,6 @@ const store = configureStore({
   preloadedState
 });
 
-// FIX Issue 3: Mark store as ready to flush any queued IPC events
 markStoreReady();
 
 // NOTE: State-expiration notification is handled by WelcomePhase.jsx (which

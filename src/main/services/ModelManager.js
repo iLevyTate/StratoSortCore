@@ -13,6 +13,7 @@ const {
   MODEL_CATEGORY_PREFIXES,
   FALLBACK_MODEL_PREFERENCES
 } = require('../../shared/modelCategorization');
+const { withTimeout } = require('../../shared/promiseUtils');
 
 // Lazy load SettingsService
 let settingsService = null;
@@ -79,7 +80,6 @@ class ModelManager {
       await this.loadConfig();
 
       // Discover available models with timeout using withTimeout utility
-      const { withTimeout } = require('../../shared/promiseUtils');
       try {
         await withTimeout(this.discoverModels(), TIMEOUTS.MODEL_DISCOVERY, 'Model discovery');
       } catch (error) {
@@ -101,7 +101,6 @@ class ModelManager {
 
       // Mark as initialized even if models aren't fully ready yet
       this.initialized = true;
-      // FIX: Clear _initPromise on success to allow GC of resolved Promise closure
       this._initPromise = null;
 
       logger.info(`[ModelManager] Initialized with model: ${this.selectedModel}`);
@@ -211,7 +210,6 @@ class ModelManager {
     // If no models discovered yet, try to discover them now
     if (this.availableModels.length === 0) {
       try {
-        const { withTimeout } = require('../../shared/promiseUtils');
         await withTimeout(this.discoverModels(), TIMEOUTS.MODEL_DISCOVERY, 'Model list');
       } catch (error) {
         logger.warn('[ModelManager] Model discovery unavailable during ensureWorkingModel', {
@@ -292,7 +290,7 @@ class ModelManager {
         signal: abortController.signal
       });
 
-      // HIGH PRIORITY FIX #5: Implement timeout with proper cleanup
+      // Implement timeout with proper cleanup
       const timeoutPromise = new Promise((_, reject) => {
         timeoutId = setTimeout(() => {
           // Signal cancellation to all operations
@@ -326,7 +324,7 @@ class ModelManager {
       logger.debug(`[ModelManager] Model ${modelName} failed test: ${error.message}`);
       return false;
     } finally {
-      // HIGH PRIORITY FIX #5: Guarantee cleanup in finally block
+      // Guarantee cleanup in finally block
       // Clear any remaining timeout
       if (timeoutId) {
         clearTimeout(timeoutId);

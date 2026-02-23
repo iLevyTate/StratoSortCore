@@ -1,55 +1,65 @@
-let lockCount = 0;
+const activeLockIds = new Set();
+let anonymousLockCount = 0;
 let savedOverflow = { body: '', main: '' };
-let savedPaddingRight = { body: '', main: '' };
 
-/** Get the scrollbar width to reserve space and prevent layout shift when overflow:hidden hides it */
-function getScrollbarWidth() {
-  if (typeof document === 'undefined') return 0;
-  return window.innerWidth - document.documentElement.clientWidth;
+function normalizeLockId(lockId) {
+  return typeof lockId === 'string' && lockId.trim().length > 0 ? lockId : null;
 }
 
-export function lockAppScroll() {
+function getTotalLockCount() {
+  return activeLockIds.size + anonymousLockCount;
+}
+
+export function lockAppScroll(lockId) {
   if (typeof document === 'undefined') return;
 
-  lockCount += 1;
-  if (lockCount > 1) return;
+  const normalizedLockId = normalizeLockId(lockId);
+
+  if (normalizedLockId) {
+    if (activeLockIds.has(normalizedLockId)) {
+      return;
+    }
+    activeLockIds.add(normalizedLockId);
+  } else {
+    anonymousLockCount += 1;
+  }
+
+  if (getTotalLockCount() > 1) return;
 
   const mainContent = document.getElementById('main-content');
-  const scrollbarWidth = getScrollbarWidth();
-
   savedOverflow = {
     body: document.body.style.overflow || '',
     main: mainContent?.style.overflow || ''
   };
-  savedPaddingRight = {
-    body: document.body.style.paddingRight || '',
-    main: mainContent?.style.paddingRight || ''
-  };
 
+  // Keep body lock semantics for compatibility and deterministic behavior.
   document.body.style.overflow = 'hidden';
-  if (scrollbarWidth > 0) {
-    document.body.style.paddingRight = `${scrollbarWidth}px`;
-  }
+
+  // Lock app scroller as well. Keep width stable via CSS scrollbar-gutter.
   if (mainContent) {
     mainContent.style.overflow = 'hidden';
-    if (scrollbarWidth > 0) {
-      mainContent.style.paddingRight = `${scrollbarWidth}px`;
-    }
   }
 }
 
-export function unlockAppScroll() {
+export function unlockAppScroll(lockId) {
   if (typeof document === 'undefined') return;
-  if (lockCount === 0) return;
+  const normalizedLockId = normalizeLockId(lockId);
 
-  lockCount = Math.max(0, lockCount - 1);
-  if (lockCount > 0) return;
+  if (normalizedLockId) {
+    if (!activeLockIds.has(normalizedLockId)) return;
+    activeLockIds.delete(normalizedLockId);
+  } else if (anonymousLockCount > 0) {
+    anonymousLockCount = Math.max(0, anonymousLockCount - 1);
+  } else {
+    return;
+  }
+
+  if (getTotalLockCount() > 0) return;
+
+  document.body.style.overflow = savedOverflow.body || '';
 
   const mainContent = document.getElementById('main-content');
-  document.body.style.overflow = savedOverflow.body || '';
-  document.body.style.paddingRight = savedPaddingRight.body || '';
   if (mainContent) {
     mainContent.style.overflow = savedOverflow.main || '';
-    mainContent.style.paddingRight = savedPaddingRight.main || '';
   }
 }

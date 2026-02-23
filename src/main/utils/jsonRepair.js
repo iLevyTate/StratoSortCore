@@ -47,28 +47,19 @@ function extractBalancedJson(text) {
 
   // Find the first { or [ that might start a JSON structure
   let startIndex = -1;
-  let openChar = '';
-  let closeChar = '';
 
   for (let i = 0; i < text.length; i++) {
-    if (text[i] === '{') {
+    if (text[i] === '{' || text[i] === '[') {
       startIndex = i;
-      openChar = '{';
-      closeChar = '}';
-      break;
-    }
-    if (text[i] === '[') {
-      startIndex = i;
-      openChar = '[';
-      closeChar = ']';
       break;
     }
   }
 
   if (startIndex === -1) return null;
 
-  // Count braces/brackets to find matching close
-  let depth = 0;
+  // Count braces and brackets separately to avoid conflating {} with []
+  let braceDepth = 0;
+  let bracketDepth = 0;
   let inString = false;
   let escapeNext = false;
 
@@ -92,14 +83,19 @@ function extractBalancedJson(text) {
 
     if (inString) continue;
 
-    if (char === openChar || char === '{' || char === '[') {
-      depth++;
-    } else if (char === closeChar || char === '}' || char === ']') {
-      depth--;
-      if (depth === 0) {
-        // Found matching close
-        return text.slice(startIndex, i + 1);
-      }
+    if (char === '{') {
+      braceDepth++;
+    } else if (char === '}') {
+      braceDepth--;
+    } else if (char === '[') {
+      bracketDepth++;
+    } else if (char === ']') {
+      bracketDepth--;
+    }
+
+    if (braceDepth === 0 && bracketDepth === 0) {
+      // Found matching close
+      return text.slice(startIndex, i + 1);
     }
   }
 
@@ -142,7 +138,6 @@ function extractAndParseJSON(rawResponse, defaultValue = null, options = {}) {
   }
 
   // Step 3: Extract JSON object/array using balanced brace matching
-  // HIGH FIX: Use proper brace counting instead of greedy regex to avoid matching
   // from first '{' to last '}' which could include invalid content between JSON objects
   const extractedJson = extractBalancedJson(rawResponse);
   if (extractedJson) {
@@ -190,31 +185,37 @@ function repairJSON(json) {
   const controlCharRegex = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g;
   repaired = repaired.replace(controlCharRegex, '');
 
-  // Fix trailing commas before closing braces/brackets
   repaired = repaired.replace(/,\s*([}\]])/g, '$1');
 
-  // Fix missing commas between properties (common LLM error)
   // Match: "value" followed by whitespace then "key":
   repaired = repaired.replace(/("|\d|true|false|null)\s*\n\s*"/g, '$1,\n"');
 
-  // Fix unescaped newlines within string values by replacing them
   // This regex finds strings and escapes any unescaped newlines within them
-  // CRITICAL FIX: Replace lookbehind regex with compatible character-by-character approach
   // for environments that don't support ES2018 lookbehind assertions
   repaired = repaired.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/g, (match, content) => {
-    // Escape any actual newlines that aren't already escaped
-    // Use a compatible approach that doesn't require lookbehind
+    // Escape any actual newlines that aren't already escaped.
+    // Count consecutive backslashes before the character: if even (0, 2, ...),
+    // the newline itself is unescaped and needs escaping; if odd, it's already
+    // escaped by the preceding backslash.
     let fixed = '';
     for (let i = 0; i < content.length; i++) {
       const char = content[i];
-      const prevChar = i > 0 ? content[i - 1] : null;
-      // Only escape if not already preceded by a backslash
-      if (char === '\n' && prevChar !== '\\') {
-        fixed += '\\n';
-      } else if (char === '\r' && prevChar !== '\\') {
-        fixed += '\\r';
-      } else if (char === '\t' && prevChar !== '\\') {
-        fixed += '\\t';
+      if (char === '\n' || char === '\r' || char === '\t') {
+        // Count consecutive backslashes immediately before this character
+        let backslashCount = 0;
+        let j = i - 1;
+        while (j >= 0 && content[j] === '\\') {
+          backslashCount++;
+          j--;
+        }
+        // Even number of backslashes means newline is unescaped
+        if (backslashCount % 2 === 0) {
+          if (char === '\n') fixed += '\\n';
+          else if (char === '\r') fixed += '\\r';
+          else if (char === '\t') fixed += '\\t';
+        } else {
+          fixed += char;
+        }
       } else {
         fixed += char;
       }
@@ -222,20 +223,44 @@ function repairJSON(json) {
     return `"${fixed}"`;
   });
 
-  // Fix truncated JSON - attempt to close open structures
-  const openBraces = (repaired.match(/\{/g) || []).length;
-  const closeBraces = (repaired.match(/\}/g) || []).length;
-  const openBrackets = (repaired.match(/\[/g) || []).length;
-  const closeBrackets = (repaired.match(/\]/g) || []).length;
+  // Count structural braces/brackets only (skip those inside JSON strings)
+  let openBraces = 0,
+    closeBraces = 0,
+    openBrackets = 0,
+    closeBrackets = 0;
+  let inString = false;
+  {
+    let escaped = false;
+    for (let i = 0; i < repaired.length; i++) {
+      const ch = repaired[i];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\' && inString) {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = !inString;
+        continue;
+      }
+      if (!inString) {
+        if (ch === '{') openBraces++;
+        else if (ch === '}') closeBraces++;
+        else if (ch === '[') openBrackets++;
+        else if (ch === ']') closeBrackets++;
+      }
+    }
+  }
+
+  // If the JSON ended abruptly inside a string, close the string first
+  if (inString) {
+    repaired += '"';
+  }
 
   // Add missing closing brackets/braces
   if (openBrackets > closeBrackets) {
-    // Check if we're in the middle of a string and truncate
-    const lastQuote = repaired.lastIndexOf('"');
-    if (lastQuote > repaired.lastIndexOf(']') && lastQuote > repaired.lastIndexOf('}')) {
-      // We might be in an unclosed string, try to close it
-      repaired = `${repaired}"`;
-    }
     repaired += ']'.repeat(openBrackets - closeBrackets);
   }
 

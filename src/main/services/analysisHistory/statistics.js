@@ -43,7 +43,7 @@ function getOldestTimestamp(cache, entries) {
 function getNewestTimestamp(cache, entries) {
   // If sorted cache exists, use it (first item is newest)
   if (cache.sortedEntriesValid && cache.sortedEntries?.length) {
-    return cache.sortedEntries[0].timestamp;
+    return cache.sortedEntries?.[0]?.timestamp;
   }
 
   // Otherwise find it

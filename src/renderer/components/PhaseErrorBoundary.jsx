@@ -33,7 +33,6 @@ function PhaseErrorBoundary({ children, phaseName }) {
     });
   };
 
-  // FIX: Reset analysis state on error boundary recovery ("Try Again")
   // Uses resetToSafeState to clear in-progress state but preserve results
   const handleReset = () => {
     dispatch(resetToSafeState());

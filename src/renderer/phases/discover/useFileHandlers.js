@@ -50,6 +50,8 @@ const SUPPORTED_EXTENSIONS = ANALYSIS_SUPPORTED_EXTENSIONS || ALL_SUPPORTED_EXTE
 
 const SCAN_TIMEOUT = TIMEOUTS.DIRECTORY_SCAN || 30000;
 const FILE_STATS_BATCH_SIZE = 25;
+const buildMissingPathWarning = (count) =>
+  `Skipped ${count} item${count > 1 ? 's' : ''} because no stable absolute path was available`;
 
 /**
  * Custom hook for file handling operations
@@ -219,7 +221,6 @@ export function useFileHandlers({
           if (result?.error) {
             const filePath = batch[index];
             const fileName = extractFileName(filePath);
-            // FIX: Handle both string errors (from worker catch) and Error objects (from mapWithConcurrency catch)
             const errorMessage =
               typeof result.error === 'string'
                 ? result.error
@@ -429,12 +430,7 @@ export function useFileHandlers({
 
         if (droppedNonAbsolute > 0 || unusableCount > 0) {
           const skipped = droppedNonAbsolute + unusableCount;
-          addNotification(
-            `Skipped ${skipped} item${skipped > 1 ? 's' : ''} without a usable absolute path`,
-            'warning',
-            2500,
-            'file-selection-path'
-          );
+          addNotification(buildMissingPathWarning(skipped), 'warning', 2500, 'file-selection-path');
         }
 
         const newFiles = filterNewFiles(usableFiles, selectedFiles);
@@ -453,7 +449,6 @@ export function useFileHandlers({
           source: 'file_selection'
         }));
 
-        // FIX: Use functional updater to avoid stale closure over selectedFiles
         setSelectedFiles((prev) => {
           const existing = Array.isArray(prev) ? prev : [];
           const allFiles = [...existing, ...baseFiles];
@@ -515,7 +510,6 @@ export function useFileHandlers({
       }
       const result = await window.electronAPI.files.selectDirectory();
 
-      // FIX: Handler returns 'path' not 'folder'
       if (result?.success && result?.path) {
         let scanTimeoutId;
 
@@ -574,7 +568,6 @@ export function useFileHandlers({
             source: 'folder_scan'
           }));
 
-          // FIX: Use functional updater to avoid stale closure over selectedFiles
           setSelectedFiles((prev) => {
             const existing = Array.isArray(prev) ? prev : [];
             const allFiles = [...existing, ...baseFiles];
@@ -651,7 +644,7 @@ export function useFileHandlers({
         const skippedCount = files.length - usableFiles.length;
         if (skippedCount > 0) {
           addNotification(
-            `Skipped ${skippedCount} item${skippedCount > 1 ? 's' : ''} without a usable absolute path`,
+            buildMissingPathWarning(skippedCount),
             'warning',
             2500,
             'drop-missing-path'
@@ -711,7 +704,6 @@ export function useFileHandlers({
         // Update file states
         enhancedFiles.forEach((file) => updateFileState(file.path, 'pending'));
 
-        // FIX: Use functional updater to avoid stale closure over selectedFiles
         setSelectedFiles((prev) => {
           const existing = Array.isArray(prev) ? prev : [];
           const allFiles = [...existing, ...enhancedFiles];
@@ -731,7 +723,6 @@ export function useFileHandlers({
           await analyzeFiles(enhancedFiles);
         }
       } catch (error) {
-        // FIX H-2: Consistent error handling with handleFileSelection and handleFolderSelection
         logger.error('[DiscoverPhase] Error handling file drop', {
           error: error.message,
           stack: error.stack

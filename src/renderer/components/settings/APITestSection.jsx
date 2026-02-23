@@ -125,7 +125,7 @@ function APITestSection({ addNotification }) {
           size="sm"
           className="w-full sm:w-auto"
         >
-          {isTestingApi ? 'Testing APIs...' : 'Test All APIs'}
+          {isTestingApi ? 'Testing APIs\u2026' : 'Test All APIs'}
         </Button>
 
         {Object.keys(testResults).length > 0 && (

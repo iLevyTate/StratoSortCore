@@ -1,4 +1,4 @@
-import React, { memo, useState, useCallback, useMemo } from 'react';
+import React, { memo, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { Handle, Position, NodeToolbar } from 'reactflow';
 import { ExternalLink, FolderOpen, Copy, GitBranch, Focus } from 'lucide-react';
@@ -12,69 +12,68 @@ import { formatDisplayPath } from '../../../utils/pathDisplay';
 
 const CATEGORY_STYLES = {
   Documents: {
-    bg: 'bg-blue-50',
-    border: 'border-blue-200',
-    text: 'text-blue-700',
-    ring: 'ring-blue-100'
+    bg: 'bg-stratosort-blue/10',
+    border: 'border-stratosort-blue/30',
+    text: 'text-stratosort-blue',
+    ring: 'ring-stratosort-blue/20'
   },
   Spreadsheets: {
-    bg: 'bg-green-50',
-    border: 'border-green-200',
-    text: 'text-green-700',
-    ring: 'ring-green-100'
+    bg: 'bg-stratosort-success/10',
+    border: 'border-stratosort-success/30',
+    text: 'text-stratosort-success',
+    ring: 'ring-stratosort-success/20'
   },
   Presentations: {
-    bg: 'bg-orange-50',
-    border: 'border-orange-200',
-    text: 'text-orange-700',
-    ring: 'ring-orange-100'
+    bg: 'bg-stratosort-accent/10',
+    border: 'border-stratosort-accent/30',
+    text: 'text-stratosort-accent',
+    ring: 'ring-stratosort-accent/20'
   },
   Images: {
-    bg: 'bg-purple-50',
-    border: 'border-purple-200',
-    text: 'text-purple-700',
-    ring: 'ring-purple-100'
+    bg: 'bg-stratosort-purple/10',
+    border: 'border-stratosort-purple/30',
+    text: 'text-stratosort-purple',
+    ring: 'ring-stratosort-purple/20'
   },
   Videos: {
-    bg: 'bg-pink-50',
-    border: 'border-pink-200',
-    text: 'text-pink-700',
-    ring: 'ring-pink-100'
+    bg: 'bg-stratosort-purple/10',
+    border: 'border-stratosort-purple/30',
+    text: 'text-stratosort-purple',
+    ring: 'ring-stratosort-purple/20'
   },
   Audio: {
-    bg: 'bg-cyan-50',
-    border: 'border-cyan-200',
-    text: 'text-cyan-700',
-    ring: 'ring-cyan-100'
+    bg: 'bg-stratosort-indigo/10',
+    border: 'border-stratosort-indigo/30',
+    text: 'text-stratosort-indigo',
+    ring: 'ring-stratosort-indigo/20'
   },
   Code: {
-    bg: 'bg-yellow-50',
-    border: 'border-yellow-200',
-    text: 'text-yellow-700',
-    ring: 'ring-yellow-100'
+    bg: 'bg-stratosort-accent/10',
+    border: 'border-stratosort-accent/30',
+    text: 'text-stratosort-accent',
+    ring: 'ring-stratosort-accent/20'
   },
   Data: {
-    bg: 'bg-amber-50',
-    border: 'border-amber-200',
-    text: 'text-amber-700',
-    ring: 'ring-amber-100'
+    bg: 'bg-stratosort-accent/10',
+    border: 'border-stratosort-accent/30',
+    text: 'text-stratosort-accent',
+    ring: 'ring-stratosort-accent/20'
   },
   Archives: {
-    bg: 'bg-stone-50',
-    border: 'border-stone-200',
-    text: 'text-stone-700',
-    ring: 'ring-stone-100'
+    bg: 'bg-system-gray-100',
+    border: 'border-system-gray-200',
+    text: 'text-system-gray-700',
+    ring: 'ring-system-gray-100'
   },
   Other: {
     bg: 'bg-system-gray-50',
     border: 'border-system-gray-200',
     text: 'text-system-gray-700',
-    ring: 'ring-gray-100'
+    ring: 'ring-system-gray-100'
   }
 };
 
 const FileNode = memo(({ data, selected }) => {
-  const [showActions, setShowActions] = useState(false);
   const { showError } = useNotification();
   const redactPaths = useAppSelector((state) => Boolean(state?.system?.redactPaths));
   const filePath = data?.path || '';
@@ -164,7 +163,7 @@ const FileNode = memo(({ data, selected }) => {
   return (
     <div
       className={`
-        relative px-2.5 py-1.5 rounded-lg border-2 shadow-sm min-w-[140px] max-w-[200px]
+        relative px-2.5 py-1.5 rounded-lg border-2 shadow-sm w-[220px] min-h-[104px] overflow-hidden
         transition-all duration-200 cursor-pointer group backface-hidden transform-gpu
         ${
           selected
@@ -173,8 +172,6 @@ const FileNode = memo(({ data, selected }) => {
         }
       `}
       style={{ opacity: data?.style?.opacity ?? 1 }}
-      onMouseEnter={() => setShowActions(true)}
-      onMouseLeave={() => setShowActions(false)}
       onDoubleClick={handleOpen}
       title="Double-click to open file"
     >
@@ -182,37 +179,37 @@ const FileNode = memo(({ data, selected }) => {
         <div className="flex gap-1 bg-white shadow-lg rounded-lg border border-system-gray-200 p-1">
           <IconButton
             onClick={() => handleMenuAction(handleOpen)}
-            icon={<ExternalLink className="w-4 h-4 text-blue-600" />}
+            icon={<ExternalLink className="w-4 h-4 text-stratosort-blue" />}
             size="sm"
             variant="ghost"
-            className="h-7 w-7 hover:bg-blue-50"
+            className="h-7 w-7 hover:bg-stratosort-blue/10"
             title="Open File"
             aria-label="Open File"
           />
           <IconButton
             onClick={() => handleMenuAction(handleReveal)}
-            icon={<FolderOpen className="w-4 h-4 text-amber-600" />}
+            icon={<FolderOpen className="w-4 h-4 text-stratosort-accent" />}
             size="sm"
             variant="ghost"
-            className="h-7 w-7 hover:bg-amber-50"
+            className="h-7 w-7 hover:bg-stratosort-accent/10"
             title="Reveal in Folder"
             aria-label="Reveal in Folder"
           />
           <IconButton
             onClick={() => handleMenuAction(handleFindSimilar)}
-            icon={<GitBranch className="w-4 h-4 text-emerald-600" />}
+            icon={<GitBranch className="w-4 h-4 text-stratosort-success" />}
             size="sm"
             variant="ghost"
-            className="h-7 w-7 hover:bg-emerald-50"
+            className="h-7 w-7 hover:bg-stratosort-success/10"
             title="Find Similar"
             aria-label="Find Similar"
           />
           <IconButton
             onClick={() => handleMenuAction(handleFocusOnNode)}
-            icon={<Focus className="w-4 h-4 text-indigo-600" />}
+            icon={<Focus className="w-4 h-4 text-stratosort-indigo" />}
             size="sm"
             variant="ghost"
-            className="h-7 w-7 hover:bg-indigo-50"
+            className="h-7 w-7 hover:bg-stratosort-indigo/10"
             title="Focus on Node"
             aria-label="Focus on Node"
           />
@@ -234,9 +231,9 @@ const FileNode = memo(({ data, selected }) => {
         className="!bg-[var(--color-stratosort-blue)] !w-2 !h-2"
       />
 
-      {/* Quick actions on hover */}
-      {showActions && filePath && !selected && (
-        <div className="absolute -top-8 left-1/2 -translate-x-1/2 flex gap-1 bg-white shadow-md rounded-lg px-2 py-1.5 border border-[var(--color-border-soft)] z-20">
+      {/* Quick actions on hover - using CSS group-hover for performance */}
+      {filePath && !selected && (
+        <div className="hidden group-hover:flex absolute -top-8 left-1/2 -translate-x-1/2 gap-1 bg-white shadow-md rounded-lg px-2 py-1.5 border border-[var(--color-border-soft)] z-20 animate-in fade-in zoom-in-95 duration-200">
           <IconButton
             onClick={handleOpen}
             icon={<ExternalLink className="w-3.5 h-3.5 text-[var(--color-stratosort-blue)]" />}
@@ -262,7 +259,7 @@ const FileNode = memo(({ data, selected }) => {
       {displayScore !== null && displayScore > 0 && (
         <div
           className={`
-            absolute -top-2 -right-2 text-[9px] font-bold rounded-full px-1.5 h-5 min-w-[28px] flex items-center justify-center shadow-md border border-white z-10
+            absolute -top-2 -right-2 text-xs font-bold rounded-full px-1.5 h-5 min-w-[28px] flex items-center justify-center shadow-md border border-white z-10
             ${hasHighScore ? 'bg-stratosort-blue text-white' : 'bg-system-gray-100 text-system-gray-600 border-system-gray-200'}
           `}
           title={`Relevance: ${Math.round(displayScore * 100)}%`}
@@ -278,13 +275,13 @@ const FileNode = memo(({ data, selected }) => {
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-1 mb-0.5">
-            <span className={`text-[10px] font-semibold uppercase tracking-wider ${style.text}`}>
+            <span className={`text-xs font-semibold uppercase tracking-wider ${style.text}`}>
               {category}
             </span>
           </div>
 
           <div
-            className="file-node-label text-xs font-semibold text-[var(--color-system-gray-900)] truncate mb-1"
+            className="file-node-label text-xs font-semibold text-[var(--color-system-gray-900)] clamp-2 break-all leading-snug mb-1"
             title={displayLabel}
           >
             {displayLabel}
@@ -294,7 +291,7 @@ const FileNode = memo(({ data, selected }) => {
             <div className="flex flex-wrap gap-1 mt-1.5">
               {displaySuggestedFolder && (
                 <span
-                  className="px-1.5 py-0.5 rounded text-[9px] bg-black/5 text-black/60 font-medium truncate max-w-full inline-block"
+                  className="px-1.5 py-0.5 rounded-md text-xs bg-black/5 text-black/60 font-medium truncate max-w-full inline-block break-all"
                   title={displaySuggestedFolder}
                 >
                   📂 {displaySuggestedFolder}
@@ -303,7 +300,7 @@ const FileNode = memo(({ data, selected }) => {
               {tags.map((tag, i) => (
                 <span
                   key={i}
-                  className="px-1.5 py-0.5 rounded text-[9px] bg-white/60 text-[var(--color-system-gray-600)] border border-black/5 max-w-full truncate inline-block"
+                  className="px-1.5 py-0.5 rounded-md text-xs bg-white/60 text-[var(--color-system-gray-600)] border border-black/5 max-w-full truncate inline-block break-all"
                   title={tag}
                 >
                   #{tag}

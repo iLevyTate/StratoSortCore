@@ -81,7 +81,6 @@ class SlidingWindowRateLimiter {
         throw new Error(`Rate limiter wait timeout exceeded (${maxWaitMs}ms)`);
       }
 
-      // FIX Bug 7: Smart waiting - calculate when oldest call will expire
       this._cleanup();
       if (this.calls.length > 0) {
         const oldestCall = this.calls[0];
@@ -186,7 +185,6 @@ class Semaphore {
       return;
     }
 
-    // FIX Bug 8: Backpressure with retry mechanism
     let retryAttempt = 0;
     while (this.waitQueue.length >= this.maxQueueSize) {
       if (!retry || retryAttempt >= maxRetries) {
@@ -227,7 +225,6 @@ class Semaphore {
    * FIX: Improved guard to prevent activeCount underflow in all edge cases
    */
   release() {
-    // FIX: Check for waiters first - if there are waiters, pass the slot directly
     // This ordering prevents race conditions where activeCount could underflow
     if (this.waitQueue.length > 0) {
       // Pass the slot directly to the next waiter (no net change to activeCount)
@@ -238,7 +235,6 @@ class Semaphore {
       // Only decrement if activeCount is positive - this is the normal case
       this.activeCount--;
     } else {
-      // FIX (CRIT-11): Guard against activeCount going negative
       // Already at 0 with no waiters - this is a misuse (release without acquire)
       // Log warning but don't throw to maintain backwards compatibility
       // eslint-disable-next-line no-console

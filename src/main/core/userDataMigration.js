@@ -15,7 +15,8 @@ const LEGACY_USERDATA_FOLDERS = [
   'elstratosort',
   'Electron',
   'StratoSort-dev',
-  'stratosort-dev'
+  'stratosort-dev',
+  'stratosort-core-dev'
 ];
 
 const STATE_FILES = [

@@ -86,7 +86,8 @@ class FileOperationTracker {
         for (const entry of parsed) {
           // Only load non-expired entries
           if (entry && entry.path && entry.timestamp && now - entry.timestamp <= this.cooldownMs) {
-            this.recentOperations.set(entry.path, {
+            const normalizedPath = this._resolveForTracking(entry.path);
+            this.recentOperations.set(normalizedPath, {
               timestamp: entry.timestamp,
               operationType: entry.operationType || 'unknown',
               source: entry.source || 'persisted'

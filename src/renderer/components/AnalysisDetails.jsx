@@ -46,7 +46,7 @@ const buildCollapsedPreview = (text, { maxLength = 240, mono = false, label } = 
 const DetailRow = ({ label, value, truncate = false }) => {
   if (!isValuePresent(value)) return null;
   return (
-    <div className="grid grid-cols-[120px_1fr] gap-4 py-1.5">
+    <div className="flex flex-col gap-1.5 py-1.5">
       <Text variant="tiny" className="uppercase tracking-wider font-semibold text-system-gray-400">
         {label}
       </Text>
@@ -192,9 +192,12 @@ const AnalysisDetails = memo(function AnalysisDetails({
         className="bg-gradient-to-br from-white to-system-gray-50/80 border-border-soft/70"
       >
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0 flex-1 space-y-2">
+          <div className="min-w-[200px] flex-1 space-y-3">
             {showName && analysis.suggestedName && (
-              <DetailRow label="Suggested Name" value={<Code>{analysis.suggestedName}</Code>} />
+              <DetailRow
+                label="Suggested Name"
+                value={<Code className="break-all">{analysis.suggestedName}</Code>}
+              />
             )}
             {displayFilePath && (
               <DetailRow
@@ -207,7 +210,7 @@ const AnalysisDetails = memo(function AnalysisDetails({
               />
             )}
           </div>
-          <div className="flex flex-col items-start sm:items-end gap-3">
+          <div className="flex flex-row sm:flex-col items-center sm:items-end gap-3 flex-wrap">
             {showCategory && analysis.category && (
               <div className="flex items-center gap-2">
                 <Text

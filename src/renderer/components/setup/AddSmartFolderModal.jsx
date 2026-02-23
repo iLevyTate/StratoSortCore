@@ -1,11 +1,11 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useId } from 'react';
 import PropTypes from 'prop-types';
 import { useSelector } from 'react-redux';
 import { Sparkles, FolderOpen } from 'lucide-react';
 import { Button, Input, Textarea } from '../ui';
 import { Text } from '../ui/Typography';
 import Modal from '../ui/Modal';
-import { Inline, Stack } from '../layout';
+import { Stack } from '../layout';
 import { createLogger } from '../../../shared/logger';
 import { filesIpc, smartFoldersIpc } from '../../services/ipc';
 import { selectRedactPaths } from '../../store/selectors';
@@ -30,6 +30,7 @@ function AddSmartFolderModal({
   const [isAdding, setIsAdding] = useState(false);
   const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
   const isMountedRef = useRef(true);
+  const formId = useId();
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -221,8 +222,11 @@ function AddSmartFolderModal({
       onClose={handleClose}
       title="Add Smart Folder"
       size="md"
+      closeOnOverlayClick={!isAdding}
+      closeOnEsc={!isAdding}
+      closeDisabled={isAdding}
       footer={
-        <Inline className="justify-end" gap="compact" wrap={false}>
+        <>
           <Button
             type="button"
             onClick={handleClose}
@@ -233,86 +237,90 @@ function AddSmartFolderModal({
             Cancel
           </Button>
           <Button
-            onClick={handleSubmit}
+            type="submit"
+            form={formId}
             variant="primary"
             size="sm"
             disabled={!folderName.trim() || isAdding}
+            isLoading={isAdding}
           >
             {isAdding ? 'Adding...' : 'Add Folder'}
           </Button>
-        </Inline>
+        </>
       }
     >
-      <Stack gap="relaxed">
-        <Input
-          label="Folder Name"
-          type="text"
-          value={folderName}
-          onChange={(e) => setFolderName(e.target.value)}
-          placeholder="e.g., Documents, Photos, Projects"
-          className="w-full"
-          autoFocus
-          required
-        />
-
-        <div className="flex flex-col gap-1.5">
-          <Text as="label" variant="small" className="block font-medium text-system-gray-700">
-            Target Path <span className="text-system-gray-400 font-normal ml-1">(optional)</span>
-          </Text>
-          <div className="flex gap-2">
-            <Input
-              type={redactPaths ? 'password' : 'text'}
-              value={folderPath}
-              onChange={(e) => setFolderPath(e.target.value)}
-              placeholder={
-                redactPaths
-                  ? `…${getPathSeparator(defaultLocation)}${folderName || 'FolderName'}`
-                  : `${defaultLocation}${getPathSeparator(defaultLocation)}${folderName || 'FolderName'}`
-              }
-              className="flex-1"
-            />
-            <Button
-              type="button"
-              onClick={handleBrowse}
-              variant="secondary"
-              size="sm"
-              title="Browse for folder"
-              className="shrink-0"
-            >
-              <FolderOpen className="w-4 h-4" />
-              Browse
-            </Button>
-          </div>
-        </div>
-
-        <div className="relative">
-          <div className="flex items-center justify-between mb-1.5">
-            <Text as="label" variant="small" className="block font-medium text-system-gray-700">
-              Description{' '}
-              <span className="text-stratosort-blue font-medium ml-1">(AI uses this)</span>
-            </Text>
-            <Button
-              type="button"
-              onClick={handleGenerateDescription}
-              disabled={isGeneratingDescription || !folderName.trim()}
-              isLoading={isGeneratingDescription}
-              variant="subtle"
-              size="sm"
-              leftIcon={!isGeneratingDescription ? <Sparkles className="w-4 h-4" /> : null}
-              className="text-stratosort-blue bg-stratosort-blue/10 border-stratosort-blue/20 hover:bg-stratosort-blue/20"
-            >
-              {isGeneratingDescription ? 'Generating...' : 'Generate with AI'}
-            </Button>
-          </div>
-          <Textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Describe what types of files should go here..."
+      <form id={formId} onSubmit={handleSubmit}>
+        <Stack gap="relaxed">
+          <Input
+            label="Folder Name"
+            type="text"
+            value={folderName}
+            onChange={(e) => setFolderName(e.target.value)}
+            placeholder="e.g., Documents, Photos, Projects"
             className="w-full"
-            rows={3}
+            autoFocus
+            required
           />
-        </div>
-      </Stack>
+
+          <div className="flex flex-col gap-1.5">
+            <Text as="label" variant="small" className="block font-medium text-system-gray-700">
+              Target Path <span className="text-system-gray-400 font-normal ml-1">(optional)</span>
+            </Text>
+            <div className="flex gap-2">
+              <Input
+                type={redactPaths ? 'password' : 'text'}
+                value={folderPath}
+                onChange={(e) => setFolderPath(e.target.value)}
+                placeholder={
+                  redactPaths
+                    ? `…${getPathSeparator(defaultLocation)}${folderName || 'FolderName'}`
+                    : `${defaultLocation}${getPathSeparator(defaultLocation)}${folderName || 'FolderName'}`
+                }
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                onClick={handleBrowse}
+                variant="secondary"
+                size="sm"
+                title="Browse for folder"
+                className="shrink-0"
+              >
+                <FolderOpen className="w-4 h-4" />
+                Browse
+              </Button>
+            </div>
+          </div>
+
+          <div className="relative">
+            <div className="flex items-center justify-between mb-1.5">
+              <Text as="label" variant="small" className="block font-medium text-system-gray-700">
+                Description{' '}
+                <span className="text-stratosort-blue font-medium ml-1">(AI uses this)</span>
+              </Text>
+              <Button
+                type="button"
+                onClick={handleGenerateDescription}
+                disabled={isGeneratingDescription || !folderName.trim()}
+                isLoading={isGeneratingDescription}
+                variant="subtle"
+                size="sm"
+                leftIcon={!isGeneratingDescription ? <Sparkles className="w-4 h-4" /> : null}
+                className="text-stratosort-blue bg-stratosort-blue/10 border-stratosort-blue/20 hover:bg-stratosort-blue/20"
+              >
+                {isGeneratingDescription ? 'Generating...' : 'Generate with AI'}
+              </Button>
+            </div>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Describe what types of files should go here..."
+              className="w-full"
+              rows={3}
+            />
+          </div>
+        </Stack>
+      </form>
     </Modal>
   );
 }

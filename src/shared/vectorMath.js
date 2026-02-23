@@ -34,7 +34,6 @@ function cosineSimilarity(a, b) {
   let i = 0;
 
   for (; i < unrollLimit; i += 4) {
-    // FIX HIGH-49: Validate vector elements to prevent NaN propagation
     if (
       isNaN(a[i]) ||
       isNaN(b[i]) ||
@@ -60,8 +59,7 @@ function cosineSimilarity(a, b) {
     normB += b[i] * b[i];
   }
 
-  // FIX CRIT-39: Check for zero or near-zero magnitude to avoid division by zero
-  if (normA < Number.EPSILON || normB < Number.EPSILON) return 0;
+  if (normA < 1e-10 || normB < 1e-10) return 0;
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
@@ -135,7 +133,6 @@ function validateEmbeddingVector(vector) {
 }
 
 // Track dimension mismatch warnings to avoid log spam (warn once per dimension pair)
-// FIX: Cap size to prevent unbounded memory growth in long-running processes
 const _warnedDimPairs = new Set();
 const _MAX_WARNED_DIM_PAIRS = 100;
 function _warnDimMismatch(actual, expected) {

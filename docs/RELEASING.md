@@ -18,6 +18,10 @@ artifacts.
    - Base-model download works from the app UI
 5. **Confirm docs**
    - Ensure `docs/INSTALL_GUIDE.md` matches current installer names and OS prompts
+   - Ensure release references are updated for the upcoming tag:
+     - `README.md` version badge
+     - `CHANGELOG.md` compare links (`[Unreleased]` and new version anchor)
+     - `.github/WORKFLOW_README.md` artifact names/checksum filenames
 
 ## Tag-Triggered Releases (Recommended)
 
@@ -28,12 +32,15 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
+For the next release, replace `X.Y.Z` with the version from `package.json` after you bump it.
+
 This triggers both workflows:
 
 - `release.yml` (Windows)
 - `mac-release.yml` (macOS)
 
-Both upload artifacts to the GitHub release for the tag.
+Each workflow runs quality gates (format, lint, test:coverage, verify:ipc-handlers, build) before
+packaging. Both upload artifacts to the GitHub release for the tag.
 
 ## Published Artifacts
 

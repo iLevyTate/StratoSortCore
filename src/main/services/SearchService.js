@@ -69,6 +69,25 @@ const DEFAULT_OPTIONS = {
   graphExpansionDecay: SEARCH.GRAPH_EXPANSION_DECAY
 };
 
+/**
+ * Normalize caller-provided precomputed embedding input.
+ * Accepts either:
+ * - full embed result object: { vector: number[] }
+ * - raw vector array: number[]
+ *
+ * @param {Object|Array|null|undefined} input
+ * @returns {{vector: number[]}|null}
+ */
+function normalizePrecomputedEmbedding(input) {
+  if (Array.isArray(input?.vector) && input.vector.length > 0) {
+    return { vector: input.vector };
+  }
+  if (Array.isArray(input) && input.length > 0) {
+    return { vector: input };
+  }
+  return null;
+}
+
 class SearchService {
   /**
    * Create a new SearchService instance
@@ -133,7 +152,6 @@ class SearchService {
     // Lock to prevent concurrent index builds (race condition fix)
     this._indexBuildPromise = null;
 
-    // FIX: Debounce timer for invalidateAndRebuild to prevent index thrashing
     // during batch operations (e.g., multi-file move/rename/delete)
     this._rebuildDebounceTimer = null;
     this._rebuildDebounceResolvers = [];
@@ -339,7 +357,6 @@ class SearchService {
         const analysis = doc.analysis || {};
         const organization = doc.organization || {};
 
-        // FIX: Use current path/name after organization, not original path
         // If file was moved/renamed, use the actual destination path
         const currentPath = organization.actual || doc.originalPath;
         const currentName = organization.newName || doc.fileName || '';
@@ -454,7 +471,6 @@ class SearchService {
     return text.length > maxLength ? text.slice(0, maxLength) : text;
   }
 
-  // FIX: Use shared padOrTruncateVector from vectorMath.js to eliminate duplication
   _padOrTruncateVector(vector, expectedDim) {
     return padOrTruncateVector(vector, expectedDim);
   }
@@ -489,7 +505,6 @@ class SearchService {
           reason: 'Model mismatch likely'
         });
 
-        // FIX C-1: Throw descriptive error instead of returning null
         // This allows UI to display actionable message to user
         const err = new Error(errorMsg);
         err.isDimensionMismatch = true;
@@ -498,7 +513,6 @@ class SearchService {
 
       return vector;
     } catch (e) {
-      // FIX C-1: Re-throw dimension mismatch errors so UI can display actionable message
       // Other errors (like vector DB unavailable) can fail safely to null
       if (e.isDimensionMismatch) {
         throw e; // Propagate to UI with clear message
@@ -662,7 +676,8 @@ class SearchService {
   async vectorSearch(query, topK = 20, options = {}) {
     try {
       // Reuse precomputed embedding if provided (avoids redundant LLM call in hybrid mode)
-      const embedResult = options.precomputedEmbedding || (await this.embedding.embedText(query));
+      const precomputedEmbedding = normalizePrecomputedEmbedding(options.precomputedEmbedding);
+      const embedResult = precomputedEmbedding || (await this.embedding.embedText(query));
       if (!embedResult || !embedResult.vector) {
         logger.warn('[SearchService] Failed to generate query embedding');
         return [];
@@ -699,7 +714,6 @@ class SearchService {
         .filter((w) => w.length > 2);
 
       return vectorResults.map((result) => {
-        // FIX: Use score if available, otherwise convert distance to similarity
         // Vector DB cosine distance is in range [0, 2], convert with: 1 - distance/2
         // Also handle score=0 as a valid score (not falsy fallback)
         const semanticScore =
@@ -708,7 +722,6 @@ class SearchService {
             : Math.max(0, 1 - (result.distance || 0) / 2);
         const metadata = result.metadata || {};
 
-        // FIX: Tags are stored as JSON string in vector DB, need to parse them
         let tags = [];
         if (Array.isArray(metadata.tags)) {
           tags = metadata.tags;
@@ -820,7 +833,8 @@ class SearchService {
       }
 
       // Reuse precomputed embedding if provided (avoids redundant LLM call in hybrid mode)
-      const embedResult = precomputedEmbedding || (await this.embedding.embedText(query));
+      const normalizedPrecomputedEmbedding = normalizePrecomputedEmbedding(precomputedEmbedding);
+      const embedResult = normalizedPrecomputedEmbedding || (await this.embedding.embedText(query));
       if (!embedResult || !embedResult.vector) {
         logger.warn('[SearchService] Failed to generate query embedding for chunk search');
         return [];
@@ -1027,7 +1041,6 @@ class SearchService {
       };
     }
 
-    // FIX: Guard against division by zero when all edge weights are 0.
     // The spread into Math.max with an empty edges array would yield MIN_EPSILON,
     // but if all weights are literally 0, weightNorm = 0/0 = NaN, corrupting scores.
     const rawMaxWeight = edges.reduce(
@@ -1294,7 +1307,6 @@ class SearchService {
           score: finalScore,
           rrfScore: normalizedRrf,
           metadata: original.metadata || {},
-          // FIX: Use merged sources from matchDetailsMap (tracks all contributing sources)
           // instead of only the preferred result's single source
           sources: matchDetailsMap.get(id)?.sources?.filter(Boolean) || ['fused'],
           matchDetails: matchDetailsMap.get(id) || {}
@@ -1397,7 +1409,6 @@ class SearchService {
     const validResults = [];
     const ghostIds = [];
 
-    // FIX (M-6): Check file existence in parallel instead of sequential awaits.
     // 20 results previously required 20 serial filesystem round-trips.
     const checks = results.map(async (result) => {
       const filePath = result.metadata?.path;
@@ -1504,7 +1515,6 @@ class SearchService {
 
     logger.info('[SearchService] Search started', { query: query.substring(0, 100), mode, topK });
 
-    // FIX P2-1: Normalize query for all search modes (trim, collapse whitespace)
     // BM25 will additionally expand synonyms, but vector search uses this normalized version
     const normalizedQuery = query.trim().replace(/\s+/g, ' ');
 
@@ -1587,7 +1597,6 @@ class SearchService {
       }
 
       if (mode === 'vector') {
-        // FIX P2-1: Use normalized query for vector search (consistent preprocessing)
         const results = await this.vectorSearch(normalizedQuery, topK);
         this._enrichResults(results);
         const filtered = this._filterByScore(results, minScore);
@@ -1595,16 +1604,16 @@ class SearchService {
       }
 
       // Hybrid mode: combine both search types with timeout protection
-      // FIX P2-1: Use expanded query for BM25, normalized for vector (consistent preprocessing)
-      // FIX: Precompute embedding once and share between vector + chunk search to avoid
       // generating the same query embedding twice (saves one LLM inference call per search)
-      let precomputedEmbedding = null;
-      try {
-        precomputedEmbedding = await this.embedding.embedText(normalizedQuery);
-      } catch (embedErr) {
-        logger.warn('[SearchService] Failed to precompute query embedding', {
-          error: embedErr?.message
-        });
+      let precomputedEmbedding = normalizePrecomputedEmbedding(options.precomputedEmbedding);
+      if (!precomputedEmbedding) {
+        try {
+          precomputedEmbedding = await this.embedding.embedText(normalizedQuery);
+        } catch (embedErr) {
+          logger.warn('[SearchService] Failed to precompute query embedding', {
+            error: embedErr?.message
+          });
+        }
       }
 
       const bm25Results = await this.bm25Search(processedQuery, topK * 2);
@@ -1798,7 +1807,6 @@ class SearchService {
       // Apply minimum score filter to fused results
       let filteredResults = this._filterByScore(fusedResults.slice(0, topK), minScore);
 
-      // FIX: Validate file existence to remove ghost entries
       try {
         const { validResults, ghostCount } = await this._validateFileExistence(filteredResults);
         if (ghostCount > 0) {
@@ -2097,7 +2105,6 @@ class SearchService {
     this.invalidateIndex({ reason, oldPath, newPath });
 
     if (immediate) {
-      // FIX: Debounce rapid rebuild requests to prevent index thrashing
       // during batch operations (e.g., moving 50 files triggers 50 invalidations).
       // Callers get a promise that resolves once the coalesced rebuild completes.
       return new Promise((resolve) => {
@@ -2931,6 +2938,9 @@ class SearchService {
         r({ success: false, rebuilt: false, error: 'Service shutting down' });
       }
     }
+
+    // Clean up re-ranker resources
+    this.reRanker?.cleanup?.();
 
     // Clear index and cache
     this.bm25Index = null;

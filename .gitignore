@@ -63,6 +63,7 @@ blob-report/
 # Temporary files
 *.tmp
 *.temp
+test-list.txt
 .cache/
 .webpack-cache/
 .eslintcache
@@ -74,6 +75,7 @@ nul
 debug-analysis.js
 startup-validation.js
 verify-*.js
+!scripts/verify-*.js
 
 # Documentation build
 docs/_build/

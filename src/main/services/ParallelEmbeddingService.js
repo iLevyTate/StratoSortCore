@@ -43,6 +43,9 @@ const SEMAPHORE_CONFIG = {
   MAX_QUEUE_SIZE: 100, // Maximum queued requests before rejecting
   QUEUE_TIMEOUT_MS: TIMEOUTS.AI_ANALYSIS_LONG // 180 second timeout to survive blocking operations
 };
+const MIN_CONCURRENCY = 1;
+const MIN_ADAPTIVE_CONCURRENCY = 2;
+const MAX_CONCURRENCY = 10;
 
 /**
  * ParallelEmbeddingService
@@ -64,8 +67,11 @@ class ParallelEmbeddingService {
     // Configurable concurrency limit - increased hard cap for powerful GPUs
     this.concurrencyLimit = Math.min(
       options.concurrencyLimit || this._calculateOptimalConcurrency(),
-      10 // Hard cap increased from 5 to 10
+      MAX_CONCURRENCY // Hard cap increased from 5 to 10
     );
+    // Upper bound sourced from system capability recommendations.
+    // Adaptive logic must never scale above this once known.
+    this.maxRecommendedConcurrency = MAX_CONCURRENCY;
 
     // Semaphore state
     this.activeRequests = 0;
@@ -94,16 +100,14 @@ class ParallelEmbeddingService {
     // Align initial limit with system recommendation (async).
     this._syncRecommendedConcurrency('startup').catch(() => {});
 
-    // FIX Bug #14: Listen for LlamaService initialization to upgrade concurrency
     // Initial calculation often happens before LlamaService has detected GPU
     this._llamaInitHandler = null;
     this._llamaServiceRef = null;
     try {
       const llamaService = getLlamaService();
       if (llamaService && typeof llamaService.on === 'function') {
-        // FIX: Store handler reference so we can remove it in shutdown()
         this._llamaInitHandler = () => {
-          const newLimit = Math.min(this._calculateOptimalConcurrency(), 10);
+          const newLimit = Math.min(this._calculateOptimalConcurrency(), MAX_CONCURRENCY);
           if (newLimit !== this.concurrencyLimit) {
             this.setConcurrencyLimit(newLimit);
             logger.info('[ParallelEmbeddingService] Concurrency updated after LlamaService init', {
@@ -125,7 +129,14 @@ class ParallelEmbeddingService {
       const { getRecommendedConcurrency } = require('./PerformanceService');
       const recs = await getRecommendedConcurrency();
       if (!recs?.maxConcurrent) return;
-      const capped = Math.max(1, Math.min(this.concurrencyLimit, recs.maxConcurrent, 10));
+      this.maxRecommendedConcurrency = Math.max(
+        MIN_CONCURRENCY,
+        Math.min(recs.maxConcurrent, MAX_CONCURRENCY)
+      );
+      const capped = Math.max(
+        MIN_CONCURRENCY,
+        Math.min(this.concurrencyLimit, this.maxRecommendedConcurrency, MAX_CONCURRENCY)
+      );
       if (capped !== this.concurrencyLimit) {
         this.setConcurrencyLimit(capped);
         logger.info('[ParallelEmbeddingService] Concurrency capped by system recommendation', {
@@ -152,7 +163,6 @@ class ParallelEmbeddingService {
     const cpuCores = os.cpus().length;
     const freeMem = os.freemem();
     const totalMem = os.totalmem();
-    // FIX: Prevent division by zero in edge cases (VMs, containers)
     const memUsageRatio = totalMem > 0 ? 1 - freeMem / totalMem : 0.5;
 
     // Base concurrency on CPU cores (50% utilization for embedding model)
@@ -190,7 +200,7 @@ class ParallelEmbeddingService {
     }
 
     // Cap at reasonable maximum
-    return Math.min(concurrency, 10);
+    return Math.min(concurrency, MAX_CONCURRENCY);
   }
 
   /**
@@ -205,7 +215,6 @@ class ParallelEmbeddingService {
       error.code = 'SERVICE_SHUTDOWN';
       throw error;
     }
-    // FIX: Atomic increment-then-check pattern to prevent race condition
     // Previous pattern: if (active < limit) { active++ } - two concurrent calls could both pass
     // New pattern: active++; if (active > limit) { active--; queue } - atomic acquisition
     this.activeRequests++;
@@ -218,7 +227,6 @@ class ParallelEmbeddingService {
     // We've exceeded the limit, decrement and queue
     this.activeRequests--;
 
-    // FIX: Enforce maximum queue size to prevent memory bloat
     if (this.waitQueue.length >= SEMAPHORE_CONFIG.MAX_QUEUE_SIZE) {
       const error = new Error('ParallelEmbeddingService: Request queue full');
       error.code = 'QUEUE_FULL';
@@ -229,7 +237,6 @@ class ParallelEmbeddingService {
       throw error;
     }
 
-    // FIX: Add timeout to prevent indefinite waiting
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         // Remove this entry from waitQueue
@@ -258,7 +265,6 @@ class ParallelEmbeddingService {
    * if the limit was dynamically reduced.
    */
   _releaseSlot() {
-    // FIX: Guard against underflow.
     if (this.activeRequests <= 0) {
       logger.warn(
         '[ParallelEmbeddingService] _releaseSlot() called without matching acquire, ignoring'
@@ -271,7 +277,6 @@ class ParallelEmbeddingService {
     // Try to wake up next waiting request if we have capacity
     if (this.waitQueue.length > 0 && this.activeRequests < this.concurrencyLimit) {
       const next = this.waitQueue.shift();
-      // FIX: Clear the timeout to prevent memory leak and spurious rejection
       if (next.timeoutId) {
         clearTimeout(next.timeoutId);
       }
@@ -330,10 +335,20 @@ class ParallelEmbeddingService {
       throw error;
     }
 
-    // Build progressively stricter caps. The first pass preserves current behavior,
-    // then we tighten token estimates for token-dense inputs to avoid hard failures.
+    // Query the actual embedding context size from the loaded model when available.
+    // This adapts to any model (including custom ones not in the registry).
+    const runtimeContextSize =
+      Number.isFinite(config?.embeddingContextSize) && config.embeddingContextSize > 0
+        ? config.embeddingContextSize
+        : undefined;
+
+    const primaryCapOptions = { modelName };
+    if (runtimeContextSize) {
+      primaryCapOptions.maxTokens = runtimeContextSize;
+    }
+
     const capPlans = [];
-    const primaryCap = capEmbeddingInput(originalText, { modelName });
+    const primaryCap = capEmbeddingInput(originalText, primaryCapOptions);
     capPlans.push({
       ...primaryCap,
       reason: 'default_cap'
@@ -467,6 +482,11 @@ class ParallelEmbeddingService {
           }
         }
       } catch (workerError) {
+        // can immediately try a stricter input cap instead of falling back to
+        // the main process (which will likely fail with the same error).
+        if (isEmbeddingContextOverflow(workerError)) {
+          throw workerError;
+        }
         logger.warn('[ParallelEmbeddingService] Embedding worker failed, falling back', {
           error: workerError.message
         });
@@ -632,7 +652,6 @@ class ParallelEmbeddingService {
 
           const { vector, model } = await this.embedText(item.text);
 
-          // FIX: Validate model consistency - warn if model used differs from batch model.
           // Also tolerate the default fallback name (AI_DEFAULTS.EMBEDDING.MODEL) which
           // may be returned when the actual model name can't be resolved from LlamaService.
           if (
@@ -640,7 +659,6 @@ class ParallelEmbeddingService {
             model !== 'fallback' &&
             model !== AI_DEFAULTS.EMBEDDING.MODEL
           ) {
-            // FIX CRIT-29: Throw on model mismatch to prevent vector space corruption
             const mismatchMsg = `Model mismatch in batch: expected ${batchModel}, got ${model}. Aborting to protect vector integrity.`;
             logger.error('[ParallelEmbeddingService] ' + mismatchMsg, {
               itemId: item.id
@@ -652,7 +670,7 @@ class ParallelEmbeddingService {
             id: item.id,
             vector,
             model,
-            batchModel, // FIX: Include batch model for validation by caller
+            batchModel,
             meta: item.meta || {},
             success: true
           };
@@ -674,7 +692,6 @@ class ParallelEmbeddingService {
         } catch (error) {
           completedCount++;
 
-          // FIX: Enhanced error information with retryable flag and error type
           const errorMessage = error.message || String(error);
           const errorType = this._classifyError(error);
           const retryable = this._isRetryableError(error);
@@ -750,7 +767,6 @@ class ParallelEmbeddingService {
           duration,
           avgLatencyMs: Math.round(duration / items.length),
           throughput: duration > 0 ? items.length / (duration / 1000) : 0,
-          // FIX: Include model info for caller validation
           model: batchModel,
           modelChangedDuringBatch
         }
@@ -805,7 +821,11 @@ class ParallelEmbeddingService {
    * @param {number} limit - New concurrency limit (1-10)
    */
   setConcurrencyLimit(limit) {
-    const newLimit = Math.max(1, Math.min(limit, 10));
+    const recommendedCap =
+      Number.isFinite(this.maxRecommendedConcurrency) && this.maxRecommendedConcurrency > 0
+        ? this.maxRecommendedConcurrency
+        : MAX_CONCURRENCY;
+    const newLimit = Math.max(MIN_CONCURRENCY, Math.min(limit, recommendedCap, MAX_CONCURRENCY));
 
     if (newLimit !== this.concurrencyLimit) {
       logger.info('[ParallelEmbeddingService] Concurrency limit changed', {
@@ -874,7 +894,6 @@ class ParallelEmbeddingService {
 
     this._isShuttingDown = true;
 
-    // FIX: Remove LlamaService listener to prevent memory leak and stale callbacks
     if (this._llamaServiceRef && this._llamaInitHandler) {
       try {
         this._llamaServiceRef.removeListener('initialized', this._llamaInitHandler);
@@ -951,7 +970,6 @@ class ParallelEmbeddingService {
    * Dynamically adjust concurrency based on error rate
    */
   _adjustConcurrency() {
-    // FIX: Don't adjust concurrency during shutdown -- increasing it could
     // wake queued requests that will immediately fail.
     if (this._isShuttingDown) return;
 
@@ -962,27 +980,35 @@ class ParallelEmbeddingService {
 
     const errorRate = failedRequests / totalProcessed;
 
-    if (errorRate > 0.2 && this.concurrencyLimit > 2) {
+    if (errorRate > 0.2 && this.concurrencyLimit > MIN_ADAPTIVE_CONCURRENCY) {
       // High error rate - reduce concurrency
-      const newLimit = Math.max(2, Math.floor(this.concurrencyLimit * 0.7));
+      const newLimit = Math.max(MIN_ADAPTIVE_CONCURRENCY, Math.floor(this.concurrencyLimit * 0.7));
       if (newLimit !== this.concurrencyLimit) {
         logger.info('[ParallelEmbeddingService] Reducing concurrency due to high error rate', {
           errorRate: `${(errorRate * 100).toFixed(1)}%`,
           previousLimit: this.concurrencyLimit,
           newLimit
         });
-        this.concurrencyLimit = newLimit;
+        this.setConcurrencyLimit(newLimit);
       }
-    } else if (errorRate < 0.05 && this.concurrencyLimit < 10 && totalProcessed > 50) {
+    } else if (
+      errorRate < 0.05 &&
+      this.concurrencyLimit < this.maxRecommendedConcurrency &&
+      totalProcessed > 50
+    ) {
       // Low error rate - can increase concurrency
-      const newLimit = Math.min(10, Math.ceil(this.concurrencyLimit * 1.2));
+      const newLimit = Math.min(
+        this.maxRecommendedConcurrency,
+        Math.ceil(this.concurrencyLimit * 1.2)
+      );
       if (newLimit !== this.concurrencyLimit) {
         logger.debug('[ParallelEmbeddingService] Increasing concurrency due to low error rate', {
           errorRate: `${(errorRate * 100).toFixed(1)}%`,
           previousLimit: this.concurrencyLimit,
-          newLimit
+          newLimit,
+          recommendationCap: this.maxRecommendedConcurrency
         });
-        this.concurrencyLimit = newLimit;
+        this.setConcurrencyLimit(newLimit);
       }
     }
   }

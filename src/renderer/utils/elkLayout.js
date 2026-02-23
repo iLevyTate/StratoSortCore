@@ -68,6 +68,7 @@ let layoutDebounceTimer = null;
 const LAYOUT_DEBOUNCE_MS = 200; // Increased debounce to let UI settle before heavy layout
 
 // Track pending promise callbacks to prevent memory leaks and handle cancellation
+const MAX_PENDING_CALLBACKS = 100;
 let pendingCallbacks = [];
 
 // Store latest layout request data to prevent stale closure issues
@@ -80,12 +81,11 @@ let layoutAborted = false;
  * Node size configuration for different node types
  */
 const NODE_SIZES = {
-  queryNode: { width: 180, height: 60 },
-  fileNode: { width: 240, height: 120 },
-  folderNode: { width: 220, height: 90 },
-  // FIX: Make cluster nodes compact circles/hubs instead of large cards
-  clusterNode: { width: 180, height: 180 },
-  default: { width: 220, height: 100 }
+  queryNode: { width: 240, height: 92 },
+  fileNode: { width: 240, height: 124 },
+  folderNode: { width: 240, height: 96 },
+  clusterNode: { width: 190, height: 190 },
+  default: { width: 230, height: 110 }
 };
 
 /**
@@ -135,8 +135,8 @@ export async function elkLayout(nodes, edges, options = {}) {
   const elkAlgorithm = ALGORITHM_MAP[algorithm] || algorithm;
 
   // Spacing proportional to base spacing
-  const edgeSpacing = Math.max(40, Math.round(spacing / 4));
-  const edgeNodeSpacing = Math.max(40, Math.round(spacing / 3));
+  const edgeSpacing = Math.max(56, Math.round(spacing / 3));
+  const edgeNodeSpacing = Math.max(56, Math.round(spacing / 2.6));
   const edgeLayerSpacing = Math.max(60, Math.round(layerSpacing / 3));
 
   // Base layout options
@@ -150,6 +150,8 @@ export async function elkLayout(nodes, edges, options = {}) {
     'elk.edgeRouting': 'SPLINES',
     // Prioritize node placement that reduces edge crossings
     'elk.layered.crossingMinimization.forceNodeModelOrder': 'true',
+    // Keep edge order deterministic to reduce line stacking flicker between layouts
+    'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
     // Separate edge segments to prevent overlap
     'elk.layered.mergeEdges': 'false'
   };
@@ -162,6 +164,7 @@ export async function elkLayout(nodes, edges, options = {}) {
     layoutOptions['elk.layered.nodePlacement.strategy'] = 'BRANDES_KOEPF'; // Better straight-line alignment
     layoutOptions['elk.spacing.componentComponent'] = String(spacing); // Keep disconnected clusters close
     layoutOptions['elk.layered.crossingMinimization.strategy'] = 'LAYER_SWEEP';
+    layoutOptions['elk.layered.crossingMinimization.greedySwitch.type'] = 'TWO_SIDED';
   } else if (elkAlgorithm === 'org.eclipse.elk.force') {
     layoutOptions['elk.force.iterations'] = '100';
     layoutOptions['elk.force.repulsion'] = String(Math.max(2.0, spacing / 50)); // Scale repulsion
@@ -288,7 +291,16 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
       clearTimeout(layoutDebounceTimer);
     }
 
-    // Track this resolver
+    // Track this resolver, evicting oldest entries if over the cap
+    if (pendingCallbacks.length >= MAX_PENDING_CALLBACKS) {
+      const evicted = pendingCallbacks.splice(
+        0,
+        pendingCallbacks.length - MAX_PENDING_CALLBACKS + 1
+      );
+      const evictError = new Error('Layout callback evicted (too many pending)');
+      evictError.name = 'AbortError';
+      evicted.forEach((cb) => cb.reject(evictError));
+    }
     pendingCallbacks.push({ resolve, reject });
 
     // Set up debounced execution
@@ -296,7 +308,6 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
       layoutDebounceTimer = null;
 
       // Check if layout was aborted during debounce wait
-      // FIX: If aborted, we need to reject callbacks, not leave them hanging
       if (layoutAborted) {
         // Reject any pending callbacks that haven't been handled
         if (pendingCallbacks.length > 0) {
@@ -315,7 +326,6 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
       // Get the latest data (not stale closure data)
       const { nodes: latestNodes, edges: latestEdges, options: latestOptions } = latestLayoutData;
 
-      // FIX: If there's already a layout in progress, wait for it to complete
       // but then ALWAYS use the latest data for the result instead of reusing
       // the pending promise's result. This prevents stale data issues when
       // new requests come in with different data during a running layout.
@@ -334,7 +344,6 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
 
       try {
         const result = await pendingLayoutPromise;
-        // FIX: If aborted during layout, reject callbacks instead of leaving them hanging
         if (layoutAborted) {
           const error = new Error('Layout cancelled');
           error.name = 'AbortError';
@@ -344,7 +353,6 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
         }
       } catch (error) {
         logger.error('[elkLayout] Debounced layout failed:', error);
-        // FIX: If aborted, reject; otherwise resolve with original nodes
         if (layoutAborted) {
           const abortError = new Error('Layout cancelled');
           abortError.name = 'AbortError';
@@ -770,7 +778,6 @@ function applyClusterRepulsion(nodes, options = {}) {
 
   const positions = nodes.map((n) => ({ ...n.position }));
 
-  // FIX: Use spatial grid for O(n) collision detection instead of O(n²)
   // Grid cell size should be >= minDistance to ensure we only check neighboring cells
   const cellSize = minDistance;
 

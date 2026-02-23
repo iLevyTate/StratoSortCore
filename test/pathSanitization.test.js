@@ -51,7 +51,7 @@ describe('Path Sanitization', () => {
 
       test('normalizes valid paths correctly', () => {
         const windowsPath = sanitizePath('C:\\Users\\Documents\\./subdir\\file.txt');
-        expect(windowsPath).toBe(path.normalize('C:\\Users\\Documents\\./subdir\\file.txt'));
+        expect(windowsPath).toBe(path.win32.normalize('C:\\Users\\Documents\\./subdir\\file.txt'));
         expect(windowsPath).not.toContain('./');
 
         const unixPath = sanitizePath('/home/user/./documents/file.txt');

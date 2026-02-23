@@ -25,7 +25,6 @@ try {
   fs = null;
 }
 
-// HIGH FIX (HIGH-13): Default timeout for symlink operations to prevent hangs on network mounts
 const SYMLINK_CHECK_TIMEOUT_MS = 5000;
 const URL_SCHEME_REGEX = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
 
@@ -55,7 +54,6 @@ function sanitizePath(filePath) {
     return '';
   }
 
-  // FIX: Handle file:// URLs for consistency with preload behavior
   // This ensures main process handles file:// URLs the same way as the renderer
   let processedPath = filePath;
   if (processedPath.toLowerCase().startsWith('file://')) {
@@ -84,11 +82,13 @@ function sanitizePath(filePath) {
   // 3. Normalize the path first (resolves .., ., etc.)
   // This must happen BEFORE truncation so that ".." segments are resolved
   // and truncation cannot create a path traversal vector.
-  normalized = path.normalize(normalized);
+  const isWin32Path =
+    PLATFORM === 'win32' || /^[a-zA-Z]:[\\/]/.test(normalized) || normalized.includes('\\');
+  normalized = isWin32Path ? path.win32.normalize(normalized) : path.posix.normalize(normalized);
 
   // 4. Check for path traversal attempts AFTER normalization
   // Only treat ".." as traversal when it's an actual path segment.
-  const normalizedParts = normalized.split(path.sep).filter((part) => part.length > 0);
+  const normalizedParts = normalized.split(/[\\/]/).filter((part) => part.length > 0);
   if (normalizedParts.some((part) => part === '..')) {
     throw new Error('Invalid path: path traversal detected');
   }
@@ -97,24 +97,16 @@ function sanitizePath(filePath) {
   const platform = PLATFORM;
   const maxLength = MAX_PATH_LENGTHS[platform] || MAX_PATH_LENGTHS.linux;
   if (normalized.length > maxLength) {
-    // Truncate the path if it's too long instead of throwing
-    // Try to preserve the file extension if possible
     const ext = path.extname(normalized);
-    const truncateLength = maxLength - ext.length;
-    if (truncateLength > 0) {
-      // FIX (MED-5): Use Array.from for code-point-aware truncation.
-      // String.substring operates on UTF-16 code units and can split
-      // surrogate pairs (emoji, CJK supplementary characters).
-      const chars = Array.from(normalized);
-      normalized = chars.slice(0, truncateLength).join('') + ext;
+    if (ext.length >= maxLength) {
+      normalized = normalized.slice(0, maxLength);
     } else {
-      const chars = Array.from(normalized);
-      normalized = chars.slice(0, maxLength).join('');
+      normalized = normalized.slice(0, maxLength - ext.length) + ext;
     }
   }
 
   // 6. Validate path depth to prevent deep nesting attacks
-  const pathParts = normalizedParts;
+  const pathParts = normalized.split(path.sep).filter((part) => part.length > 0);
   if (pathParts.length > MAX_PATH_DEPTH) {
     throw new Error(
       `Invalid path: path depth (${pathParts.length}) exceeds maximum (${MAX_PATH_DEPTH})`
@@ -260,7 +252,6 @@ function isPathWithinAllowed(targetPath, allowedBasePaths) {
     return false;
   }
 
-  // FIX: Platform-aware case sensitivity handling
   // Windows and macOS (HFS+) are case-insensitive, Linux is case-sensitive
   const isWindows = process.platform === 'win32';
   const isMacOS = process.platform === 'darwin';
@@ -338,7 +329,6 @@ async function checkSymlinkSafety(
     return { isSymlink: false, isSafe: true };
   }
 
-  // HIGH FIX (HIGH-13): Wrap operations in timeout to prevent hangs on network mounts
   const timeoutPromise = new Promise((_, reject) => {
     const id = setTimeout(() => {
       reject(

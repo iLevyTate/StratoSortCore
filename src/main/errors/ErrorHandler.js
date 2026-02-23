@@ -54,7 +54,6 @@ function normalizeErrorForLogging(err) {
 
 class ErrorHandler {
   constructor() {
-    // FIX: Defer getting logPath until app is ready
     this.logPath = null;
     this.currentLogFile = null;
     this.errorQueue = [];
@@ -67,7 +66,6 @@ class ErrorHandler {
    */
   async initialize(options = {}) {
     try {
-      // FIX: Set logPath here when app is ready (not in constructor)
       this.logPath = path.join(app.getPath('userData'), 'logs');
 
       // Create logs directory
@@ -96,7 +94,6 @@ class ErrorHandler {
   }
 
   setupGlobalHandlers() {
-    // FIX: Guard against duplicate listener registration if initialize() is called twice
     if (this._globalHandlersRegistered) return;
     this._globalHandlersRegistered = true;
 
@@ -243,7 +240,6 @@ class ErrorHandler {
     switch (errorType) {
       case ERROR_TYPES.PERMISSION_DENIED:
       case ERROR_TYPES.UNKNOWN:
-        // FIX: Downgraded from 'critical' to 'high' (mapped to 'error').
         // 'critical' triggers handleCriticalError which shows a restart/quit dialog.
         // Permission denied and unknown errors are recoverable and should not force an app quit.
         return 'error';

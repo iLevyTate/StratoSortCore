@@ -45,7 +45,7 @@ describe('settingsValidation', () => {
     expect(sanitized.defaultSmartFolderLocation).toBeUndefined();
     expect(sanitized.theme).toBeUndefined();
     expect(sanitized.dependencyWizardShown).toBeUndefined();
-    expect(sanitized.customFutureSetting).toBe('keep-me');
+    expect(sanitized.customFutureSetting).toBeUndefined();
     expect(Object.getPrototypeOf(sanitized)).toBe(null);
   });
 

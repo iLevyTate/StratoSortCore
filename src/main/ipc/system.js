@@ -4,8 +4,14 @@
  * Handles system metrics, application statistics, updates, and configuration.
  */
 const { IpcServiceContext, createFromLegacyParams } = require('./IpcServiceContext');
-const { createHandler, createErrorResponse, safeHandle } = require('./ipcWrappers');
+const {
+  createHandler,
+  createErrorResponse,
+  canceledResponse,
+  safeHandle
+} = require('./ipcWrappers');
 const { dump: dumpConfig, validate: validateConfig } = require('../../shared/config/index');
+const { schemas } = require('./validationSchemas');
 
 const MAX_LOG_MESSAGE_CHARS = 8192;
 const MAX_LOG_CONTEXT_CHARS = 120;
@@ -13,6 +19,7 @@ const MAX_LOG_SERIALIZED_DATA_BYTES = 16384;
 const MAX_LOG_DATA_DEPTH = 4;
 const MAX_LOG_DATA_KEYS = 100;
 const MAX_LOG_ARRAY_ITEMS = 100;
+const LOG_EXPORT_WORKER_TIMEOUT_MS = 120000;
 const BLOCKED_LOG_DATA_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const MAX_CONFIG_PATH_CHARS = 120;
 const SAFE_CONFIG_PATH_PATTERN = /^[A-Za-z0-9_.-]+$/;
@@ -173,8 +180,28 @@ function registerSystemIpc(servicesOrParams) {
     })
   );
 
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.SYSTEM.CHECK_FOR_UPDATES,
+    createHandler({
+      logger,
+      context,
+      handler: async () => {
+        try {
+          const { checkForUpdates } = require('../core/autoUpdater');
+          const result = await checkForUpdates();
+          return result?.success === false
+            ? createErrorResponse(new Error(result.error || 'Failed to check for updates'))
+            : { success: true };
+        } catch (error) {
+          logger.error('Failed to check for updates:', error);
+          return createErrorResponse(error);
+        }
+      }
+    })
+  );
+
   // Configuration inspection handler for debugging and support
-  // FIX: Use IPC_CHANNELS constant instead of string literal
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SYSTEM.GET_CONFIG,
@@ -205,20 +232,19 @@ function registerSystemIpc(servicesOrParams) {
   );
 
   // Get configuration value by path
-  // FIX: Use IPC_CHANNELS constant instead of string literal
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SYSTEM.GET_CONFIG_VALUE,
     createHandler({
       logger,
       context,
+      schema: schemas.configPath,
       handler: async (_event, configPath) => {
         try {
           const pathError = validateConfigPathInput(configPath);
           if (pathError) {
             return createErrorResponse({ message: pathError });
           }
-          // FIX 86: Validate input and block access to sensitive config keys
           const { SENSITIVE_KEYS } = require('../../shared/config/configSchema');
           const normalizedPath = configPath.trim();
           const pathLower = normalizedPath.toLowerCase();
@@ -264,6 +290,7 @@ function registerSystemIpc(servicesOrParams) {
     createHandler({
       logger,
       context,
+      schema: schemas.systemLog,
       handler: async (_event, payload) => {
         try {
           if (!payload || typeof payload !== 'object') return { success: false };
@@ -311,21 +338,14 @@ function registerSystemIpc(servicesOrParams) {
           const { app, dialog } = require('electron');
           const path = require('path');
           const fs = require('fs');
-          const AdmZip = require('adm-zip');
+          const { Worker } = require('worker_threads');
 
           const logsDir = path.join(app.getPath('userData'), 'logs');
           if (!fs.existsSync(logsDir)) {
             return { success: false, error: 'No logs found' };
           }
 
-          const zip = new AdmZip();
-          zip.addLocalFolder(logsDir, 'logs');
-
-          // Also include crash dumps if they exist
           const crashDumpsDir = path.join(app.getPath('userData'), 'crash-dumps');
-          if (fs.existsSync(crashDumpsDir)) {
-            zip.addLocalFolder(crashDumpsDir, 'crash-dumps');
-          }
 
           const { filePath } = await dialog.showSaveDialog({
             title: 'Export Debug Logs',
@@ -334,10 +354,65 @@ function registerSystemIpc(servicesOrParams) {
           });
 
           if (!filePath) {
-            return { success: false, cancelled: true };
+            return canceledResponse();
           }
 
-          zip.writeZip(filePath);
+          await new Promise((resolve, reject) => {
+            let settled = false;
+            let timeoutId = null;
+            const workerCode = `
+              const { parentPort, workerData } = require('worker_threads');
+              const AdmZip = require('adm-zip');
+              const fs = require('fs');
+              try {
+                const zip = new AdmZip();
+                zip.addLocalFolder(workerData.logsDir, 'logs');
+                if (workerData.crashDumpsDir && fs.existsSync(workerData.crashDumpsDir)) {
+                  zip.addLocalFolder(workerData.crashDumpsDir, 'crash-dumps');
+                }
+                zip.writeZip(workerData.outPath);
+                parentPort.postMessage({ success: true });
+              } catch (err) {
+                parentPort.postMessage({ success: false, error: err.message });
+              }
+            `;
+            const worker = new Worker(workerCode, {
+              eval: true,
+              workerData: { logsDir, crashDumpsDir, outPath: filePath }
+            });
+
+            const finish = (error = null) => {
+              if (settled) return;
+              settled = true;
+              if (timeoutId) clearTimeout(timeoutId);
+              if (error) reject(error);
+              else resolve();
+            };
+
+            timeoutId = setTimeout(() => {
+              worker.terminate().catch(() => {});
+              finish(
+                new Error(
+                  `Log export timed out after ${Math.round(LOG_EXPORT_WORKER_TIMEOUT_MS / 1000)}s`
+                )
+              );
+            }, LOG_EXPORT_WORKER_TIMEOUT_MS);
+
+            worker.on('message', (msg) => {
+              if (msg?.success) {
+                finish();
+              } else {
+                finish(new Error(msg?.error || 'Log export failed'));
+              }
+            });
+            worker.on('error', (error) => finish(error));
+            worker.on('exit', (code) => {
+              if (!settled && code !== 0) {
+                finish(new Error(`Worker stopped with exit code ${code}`));
+              }
+            });
+          });
+
           return { success: true, filePath };
         } catch (error) {
           logger.error('Failed to export logs:', error);

@@ -12,6 +12,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Release Prep
+
+- Next release placeholder: update this section when preparing `v2.0.4` (or the next semver tag).
+
+## [2.0.3] - 2026-02-23
+
+### Fixed
+
+- **E2E Stability**: Added Linux CI sandboxing bypass and resolved missing Range header clear bugs
+  in vector DB tests.
+- **Path Handling**: Updated file utilities to use `win32.basename` for consistent filename
+  retrieval across platforms.
+- **OCR fallback**: Gracefully handle missing `sharp` native module during PDF extraction.
+- **UI glitches**: Resolved phase rendering issues and model setup wizard initial loading states.
+- **Settings synchronization**: Synced config state across main/renderer boundaries; watchers now
+  reliably observe valid settings.
+- **Storage**: Healed legacy "Uncategorized" folder paths and resolved smart folder UI bugs.
+- **Naming conventions**: Centralized naming logic and fixed casing bugs with non-ASCII characters.
+
+### Improved
+
+- **Verification**: Added scripts for verifying IPC handlers, native modules, packaged artifacts,
+  and updater metadata.
+- **Performance**: Cached parsed chat conversations (LRU) to avoid repeated JSON overhead.
+- **Performance**: Optimized search graph node filtering and ELK parallel edge rendering.
+- **Build**: Enhanced release preflight checks and enforced macOS/Windows code signing checks in CI.
+
 ## [2.0.2] - 2026-02-15
 
 ### Changed
@@ -298,7 +325,10 @@ notes.
 Note: `v1.x` release links intentionally point to the predecessor repository for historical
 traceability.
 
-[Unreleased]: https://github.com/iLevyTate/StratoSortCore/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/iLevyTate/StratoSortCore/compare/v2.0.4...HEAD
+[2.0.4]: https://github.com/iLevyTate/StratoSortCore/compare/v2.0.3...v2.0.4
+[2.0.3]: https://github.com/iLevyTate/StratoSortCore/compare/v2.0.2...v2.0.3
+[2.0.2]: https://github.com/iLevyTate/StratoSortCore/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/iLevyTate/StratoSortCore/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/iLevyTate/StratoSortCore/compare/v1.2.2...v2.0.0
 [1.2.2]: https://github.com/iLevyTate/elstratosort/compare/v1.2.1...v1.2.2

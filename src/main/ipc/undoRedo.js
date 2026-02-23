@@ -5,7 +5,6 @@
  * Demonstrates the service check pattern with fallback responses.
  */
 const { IpcServiceContext, createFromLegacyParams } = require('./IpcServiceContext');
-// FIX: Import safeSend for validated IPC event sending
 const { createHandler, safeHandle, safeSend } = require('./ipcWrappers');
 
 function registerUndoRedoIpc(servicesOrParams) {
@@ -40,8 +39,6 @@ function registerUndoRedoIpc(servicesOrParams) {
             success: false,
             message: 'Nothing to undo'
           };
-          // FIX H-3: Notify renderer to refresh file state after successful undo
-          // FIX: Use safeSend for validated IPC event sending
           if (result?.success && event?.sender && !event.sender.isDestroyed()) {
             safeSend(event.sender, IPC_CHANNELS.UNDO_REDO.STATE_CHANGED, {
               action: 'undo',
@@ -73,8 +70,6 @@ function registerUndoRedoIpc(servicesOrParams) {
             success: false,
             message: 'Nothing to redo'
           };
-          // FIX H-3: Notify renderer to refresh file state after successful redo
-          // FIX: Use safeSend for validated IPC event sending
           if (result?.success && event?.sender && !event.sender.isDestroyed()) {
             safeSend(event.sender, IPC_CHANNELS.UNDO_REDO.STATE_CHANGED, {
               action: 'redo',

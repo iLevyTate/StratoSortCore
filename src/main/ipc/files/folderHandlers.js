@@ -247,7 +247,6 @@ function registerFolderHandlers(servicesOrParams) {
       context: 'FolderOps',
       schema: schemaFilePath,
       handler: async (event, fullPath) => {
-        // FIX: Add null check for fullPath parameter
         if (!fullPath || typeof fullPath !== 'string') {
           return {
             success: false,

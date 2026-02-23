@@ -186,19 +186,34 @@ async function generateDmgBackground(sourcePath, outputDir) {
 
   const dmgBgPath = path.join(installerDir, 'dmg-background.png');
 
-  // Create a 540x380 background with logo centered
-  await sharp(sourcePath)
-    .resize(200, 200, {
+  const WIDTH = 540;
+  const HEIGHT = 380;
+  const BG = { r: 245, g: 245, b: 247, alpha: 255 };
+  const LOGO_SIZE = 72;
+
+  const logoBuffer = await sharp(sourcePath)
+    .resize(LOGO_SIZE, LOGO_SIZE, {
       fit: 'contain',
-      background: { r: 245, g: 245, b: 247, alpha: 1 }
+      background: { r: 0, g: 0, b: 0, alpha: 0 }
     })
-    .extend({
-      top: 90,
-      bottom: 90,
-      left: 170,
-      right: 170,
-      background: { r: 245, g: 245, b: 247, alpha: 1 }
-    })
+    .png()
+    .toBuffer();
+
+  const labelSvg = Buffer.from(
+    `<svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg">` +
+      `<text x="${WIDTH / 2}" y="138" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" ` +
+      `font-size="16" font-weight="500" fill="#333333" text-anchor="middle">` +
+      `StratoSort Core</text>` +
+      `</svg>`
+  );
+
+  await sharp({
+    create: { width: WIDTH, height: HEIGHT, channels: 4, background: BG }
+  })
+    .composite([
+      { input: logoBuffer, left: Math.round((WIDTH - LOGO_SIZE) / 2), top: 40 },
+      { input: labelSvg, left: 0, top: 0 }
+    ])
     .png()
     .toFile(dmgBgPath);
 
@@ -261,10 +276,13 @@ async function checkDependencies() {
 }
 
 // Run the script
-checkDependencies().then(() => {
-  if (require.main === module) {
-    main().catch(console.error);
-  }
-});
+if (require.main === module) {
+  checkDependencies()
+    .then(() => main())
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+}
 
 module.exports = { generatePngIcon, generateWindowsIco, generateMacIcns };

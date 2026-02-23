@@ -171,7 +171,7 @@ test.describe('Soak (opt-in)', () => {
           if (await searchInput.isVisible().catch(() => false)) {
             await searchInput.fill(iteration % 2 === 0 ? 'document' : 'project');
           }
-          const graphTab = window.locator('button:has-text("Explore Graph")').first();
+          const graphTab = window.locator('button:has-text("Relate")').first();
           if (await graphTab.isVisible().catch(() => false)) {
             await graphTab.click({ timeout: 5000 }).catch(() => {});
             // Nudge the graph a bit (zoom/pan) without relying on data being present.

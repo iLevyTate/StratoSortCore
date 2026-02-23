@@ -226,11 +226,13 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
           {/* Content */}
           <div className="min-h-[300px]">
             {isLoading ? (
-              <div className="text-center p-8">
-                <div className="animate-spin w-12 h-12 border-4 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-4" />
-                <Text variant="small" className="text-system-gray-500">
-                  Loading analysis data...
-                </Text>
+              <div className="text-center p-8 animate-loading-fade">
+                <div className="animate-loading-content">
+                  <div className="animate-spin w-12 h-12 border-4 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-4" />
+                  <Text variant="small" className="text-system-gray-500">
+                    Loading analysis data...
+                  </Text>
+                </div>
               </div>
             ) : (
               <>

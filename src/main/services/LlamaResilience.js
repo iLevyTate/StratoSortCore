@@ -48,7 +48,10 @@ const NON_TRANSIENT_ERROR_PATTERNS = [
   'corrupted',
   'bad magic',
   'no model',
-  'download'
+  'download',
+  'unsupported image format',
+  'zero length image',
+  'invalid image'
 ];
 
 const NON_TRANSIENT_ERROR_CODES = new Set([
@@ -258,12 +261,19 @@ async function withLlamaResilience(operation, options = {}) {
         return await _executeWithRetries(operation, retryOptions);
       } catch (error) {
         if (isNonTransientError(error)) {
-          // Tag the error so CircuitBreaker.execute() still throws it, but
-          // we record a success to prevent the breaker from tripping.
-          // This is safe because the breaker's recordFailure() has already been
-          // called by execute()'s catch block — we need to undo that.
-          // Simpler approach: throw a wrapper that CircuitBreaker won't count.
-          error._skipCircuitBreakerCount = true;
+          // In HALF_OPEN state, non-transient errors must still transition the
+          // breaker to OPEN. Otherwise the breaker stays stuck in HALF_OPEN
+          // because _skipCircuitBreakerCount prevents recordFailure() from
+          // being called, and recordFailure() is the only path that transitions
+          // HALF_OPEN -> OPEN.
+          if (breaker.getState() !== 'HALF_OPEN') {
+            // Tag the error so CircuitBreaker.execute() still throws it, but
+            // we record a success to prevent the breaker from tripping.
+            // This is safe because the breaker's recordFailure() has already been
+            // called by execute()'s catch block — we need to undo that.
+            // Simpler approach: throw a wrapper that CircuitBreaker won't count.
+            error._skipCircuitBreakerCount = true;
+          }
         }
         throw error;
       }

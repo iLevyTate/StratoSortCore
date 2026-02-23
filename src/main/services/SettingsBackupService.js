@@ -96,7 +96,6 @@ class SettingsBackupService {
       const backupJson = stableStringify(backupData);
 
       // Calculate SHA256 hash of the backup data for integrity verification
-      // FIX HIGH-22: Use stable JSON stringify for consistent hash calculation
       const hash = crypto.createHash('sha256').update(backupJson, 'utf8').digest('hex');
 
       // Store hash in a separate metadata object
@@ -228,7 +227,6 @@ class SettingsBackupService {
       // Verify SHA256 hash if present
       if (backupData.hash) {
         const { hash: storedHash, ...originalData } = backupData;
-        // FIX HIGH-22: Use stable JSON stringify for consistent hash verification
         // This ensures key order doesn't affect the hash
         const originalJson = stableStringify(originalData);
         const calculatedHash = crypto

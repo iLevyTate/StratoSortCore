@@ -105,7 +105,6 @@ function getDangerousPaths(platform = PLATFORM) {
   if (platform === 'darwin') {
     paths.push(...DANGEROUS_PATHS.darwin);
   } else if (platform === 'win32') {
-    // FIX Bug 18: Generate dangerous paths for all detected drive letters,
     // not just the hardcoded C: drive. Systems commonly have D:, E:, etc.
     const driveLetters = _getWindowsDriveLetters();
     const windowsSubPaths = [
@@ -151,23 +150,6 @@ function _getWindowsDriveLetters() {
     if (homeDrive) {
       drives.add(homeDrive.toUpperCase().replace(/\\$/, ''));
     }
-  }
-
-  // FIX: Enumerate all mounted drive letters so dangerous paths on D:, E:, etc.
-  // are also blocked. Previous code only covered C: and env-based drives.
-  try {
-    const fs = require('fs');
-    for (let code = 65; code <= 90; code++) {
-      const letter = `${String.fromCharCode(code)}:`;
-      try {
-        fs.accessSync(`${letter}\\`);
-        drives.add(letter);
-      } catch {
-        // Drive not mounted, skip
-      }
-    }
-  } catch {
-    // fs not available (browser context), fall back to env-based detection
   }
 
   return Array.from(drives);
@@ -292,7 +274,7 @@ const ALLOWED_METADATA_FIELDS = [
   'tags',
   'keywords',
   'entity',
-  // 'type', // FIX HIGH-48: Removed duplicate 'type'
+  // 'type',
   'project',
   'date',
   'suggestedName',
@@ -345,7 +327,9 @@ const ALLOWED_RECEIVE_CHANNELS = [
   IPC_CHANNELS.VECTOR_DB.STATUS_CHANGED,
   IPC_EVENTS.NOTIFICATION,
   IPC_EVENTS.UNDO_REDO_STATE_CHANGED,
-  IPC_EVENTS.BATCH_RESULTS_CHUNK
+  IPC_EVENTS.BATCH_RESULTS_CHUNK,
+  IPC_CHANNELS.CHAT.STREAM_CHUNK,
+  IPC_CHANNELS.CHAT.STREAM_END
 ];
 
 /**

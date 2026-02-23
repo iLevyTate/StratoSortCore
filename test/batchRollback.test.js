@@ -50,11 +50,15 @@ describe('executeRollback', () => {
     expect(mockFsPromises.mkdir).toHaveBeenCalled();
     expect(mockFsPromises.writeFile).toHaveBeenCalled();
 
-    const [manifestPath, manifestJson] = mockFsPromises.writeFile.mock.calls[0];
-    expect(manifestPath).toContain('rollback_batch-1.json');
+    const [tmpPath, manifestJson] = mockFsPromises.writeFile.mock.calls[0];
     expect(JSON.parse(manifestJson).status).toBe('pending');
 
-    expect(mockFsPromises.rename).toHaveBeenCalledTimes(2);
+    // writeFileAtomic writes to a tmp file then renames it to the manifest path,
+    // plus 2 rollback renames = 3 total rename calls
+    expect(mockFsPromises.rename).toHaveBeenCalledTimes(3);
+    // The manifest path is the second arg of the first rename call (writeFileAtomic)
+    const manifestPath = mockFsPromises.rename.mock.calls[0][1];
+    expect(manifestPath).toContain('rollback_batch-1.json');
     expect(mockFsPromises.unlink).toHaveBeenCalledWith(manifestPath);
     expect(result.rolledBack).toBe(true);
     expect(result.rollbackFailCount).toBe(0);
@@ -63,7 +67,11 @@ describe('executeRollback', () => {
   test('uses cross-device move on EXDEV errors', async () => {
     const exdevError = new Error('EXDEV');
     exdevError.code = 'EXDEV';
-    mockFsPromises.rename.mockRejectedValueOnce(exdevError).mockResolvedValueOnce(undefined);
+    // First rename call is from writeFileAtomic (manifest creation) - let it succeed.
+    // Second rename call is the actual rollback rename - make it throw EXDEV.
+    mockFsPromises.rename
+      .mockResolvedValueOnce(undefined) // writeFileAtomic: tmp -> manifest
+      .mockRejectedValueOnce(exdevError); // rollback rename: dst -> src
 
     await executeRollback(
       [{ source: '/src/a.txt', destination: '/dst/a.txt' }],
@@ -79,7 +87,15 @@ describe('executeRollback', () => {
   });
 
   test('updates recovery manifest on partial failure', async () => {
-    mockFsPromises.rename.mockRejectedValueOnce(new Error('Rename failed'));
+    // writeFileAtomic for initial manifest: writeFile(tmp) + rename(tmp -> manifest) succeed.
+    // Then rollback renames: first rollback op fails (reversed order: b.txt first),
+    // second rollback op succeeds.
+    mockFsPromises.rename
+      .mockResolvedValueOnce(undefined) // writeFileAtomic: tmp -> manifest
+      .mockRejectedValueOnce(new Error('Rename failed')) // rollback of b.txt fails
+      .mockResolvedValueOnce(undefined) // rollback of a.txt succeeds
+      .mockResolvedValueOnce(undefined); // writeFileAtomic: tmp -> manifest (update)
+
     mockFsPromises.readFile.mockResolvedValueOnce(
       JSON.stringify({ status: 'pending', results: [] })
     );
@@ -96,6 +112,7 @@ describe('executeRollback', () => {
       log
     );
 
+    // The last writeFile call is for the updated manifest (via writeFileAtomic)
     const lastWriteCall =
       mockFsPromises.writeFile.mock.calls[mockFsPromises.writeFile.mock.calls.length - 1];
     const updatedManifest = JSON.parse(lastWriteCall[1]);

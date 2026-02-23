@@ -1,6 +1,6 @@
 /**
  * Jest configuration for StratoSort tests (unit + integration).
- * Updated to Jest 29 syntax—removed deprecated options that triggered warnings.
+ * Updated to Jest 30 syntax—removed deprecated options that triggered warnings.
  */
 
 module.exports = {
@@ -30,7 +30,7 @@ module.exports = {
     ]
   },
   // No transforms needed for plain JS
-  collectCoverageFrom: ['../src/**/*.js', '!../src/**/node_modules/**'],
+  collectCoverageFrom: ['../src/**/*.{js,jsx}', '!../src/**/node_modules/**'],
   coverageDirectory: '../coverage',
   setupFilesAfterEnv: ['<rootDir>/test-setup.js'],
   // Sequential execution keeps AI mocks deterministic

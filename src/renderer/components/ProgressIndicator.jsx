@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { createLogger } from '../../shared/logger';
-import { PHASES, PHASE_METADATA } from '../../shared/constants';
+import { PHASES, PHASE_METADATA, PHASE_ORDER } from '../../shared/constants';
 import { useAppSelector } from '../store/hooks';
 import { Heading, Text } from './ui/Typography';
 import { Button, IconButton } from './ui';
@@ -19,7 +19,7 @@ function ProgressIndicator() {
     icon: '?',
     progress: 0
   };
-  const phases = PHASES ? Object.values(PHASES) : [];
+  const phases = PHASE_ORDER || (PHASES ? Object.values(PHASES) : []);
   const currentIndex = phases.indexOf(currentPhase);
 
   const getPersistKeysForPhase = () => {

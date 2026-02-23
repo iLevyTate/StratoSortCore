@@ -9,11 +9,20 @@ import { isMac } from '../../utils/platform';
  * FloatingSearchWidget - A draggable floating widget for quick access to semantic search
  * Similar to notification system but draggable and always accessible
  */
+function getHeaderSafeOffsetY() {
+  if (typeof window === 'undefined') return 80;
+  const cssValue = window
+    .getComputedStyle(document.documentElement)
+    .getPropertyValue('--app-nav-height');
+  const navHeight = Number.parseFloat(cssValue);
+  const safeNavHeight = Number.isFinite(navHeight) ? navHeight : 72;
+  return Math.max(56, safeNavHeight + 8);
+}
+
 function FloatingSearchWidget({ isOpen, onClose, onOpenSearch }) {
   const [position, setPosition] = useState({ x: 20, y: 100 });
   const [isDragging, setIsDragging] = useState(false);
-  // FIX: Use ref instead of state for dragOffset to prevent useEffect re-runs during drag
-  // This prevents event listener churn when dragOffset changes
+  // Keep drag offset in a ref to avoid drag-loop re-renders.
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const widgetRef = useRef(null);
   const dragStartRef = useRef(null);
@@ -31,7 +40,8 @@ function FloatingSearchWidget({ isOpen, onClose, onOpenSearch }) {
           parsed.x >= 0 &&
           parsed.y >= 0
         ) {
-          setPosition({ x: parsed.x, y: parsed.y });
+          const minY = getHeaderSafeOffsetY();
+          setPosition({ x: parsed.x, y: Math.max(parsed.y, minY) });
         }
       }
     } catch {
@@ -61,7 +71,6 @@ function FloatingSearchWidget({ isOpen, onClose, onOpenSearch }) {
 
     const rect = widgetRef.current?.getBoundingClientRect();
     if (rect) {
-      // FIX: Use ref instead of setState to avoid triggering useEffect re-run
       dragOffsetRef.current = {
         x: e.clientX - rect.left,
         y: e.clientY - rect.top
@@ -78,16 +87,17 @@ function FloatingSearchWidget({ isOpen, onClose, onOpenSearch }) {
     const handleMouseMove = (e) => {
       if (!dragStartRef.current) return;
 
-      // FIX: Use ref to access dragOffset to avoid adding it to deps
       const newX = e.clientX - dragOffsetRef.current.x;
       const newY = e.clientY - dragOffsetRef.current.y;
 
       // Constrain to viewport
       const maxX = window.innerWidth - (widgetRef.current?.offsetWidth || 320);
       const maxY = window.innerHeight - (widgetRef.current?.offsetHeight || 200);
+      const minY = getHeaderSafeOffsetY();
+      const clampedMinY = Math.min(Math.max(0, minY), Math.max(0, maxY));
 
       const constrainedX = Math.max(0, Math.min(newX, maxX));
-      const constrainedY = Math.max(0, Math.min(newY, maxY));
+      const constrainedY = Math.max(clampedMinY, Math.min(newY, maxY));
 
       setPosition({ x: constrainedX, y: constrainedY });
     };
@@ -107,7 +117,6 @@ function FloatingSearchWidget({ isOpen, onClose, onOpenSearch }) {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-    // FIX: Removed dragOffset from deps since we now use a ref
   }, [isDragging, savePosition]);
 
   if (!isOpen) return null;
@@ -115,8 +124,9 @@ function FloatingSearchWidget({ isOpen, onClose, onOpenSearch }) {
   return (
     <div
       ref={widgetRef}
-      className="fixed z-[500] pointer-events-auto"
+      className="fixed pointer-events-auto"
       style={{
+        zIndex: 'var(--z-toast)',
         left: `${position.x}px`,
         top: `${position.y}px`,
         cursor: isDragging ? 'grabbing' : 'default'
@@ -157,7 +167,7 @@ function FloatingSearchWidget({ isOpen, onClose, onOpenSearch }) {
             </div>
             <Text variant="tiny" className="mt-2 text-system-gray-400">
               Tip: Press{' '}
-              <kbd className="px-1 py-0.5 bg-system-gray-100 rounded text-system-gray-600 font-mono">
+              <kbd className="px-1 py-0.5 bg-system-gray-100 rounded-md text-system-gray-600 font-mono">
                 {isMac ? '⌘K' : 'Ctrl+K'}
               </kbd>{' '}
               anytime to search

@@ -30,7 +30,6 @@ function Toast({
   const [isVisible, setIsVisible] = useState(show);
   const closeTimerRef = useRef(null);
   const animationTimerRef = useRef(null);
-  // FIX: Use ref for onClose to prevent timer reset when parent re-renders with new callback
   const onCloseRef = useRef(onClose);
 
   // Keep onClose ref in sync
@@ -55,7 +54,6 @@ function Toast({
     };
   }, []);
 
-  // FIX: Removed onClose from dependency array - use ref instead
   useEffect(() => {
     if (show && duration > 0) {
       closeTimerRef.current = setTimeout(() => {
@@ -80,7 +78,7 @@ function Toast({
     }
 
     return undefined;
-  }, [show, duration]); // FIX: Removed onClose - using ref instead
+  }, [show, duration]);
 
   const handleClose = () => {
     setIsVisible(false);
@@ -92,7 +90,6 @@ function Toast({
       clearTimeout(animationTimerRef.current);
       animationTimerRef.current = null;
     }
-    // FIX: Use ref for consistency with other timer callbacks
     animationTimerRef.current = setTimeout(() => {
       animationTimerRef.current = null;
       onCloseRef.current?.();
@@ -173,7 +170,11 @@ function Toast({
     >
       <div className="flex items-center gap-2.5">
         <span aria-hidden="true">{getSeverityIcon()}</span>
-        <Text as="span" variant="small" className="flex-1 text-[13px] font-medium leading-snug">
+        <Text
+          as="span"
+          variant="small"
+          className="flex-1 min-w-0 text-[13px] font-medium leading-snug break-words"
+        >
           {renderMessageContent()}
           {mergeCount > 1 && (
             <Text
@@ -312,7 +313,7 @@ export function ToastContainer({ toasts = [], onRemoveToast }) {
           <Text
             as="div"
             variant="tiny"
-            className="pointer-events-none text-[11px] text-system-gray-400 text-right"
+            className="pointer-events-none text-system-gray-400 text-right"
           >
             +{hiddenCount} more
           </Text>
@@ -351,7 +352,6 @@ export const useToast = () => {
     let nextToasts = previousToasts;
 
     // If grouping, try to merge with an existing toast
-    // FIX: Instead of overwriting messages, show count to preserve awareness
     if (groupKey) {
       const idx = previousToasts.findIndex(
         (toast) => toast.groupKey === groupKey && now - (toast.createdAt || now) <= GROUP_WINDOW_MS
@@ -362,7 +362,6 @@ export const useToast = () => {
         const updated = {
           ...existing,
           id: existing.id, // keep id stable for animation
-          // FIX: Preserve first message but add count indicator
           message: existing.originalMessage || existing.message,
           originalMessage: existing.originalMessage || existing.message,
           mergeCount,

@@ -15,7 +15,6 @@ const DEFAULT_IGNORE_PATTERNS = [
   // Add more common patterns if needed
 ];
 
-// CRITICAL FIX: Limit concurrent file operations to prevent file handle exhaustion
 const CONCURRENCY_LIMIT = 50;
 const MAX_LOG_SAMPLES = 5;
 
@@ -207,7 +206,6 @@ async function scanDirectory(
       }
     };
 
-    // CRITICAL FIX: Process in batches to prevent file handle exhaustion
     const results = [];
     for (let i = 0; i < dirents.length; i += CONCURRENCY_LIMIT) {
       const batch = dirents.slice(i, i + CONCURRENCY_LIMIT);

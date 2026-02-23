@@ -115,7 +115,6 @@ const Select = memo(function Select({
     return `form-input-enhanced ${invalidClass} ${className}`.trim();
   }, [invalid, error, className]);
 
-  // FIX: Guard against empty options array to prevent undefined display
   const selectedOption =
     options.length > 0 ? (options.find((opt) => opt.value === rest.value) ?? options[0]) : null;
 
@@ -131,7 +130,6 @@ const Select = memo(function Select({
       });
       setIsOpen(false);
     },
-    // FIX: Use specific properties instead of [rest] which recreates every render
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rest.onChange, rest.name]
   );

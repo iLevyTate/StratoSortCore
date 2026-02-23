@@ -48,7 +48,7 @@ describe('FileOperationTracker', () => {
     const now = Date.now();
     mockFs.readFile.mockResolvedValueOnce(
       JSON.stringify([
-        { path: 'c:\\file.txt', timestamp: now, operationType: 'move', source: 'persisted' }
+        { path: 'C:\\file.txt', timestamp: now, operationType: 'move', source: 'persisted' }
       ])
     );
 

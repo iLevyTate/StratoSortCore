@@ -19,6 +19,13 @@ const CHAT_PERSONAS = [
     description: 'Exploratory, curious responses that surface alternatives and next steps.',
     guidance:
       'Use an exploratory, curious tone. Highlight alternatives, note uncertainties, and suggest engaging next questions or angles to investigate.'
+  },
+  {
+    id: 'auditor',
+    label: 'Auditor',
+    description: 'Strict citation-only responses that flag uncertainty explicitly.',
+    guidance:
+      'Never state anything not directly supported by the provided documents. Every claim must have an inline [doc-N] citation. Flag any uncertainty explicitly. If evidence is insufficient, say so rather than speculate. Prioritize accuracy over completeness.'
   }
 ];
 

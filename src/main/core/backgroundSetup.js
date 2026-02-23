@@ -19,10 +19,10 @@ const fs = require('fs').promises;
 const path = require('path');
 
 const { createLogger } = require('../../shared/logger');
-// FIX: Import safeSend for validated IPC event sending
 const { safeSend } = require('../ipc/ipcWrappers');
 const { getInstance: getModelDownloadManager } = require('../services/ModelDownloadManager');
 const { getInstance: getLlamaService } = require('../services/LlamaService');
+const { ensureResolvedModelsPath } = require('../services/modelPathResolver');
 const { AI_DEFAULTS, IPC_EVENTS } = require('../../shared/constants');
 const { getModel } = require('../../shared/modelRegistry');
 
@@ -53,7 +53,6 @@ function emitDependencyProgress(payload) {
   try {
     const win = BrowserWindow.getAllWindows()[0];
     if (win && !win.isDestroyed()) {
-      // FIX: Use safeSend for validated IPC event sending
       safeSend(win.webContents, IPC_EVENTS.OPERATION_PROGRESS, {
         type: 'dependency',
         ...(payload || {})
@@ -99,6 +98,22 @@ async function markSetupComplete() {
  * Download missing GGUF models in the background.
  * Non-blocking: failures are logged but do not prevent app startup.
  */
+function emitLegacyModelsWarning() {
+  try {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win && !win.isDestroyed()) {
+      safeSend(win.webContents, IPC_EVENTS.NOTIFICATION, {
+        message:
+          'Downloading models to legacy directory. Consider moving models to the current app data folder.',
+        severity: 'warning',
+        duration: 6000
+      });
+    }
+  } catch (error) {
+    logger.debug('[BACKGROUND] Could not emit legacy models warning:', error.message);
+  }
+}
+
 async function downloadMissingModels() {
   try {
     const llamaService = getLlamaService();
@@ -141,6 +156,15 @@ async function downloadMissingModels() {
       missing,
       available: Array.from(availableNames)
     });
+
+    const resolved = await ensureResolvedModelsPath();
+    if (resolved.source === 'legacy') {
+      logger.warn('[BACKGROUND] Downloading to legacy models directory', {
+        modelsPath: resolved.modelsPath,
+        currentModelsPath: resolved.currentModelsPath
+      });
+      emitLegacyModelsWarning();
+    }
 
     for (const modelName of missing) {
       emitDependencyProgress({

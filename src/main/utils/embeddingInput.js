@@ -1,8 +1,8 @@
 const { LLAMA } = require('../../shared/performanceConstants');
 const { getModel } = require('../../shared/modelRegistry');
 
-const DEFAULT_CHARS_PER_TOKEN = 4;
-const DEFAULT_HEADROOM_RATIO = 0.9;
+const DEFAULT_CHARS_PER_TOKEN = 3.5;
+const DEFAULT_HEADROOM_RATIO = 0.85;
 
 function estimateTokens(text, charsPerToken = DEFAULT_CHARS_PER_TOKEN) {
   if (!text) return 0;

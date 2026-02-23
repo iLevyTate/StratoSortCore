@@ -50,14 +50,44 @@ jest.mock('../src/main/services/ModelDownloadManager', () => ({
   getInstance: jest.fn(() => mockDownloadManager)
 }));
 
+const mockEnsureResolvedModelsPath = jest.fn();
+jest.mock('../src/main/services/modelPathResolver', () => ({
+  ensureResolvedModelsPath: (...args) => mockEnsureResolvedModelsPath(...args)
+}));
+
 const { registerLlamaIpc } = require('../src/main/ipc/llama');
 const { container } = require('../src/main/services/ServiceContainer');
+const { safeSend } = require('../src/main/ipc/ipcWrappers');
+const { IPC_EVENTS } = require('../src/shared/constants');
 
 describe('llama IPC – extended handlers', () => {
+  let mockLogger;
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockHandlers.clear();
     container.reset();
+    mockLogger = {
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+      debug: jest.fn()
+    };
+    mockLlamaService.updateConfig.mockResolvedValue({
+      success: true,
+      modelDowngraded: false,
+      selected: { text: 't.gguf', vision: 'v.gguf', embedding: 'e.gguf' }
+    });
+    mockLlamaService.getConfig.mockResolvedValue({
+      textModel: 't.gguf',
+      visionModel: 'v.gguf',
+      embeddingModel: 'e.gguf'
+    });
+    mockEnsureResolvedModelsPath.mockResolvedValue({
+      source: 'current',
+      modelsPath: '/test/userData/models',
+      currentModelsPath: '/test/userData/models'
+    });
 
     registerLlamaIpc({
       ipcMain: {},
@@ -72,7 +102,7 @@ describe('llama IPC – extended handlers', () => {
           GET_DOWNLOAD_STATUS: 'llama:get-download-status'
         }
       },
-      logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+      logger: mockLogger,
       systemAnalytics: {},
       getMainWindow: () => null
     });
@@ -88,10 +118,36 @@ describe('llama IPC – extended handlers', () => {
   describe('UPDATE_CONFIG', () => {
     test('updates config successfully', async () => {
       const handler = getHandler('update-config');
+      mockLlamaService.getConfig
+        .mockResolvedValueOnce({
+          textModel: 't.gguf',
+          visionModel: 'v.gguf',
+          embeddingModel: 'e.gguf'
+        })
+        .mockResolvedValueOnce({
+          textModel: 'new-model.gguf',
+          visionModel: 'v.gguf',
+          embeddingModel: 'e.gguf'
+        });
+      mockLlamaService.updateConfig.mockResolvedValueOnce({
+        success: true,
+        modelDowngraded: false,
+        selected: { text: 'new-model.gguf', vision: 'v.gguf', embedding: 'e.gguf' }
+      });
       const result = await handler({}, { textModel: 'new-model.gguf' });
 
       expect(result.success).toBe(true);
+      expect(result.changes.textModel).toEqual({
+        from: 't.gguf',
+        to: 'new-model.gguf'
+      });
       expect(mockLlamaService.updateConfig).toHaveBeenCalledWith({ textModel: 'new-model.gguf' });
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        '[IPC:Llama] Config update applied',
+        expect.objectContaining({
+          changedModelKeys: expect.arrayContaining(['textModel'])
+        })
+      );
     });
 
     test('returns error on failure', async () => {
@@ -114,6 +170,28 @@ describe('llama IPC – extended handlers', () => {
           llamaContextSize: 16384,
           gpuLayers: 42,
           contextSize: 16384
+        })
+      );
+    });
+
+    test('surfaces model downgrade and logs a warning', async () => {
+      const handler = getHandler('update-config');
+      mockLlamaService.updateConfig.mockResolvedValueOnce({
+        success: true,
+        modelDowngraded: true,
+        selected: { text: 't.gguf', vision: 'v.gguf', embedding: 'default-embed.gguf' }
+      });
+
+      const result = await handler({}, { embeddingModel: 'invalid-not-embedding.gguf' });
+
+      expect(result.success).toBe(true);
+      expect(result.modelDowngraded).toBe(true);
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '[IPC:Llama] Unsupported model request adjusted to safe defaults',
+        expect.objectContaining({
+          requested: expect.objectContaining({
+            embeddingModel: 'invalid-not-embedding.gguf'
+          })
         })
       );
     });
@@ -192,6 +270,47 @@ describe('llama IPC – extended handlers', () => {
       expect(mockDownloadManager.downloadModel).toHaveBeenCalledWith(
         'model.gguf',
         expect.objectContaining({ onProgress: expect.any(Function) })
+      );
+    });
+
+    test('emits legacy directory warning before download when legacy path is active', async () => {
+      mockHandlers.clear();
+      const win = { isDestroyed: () => false, webContents: {} };
+      mockEnsureResolvedModelsPath.mockResolvedValueOnce({
+        source: 'legacy',
+        modelsPath: '/legacy/userData/models',
+        currentModelsPath: '/test/userData/models'
+      });
+
+      registerLlamaIpc({
+        ipcMain: {},
+        IPC_CHANNELS: {
+          LLAMA: {
+            GET_MODELS: 'llama:get-models',
+            GET_CONFIG: 'llama:get-config',
+            UPDATE_CONFIG: 'llama:update-config',
+            TEST_CONNECTION: 'llama:test-connection',
+            DOWNLOAD_MODEL: 'llama:download-model',
+            DELETE_MODEL: 'llama:delete-model',
+            GET_DOWNLOAD_STATUS: 'llama:get-download-status'
+          }
+        },
+        logger: mockLogger,
+        systemAnalytics: {},
+        getMainWindow: () => win
+      });
+
+      const handler = getHandler('download-model');
+      const result = await handler({}, 'legacy-model.gguf');
+
+      expect(result.success).toBe(true);
+      expect(safeSend).toHaveBeenCalledWith(
+        win.webContents,
+        IPC_EVENTS.NOTIFICATION,
+        expect.objectContaining({
+          message: expect.stringContaining('legacy models directory'),
+          severity: 'warning'
+        })
       );
     });
   });

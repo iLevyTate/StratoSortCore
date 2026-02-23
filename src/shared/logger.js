@@ -22,7 +22,6 @@ const LOG_LEVEL_NAMES = ['ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE'];
 // The preload (target: 'web') and renderer use pino/browser.js which lacks it.
 const _hasPinoTransport = typeof pino.transport === 'function';
 
-// FIX: Share a single pino-pretty transport across all Logger instances.
 // Previously, every createLogger() call spawned a new pino transport worker,
 // each registering its own process.on('exit') handler. With 100+ loggers in
 // the main process, this caused MaxListenersExceededWarning at startup.
@@ -86,14 +85,13 @@ function sanitizeLogData(data) {
       (_match, filename) => `[REDACTED_PATH]\\${filename}`
     );
     sanitized = sanitized.replace(
-      /\/(?:[^/\s]+\/)+([^/\s]+)/g,
+      /(?<!:)\/(?:[^/\s]+\/)+([^/\s]+)/g,
       (_match, filename) => `[REDACTED_PATH]/${filename}`
     );
     return sanitized;
   }
 
   if (typeof data === 'object' && data !== null) {
-    // FIX: Error objects have non-enumerable properties — convert to plain object
     // so message, stack, and code are preserved in log output
     if (data instanceof Error) {
       return sanitizeLogData({
@@ -138,9 +136,19 @@ class Logger {
     this.level = process.env.NODE_ENV === 'development' ? 'debug' : 'info';
 
     // Initialize Pino instance
-    _activeLoggers.add(this);
+    // Clean up dead weak refs occasionally
+    if (_activeLoggers.size % 10 === 0) {
+      for (const ref of _activeLoggers) {
+        if (!ref.deref()) _activeLoggers.delete(ref);
+      }
+    }
+    _activeLoggers.add(new WeakRef(this));
     this._applyGlobalConfig();
-    this._initPino(options);
+    // Allow deferring _initPino when the caller (e.g. createLogger) will
+    // override properties and call _initPino itself, avoiding a wasted init.
+    if (!options.deferInit) {
+      this._initPino(options);
+    }
   }
 
   _applyGlobalConfig() {
@@ -252,7 +260,6 @@ class Logger {
       if (streams && streams.length > 0 && typeof pino.multistream === 'function') {
         this.pino = pino(pinoOptions, pino.multistream(streams));
       } else {
-        // FIX: Use the shared transport for the common dev-console-only case
         // to avoid spawning a separate pino worker per logger instance.
         // Only custom transports (e.g. file logging) get their own stream.
         this.pino = pino(pinoOptions, transport || undefined);
@@ -384,18 +391,15 @@ const logger = new Logger();
 
 // Factory functions
 function createLogger(context) {
-  const contextLogger = new Logger(context);
+  // Defer init in constructor — we override properties below and init once.
+  const contextLogger = new Logger(context, { deferInit: true });
   // Inherit settings from singleton
   contextLogger.level = logger.level;
   contextLogger.enableFile = logger.enableFile;
   contextLogger.logFile = logger.logFile;
   contextLogger.enableConsole = logger.enableConsole;
-  contextLogger._initPino(); // Re-init with inherited settings
+  contextLogger._initPino(); // Single init with inherited settings
   return contextLogger;
-}
-
-function getLogger(context) {
-  return createLogger(context);
 }
 
 function configureFileLogging(logFilePath, options = {}) {
@@ -408,16 +412,21 @@ function configureFileLogging(logFilePath, options = {}) {
     _globalLogConfig.level = options.level;
   }
 
-  for (const instance of _activeLoggers) {
-    instance.enableFile = true;
-    instance.logFile = logFilePath;
-    if (typeof options.enableConsole === 'boolean') {
-      instance.enableConsole = options.enableConsole;
+  for (const ref of _activeLoggers) {
+    const instance = ref.deref();
+    if (instance) {
+      instance.enableFile = true;
+      instance.logFile = logFilePath;
+      if (typeof options.enableConsole === 'boolean') {
+        instance.enableConsole = options.enableConsole;
+      }
+      if (typeof options.level === 'string') {
+        instance.level = options.level;
+      }
+      instance._initPino();
+    } else {
+      _activeLoggers.delete(ref);
     }
-    if (typeof options.level === 'string') {
-      instance.level = options.level;
-    }
-    instance._initPino();
   }
 }
 
@@ -426,11 +435,33 @@ function configureConsoleLogging(enableConsole) {
     _globalLogConfig.enableConsole = enableConsole;
   }
 
-  for (const instance of _activeLoggers) {
-    if (typeof enableConsole === 'boolean') {
-      instance.enableConsole = enableConsole;
+  for (const ref of _activeLoggers) {
+    const instance = ref.deref();
+    if (instance) {
+      if (typeof enableConsole === 'boolean') {
+        instance.enableConsole = enableConsole;
+      }
+      instance._initPino();
+    } else {
+      _activeLoggers.delete(ref);
     }
-    instance._initPino();
+  }
+}
+
+/**
+ * Safe logger factory with console fallback for cross-process safety.
+ * Use in shared modules that may be loaded before the logger is fully initialized.
+ */
+function createSafeLogger(name) {
+  try {
+    return createLogger(name);
+  } catch {
+    return {
+      debug: () => {},
+      info: () => {},
+      warn: console.warn.bind(console, `[${name}]`),
+      error: console.error.bind(console, `[${name}]`)
+    };
   }
 }
 
@@ -438,9 +469,8 @@ module.exports = {
   Logger,
   logger,
   LOG_LEVELS,
-  LOG_LEVEL_NAMES,
   createLogger,
-  getLogger,
+  createSafeLogger,
   sanitizeLogData,
   configureFileLogging,
   configureConsoleLogging

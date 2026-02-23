@@ -12,6 +12,18 @@ const { getCanonicalFileId } = require('../../shared/pathSanitization');
 const { createLogger } = require('../../shared/logger');
 
 const logger = createLogger('ServiceIntegration');
+
+function throwIfAborted(signal, phase) {
+  if (signal?.aborted) {
+    const reason =
+      signal.reason instanceof Error
+        ? signal.reason.message
+        : typeof signal.reason === 'string'
+          ? signal.reason
+          : 'Aborted';
+    throw new Error(`[ServiceIntegration] Aborted during ${phase}: ${reason}`);
+  }
+}
 /**
  * FIX: Explicit service initialization order with dependencies
  * This makes the initialization sequence clear and documentable.
@@ -22,7 +34,7 @@ const logger = createLogger('ServiceIntegration');
  */
 const SERVICE_INITIALIZATION_ORDER = {
   // Tier 0: Independent services (can init in parallel)
-  tier0: ['analysisHistory', 'undoRedo', 'processingState'],
+  tier0: ['analysisHistory', 'undoRedo', 'processingState', 'chatHistoryStore'],
   // Tier 1: Vector DB (in-process Orama - no external server needed)
   tier1: ['vectorDb'],
   // Tier 2: Services that depend on Vector DB
@@ -64,7 +76,10 @@ class ServiceIntegration {
     this.relationshipIndex = null;
     this.initialized = false;
 
-    // FIX: Add initialization mutex to prevent race conditions
+    // (e.g. degraded mode after startup timeout). Handlers like GET_CLUSTERS will then resolve
+    // 'clustering' successfully; individual services may remain uninitialized until first use.
+    this._registerCoreServices();
+
     // Multiple concurrent initialize() calls would previously both pass the
     // if (this.initialized) check and run in parallel, causing undefined behavior
     this._initPromise = null;
@@ -105,7 +120,6 @@ class ServiceIntegration {
    * @returns {Promise<{initialized: string[], errors: Array<{service: string, error: string}>, skipped: string[]}>}
    */
   async initialize(options = {}) {
-    // FIX: Return existing initialization promise if one is in progress
     // This prevents race conditions when multiple calls happen concurrently
     if (this._initPromise) {
       return this._initPromise;
@@ -115,7 +129,6 @@ class ServiceIntegration {
       return { initialized: [], errors: [], skipped: [], alreadyInitialized: true };
     }
 
-    // FIX: Store the initialization promise so concurrent calls can await it
     this._initPromise = this._doInitialize(options);
     try {
       return await this._initPromise;
@@ -132,9 +145,10 @@ class ServiceIntegration {
    * @private
    */
   async _doInitialize(options = {}) {
+    const { signal } = options;
+    throwIfAborted(signal, 'initialization setup');
     logger.info('[ServiceIntegration] Starting initialization...');
 
-    // FIX L3: Clear stale init status from any previous initialization attempts
     this._lastInitStatus = null;
     this._lastInitError = null;
 
@@ -148,12 +162,14 @@ class ServiceIntegration {
     try {
       // Register core services with the container
       this._registerCoreServices();
+      throwIfAborted(signal, 'service registration');
 
       // Initialize core services
       this.analysisHistory = container.resolve(ServiceIds.ANALYSIS_HISTORY);
       this.undoRedo = container.resolve(ServiceIds.UNDO_REDO);
       this.processingState = container.resolve(ServiceIds.PROCESSING_STATE);
       this.relationshipIndex = container.resolve(ServiceIds.RELATIONSHIP_INDEX);
+      this.chatHistoryStore = container.tryResolve(ServiceIds.CHAT_HISTORY_STORE);
 
       // Initialize vector service and folder matching
       this.vectorService = container.resolve(ServiceIds.ORAMA_VECTOR);
@@ -175,6 +191,7 @@ class ServiceIntegration {
 
       // Initialize auto-organize service
       this.autoOrganizeService = container.resolve(ServiceIds.AUTO_ORGANIZE);
+      throwIfAborted(signal, 'service resolution');
 
       // Vector DB availability check
       // OramaVectorService is in-process, so it's always available (no external server)
@@ -212,13 +229,15 @@ class ServiceIntegration {
         );
       }
 
-      // FIX: Tiered initialization with explicit dependency ordering
       // Tier 0: Initialize independent services in parallel
+      throwIfAborted(signal, 'tier0 initialization');
       const tier0Results = await Promise.allSettled([
         this.analysisHistory.initialize(),
         this.undoRedo.initialize(),
-        this.processingState.initialize()
+        this.processingState.initialize(),
+        this.chatHistoryStore ? this.chatHistoryStore.initialize() : Promise.resolve()
       ]);
+      throwIfAborted(signal, 'tier0 initialization');
 
       // Process Tier 0 results
       SERVICE_INITIALIZATION_ORDER.tier0.forEach((name, index) => {
@@ -240,9 +259,11 @@ class ServiceIntegration {
       // Tier 1: Initialize Vector DB (OramaVectorService is in-process, always available)
       if (isVectorDbReady && this.vectorService) {
         try {
+          throwIfAborted(signal, 'vectorDb initialization');
           if (!skipVectorInit) {
             await this.vectorService.initialize();
           }
+          throwIfAborted(signal, 'vectorDb initialization');
           initStatus.initialized.push('vectorDb');
 
           // Wire up cascade orphan marking when analysis entries are removed
@@ -303,7 +324,9 @@ class ServiceIntegration {
       // FolderMatchingService depends on vector DB for vector operations
       if (this.folderMatchingService && isVectorDbReady) {
         try {
+          throwIfAborted(signal, 'folderMatching initialization');
           await this.folderMatchingService.initialize();
+          throwIfAborted(signal, 'folderMatching initialization');
           initStatus.initialized.push('folderMatching');
         } catch (error) {
           const errorMsg = error?.message || String(error);
@@ -342,7 +365,6 @@ class ServiceIntegration {
         });
       }
 
-      // FIX: Return structured initialization status for callers to inspect
       return { ...initStatus, success };
     } catch (error) {
       const errorMsg = error?.message || String(error);
@@ -402,6 +424,13 @@ class ServiceIntegration {
       });
     }
 
+    if (!container.has(ServiceIds.CHAT_HISTORY_STORE)) {
+      container.registerSingleton(ServiceIds.CHAT_HISTORY_STORE, () => {
+        const { ChatHistoryStore } = require('./ChatHistoryStore');
+        return new ChatHistoryStore();
+      });
+    }
+
     // Register folder matching service (depends on vector DB)
     if (!container.has(ServiceIds.FOLDER_MATCHING)) {
       container.registerSingleton(ServiceIds.FOLDER_MATCHING, (c) => {
@@ -419,7 +448,6 @@ class ServiceIntegration {
       });
     }
 
-    // FIX: Register ClusteringService as separate DI entry to avoid circular dependency
     // This allows other services to depend on ClusteringService independently
     if (!container.has(ServiceIds.CLUSTERING)) {
       container.registerSingleton(ServiceIds.CLUSTERING, (c) => {
@@ -443,7 +471,6 @@ class ServiceIntegration {
           vectorDbService: c.resolve(ServiceIds.ORAMA_VECTOR),
           folderMatchingService: c.resolve(ServiceIds.FOLDER_MATCHING),
           settingsService: settingsService,
-          // FIX: Use lazy resolution with getter to break potential circular dependency
           // This allows ClusteringService to be resolved when first needed, not during registration
           getClusteringService: () => c.resolve(ServiceIds.CLUSTERING),
           config: {
@@ -587,7 +614,6 @@ class ServiceIntegration {
         const settingsService = c.resolve(ServiceIds.SETTINGS);
         const vectorDbService = c.resolve(ServiceIds.ORAMA_VECTOR);
         const filePathCoordinator = c.resolve(ServiceIds.FILE_PATH_COORDINATOR);
-        // FIX: Add folderMatcher for auto-embedding analyzed files into vector DB
         const folderMatcher = c.resolve(ServiceIds.FOLDER_MATCHING);
         const notificationService = c.resolve(ServiceIds.NOTIFICATION_SERVICE);
 
@@ -601,13 +627,12 @@ class ServiceIntegration {
           settingsService,
           vectorDbService,
           filePathCoordinator,
-          folderMatcher, // FIX: Pass folderMatcher for immediate auto-embedding
+          folderMatcher,
           notificationService // For user feedback on file analysis
         });
       });
     }
 
-    // FIX: Register SearchService with container for proper DI and lifecycle management
     // SearchService is a core feature service that was previously manually instantiated
     if (!container.has(ServiceIds.SEARCH_SERVICE)) {
       container.registerSingleton(ServiceIds.SEARCH_SERVICE, (c) => {
@@ -617,12 +642,12 @@ class ServiceIntegration {
           analysisHistoryService: c.resolve(ServiceIds.ANALYSIS_HISTORY),
           parallelEmbeddingService: c.resolve(ServiceIds.PARALLEL_EMBEDDING),
           llamaService: c.tryResolve(ServiceIds.LLAMA_SERVICE),
-          relationshipIndexService: c.tryResolve(ServiceIds.RELATIONSHIP_INDEX)
+          relationshipIndexService: c.tryResolve(ServiceIds.RELATIONSHIP_INDEX),
+          chatHistoryStore: c.tryResolve(ServiceIds.CHAT_HISTORY_STORE)
         });
       });
     }
 
-    // FIX: Register DownloadWatcher with container for proper lifecycle management
     // DownloadWatcher monitors downloads folder and needs proper shutdown handling
     if (!container.has(ServiceIds.DOWNLOAD_WATCHER)) {
       container.registerSingleton(ServiceIds.DOWNLOAD_WATCHER, (c) => {
@@ -654,7 +679,6 @@ class ServiceIntegration {
    * @returns {Promise<void>}
    */
   async shutdown() {
-    // FIX: Wait for any in-progress initialization to complete before shutting down
     // This prevents race conditions where shutdown runs concurrently with init
     if (this._initPromise) {
       logger.debug(
@@ -693,6 +717,7 @@ class ServiceIntegration {
       // Also clear SmartFolderWatcher reference to prevent memory leaks
       this.smartFolderWatcher = null;
       this.relationshipIndex = null;
+      this.chatHistoryStore = null;
       this.initialized = false;
 
       logger.info('[ServiceIntegration] All services shut down successfully');

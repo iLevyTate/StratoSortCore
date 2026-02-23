@@ -64,6 +64,16 @@ class EmbeddingCache {
    * @private
    */
   _subscribeToInvalidationBus() {
+    // Guard against duplicate subscriptions if initialize() is called multiple times
+    if (this._unsubscribe) {
+      try {
+        this._unsubscribe();
+      } catch {
+        // Previous subscription may already be cleaned up
+      }
+      this._unsubscribe = null;
+    }
+
     try {
       const bus = getCacheInvalidationBus();
       this._unsubscribe = bus.subscribe('EmbeddingCache', {
@@ -183,7 +193,6 @@ class EmbeddingCache {
     const baseStats = this._cache.getStats();
 
     // Estimate memory usage dynamically based on configured embedding dimension
-    // FIX: Use 4 bytes per float (float32) instead of 8 (embeddings use single precision)
     const embeddingDim = getConfig('ANALYSIS.embeddingDimension', 768);
     const bytesPerEntry = embeddingDim * 4 + 200; // vector float32s + metadata overhead
     const estimatedBytes = this._cache.size * bytesPerEntry;

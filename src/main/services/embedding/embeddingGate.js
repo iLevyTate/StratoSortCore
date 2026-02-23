@@ -109,7 +109,6 @@ async function shouldEmbed(params) {
   }
 
   if (stage === 'final') {
-    // FIX Bug #16: Prevent double embedding.
     // If timing is 'during_analysis', we assume it was handled during analysis (or path update handles the move).
     // Only embed at final stage if timing is explicitly 'after_organize'.
     return { shouldEmbed: timing === 'after_organize', timing, policy, scope };

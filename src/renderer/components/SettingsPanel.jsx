@@ -19,7 +19,7 @@ import { DEFAULT_AI_MODELS } from '../../shared/constants';
 import { DEFAULT_SETTINGS } from '../../shared/defaultSettings';
 import { DEBOUNCE } from '../../shared/performanceConstants';
 import { useNotification } from '../contexts/NotificationContext';
-import { getElectronAPI, eventsIpc, llamaIpc, settingsIpc } from '../services/ipc';
+import { getElectronAPI, eventsIpc, filesIpc, llamaIpc, settingsIpc } from '../services/ipc';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { toggleSettings, updateSettings } from '../store/slices/uiSlice';
 import { useDebouncedCallback } from '../hooks/usePerformance';
@@ -43,9 +43,12 @@ import EmbeddingBehaviorSection from './settings/EmbeddingBehaviorSection';
 import DefaultLocationsSection from './settings/DefaultLocationsSection';
 import NamingSettingsSection from './settings/NamingSettingsSection';
 import GraphRetrievalSection from './settings/GraphRetrievalSection';
+import ProcessingLimitsSection from './settings/ProcessingLimitsSection';
 import ApplicationSection from './settings/ApplicationSection';
 import APITestSection from './settings/APITestSection';
 import SettingsBackupSection from './settings/SettingsBackupSection';
+import DebugToolsSection from './settings/DebugToolsSection';
+import DiagnosticsLogsSection from './settings/DiagnosticsLogsSection';
 
 const AnalysisHistoryModal = lazy(() => import('./AnalysisHistoryModal'));
 
@@ -54,8 +57,8 @@ const SECTION_KEYS = [
   'settings-performance',
   'settings-defaults',
   'settings-app',
-  'settings-history',
-  'settings-api'
+  'settings-diagnostics',
+  'settings-history'
 ];
 
 const logger = createLogger('SettingsPanel');
@@ -85,8 +88,15 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const uiSettings = useAppSelector((state) => state.ui.settings);
   const { addNotification } = useNotification();
   const isApiAvailable = isElectronAPIAvailable();
+  const isDevBuild = process.env.NODE_ENV === 'development';
+
+  const saveFlushRef = useRef(null);
 
   const handleToggleSettings = useCallback(() => {
+    // Flush any pending auto-save before closing so model/settings changes persist
+    if (typeof saveFlushRef.current === 'function') {
+      saveFlushRef.current();
+    }
     dispatch(toggleSettings());
   }, [dispatch]);
 
@@ -145,8 +155,8 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const skipAutoSaveRef = useRef(0);
   const cancelAutoSaveRef = useRef(null);
   const settingsRef = useRef(null);
-  const uiSettingsRef = useRef(uiSettings);
   const settingsLoadedRef = useRef(false);
+  const modelLoadRequestRef = useRef(0);
   const lastSavedSnapshotRef = useRef(stableStringify(sanitizeSettings(DEFAULT_SETTINGS)));
 
   useEffect(() => {
@@ -167,10 +177,6 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const updateLastSavedSnapshot = useCallback((nextSettings) => {
     lastSavedSnapshotRef.current = stableStringify(sanitizeSettings(nextSettings || {}));
   }, []);
-
-  useEffect(() => {
-    uiSettingsRef.current = uiSettings;
-  }, [uiSettings]);
 
   useEffect(() => {
     settingsLoadedRef.current = settingsLoaded;
@@ -199,15 +205,34 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const loadSettings = useCallback(async () => {
     try {
       if (settingsLoadedRef.current) return;
-      const hasCachedSettings =
-        uiSettingsRef.current &&
-        typeof uiSettingsRef.current === 'object' &&
-        Object.keys(uiSettingsRef.current).length > 0;
-      const savedSettings = hasCachedSettings ? uiSettingsRef.current : await settingsIpc.get();
+      // Always fetch authoritative settings from main-process persistence.
+      // Relying on cached Redux ui.settings can replay stale/default values and
+      // accidentally overwrite user-selected locations during auto-save.
+      const savedSettings = await settingsIpc.get();
       const mergedSettings = {
         ...DEFAULT_SETTINGS,
         ...(savedSettings || {})
       };
+      const defaultLocation =
+        typeof mergedSettings.defaultSmartFolderLocation === 'string'
+          ? mergedSettings.defaultSmartFolderLocation.trim()
+          : '';
+      const shouldResolveDocumentsLocation =
+        !defaultLocation || defaultLocation.toLowerCase() === 'documents';
+      if (shouldResolveDocumentsLocation) {
+        try {
+          const documentsPathResponse = await filesIpc.getDocumentsPath();
+          const documentsPath =
+            typeof documentsPathResponse === 'string'
+              ? documentsPathResponse
+              : documentsPathResponse?.path;
+          if (typeof documentsPath === 'string' && documentsPath.trim()) {
+            mergedSettings.defaultSmartFolderLocation = documentsPath.trim();
+          }
+        } catch {
+          // Keep the existing fallback value if documents path lookup fails.
+        }
+      }
       skipAutoSaveRef.current += 1;
       applySettingsUpdate(mergedSettings);
       dispatch(updateSettings(mergedSettings));
@@ -229,9 +254,15 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   }, [applySettingsUpdate, dispatch, updateLastSavedSnapshot]);
 
   const loadModels = useCallback(async () => {
+    const requestId = modelLoadRequestRef.current + 1;
+    modelLoadRequestRef.current = requestId;
+
     try {
       setIsRefreshingModels(true);
       const response = await llamaIpc.getModels();
+      if (modelLoadRequestRef.current !== requestId) {
+        return;
+      }
       const categories = response?.categories || {
         text: [],
         vision: [],
@@ -260,6 +291,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       // but applying it here can silently overwrite user-configured models
       // with fallback/default selections and then persist them on next save.
     } catch (error) {
+      if (modelLoadRequestRef.current !== requestId) {
+        return;
+      }
       logger.error('Failed to load AI models', {
         error: error.message,
         stack: error.stack
@@ -267,7 +301,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       setModelLists({ text: [], vision: [], embedding: [], all: [] });
       addNotification('Failed to load AI models. Check model downloads.', 'warning');
     } finally {
-      setIsRefreshingModels(false);
+      if (modelLoadRequestRef.current === requestId) {
+        setIsRefreshingModels(false);
+      }
     }
   }, [addNotification]);
 
@@ -397,7 +433,14 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       const savedSettings = res?.settings || normalizedSettings;
       dispatch(updateSettings(savedSettings));
       updateLastSavedSnapshot(savedSettings);
-      if (Array.isArray(res?.validationWarnings) && res.validationWarnings.length > 0) {
+      if (res?.modelUpdate?.modelDowngraded) {
+        addNotification(
+          'One or more model selections were adjusted. Check AI model settings.',
+          'warning',
+          5000,
+          'model-downgrade'
+        );
+      } else if (Array.isArray(res?.validationWarnings) && res.validationWarnings.length > 0) {
         addNotification(`Saved with warnings: ${res.validationWarnings.join('; ')}`, 'warning');
       } else {
         addNotification('Settings saved successfully!', 'success');
@@ -437,9 +480,26 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         return;
       }
       const res = await settingsIpc.save(normalizedSettings);
+      if (res?.success === false) {
+        logger.error('Auto-save settings rejected by backend', {
+          error: res?.error,
+          validationErrors: res?.validationErrors
+        });
+        return;
+      }
       const savedSettings = res?.settings || normalizedSettings;
       dispatch(updateSettings(savedSettings));
       updateLastSavedSnapshot(savedSettings);
+
+      if (res?.modelUpdate?.modelDowngraded) {
+        logger.warn('Model selection was adjusted by the backend', res.modelUpdate);
+        addNotification(
+          'One or more model selections were adjusted. Check AI model settings.',
+          'warning',
+          5000,
+          'model-downgrade'
+        );
+      }
     } catch (error) {
       logger.error('Auto-save settings failed', {
         error: error.message,
@@ -450,6 +510,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
   useEffect(() => {
     cancelAutoSaveRef.current = autoSaveSettings?.cancel || null;
+    saveFlushRef.current = autoSaveSettings?.flush || null;
   }, [autoSaveSettings]);
 
   useEffect(() => {
@@ -679,14 +740,14 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       role="presentation"
     >
       <div
-        className="surface-panel !p-0 w-full max-w-4xl mx-auto max-h-[86vh] flex flex-col overflow-hidden shadow-2xl animate-modal-enter pointer-events-auto"
+        className="surface-panel !p-0 w-full max-w-4xl mx-auto max-h-[86vh] flex flex-col overflow-hidden shadow-2xl pointer-events-auto"
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
       >
         {showUnavailable ? (
           <>
-            <div className="settings-modal-header px-6 py-4 border-b border-border-soft/70 bg-white flex-shrink-0 rounded-t-2xl">
+            <div className="settings-modal-header px-6 py-4 border-b border-border-soft/70 bg-surface-primary flex-shrink-0 rounded-t-2xl">
               <div className="flex items-start sm:items-center justify-between gap-4">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -730,7 +791,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           </>
         ) : (
           <>
-            <div className="settings-modal-header px-6 py-4 border-b border-border-soft/70 bg-white flex-shrink-0 rounded-t-2xl">
+            <div className="settings-modal-header px-6 py-4 border-b border-border-soft/70 bg-surface-primary flex-shrink-0 rounded-t-2xl">
               <div className="flex items-start sm:items-center justify-between gap-4">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -774,11 +835,11 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
             <div className="p-6 flex flex-col gap-6 flex-1 min-h-0 overflow-y-auto modern-scrollbar relative">
               {isHydrating && (
-                <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-10 rounded-b-2xl">
-                  <div className="text-center">
+                <div className="absolute inset-0 bg-surface-primary/80 flex items-center justify-center z-10 rounded-b-2xl animate-loading-fade">
+                  <div className="text-center animate-loading-content">
                     <div className="animate-spin w-10 h-10 border-3 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-3" />
                     <Text variant="small" className="text-system-gray-600">
-                      Loading settings...
+                      Loading settings\u2026
                     </Text>
                   </div>
                 </div>
@@ -838,6 +899,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 <Stack gap="spacious">
                   <AutoOrganizeSection settings={settings} setSettings={applySettingsUpdate} />
                   <BackgroundModeSection settings={settings} setSettings={applySettingsUpdate} />
+                  <ProcessingLimitsSection settings={settings} setSettings={applySettingsUpdate} />
                   <GraphRetrievalSection settings={settings} setSettings={applySettingsUpdate} />
                 </Stack>
               </Collapsible>
@@ -869,7 +931,11 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 persistKey="settings-app"
               >
                 <Stack gap="spacious">
-                  <ApplicationSection settings={settings} setSettings={applySettingsUpdate} />
+                  <ApplicationSection
+                    settings={settings}
+                    setSettings={applySettingsUpdate}
+                    addNotification={addNotification}
+                  />
                   <NotificationSettingsSection
                     settings={settings}
                     setSettings={applySettingsUpdate}
@@ -889,14 +955,14 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 persistKey="settings-history"
               >
                 <SettingsCard
-                  title="Analysis History"
+                  title="Analysis history"
                   description="View and manage your file analysis history, including past results and statistics."
                 >
                   <Button
                     onClick={() => setShowAnalysisHistory(true)}
                     variant="secondary"
                     size="sm"
-                    className="w-fit"
+                    className="w-full sm:w-auto"
                   >
                     View Analysis History
                   </Button>
@@ -907,13 +973,17 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 title={
                   <div className="flex items-center gap-2">
                     <Wrench className="h-4 w-4 text-stratosort-blue" aria-hidden="true" />
-                    <span>Backend API Test</span>
+                    <span>Diagnostics</span>
                   </div>
                 }
                 defaultOpen={false}
-                persistKey="settings-api"
+                persistKey="settings-diagnostics"
               >
-                <APITestSection addNotification={addNotification} />
+                <Stack gap="spacious">
+                  <DiagnosticsLogsSection addNotification={addNotification} />
+                  <APITestSection addNotification={addNotification} />
+                  {isDevBuild && <DebugToolsSection addNotification={addNotification} />}
+                </Stack>
               </Collapsible>
             </div>
 
@@ -933,14 +1003,14 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 disabled={isSaving}
                 leftIcon={<Save className="w-4 h-4" />}
               >
-                {isSaving ? 'Saving...' : 'Save Settings'}
+                {isSaving ? 'Saving\u2026' : 'Save Settings'}
               </Button>
             </div>
           </>
         )}
       </div>
       {!showUnavailable && showAnalysisHistory && (
-        <Suspense fallback={<ModalLoadingOverlay message="Loading History..." />}>
+        <Suspense fallback={<ModalLoadingOverlay message="Loading History\u2026" />}>
           <AnalysisHistoryModal
             onClose={() => setShowAnalysisHistory(false)}
             analysisStats={analysisStats}

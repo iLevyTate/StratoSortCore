@@ -169,6 +169,32 @@ describe('ipcMiddleware extended coverage', () => {
       );
     });
 
+    test('re-dispatches progress as DOM CustomEvent for useAnalysis listener', () => {
+      ipcMiddleware(mockStore);
+      markStoreReady();
+
+      const progressPayload = {
+        type: 'batch_analyze',
+        completed: 3,
+        total: 10,
+        currentFile: '/path/to/file.pdf'
+      };
+
+      handlers.operationProgress(progressPayload);
+
+      expect(global.window.dispatchEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'operation-progress',
+          detail: expect.objectContaining({
+            type: 'batch_analyze',
+            completed: 3,
+            total: 10,
+            currentFile: '/path/to/file.pdf'
+          })
+        })
+      );
+    });
+
     test('does not map non-analysis progress payloads', () => {
       ipcMiddleware(mockStore);
       markStoreReady();
@@ -417,42 +443,30 @@ describe('ipcMiddleware extended coverage', () => {
   });
 
   describe('recoverPersistedCriticalEvents', () => {
-    test('does nothing when no persisted events', () => {
+    test('does nothing when no dropped critical events', () => {
       ipcMiddleware(mockStore);
       markStoreReady();
       mockDispatch.mockClear();
 
-      storedLocalStorage.setItem('ipc_critical_events', '[]');
-      recoverPersistedCriticalEvents();
-
-      // Should not dispatch any notification for empty recovery
-      const notifCalls = mockDispatch.mock.calls.filter((c) =>
-        c[0]?.payload?.message?.includes('updates were queued')
-      );
-      expect(notifCalls).toHaveLength(0);
-    });
-
-    test('handles corrupted localStorage gracefully', () => {
-      ipcMiddleware(mockStore);
-      markStoreReady();
-
-      storedLocalStorage.setItem('ipc_critical_events', '{invalid json');
-
-      expect(() => recoverPersistedCriticalEvents()).not.toThrow();
-      expect(storedLocalStorage.removeItem).toHaveBeenCalledWith('ipc_critical_events');
-    });
-
-    test('treats non-array persisted payload as empty', () => {
-      ipcMiddleware(mockStore);
-      markStoreReady();
-      mockDispatch.mockClear();
-      storedLocalStorage.removeItem.mockClear();
-
-      storedLocalStorage.setItem('ipc_critical_events', 'null');
       recoverPersistedCriticalEvents();
 
       expect(mockDispatch).not.toHaveBeenCalled();
-      expect(storedLocalStorage.removeItem).not.toHaveBeenCalled();
+    });
+
+    test('dispatches warning when critical events are dropped under queue pressure', () => {
+      ipcMiddleware(mockStore);
+      // operationProgress maps to updateProgress (critical action).
+      for (let i = 0; i < 350; i += 1) {
+        handlers.operationProgress({ type: 'batch_analyze', completed: i, total: 400 });
+      }
+      markStoreReady();
+
+      const warningCalls = mockDispatch.mock.calls.filter(
+        (entry) =>
+          entry[0]?.type === 'system/addNotification' &&
+          String(entry[0]?.payload?.message || '').includes('critical updates were dropped')
+      );
+      expect(warningCalls.length).toBeGreaterThan(0);
     });
   });
 });

@@ -18,6 +18,7 @@ const { createSingletonHelpers } = require('../../shared/singletonFactory');
 const { AI_DEFAULTS, DEFAULT_AI_MODELS } = require('../../shared/constants');
 const { getModel } = require('../../shared/modelRegistry');
 const { resolveEmbeddingDimension } = require('../../shared/embeddingDimensions');
+const { isVisionDecodePressureError } = require('./visionErrorClassification');
 const { ERROR_CODES } = require('../../shared/errorCodes');
 const { attachErrorCode } = require('../../shared/errorHandlingUtils');
 const { categorizeModel } = require('../../shared/modelCategorization');
@@ -81,7 +82,6 @@ let _nodeLlamaModule = null;
 let _nodeLlamaLoadPromise = null;
 async function loadNodeLlamaModule() {
   if (_nodeLlamaModule) return _nodeLlamaModule;
-  // FIX: Store the import promise to prevent duplicate imports when two
   // concurrent callers both see _nodeLlamaModule === null. Without this,
   // both callers start a separate dynamic import() and the second overwrites
   // the first's result. Storing the promise ensures all callers await the
@@ -127,13 +127,16 @@ function parsePositiveInt(value) {
 
 /**
  * Validate whether a model name is a recognized embedding model.
- * Uses the model registry and pattern-based categorization instead of a
- * hardcoded allowlist so newly-added models work without code changes.
+ * Accepts if EITHER the model registry OR pattern-based categorization
+ * identifies it as embedding. This keeps the gatekeeper consistent with the
+ * frontend's categorizeModel() that populates the embedding dropdown.
+ * Previously, a registry entry with a non-embedding type would short-circuit
+ * and reject models that pattern matching correctly identified as embedding.
  */
 const _isAllowedEmbeddingModel = (name) => {
   if (!name) return false;
   const registryInfo = getModel(name);
-  if (registryInfo) return registryInfo.type === 'embedding';
+  if (registryInfo?.type === 'embedding') return true;
   return categorizeModel(name) === 'embedding';
 };
 
@@ -164,7 +167,6 @@ class LlamaService extends EventEmitter {
     this._degradationManager = null; // Initialized after llama
     this._coordinator = new ModelAccessCoordinator();
 
-    // FIX Bug #34: Use singleton PerformanceMetrics or ensure cleanup
     // Since PerformanceMetrics is stateful (interval), we should use the singleton
     // or properly destroy the old one. Here we use the new instance but ensure
     // we destroy it in shutdown().
@@ -177,6 +179,7 @@ class LlamaService extends EventEmitter {
     this._preferredContextSize = { text: null, vision: null };
     this._preferredContextSequences = { text: null, vision: null };
     this._visionContextSize = null;
+    this._embeddingContextSize = null;
     this._modelChangeCallbacks = new Set();
     this._visionProjectorStatus = {
       required: false,
@@ -330,7 +333,6 @@ class LlamaService extends EventEmitter {
 
     if (this._configLoaded) return;
 
-    // FIX: Use a promise gate to prevent concurrent callers from both
     // triggering _loadConfig(). Without this, two concurrent callers both
     // see _configLoaded === false, both call _loadConfig(), and the second
     // may overwrite partially-set state from the first.
@@ -423,13 +425,16 @@ class LlamaService extends EventEmitter {
 
   _getEffectiveContextSize(type = 'text') {
     if (type === 'vision') {
-      // Prefer the pre-computed vision context size from _applyContextSizing.
-      // If null (e.g. after updateConfig reset), recompute from current config
-      // with the minimum floor guarantee so image analysis always works.
       if (Number.isFinite(this._visionContextSize)) {
         return this._visionContextSize;
       }
       return Math.max(this._config.contextSize, VISION_MIN_CONTEXT);
+    }
+    if (type === 'embedding') {
+      if (Number.isFinite(this._embeddingContextSize) && this._embeddingContextSize > 0) {
+        return this._embeddingContextSize;
+      }
+      return null;
     }
     const preferred = this._preferredContextSize?.[type];
     if (Number.isFinite(preferred) && preferred > 0) {
@@ -485,15 +490,7 @@ class LlamaService extends EventEmitter {
   }
 
   _isVisionDecodePressureError(errorLike) {
-    const message = String(errorLike?.message || errorLike || '').toLowerCase();
-    return (
-      message.includes('failed to process image') ||
-      message.includes('failed to decode image') ||
-      message.includes('failed to find a memory slot') ||
-      message.includes('kv cache') ||
-      message.includes('out of memory') ||
-      message.includes('mtmd_helper_eval failed')
-    );
+    return isVisionDecodePressureError(errorLike);
   }
 
   _getContextSequences(type = 'text') {
@@ -519,6 +516,7 @@ class LlamaService extends EventEmitter {
       gpuLayers: this._config.gpuLayers,
       contextSize: this._getEffectiveContextSize('text'),
       visionContextSize: this._getEffectiveContextSize('vision'),
+      embeddingContextSize: this._getEffectiveContextSize('embedding'),
       threads: this._config.threads,
       gpuBackend: this._gpuBackend,
       modelsPath: this._modelsPath,
@@ -551,12 +549,16 @@ class LlamaService extends EventEmitter {
     if (partial.visionModel) this._selectedModels.vision = String(partial.visionModel);
     if (partial.embeddingModel) {
       const requested = String(partial.embeddingModel);
-      if (_isAllowedEmbeddingModel(requested)) {
-        this._selectedModels.embedding = requested;
-      } else {
-        this._selectedModels.embedding = DEFAULT_CONFIG.embeddingModel;
-        modelDowngraded = true;
+      if (!_isAllowedEmbeddingModel(requested)) {
+        logger.warn(
+          '[LlamaService] Embedding model not recognized by categorization; accepting user selection',
+          {
+            requested,
+            recognized: false
+          }
+        );
       }
+      this._selectedModels.embedding = requested;
     }
 
     if (typeof resolvedGpuLayers === 'number') this._config.gpuLayers = resolvedGpuLayers;
@@ -567,6 +569,7 @@ class LlamaService extends EventEmitter {
       this._preferredContextSequences.text = null;
       this._preferredContextSequences.vision = null;
       this._visionContextSize = null;
+      this._embeddingContextSize = null;
     }
     if (typeof partial.threads === 'number') this._config.threads = partial.threads;
 
@@ -656,6 +659,19 @@ class LlamaService extends EventEmitter {
           // ignore callback errors
         }
       }
+    }
+
+    if (changedTypes.length > 0) {
+      logger.info('[LlamaService] Model configuration updated', {
+        changedTypes,
+        selectedModels: { ...this._selectedModels },
+        modelDowngraded
+      });
+    } else {
+      logger.debug('[LlamaService] updateConfig applied with no model change', {
+        modelDowngraded,
+        partialKeys: Object.keys(partial || {})
+      });
     }
 
     return { success: true, modelDowngraded, selected: { ...this._selectedModels } };
@@ -851,7 +867,7 @@ class LlamaService extends EventEmitter {
   async _loadConfig() {
     try {
       const settingsService = SettingsService.getInstance();
-      const settings = settingsService?.getAll?.() || {};
+      const settings = (await settingsService.load()) || {};
 
       // Helper to resolve model name (fallback to default if legacy/missing)
       const resolveModel = (configured, defaultName, type) => {
@@ -942,7 +958,7 @@ class LlamaService extends EventEmitter {
   }
 
   async _waitForIdleOperations(reason, timeoutMs = 30000, options = {}) {
-    if (!this._coordinator) return;
+    if (!this._coordinator) return true;
     const { modelType, excludeOperationId } = options || {};
     const getActiveCount = (status) => {
       const operations = Array.isArray(status?.operations) ? status.operations : [];
@@ -1035,7 +1051,6 @@ class LlamaService extends EventEmitter {
   async _supportsVisionInput() {
     if (this._visionInputSupported != null) return this._visionInputSupported;
 
-    // FIX: Use a promise gate to prevent duplicate vision asset checks when
     // concurrent callers both see _visionInputSupported === null.
     if (this._visionCheckPromise) return this._visionCheckPromise;
 
@@ -1259,6 +1274,11 @@ class LlamaService extends EventEmitter {
       if (type === 'embedding') {
         try {
           context = await model.createEmbeddingContext();
+          const ctxSize =
+            context?.contextSize ?? context?._contextSize ?? model?.trainContextSize ?? null;
+          if (Number.isFinite(ctxSize) && ctxSize > 0) {
+            this._embeddingContextSize = ctxSize;
+          }
         } catch (err) {
           lastError = err;
           logger.warn(`[LlamaService] Failed to create embedding context: ${err.message}`);
@@ -1392,15 +1412,23 @@ class LlamaService extends EventEmitter {
       }
 
       if (!context) {
-        // CRITICAL FIX: Dispose the loaded model to prevent GPU memory leak.
         // Without this, the model stays resident in VRAM despite having no
         // usable context, and repeated retries can exhaust GPU memory.
+        let disposed = false;
         try {
-          await model?.dispose();
+          if (model && typeof model.dispose === 'function') {
+            await model.dispose();
+            disposed = true;
+          }
         } catch (disposeErr) {
-          logger.debug('[LlamaService] Failed to dispose model after context failure', {
+          logger.warn('[LlamaService] Failed to dispose model after context failure', {
             type,
             error: disposeErr?.message
+          });
+        }
+        if (!disposed && model) {
+          logger.error('[LlamaService] Model disposal failed — potential GPU memory leak', {
+            type
           });
         }
         throw lastError || new Error('Failed to create context');
@@ -1436,7 +1464,6 @@ class LlamaService extends EventEmitter {
     const { operationId } = options || {};
 
     try {
-      // FIX: Use a shorter timeout (10s) for idle-wait during CPU fallback.
       // Other operations of the same model type may be blocked on the reload
       // gate that we just acquired, creating a circular wait. A shorter timeout
       // prevents a 60s hang; if operations are still active after 10s, they are
@@ -1812,7 +1839,6 @@ class LlamaService extends EventEmitter {
     }
     const { onProgress } = options;
 
-    // FIX Bug #10: Run embeddings in parallel but with bounded concurrency
     // to prevent flooding the ModelAccessCoordinator or creating too many Promises.
     const BATCH_CONCURRENCY = 4;
     let completed = 0;
@@ -1858,6 +1884,195 @@ class LlamaService extends EventEmitter {
     }
 
     return { embeddings: results };
+  }
+
+  /**
+   * Generate text response with streaming support.
+   *
+   * @param {Object} options
+   * @param {string} options.prompt
+   * @param {string} [options.systemPrompt]
+   * @param {number} [options.maxTokens]
+   * @param {number} [options.temperature]
+   * @param {AbortSignal} [options.signal]
+   * @param {Function} [options.onToken] - Callback for each token: (text) => void
+   */
+  async generateTextStreaming(options) {
+    const { prompt, systemPrompt, maxTokens = 2048, temperature = 0.7, signal, onToken } = options;
+    const requestedMaxTokens = Number.isFinite(Number(maxTokens))
+      ? Math.max(1, Math.floor(Number(maxTokens)))
+      : 2048;
+    const effectiveContextSize = this._getEffectiveContextSize('text');
+    const RESPONSE_TOKEN_RESERVE = 1024;
+    const contextBoundMaxTokens = Math.max(
+      128,
+      Math.floor(Math.max(256, effectiveContextSize - RESPONSE_TOKEN_RESERVE) * 0.5)
+    );
+    const safeMaxTokens = Math.min(requestedMaxTokens, contextBoundMaxTokens);
+    if (safeMaxTokens !== requestedMaxTokens) {
+      logger.warn('[LlamaService] Clamped maxTokens to fit context budget', {
+        requestedMaxTokens,
+        clampedMaxTokens: safeMaxTokens,
+        effectiveContextSize
+      });
+    }
+    const operationId = this._generateOperationId('text-stream');
+    await this._awaitModelReady('text');
+
+    return this._coordinator.withModel(
+      'text',
+      async () => {
+        this._modelMemoryManager?.acquireRef('text');
+        try {
+          return await withLlamaResilience(
+            async (retryOptions) => {
+              // Handle CPU fallback from LlamaResilience when GPU errors occur
+              if (retryOptions?.forceCPU && this._gpuBackend !== 'cpu') {
+                await this._reloadModelCPU('text', { operationId });
+              }
+
+              const startTime = Date.now();
+              let session;
+              let abortHandler;
+
+              const runOnce = async () => {
+                if (signal?.aborted) {
+                  const abortError = new Error('Operation aborted');
+                  abortError.name = 'AbortError';
+                  throw abortError;
+                }
+
+                const context = await this._ensureModelLoaded('text');
+
+                // node-llama-cpp reclaims disposed sequence IDs asynchronously
+                // (via withLock). After a previous session.dispose(), the slot
+                // may not be immediately available. Yield briefly to let any
+                // pending reclaim complete before allocating a new sequence.
+                if (typeof context.sequencesLeft === 'number' && context.sequencesLeft === 0) {
+                  const waitStart = Date.now();
+                  for (let _wait = 0; _wait < 50; _wait++) {
+                    await delay(10);
+                    if (context.sequencesLeft > 0) break;
+                  }
+                  const waitDuration = Date.now() - waitStart;
+                  if (waitDuration > 400) {
+                    logger.warn('[LlamaService] Slow sequence allocation detected', {
+                      waitDuration,
+                      sequencesLeft: context.sequencesLeft,
+                      model: this._selectedModels?.text
+                    });
+                  }
+                }
+
+                const { LlamaChatSession } = await loadNodeLlamaModule();
+                session = new LlamaChatSession({
+                  contextSequence: context.getSequence(),
+                  systemPrompt: systemPrompt || 'You are a helpful assistant.',
+                  autoDisposeSequence: true
+                });
+
+                if (signal) {
+                  abortHandler = () => {
+                    try {
+                      session?.dispose();
+                    } catch (disposeError) {
+                      logger.warn('[LlamaService] Session dispose on abort failed', {
+                        error: disposeError?.message
+                      });
+                    }
+                  };
+                  signal.addEventListener('abort', abortHandler, { once: true });
+                }
+
+                const promptOptions = {
+                  maxTokens: safeMaxTokens,
+                  temperature,
+                  onTextChunk: (chunk) => {
+                    if (typeof onToken === 'function') {
+                      try {
+                        onToken(chunk);
+                      } catch (e) {
+                        logger.warn('[LlamaService] onToken callback failed', { error: e.message });
+                      }
+                    }
+                  }
+                };
+                if (signal) promptOptions.signal = signal;
+                return await session.prompt(prompt, promptOptions);
+              };
+
+              try {
+                let response;
+                try {
+                  response = await runOnce();
+                } catch (error) {
+                  if (isSequenceExhaustedError(error)) {
+                    if (session) {
+                      try {
+                        session.dispose();
+                      } catch {
+                        /* model is being unloaded; dispose may throw */
+                      }
+                      session = null;
+                    }
+                    await this._recoverFromSequenceExhaustion('text', error);
+                    response = await runOnce();
+                  } else {
+                    throw error;
+                  }
+                }
+
+                const durationMs = Date.now() - startTime;
+                const responseChars = response?.length || 0;
+                const approxTokens = Math.round(responseChars / 4);
+                this._metrics.recordTextGeneration(durationMs, approxTokens, true);
+
+                logger.info('[LlamaService] Text streaming complete', {
+                  model: this._selectedModels?.text,
+                  promptChars: prompt?.length || 0,
+                  responseChars,
+                  approxTokens,
+                  durationMs,
+                  maxTokens: safeMaxTokens,
+                  requestedMaxTokens,
+                  temperature,
+                  gpu: this._gpuBackend !== 'cpu'
+                });
+
+                return { response };
+              } catch (error) {
+                this._metrics.recordTextGeneration(Date.now() - startTime, 0, false);
+                if (isOutOfMemoryError(error)) {
+                  throw attachErrorCode(error, ERROR_CODES.LLAMA_OOM);
+                }
+                throw attachErrorCode(error, ERROR_CODES.LLAMA_INFERENCE_FAILED);
+              } finally {
+                if (signal && abortHandler) {
+                  try {
+                    signal.removeEventListener('abort', abortHandler);
+                  } catch {
+                    /* ignore */
+                  }
+                }
+                if (session) {
+                  try {
+                    session.dispose();
+                  } catch (disposeError) {
+                    logger.warn('[LlamaService] Session dispose failed', {
+                      error: disposeError?.message
+                    });
+                  }
+                }
+              }
+            },
+            { modelType: 'text' }
+          );
+        } finally {
+          this._modelMemoryManager?.releaseRef('text');
+        }
+      },
+      { operationId }
+    );
   }
 
   /**
@@ -1915,9 +2130,18 @@ class LlamaService extends EventEmitter {
                 // may not be immediately available. Yield briefly to let any
                 // pending reclaim complete before allocating a new sequence.
                 if (typeof context.sequencesLeft === 'number' && context.sequencesLeft === 0) {
+                  const waitStart = Date.now();
                   for (let _wait = 0; _wait < 50; _wait++) {
                     await delay(10);
                     if (context.sequencesLeft > 0) break;
+                  }
+                  const waitDuration = Date.now() - waitStart;
+                  if (waitDuration > 400) {
+                    logger.warn('[LlamaService] Slow sequence allocation detected', {
+                      waitDuration,
+                      sequencesLeft: context.sequencesLeft,
+                      model: this._selectedModels?.text
+                    });
                   }
                 }
 
@@ -1952,7 +2176,6 @@ class LlamaService extends EventEmitter {
                   response = await runOnce();
                 } catch (error) {
                   if (isSequenceExhaustedError(error)) {
-                    // FIX: Dispose the first session before recovery to prevent leak.
                     // _recoverFromSequenceExhaustion unloads the model (which cascades
                     // to contexts), but the LlamaChatSession wrapper holds internal
                     // state that must be explicitly released.
@@ -2073,7 +2296,7 @@ class LlamaService extends EventEmitter {
           await this._modelMemoryManager.unloadModel('text');
           await this._modelMemoryManager.unloadModel('embedding');
           // Brief delay for CUDA driver to release VRAM back to the OS
-          await new Promise((r) => setTimeout(r, 500));
+          await delay(500);
         }
       } catch (error) {
         this._visionBatchModeRefs = Math.max(0, this._visionBatchModeRefs - 1);
@@ -2116,7 +2339,7 @@ class LlamaService extends EventEmitter {
         /* ignore — server may already be gone */
       }
       // Wait for CUDA VRAM release before reloading text model
-      await new Promise((r) => setTimeout(r, 500));
+      await delay(500);
       this._ensureModelLoaded('text')
         .catch((err) => {
           logger.warn('[LlamaService] Text model preload after vision batch failed:', err?.message);
@@ -2203,7 +2426,7 @@ class LlamaService extends EventEmitter {
                   await this._modelMemoryManager.unloadModel('text');
                   await this._modelMemoryManager.unloadModel('embedding');
                   // Brief delay for CUDA driver to release VRAM back to the OS
-                  await new Promise((r) => setTimeout(r, 500));
+                  await delay(500);
                 }
 
                 const visionService = getVisionService();
@@ -2236,7 +2459,6 @@ class LlamaService extends EventEmitter {
                 } catch (visionError) {
                   const shouldRetryDegraded =
                     this._shouldUseConservativeVisionProfile() &&
-                    !this._visionBatchMode &&
                     this._isVisionDecodePressureError(visionError);
                   if (!shouldRetryDegraded) {
                     throw visionError;
@@ -2290,7 +2512,7 @@ class LlamaService extends EventEmitter {
                       /* ignore — server may already be gone */
                     }
                     // Wait for CUDA VRAM release before reloading text model
-                    await new Promise((r) => setTimeout(r, 500));
+                    await delay(500);
                   }
 
                   // Vision done — pre-load text model for next inference
@@ -2481,7 +2703,7 @@ class LlamaService extends EventEmitter {
     // Clean up all references to prevent stale state
     this._initialized = false;
     this._initPromise = null;
-    this._configLoaded = false; // FIX: Reset so re-initialization loads fresh config
+    this._configLoaded = false;
     this._modelsPath = null; // Reset so re-initialization discovers fresh path
     this._llama = null;
     this._models = { text: null, vision: null, embedding: null };

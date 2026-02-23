@@ -60,7 +60,6 @@ async function processItemsInParallel({
           TIMEOUTS.BATCH_EMBEDDING_MAX || 5 * 60 * 1000,
           `Batch ${type} upsert`
         );
-        // FIX CRITICAL: Check batch operation result for data loss prevention
         // If the service returns success: false (e.g. dimension mismatch), we must treat it as a failure
         // so items go to the failed queue instead of being silently dropped.
         if (result && result.success === false) {
@@ -104,7 +103,6 @@ async function processItemsInParallel({
           TIMEOUTS.BATCH_EMBEDDING_MAX || 5 * 60 * 1000,
           `Batch ${type} upsert`
         );
-        // FIX CRITICAL: Check batch operation result for data loss prevention
         if (result && result.success === false) {
           const isDimensionMismatch =
             result.error === 'dimension_mismatch' || result.requiresRebuild === true;
@@ -195,7 +193,6 @@ async function processItemsInParallel({
         `Upsert ${type}`
       );
 
-      // FIX CRITICAL: Check operation result for data loss prevention
       if (result && result.success === false) {
         const isDimensionMismatch =
           result.error === 'dimension_mismatch' || result.requiresRebuild === true;

@@ -21,7 +21,9 @@ const { attachErrorCode } = require('../../shared/errorHandlingUtils');
 const { replaceFileWithRetry } = require('../../shared/atomicFile');
 const { compress, uncompress } = require('../../shared/lz4Codec');
 const { resolveEmbeddingDimension } = require('../../shared/embeddingDimensions');
+const { cosineSimilarity } = require('../../shared/vectorMath');
 const { getEmbeddingModel, loadLlamaConfig, getLlamaService } = require('../llamaUtils');
+const { createTimeoutRace } = require('../../shared/promiseUtils');
 const { writeEmbeddingIndexMetadata } = require('./vectorDb/embeddingIndexMetadata');
 const { get: getConfig } = require('../../shared/config/index');
 const { SEARCH } = require('../../shared/performanceConstants');
@@ -181,6 +183,7 @@ class OramaVectorService extends EventEmitter {
     // Embedding sidecar store – Orama's restore() loses vector data (v3.1.x bug),
     // so we cache embeddings separately, keyed by collection name → Map<docId, number[]>.
     this._embeddingStore = {};
+    this._maxEmbeddingStoreSize = 10000;
 
     // Bounded concurrency for batch upsert paths to improve throughput without
     // overwhelming DB writes or event-loop latency.
@@ -197,6 +200,15 @@ class OramaVectorService extends EventEmitter {
       repairAttempts: 0
     };
     this._vectorHealthPromise = null;
+    this._folderVectorHealth = {
+      primaryHealthy: null,
+      lastValidatedAt: 0,
+      lastValidationReason: null,
+      lastValidationError: null,
+      lastRepairAt: 0,
+      repairAttempts: 0
+    };
+    this._folderVectorHealthPromise = null;
   }
 
   async _runBoundedBatch(items, workerFn, concurrency = this._batchUpsertConcurrency) {
@@ -273,6 +285,18 @@ class OramaVectorService extends EventEmitter {
         this._broadcastStatus('error', 'degraded');
       }
     }
+  }
+
+  _getFolderVectorHealthSnapshot() {
+    return { ...this._folderVectorHealth };
+  }
+
+  _setFolderVectorHealth(update) {
+    this._folderVectorHealth = {
+      ...this._folderVectorHealth,
+      ...update
+    };
+    this.emit('folder-vector-health', this._getFolderVectorHealthSnapshot());
   }
 
   /**
@@ -357,6 +381,61 @@ class OramaVectorService extends EventEmitter {
     return docs;
   }
 
+  async _getAllFolderDocuments() {
+    if (!this._databases?.folders) return [];
+
+    try {
+      const snapshot = await persist(this._databases.folders);
+      const docsById = snapshot?.docs?.docs;
+      if (docsById && typeof docsById === 'object') {
+        return Object.values(docsById).filter((doc) => doc && typeof doc === 'object');
+      }
+    } catch (error) {
+      logger.warn(
+        '[OramaVectorService] Failed to snapshot folders DB; falling back to paged search',
+        {
+          error: error?.message
+        }
+      );
+    }
+
+    const pageSize = 1000;
+    const docs = [];
+    const seenFirstIds = new Set();
+    let offset = 0;
+
+    while (true) {
+      const page = await search(this._databases.folders, {
+        term: '',
+        limit: pageSize,
+        offset
+      });
+      const hits = Array.isArray(page?.hits) ? page.hits : [];
+      if (hits.length === 0) break;
+
+      const firstId = hits[0]?.document?.id;
+      if (offset > 0 && firstId && seenFirstIds.has(firstId)) {
+        logger.warn(
+          '[OramaVectorService] Detected repeating folder page results; stopping to avoid infinite loop',
+          { offset, pageSize, firstId }
+        );
+        break;
+      }
+      if (firstId) seenFirstIds.add(firstId);
+
+      for (const hit of hits) {
+        if (hit?.document && typeof hit.document === 'object') {
+          docs.push(hit.document);
+        }
+      }
+
+      if (hits.length < pageSize) break;
+      offset += hits.length;
+    }
+
+    return docs;
+  }
+
   async _repairFilesVectorIndexFromCurrentState() {
     if (!this._databases?.files) return { repaired: false, reason: 'files-db-unavailable' };
 
@@ -418,6 +497,67 @@ class OramaVectorService extends EventEmitter {
     };
   }
 
+  async _repairFoldersVectorIndexFromCurrentState() {
+    if (!this._databases?.folders) return { repaired: false, reason: 'folders-db-unavailable' };
+
+    const sourceDocs = await this._getAllFolderDocuments();
+    const rebuilt = await create({ schema: this._schemas.folders });
+    const rebuiltEmbeddings = new Map();
+    let repairedDocs = 0;
+    let placeholders = 0;
+
+    for (const existing of sourceDocs) {
+      const normalizedEmbedding = this._normalizeEmbeddingVector(
+        this._embeddingStore?.folders?.get(existing.id) || existing.embedding,
+        this._dimension
+      );
+      const hasVector =
+        Array.isArray(normalizedEmbedding) &&
+        normalizedEmbedding.length === this._dimension &&
+        !(normalizedEmbedding[0] === 0 && normalizedEmbedding.every((v) => v === 0));
+      const embedding = hasVector
+        ? normalizedEmbedding
+        : Array.from({ length: this._dimension }, () => 0);
+
+      try {
+        await insert(rebuilt, {
+          id: existing.id,
+          embedding,
+          folderPath: existing.folderPath || '',
+          folderName: existing.folderName || '',
+          description: existing.description || '',
+          patterns: Array.isArray(existing.patterns) ? existing.patterns : []
+        });
+
+        if (hasVector) {
+          rebuiltEmbeddings.set(existing.id, embedding);
+        } else {
+          placeholders++;
+        }
+        repairedDocs++;
+      } catch (err) {
+        logger.warn('[OramaVectorService] Failed to insert folder document during repair', {
+          id: existing.id,
+          error: err.message
+        });
+      }
+    }
+
+    this._databases.folders = rebuilt;
+    this._embeddingStore.folders = rebuiltEmbeddings;
+    this._collectionDimensions.folders = this._dimension;
+    this._invalidateCacheForFolder();
+    this._clearQueryCache();
+    await this.persistAll();
+
+    return {
+      repaired: true,
+      repairedDocs,
+      placeholders,
+      embeddingsCached: rebuiltEmbeddings.size
+    };
+  }
+
   async _ensurePrimaryVectorHealth({ reason = 'runtime', force = false, autoRepair = true } = {}) {
     const now = Date.now();
     if (
@@ -432,6 +572,7 @@ class OramaVectorService extends EventEmitter {
       return this._vectorHealthPromise;
     }
 
+    const HEALTH_CHECK_TIMEOUT_MS = 30000;
     this._vectorHealthPromise = (async () => {
       const embStore = this._embeddingStore?.files;
       if (!(embStore instanceof Map) || embStore.size === 0) {
@@ -523,11 +664,174 @@ class OramaVectorService extends EventEmitter {
         });
         return this._getVectorHealthSnapshot();
       }
-    })().finally(() => {
-      this._vectorHealthPromise = null;
-    });
+    })();
+
+    // Wrap with timeout to prevent a hanging health check from blocking all subsequent checks
+    const { promise: timeoutPromise, cleanup } = createTimeoutRace(
+      HEALTH_CHECK_TIMEOUT_MS,
+      'Vector health check timed out'
+    );
+
+    this._vectorHealthPromise = Promise.race([this._vectorHealthPromise, timeoutPromise])
+      .catch((error) => {
+        logger.warn('[OramaVectorService] Health check timed out or failed', {
+          reason,
+          error: error?.message
+        });
+        this._setVectorHealth({
+          primaryHealthy: false,
+          lastValidatedAt: Date.now(),
+          lastValidationReason: `${reason}:timeout`,
+          lastValidationError: error?.message || 'Health check timed out'
+        });
+        return this._getVectorHealthSnapshot();
+      })
+      .finally(() => {
+        cleanup();
+        this._vectorHealthPromise = null;
+      });
 
     return this._vectorHealthPromise;
+  }
+
+  async _ensurePrimaryFolderVectorHealth({
+    reason = 'runtime',
+    force = false,
+    autoRepair = true
+  } = {}) {
+    const now = Date.now();
+    if (
+      !force &&
+      this._folderVectorHealth.lastValidatedAt > 0 &&
+      now - this._folderVectorHealth.lastValidatedAt < VECTOR_PRIMARY_VALIDATION_INTERVAL_MS
+    ) {
+      return this._getFolderVectorHealthSnapshot();
+    }
+
+    if (this._folderVectorHealthPromise) {
+      return this._folderVectorHealthPromise;
+    }
+
+    const HEALTH_CHECK_TIMEOUT_MS = 30000;
+    this._folderVectorHealthPromise = (async () => {
+      const embStore = this._embeddingStore?.folders;
+      if (!(embStore instanceof Map) || embStore.size === 0) {
+        this._setFolderVectorHealth({
+          primaryHealthy: true,
+          lastValidatedAt: Date.now(),
+          lastValidationReason: `${reason}:no-vectors`,
+          lastValidationError: null
+        });
+        return this._getFolderVectorHealthSnapshot();
+      }
+
+      const probeEntry = Array.from(embStore.entries()).find(([_, vector]) => {
+        const normalized = this._normalizeEmbeddingVector(vector, this._dimension);
+        return (
+          Array.isArray(normalized) &&
+          normalized.length === this._dimension &&
+          !(normalized[0] === 0 && normalized.every((v) => v === 0))
+        );
+      });
+
+      if (!probeEntry) {
+        this._setFolderVectorHealth({
+          primaryHealthy: true,
+          lastValidatedAt: Date.now(),
+          lastValidationReason: `${reason}:no-valid-probe`,
+          lastValidationError: null
+        });
+        return this._getFolderVectorHealthSnapshot();
+      }
+
+      const [probeId, probeVector] = probeEntry;
+      const runProbe = async () => {
+        const probeResults = await search(this._databases.folders, {
+          mode: 'vector',
+          vector: { value: probeVector, property: 'embedding' },
+          limit: 5
+        });
+        return (probeResults.hits || []).some((hit) => hit?.document?.id === probeId);
+      };
+
+      try {
+        let healthy = await runProbe();
+        if (
+          !healthy &&
+          autoRepair &&
+          this._folderVectorHealth.repairAttempts < VECTOR_PRIMARY_MAX_REPAIR_ATTEMPTS
+        ) {
+          this._setFolderVectorHealth({
+            repairAttempts: this._folderVectorHealth.repairAttempts + 1,
+            lastRepairAt: Date.now()
+          });
+
+          logger.warn(
+            '[OramaVectorService] Folder vector self-check failed; attempting folders index repair',
+            {
+              reason,
+              probeId
+            }
+          );
+
+          const repair = await this._repairFoldersVectorIndexFromCurrentState();
+          logger.info('[OramaVectorService] Folders vector index repair completed', {
+            ...repair,
+            reason
+          });
+          healthy = await runProbe();
+        }
+
+        this._setFolderVectorHealth({
+          primaryHealthy: healthy,
+          lastValidatedAt: Date.now(),
+          lastValidationReason: reason,
+          lastValidationError: null
+        });
+        return this._getFolderVectorHealthSnapshot();
+      } catch (error) {
+        this._setFolderVectorHealth({
+          primaryHealthy: false,
+          lastValidatedAt: Date.now(),
+          lastValidationReason: reason,
+          lastValidationError: error?.message || String(error)
+        });
+        logger.warn('[OramaVectorService] Folder vector self-check failed', {
+          reason,
+          error: error?.message
+        });
+        return this._getFolderVectorHealthSnapshot();
+      }
+    })();
+
+    const { promise: timeoutPromise, cleanup } = createTimeoutRace(
+      HEALTH_CHECK_TIMEOUT_MS,
+      'Folder vector health check timed out'
+    );
+
+    this._folderVectorHealthPromise = Promise.race([
+      this._folderVectorHealthPromise,
+      timeoutPromise
+    ])
+      .catch((error) => {
+        logger.warn('[OramaVectorService] Folder health check timed out or failed', {
+          reason,
+          error: error?.message
+        });
+        this._setFolderVectorHealth({
+          primaryHealthy: false,
+          lastValidatedAt: Date.now(),
+          lastValidationReason: `${reason}:timeout`,
+          lastValidationError: error?.message || 'Health check timed out'
+        });
+        return this._getFolderVectorHealthSnapshot();
+      })
+      .finally(() => {
+        cleanup();
+        this._folderVectorHealthPromise = null;
+      });
+
+    return this._folderVectorHealthPromise;
   }
 
   /**
@@ -579,6 +883,11 @@ class OramaVectorService extends EventEmitter {
         });
 
         await this._ensurePrimaryVectorHealth({
+          reason: 'initialize',
+          force: true,
+          autoRepair: true
+        });
+        await this._ensurePrimaryFolderVectorHealth({
           reason: 'initialize',
           force: true,
           autoRepair: true
@@ -686,12 +995,15 @@ class OramaVectorService extends EventEmitter {
       modelName: newModel
     });
 
-    if (resolved.dimensionChanged) {
-      logger.warn('[OramaVectorService] Embedding dimension changed, resetting collections', {
+    const needsReset = resolved.dimensionChanged || resolved.modelChanged;
+    if (needsReset) {
+      logger.warn('[OramaVectorService] Embedding model changed, resetting collections', {
         previousModel,
         newModel: resolved.modelName || newModel,
         previousDimension: resolved.previousDimension,
-        newDimension: this._dimension
+        newDimension: this._dimension,
+        dimensionChanged: resolved.dimensionChanged,
+        modelChanged: resolved.modelChanged
       });
       await this.resetAll();
     }
@@ -720,7 +1032,9 @@ class OramaVectorService extends EventEmitter {
       newModel: resolved.modelName || newModel,
       previousDimension: resolved.previousDimension,
       newDimension: this._dimension,
-      dimensionChanged: resolved.dimensionChanged
+      dimensionChanged: resolved.dimensionChanged,
+      modelChanged: resolved.modelChanged,
+      collectionsReset: needsReset
     };
   }
 
@@ -1000,7 +1314,6 @@ class OramaVectorService extends EventEmitter {
         clearTimeout(this._persistTimer);
         this._persistTimer = null;
       }
-      // FIX: Only start a new persist if none is running. When _isPersisting is
       // true, _doPersist() returns a resolved promise (no-op). Assigning that to
       // _currentPersistPromise would overwrite the reference to the real in-flight
       // persist, causing cleanup() to skip waiting for it and risk data loss.
@@ -1018,12 +1331,13 @@ class OramaVectorService extends EventEmitter {
     }
 
     this._persistTimer = setTimeout(() => {
-      // FIX: Same guard for the debounced path -- don't clobber the promise ref
       // if a persist is still running when the timer fires.
       if (!this._isPersisting) {
         this._currentPersistPromise = this._doPersist();
       }
     }, PERSIST_DEBOUNCE_MS);
+    // Prevent persist timer from keeping Node.js/Electron alive on shutdown
+    if (typeof this._persistTimer?.unref === 'function') this._persistTimer.unref();
   }
 
   /**
@@ -1088,11 +1402,21 @@ class OramaVectorService extends EventEmitter {
 
       logger.debug('[OramaVectorService] Persisted all databases');
     } catch (error) {
-      this._persistPending = true;
-      logger.error(
-        '[OramaVectorService] Persistence failed:',
-        attachErrorCode(error, ERROR_CODES.VECTOR_DB_PERSIST_FAILED)
-      );
+      this._persistRetryCount = (this._persistRetryCount || 0) + 1;
+      const maxRetries = 5;
+      if (this._persistRetryCount >= maxRetries) {
+        logger.error(
+          `[OramaVectorService] Persistence failed ${maxRetries} consecutive times, stopping retries`,
+          attachErrorCode(error, ERROR_CODES.VECTOR_DB_PERSIST_FAILED)
+        );
+        this._persistPending = false;
+      } else {
+        this._persistPending = true;
+        logger.error(
+          `[OramaVectorService] Persistence failed (attempt ${this._persistRetryCount}/${maxRetries}):`,
+          attachErrorCode(error, ERROR_CODES.VECTOR_DB_PERSIST_FAILED)
+        );
+      }
     } finally {
       this._isPersisting = false;
       // If new writes arrived while we were persisting, the debounce timer that
@@ -1100,8 +1424,15 @@ class OramaVectorService extends EventEmitter {
       // those writes are not silently orphaned.
       if (this._persistPending && !this._isShuttingDown) {
         this._persistTimer = setTimeout(() => {
-          this._currentPersistPromise = this._doPersist();
+          if (!this._isPersisting) {
+            this._currentPersistPromise = this._doPersist();
+          }
         }, PERSIST_DEBOUNCE_MS);
+        if (typeof this._persistTimer?.unref === 'function') this._persistTimer.unref();
+      }
+      // Reset retry counter on successful persist
+      if (!this._persistPending) {
+        this._persistRetryCount = 0;
       }
     }
   }
@@ -1187,22 +1518,7 @@ class OramaVectorService extends EventEmitter {
   }
 
   _cosineSimilarity(a, b) {
-    if (!Array.isArray(a) || !Array.isArray(b) || a.length === 0 || a.length !== b.length) {
-      return -1;
-    }
-    let dot = 0;
-    let normA = 0;
-    let normB = 0;
-    for (let i = 0; i < a.length; i++) {
-      const av = a[i];
-      const bv = b[i];
-      if (!Number.isFinite(av) || !Number.isFinite(bv)) continue;
-      dot += av * bv;
-      normA += av * av;
-      normB += bv * bv;
-    }
-    if (normA <= 0 || normB <= 0) return -1;
-    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+    return cosineSimilarity(a, b);
   }
 
   async _fallbackQuerySimilarFiles(queryEmbedding, topK) {
@@ -1280,6 +1596,83 @@ class OramaVectorService extends EventEmitter {
         suggestedName: doc.suggestedName,
         keywords: doc.keywords,
         tags: doc.tags
+      }
+    }));
+  }
+
+  async _fallbackQueryFoldersByEmbedding(queryEmbedding, topK) {
+    const normalizedTopK = Number.isFinite(topK) && topK > 0 ? Math.max(1, Math.floor(topK)) : 5;
+    const embStore = this._embeddingStore?.folders;
+    const scored = [];
+
+    // Fast path: use in-memory sidecar vectors, then fetch folder metadata for top candidates.
+    if (embStore instanceof Map && embStore.size > 0) {
+      for (const [docId, rawVector] of embStore.entries()) {
+        const emb = this._normalizeEmbeddingVector(rawVector, queryEmbedding.length);
+        if (!Array.isArray(emb) || emb.length !== queryEmbedding.length) continue;
+        if (emb[0] === 0 && emb.every((v) => v === 0)) continue;
+        const score = this._cosineSimilarity(queryEmbedding, emb);
+        if (!Number.isFinite(score) || score <= 0) continue;
+        scored.push({ id: docId, score });
+      }
+
+      scored.sort((a, b) => b.score - a.score);
+      const candidates = scored.slice(0, Math.max(normalizedTopK * 3, normalizedTopK));
+      const results = [];
+
+      for (const candidate of candidates) {
+        const doc = await getByID(this._databases.folders, candidate.id);
+        if (!doc) continue;
+        results.push({
+          id: doc.id,
+          score: candidate.score,
+          distance: 1 - candidate.score,
+          metadata: {
+            path: doc.folderPath,
+            folderPath: doc.folderPath,
+            folderName: doc.folderName,
+            description: doc.description,
+            patterns: doc.patterns
+          }
+        });
+        if (results.length >= normalizedTopK) break;
+      }
+
+      if (results.length > 0) {
+        return results;
+      }
+    }
+
+    // Slow path: enumerate folders and score with sidecar vectors.
+    const allFolders = await this.getAllFolders();
+    const scoredDocs = [];
+    for (const folder of allFolders) {
+      const docId = folder?.id;
+      if (!docId) continue;
+      const doc = await getByID(this._databases.folders, docId);
+      if (!doc) continue;
+      const emb = this._normalizeEmbeddingVector(
+        this._embeddingStore?.folders?.get(doc.id) || doc.embedding,
+        queryEmbedding.length
+      );
+      if (!Array.isArray(emb) || emb.length !== queryEmbedding.length) continue;
+      if (emb[0] === 0 && emb.every((v) => v === 0)) continue;
+      const score = this._cosineSimilarity(queryEmbedding, emb);
+      if (!Number.isFinite(score) || score <= 0) continue;
+      scoredDocs.push({ doc, score });
+    }
+
+    scoredDocs.sort((a, b) => b.score - a.score);
+    return scoredDocs.slice(0, normalizedTopK).map(({ doc, score }) => ({
+      id: doc.id,
+      score,
+      distance: 1 - score,
+      metadata: {
+        path: doc.folderPath,
+        folderPath: doc.folderPath,
+        folderName: doc.folderName,
+        description: doc.description,
+        patterns: doc.patterns
       }
     }));
   }
@@ -1473,6 +1866,11 @@ class OramaVectorService extends EventEmitter {
     if (doc.embedding && doc.embedding.length > 0) {
       if (!this._embeddingStore.files) this._embeddingStore.files = new Map();
       this._embeddingStore.files.set(file.id, doc.embedding);
+      // Evict oldest entries if embedding store exceeds cap
+      if (this._embeddingStore.files.size > this._maxEmbeddingStoreSize) {
+        const iter = this._embeddingStore.files.keys();
+        this._embeddingStore.files.delete(iter.next().value);
+      }
     }
 
     this._invalidateCacheForFile(file.id);
@@ -1507,7 +1905,12 @@ class OramaVectorService extends EventEmitter {
       });
       return {
         success: false,
-        count: files.length,
+        count: 0,
+        failed: files.map((f) => ({
+          id: f.id || f.path,
+          error: 'dimension_mismatch',
+          requiresRebuild: true
+        })),
         error: 'dimension_mismatch',
         requiresRebuild: true
       };
@@ -1537,6 +1940,21 @@ class OramaVectorService extends EventEmitter {
           error: error.message
         });
         failed.push({ id: file.id, error: error.message });
+      }
+    }
+
+    // Sanity-check folder vector retrieval after upsert to catch index drift early.
+    if (successCount > 0) {
+      try {
+        await this._ensurePrimaryFolderVectorHealth({
+          reason: 'batch-upsert-folders',
+          force: true,
+          autoRepair: true
+        });
+      } catch (error) {
+        logger.warn('[OramaVectorService] Folder post-upsert health check failed', {
+          error: error?.message
+        });
       }
     }
 
@@ -1642,17 +2060,18 @@ class OramaVectorService extends EventEmitter {
       const results = await this.querySimilarFiles(sourceEmbedding, topK * 3);
 
       // Normalize directory path for consistent comparison
-      const normalizedDir = targetDirectory.replace(/\\/g, '/').replace(/\/+$/, '');
+      const normalizedDir = targetDirectory.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 
       // Filter to files within the target directory and above threshold
       return results
         .filter((result) => {
           if (result.id === fileId) return false; // Exclude self
-          const filePath = (result.metadata?.filePath || result.metadata?.path || '').replace(
+          const rawFilePath = (result.metadata?.filePath || result.metadata?.path || '').replace(
             /\\/g,
             '/'
           );
-          if (!filePath) return false;
+          if (!rawFilePath) return false;
+          const filePath = rawFilePath.toLowerCase();
           // Check if file is within the target directory
           return filePath.startsWith(normalizedDir + '/') && result.score >= threshold;
         })
@@ -1808,7 +2227,10 @@ class OramaVectorService extends EventEmitter {
         const newPath =
           updateSpec?.newPath || updateSpec?.newMeta?.path || updateSpec?.newMeta?.filePath || null;
         const newName =
-          updateSpec?.newName || updateSpec?.newMeta?.name || updateSpec?.newMeta?.fileName || null;
+          updateSpec?.newName ||
+          updateSpec?.newMeta?.name ||
+          updateSpec?.newMeta?.fileName ||
+          (newPath ? require('path').win32.basename(newPath) : null);
 
         if (!oldId) continue;
 
@@ -1822,9 +2244,8 @@ class OramaVectorService extends EventEmitter {
         // syncEmbeddingForMove provide, instead of silently dropping them.
         const metaOverrides = this._buildMetaOverrides(updateSpec?.newMeta, newPath, newName);
 
-        // If ID changed, delete old and insert new
+        // If ID changed, insert new then delete old to prevent data loss on insert failure
         if (newId && newId !== oldId) {
-          await remove(this._databases.files, oldId);
           await insert(this._databases.files, {
             ...existing,
             ...metaOverrides,
@@ -1832,6 +2253,8 @@ class OramaVectorService extends EventEmitter {
             filePath: newPath || existing.filePath,
             fileName: newName || existing.fileName
           });
+          await remove(this._databases.files, oldId);
+
           // Migrate embedding in sidecar store
           const embStore = this._embeddingStore?.files;
           if (embStore) {
@@ -1996,7 +2419,6 @@ class OramaVectorService extends EventEmitter {
 
     // fileChunks schema has no isOrphaned flag, so we find orphans by checking
     // whether each chunk's fileId still exists in the files database.
-    // FIX: Build a Set of known file IDs first (O(n+m) instead of O(n*m) getByID calls).
     const [allChunks, allFiles] = await Promise.all([
       search(this._databases.fileChunks, { term: '', limit: 10000 }),
       search(this._databases.files, { term: '', limit: 10000 })
@@ -2174,7 +2596,13 @@ class OramaVectorService extends EventEmitter {
       });
       return {
         success: false,
-        count: folders.length,
+        count: 0,
+        skipped: [],
+        failed: folders.map((f) => ({
+          id: f.id,
+          error: 'dimension_mismatch',
+          requiresRebuild: true
+        })),
         error: 'dimension_mismatch',
         requiresRebuild: true
       };
@@ -2232,11 +2660,15 @@ class OramaVectorService extends EventEmitter {
         vector: { value: embedding, property: 'embedding' },
         limit
       });
-
-      return result.hits
+      const rawHitCount = Array.isArray(result?.hits) ? result.hits.length : 0;
+      const placeholderHits = Array.isArray(result?.hits)
+        ? result.hits.filter((hit) => this._isZeroPlaceholderHit(hit)).length
+        : 0;
+      const filteredHits = result.hits
         .filter((hit) => !this._isZeroPlaceholderHit(hit))
-        .slice(0, topK)
-        .map((hit) => ({
+        .slice(0, topK);
+      if (filteredHits.length > 0) {
+        return filteredHits.map((hit) => ({
           id: hit.document.id,
           score: hit.score,
           distance: 1 - hit.score,
@@ -2248,6 +2680,37 @@ class OramaVectorService extends EventEmitter {
             patterns: hit.document.patterns
           }
         }));
+      }
+
+      const health = await this._ensurePrimaryFolderVectorHealth({
+        reason: 'query-empty',
+        force: true,
+        autoRepair: true
+      });
+
+      if (health.primaryHealthy === false) {
+        logger.warn(
+          '[OramaVectorService] Primary folder vector query unavailable after validation/repair; using fallback scorer',
+          {
+            topK,
+            rawHitCount,
+            placeholderHits,
+            health
+          }
+        );
+        return await this._fallbackQueryFoldersByEmbedding(embedding, topK);
+      }
+
+      logger.debug(
+        '[OramaVectorService] Primary folder vector query returned no hits; using fallback scorer',
+        {
+          topK,
+          rawHitCount,
+          placeholderHits,
+          health
+        }
+      );
+      return await this._fallbackQueryFoldersByEmbedding(embedding, topK);
     } catch (error) {
       throw attachErrorCode(error, ERROR_CODES.VECTOR_DB_QUERY_FAILED);
     }
@@ -2895,27 +3358,85 @@ class OramaVectorService extends EventEmitter {
       }));
   }
 
+  /**
+   * Get a document by ID
+   * @param {string} id
+   * @returns {Promise<Object|null>}
+   */
+  async getDocument(id) {
+    await this.initialize();
+    try {
+      const db = this._databases.files;
+      if (!db) return null;
+      return await getByID(db, id);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Update tags for a file document
+   * @param {string} id - Document ID
+   * @param {string[]} tags - New tags
+   * @returns {Promise<boolean>}
+   */
+  async updateDocumentTags(id, tags) {
+    await this.initialize();
+
+    try {
+      const db = this._databases.files;
+      if (!db) return false;
+
+      const doc = await getByID(db, id);
+      if (!doc) return false;
+
+      // Update document with new tags
+      await update(db, id, { ...doc, tags });
+
+      this._schedulePersist();
+      return true;
+    } catch (error) {
+      logger.error('[OramaVectorService] Failed to update document tags', { id, error });
+      return false;
+    }
+  }
+
   // ==================== UTILITY ====================
 
   /**
    * Reset all collections
    */
   async resetAll() {
-    await this._refreshEmbeddingDimension({ reason: 'reset-all' });
-    await this.resetFiles();
-    await this.resetFileChunks();
-    await this.resetFolders();
-    await this.resetFeedbackMemory();
-    await this.resetLearningPatterns();
-    // Clear all sidecar embedding stores
-    this._embeddingStore = {};
-    this._setVectorHealth({
-      primaryHealthy: true,
-      lastValidatedAt: Date.now(),
-      lastValidationReason: 'reset-all',
-      lastValidationError: null
-    });
-    logger.info('[OramaVectorService] All collections reset');
+    if (this._isResetting) {
+      logger.warn('[OramaVectorService] Reset already in progress, skipping');
+      return;
+    }
+    this._isResetting = true;
+    try {
+      await this._refreshEmbeddingDimension({ reason: 'reset-all' });
+      await this.resetFiles();
+      await this.resetFileChunks();
+      await this.resetFolders();
+      await this.resetFeedbackMemory();
+      await this.resetLearningPatterns();
+      // Clear all sidecar embedding stores
+      this._embeddingStore = {};
+      this._setVectorHealth({
+        primaryHealthy: true,
+        lastValidatedAt: Date.now(),
+        lastValidationReason: 'reset-all',
+        lastValidationError: null
+      });
+      this._setFolderVectorHealth({
+        primaryHealthy: true,
+        lastValidatedAt: Date.now(),
+        lastValidationReason: 'reset-all',
+        lastValidationError: null
+      });
+      logger.info('[OramaVectorService] All collections reset');
+    } finally {
+      this._isResetting = false;
+    }
   }
 
   /**
@@ -2943,6 +3464,7 @@ class OramaVectorService extends EventEmitter {
       initialized: this._initialized,
       dimension: this._dimension,
       vectorHealth: this._getVectorHealthSnapshot(),
+      folderVectorHealth: this._getFolderVectorHealthSnapshot(),
       queryCache: {
         size: this._queryCache.size,
         maxSize: this._queryCache.maxSize
@@ -3024,6 +3546,10 @@ class OramaVectorService extends EventEmitter {
 
   getVectorHealth() {
     return this._getVectorHealthSnapshot();
+  }
+
+  getFolderVectorHealth() {
+    return this._getFolderVectorHealthSnapshot();
   }
 
   /**

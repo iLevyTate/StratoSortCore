@@ -4,7 +4,7 @@ import { useSelector } from 'react-redux';
 import { FileText, ChevronRight, Info } from 'lucide-react';
 import Input from '../ui/Input';
 import Select from '../ui/Select';
-import { StatusBadge } from '../ui';
+import { Button, StatusBadge } from '../ui';
 import Card from '../ui/Card';
 import { Text } from '../ui/Typography';
 import { formatDisplayPath } from '../../utils/pathDisplay';
@@ -184,16 +184,18 @@ function ReadyFileItem({
           )}
 
           {/* View Details Link */}
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="xs"
             onClick={handleViewDetails}
-            className="flex items-center gap-1.5 text-xs font-medium text-system-gray-500 hover:text-stratosort-blue transition-colors"
+            className="px-1 text-system-gray-500 hover:text-stratosort-blue"
             aria-label={`View analysis details for ${file.name}`}
           >
             <Info className="w-3.5 h-3.5" />
             Details
             <ChevronRight className="w-3 h-3" />
-          </button>
+          </Button>
         </div>
       )}
     </Card>

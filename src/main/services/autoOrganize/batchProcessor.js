@@ -17,11 +17,10 @@ const {
   findDefaultFolder
 } = require('./folderOperations');
 const { safeSuggestion, resolveSuggestionToSmartFolder } = require('./pathUtils');
-// FIX C-5: Import from idUtils to break circular dependency with fileProcessor
+const { makeUniqueFileName } = require('../../../shared/namingConventions');
 const { generateSecureId } = require('./idUtils');
 
 const logger = createLogger('AutoOrganize-Batch');
-// FIX: Named constants for confidence thresholds (previously magic numbers)
 const CONFIDENCE_THRESHOLDS = {
   BASE: 0.75, // Minimum confidence for auto-organization
   FALLBACK: 0.3, // Confidence assigned to fallback destinations
@@ -51,8 +50,10 @@ async function processBatchResults(
     CONFIDENCE_THRESHOLDS.BASE
   );
 
-  // FIX MED-20 & CRIT-23: Initialize pendingFeedback to track promises
   const pendingFeedback = [];
+
+  // Track planned destinations within batch to prevent overwrite collisions
+  const plannedDestinations = new Set();
 
   // Create a map of files keyed by path (more stable than name)
   const fileMap = new Map(files.map((f) => [f.path || f.name, f]));
@@ -120,12 +121,16 @@ async function processBatchResults(
         // High confidence - organize automatically
         // Ensure suggestion folder/path are valid strings
         const safeSuggestionObj = safeSuggestion(canonicalSuggestion);
-        const destination = buildDestinationPath(
+        let destination = buildDestinationPath(
           file,
           safeSuggestionObj,
           defaultLocation,
           preserveNames
         );
+        if (plannedDestinations.has(destination.toLowerCase())) {
+          destination = makeUniqueFileName(destination);
+        }
+        plannedDestinations.add(destination.toLowerCase());
 
         results.organized.push({
           file: sanitizeFile(file),
@@ -166,7 +171,11 @@ async function processBatchResults(
       } else {
         const defaultFolder = findDefaultFolder(smartFolders);
         if (defaultFolder?.path && confidence < effectiveThreshold) {
-          const destination = path.join(defaultFolder.path, file.name);
+          let destination = path.join(defaultFolder.path, file.name);
+          if (plannedDestinations.has(destination.toLowerCase())) {
+            destination = makeUniqueFileName(destination);
+          }
+          plannedDestinations.add(destination.toLowerCase());
           const uncategorizedSuggestion = {
             ...defaultFolder,
             isSmartFolder: true
@@ -198,7 +207,6 @@ async function processBatchResults(
     }
   }
 
-  // FIX MED-20: Await all pending feedback promises before completing
   if (pendingFeedback.length > 0) {
     await Promise.allSettled(pendingFeedback);
   }
@@ -222,7 +230,6 @@ async function batchOrganize(
   thresholds = {},
   buildDestFn = buildDestinationPath
 ) {
-  // FIX: Use ?? instead of || to properly handle falsy values like 0
   const { confidenceThreshold = thresholds.confidence ?? CONFIDENCE_THRESHOLDS.DEFAULT } = options;
 
   logger.info('[AutoOrganize] Starting batch organization', {
@@ -284,7 +291,6 @@ async function batchOrganize(
         const groupFailures = [];
 
         for (const file of groupFiles) {
-          // FIX H-1: Guard against missing file.path before processing
           if (!file?.path) {
             const timestamp = new Date().toISOString();
             logger.warn('[AutoOrganize] Skipping file with missing path in batch', {
@@ -322,7 +328,6 @@ async function batchOrganize(
               destination
             });
 
-            // FIX: Push feedback to array for batched await instead of blocking each file
             if (file.suggestion) {
               pendingFeedback.push(
                 withTimeout(

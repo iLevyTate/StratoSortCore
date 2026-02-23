@@ -16,7 +16,8 @@ import {
   ExternalLink,
   Pencil,
   Search,
-  Sparkles
+  Sparkles,
+  Tag
 } from 'lucide-react';
 import { IconButton } from '../ui';
 
@@ -49,7 +50,8 @@ const ClusterNode = memo(({ data, selected }) => {
     onExpand,
     onOpenAllFiles,
     onSearchWithinCluster,
-    onRenameCluster
+    onRenameCluster,
+    onTagCluster
   } = data || {};
 
   const handleExpandClick = useCallback(
@@ -113,23 +115,23 @@ const ClusterNode = memo(({ data, selected }) => {
   const diameter = Math.round(
     HUB_SIZE.MIN_DIAMETER + scaleFactor * (HUB_SIZE.MAX_DIAMETER - HUB_SIZE.MIN_DIAMETER)
   );
+  const showTopTerms = topTerms.length > 0 && diameter >= 124;
 
   return (
     <div
       className={`
-        relative rounded-full border-4 shadow-lg flex flex-col items-center justify-center
+        relative rounded-full border-4 shadow-lg flex flex-col items-center justify-center overflow-hidden
         transition-all duration-300 cursor-pointer
         ${selected ? 'scale-105 z-50' : 'hover:scale-105 z-10'}
-        ${isExpanded ? 'ring-4 ring-amber-100' : ''}
+        ${isExpanded ? 'ring-4 ring-stratosort-accent/20' : ''}
       `}
       style={{
         width: `${diameter}px`,
         height: `${diameter}px`,
-        // Gradient background for depth
         background: selected
-          ? 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)'
-          : 'linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%)',
-        borderColor: selected ? '#f59e0b' : '#fbbf24'
+          ? 'linear-gradient(135deg, color-mix(in srgb, var(--color-stratosort-accent) 8%, white) 0%, color-mix(in srgb, var(--color-stratosort-accent) 15%, white) 100%)'
+          : 'linear-gradient(135deg, color-mix(in srgb, var(--color-stratosort-accent) 5%, white) 0%, color-mix(in srgb, var(--color-stratosort-accent) 12%, white) 100%)',
+        borderColor: 'var(--color-stratosort-accent)'
       }}
       onDoubleClick={handleExpandClick}
     >
@@ -143,7 +145,7 @@ const ClusterNode = memo(({ data, selected }) => {
               className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning/10"
               title="Open All Files"
               aria-label="Open All Files"
-              icon={<ExternalLink className="w-4 h-4 text-blue-600" />}
+              icon={<ExternalLink className="w-4 h-4 text-stratosort-blue" />}
             ></IconButton>
           )}
           {onSearchWithinCluster && (
@@ -154,7 +156,7 @@ const ClusterNode = memo(({ data, selected }) => {
               className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning/10"
               title="Search Within"
               aria-label="Search Within"
-              icon={<Search className="w-4 h-4 text-indigo-600" />}
+              icon={<Search className="w-4 h-4 text-stratosort-indigo" />}
             ></IconButton>
           )}
           {onCreateSmartFolder && (
@@ -165,7 +167,7 @@ const ClusterNode = memo(({ data, selected }) => {
               className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning/10"
               title="Create Smart Folder"
               aria-label="Create Smart Folder"
-              icon={<FolderPlus className="w-4 h-4 text-amber-600" />}
+              icon={<FolderPlus className="w-4 h-4 text-stratosort-accent" />}
             ></IconButton>
           )}
           {onMoveAllToFolder && (
@@ -176,7 +178,7 @@ const ClusterNode = memo(({ data, selected }) => {
               className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning/10"
               title="Move All"
               aria-label="Move All"
-              icon={<FolderInput className="w-4 h-4 text-blue-600" />}
+              icon={<FolderInput className="w-4 h-4 text-stratosort-blue" />}
             ></IconButton>
           )}
           {onExportFileList && (
@@ -187,7 +189,18 @@ const ClusterNode = memo(({ data, selected }) => {
               className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning/10"
               title="Export List"
               aria-label="Export List"
-              icon={<Download className="w-4 h-4 text-green-600" />}
+              icon={<Download className="w-4 h-4 text-stratosort-success" />}
+            ></IconButton>
+          )}
+          {onTagCluster && (
+            <IconButton
+              onClick={() => handleMenuAction(onTagCluster)}
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 text-system-gray-700 hover:bg-stratosort-warning/10"
+              title="Tag Files"
+              aria-label="Tag Files"
+              icon={<Tag className="w-4 h-4 text-stratosort-purple" />}
             ></IconButton>
           )}
           {onRenameCluster && (
@@ -223,13 +236,13 @@ const ClusterNode = memo(({ data, selected }) => {
 
       {/* Center Icon */}
       <div
-        className={`p-2.5 rounded-full mb-1.5 ${selected ? 'bg-amber-200 text-amber-700' : 'bg-amber-100 text-amber-600'}`}
+        className={`p-2.5 rounded-full mb-1.5 ${selected ? 'bg-stratosort-accent/20 text-stratosort-accent' : 'bg-stratosort-accent/10 text-stratosort-accent'}`}
       >
-        <Layers className="w-8 h-8" strokeWidth={1.5} />
+        <Layers className="w-7 h-7" strokeWidth={1.5} />
       </div>
 
       {/* Label Area */}
-      <div className="text-center px-4 w-full relative z-10">
+      <div className="text-center px-4 w-full max-w-[82%] mx-auto relative z-10">
         {isEditingLabel ? (
           <input
             ref={labelInputRef}
@@ -239,11 +252,11 @@ const ClusterNode = memo(({ data, selected }) => {
             onBlur={handleSaveLabel}
             onKeyDown={handleLabelKeyDown}
             onClick={(e) => e.stopPropagation()}
-            className="text-xs font-semibold text-center w-full bg-white/50 border border-amber-300 rounded focus:outline-none focus:border-amber-500"
+            className="text-xs font-semibold text-center w-full bg-white/50 border border-stratosort-accent/30 rounded-md focus:outline-none focus:border-stratosort-accent"
           />
         ) : (
           <div
-            className="text-xs font-bold text-system-gray-800 line-clamp-2 leading-tight break-words group/label"
+            className="text-xs font-bold text-system-gray-800 clamp-2 leading-tight break-words group/label"
             title={label}
           >
             {label}
@@ -258,9 +271,9 @@ const ClusterNode = memo(({ data, selected }) => {
       </div>
 
       {/* Top terms / why (kept inside the hub to avoid clipping) */}
-      {topTerms.length > 0 && (
+      {showTopTerms && (
         <div
-          className="mt-1 px-5 text-center text-[10px] leading-snug text-amber-700 font-medium line-clamp-2 break-all"
+          className="mt-0.5 px-4 max-w-[82%] mx-auto text-center text-[10px] leading-tight text-stratosort-accent font-medium clamp-1 break-words"
           title={`Shared terms: ${topTerms.join(', ')}`}
         >
           {topTerms.join(' • ')}
@@ -268,18 +281,18 @@ const ClusterNode = memo(({ data, selected }) => {
       )}
 
       {/* Member Count Badge */}
-      <div className="absolute -top-1 -right-1 bg-white border border-amber-200 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm flex items-center gap-1">
+      <div className="absolute -top-1 -right-1 bg-white border border-stratosort-accent/30 text-stratosort-accent text-xs font-bold px-2 py-0.5 rounded-full shadow-sm flex items-center gap-1">
         <span>{memberCount}</span>
-        {isAutoGenerated && <Sparkles className="w-2 h-2 text-amber-400" />}
+        {isAutoGenerated && <Sparkles className="w-2 h-2 text-stratosort-accent/70" />}
       </div>
 
       {/* Confidence Ring (Visual Indicator) */}
       <div
         className={`absolute inset-0 rounded-full border-2 opacity-30 pointer-events-none ${
           confidence === 'high'
-            ? 'border-emerald-500'
+            ? 'border-stratosort-success'
             : confidence === 'medium'
-              ? 'border-blue-500'
+              ? 'border-stratosort-blue'
               : 'border-system-gray-300'
         }`}
         style={{ margin: '-6px' }}
@@ -322,7 +335,8 @@ ClusterNode.propTypes = {
     onExpand: PropTypes.func,
     onOpenAllFiles: PropTypes.func,
     onSearchWithinCluster: PropTypes.func,
-    onRenameCluster: PropTypes.func
+    onRenameCluster: PropTypes.func,
+    onTagCluster: PropTypes.func
   }),
   selected: PropTypes.bool
 };

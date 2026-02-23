@@ -34,7 +34,6 @@ export function useAsyncData(fetcher, dependencies = [], options = {}) {
   // Ref to track component mount state to prevent memory leaks
   const isMountedRef = useRef(true);
 
-  // FIX: Use refs for fetcher and callbacks to prevent stale closure issues
   // This ensures execute() always uses the CURRENT fetcher, not the one from
   // when execute was memoized. This fixes the bug where dependencies change
   // but execute still references the old fetcher from its closure.
@@ -83,7 +82,6 @@ export function useAsyncData(fetcher, dependencies = [], options = {}) {
       if (isMountedRef.current) {
         setError(err);
         setLoading(false);
-        // FIX: Wrap onError callback in try-catch to prevent callback errors
         // from leaving the hook in an inconsistent state
         if (onErrorRef.current) {
           try {

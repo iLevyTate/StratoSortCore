@@ -21,7 +21,8 @@ const IPC_CHANNELS = {
     COPY_FILE: 'files:copy',
     OPEN_FOLDER: 'files:open-folder',
     DELETE_FOLDER: 'files:delete-folder',
-    CLEANUP_ANALYSIS: 'files:cleanup-analysis'
+    CLEANUP_ANALYSIS: 'files:cleanup-analysis',
+    ADD_TAGS: 'files:add-tags'
   },
   SMART_FOLDERS: {
     GET: 'smart-folders:get',
@@ -108,6 +109,7 @@ const IPC_CHANNELS = {
     GET_CLUSTER_MEMBERS: 'embeddings:get-cluster-members',
     GET_SIMILARITY_EDGES: 'embeddings:get-similarity-edges',
     GET_FILE_METADATA: 'embeddings:get-file-metadata',
+    FIND_FILES_BY_PATHS: 'embeddings:find-files-by-paths',
     FIND_DUPLICATES: 'embeddings:find-duplicates',
     CLEAR_CLUSTERS: 'embeddings:clear-clusters'
   },
@@ -115,6 +117,7 @@ const IPC_CHANNELS = {
     GET_METRICS: 'system:get-metrics',
     GET_APPLICATION_STATISTICS: 'system:get-app-stats',
     APPLY_UPDATE: 'system:apply-update',
+    CHECK_FOR_UPDATES: 'system:check-for-updates',
     GET_CONFIG: 'system:get-config',
     GET_CONFIG_VALUE: 'system:get-config-value',
     RENDERER_ERROR_REPORT: 'renderer-error-report',
@@ -164,8 +167,16 @@ const IPC_CHANNELS = {
   },
   // Dependencies removed - in-process AI stack only
   CHAT: {
-    QUERY: 'chat:query',
-    RESET_SESSION: 'chat:reset-session'
+    QUERY_STREAM: 'chat:query-stream',
+    CANCEL_STREAM: 'chat:cancel-stream',
+    STREAM_CHUNK: 'chat:stream-chunk',
+    STREAM_END: 'chat:stream-end',
+    RESET_SESSION: 'chat:reset-session',
+    LIST_CONVERSATIONS: 'chat:list-conversations',
+    GET_CONVERSATION: 'chat:get-conversation',
+    DELETE_CONVERSATION: 'chat:delete-conversation',
+    SEARCH_CONVERSATIONS: 'chat:search-conversations',
+    EXPORT_CONVERSATION: 'chat:export-conversation'
   },
   KNOWLEDGE: {
     GET_RELATIONSHIP_EDGES: 'knowledge:get-relationship-edges',
@@ -191,8 +202,7 @@ const IPC_EVENTS = {
   FILE_OPERATION_COMPLETE: 'file-operation-complete',
   NOTIFICATION: 'notification',
   UNDO_REDO_STATE_CHANGED: 'undo-redo:state-changed',
-  BATCH_RESULTS_CHUNK: 'batch-results-chunk',
-  OPERATION_FAILED: 'operation-failed'
+  BATCH_RESULTS_CHUNK: 'batch-results-chunk'
 };
 
 /**
@@ -412,7 +422,7 @@ const PHASE_TRANSITIONS = {
   [PHASES.SETUP]: [PHASES.WELCOME, PHASES.DISCOVER],
   [PHASES.DISCOVER]: [PHASES.WELCOME, PHASES.SETUP, PHASES.ORGANIZE],
   [PHASES.ORGANIZE]: [PHASES.WELCOME, PHASES.DISCOVER, PHASES.COMPLETE],
-  [PHASES.COMPLETE]: [PHASES.WELCOME, PHASES.DISCOVER]
+  [PHASES.COMPLETE]: [PHASES.WELCOME, PHASES.DISCOVER, PHASES.ORGANIZE]
 };
 
 const PHASE_ORDER = [

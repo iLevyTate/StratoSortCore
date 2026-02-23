@@ -7,6 +7,7 @@
 jest.mock('electron', () => ({
   app: {
     quit: jest.fn(),
+    exit: jest.fn(),
     on: jest.fn(),
     removeListener: jest.fn()
   },

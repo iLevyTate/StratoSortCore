@@ -27,6 +27,24 @@ const collectDataTransferTypes = (dataTransfer) => {
   return [];
 };
 
+const resolveDroppedFilePath = (file) => {
+  const fromFile = normalizeFileUri(file?.path || '');
+  if (fromFile) return fromFile;
+
+  // Electron 32+ may omit File.path in renderer; ask preload to resolve when available.
+  try {
+    const resolver = window?.electronAPI?.files?.getPathForDroppedFile;
+    if (typeof resolver === 'function') {
+      const resolved = normalizeFileUri(resolver(file));
+      if (resolved) return resolved;
+    }
+  } catch {
+    // Non-fatal: fallback to name handling below.
+  }
+
+  return normalizeFileUri(file?.name || '');
+};
+
 export const isFileDragEvent = (event) => {
   const dataTransfer = event?.dataTransfer;
   if (!dataTransfer) return false;
@@ -50,7 +68,7 @@ export const isFileDragEvent = (event) => {
 
 export const extractDroppedFiles = (dataTransfer) => {
   if (!dataTransfer) {
-    return { paths: [], fileList: [], itemFiles: [] };
+    return { paths: [], unresolvedNames: [], fileList: [], itemFiles: [] };
   }
 
   const fileList = Array.from(dataTransfer.files || []);
@@ -78,14 +96,19 @@ export const extractDroppedFiles = (dataTransfer) => {
           .map((line) => normalizeFileUri(line));
 
   const collectedPaths = [
-    ...fileList.map((file) => normalizeFileUri(file.path || file.name)),
-    ...itemFiles.map((file) => normalizeFileUri(file.path || file.name)),
+    ...fileList.map((file) => resolveDroppedFilePath(file)),
+    ...itemFiles.map((file) => resolveDroppedFilePath(file)),
     ...parsedUris,
     ...parsedPlainText
   ].filter(Boolean);
 
+  const unique = Array.from(new Set(collectedPaths));
+  const unresolvedNames = unique.filter((value) => !/[\\/]/.test(value));
+  const resolvedPaths = unique.filter((value) => /[\\/]/.test(value));
+
   return {
-    paths: Array.from(new Set(collectedPaths)),
+    paths: resolvedPaths,
+    unresolvedNames,
     fileList,
     itemFiles
   };

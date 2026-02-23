@@ -90,7 +90,7 @@ Caption.propTypes = {
 export const Code = memo(function Code({ className = '', children, ...rest }) {
   return (
     <code
-      className={`font-mono text-sm bg-system-gray-100 text-stratosort-indigo px-1.5 py-0.5 rounded ${className}`}
+      className={`font-mono text-sm bg-system-gray-100 text-stratosort-indigo px-1.5 py-0.5 rounded-md ${className}`}
       {...rest}
     >
       {children}

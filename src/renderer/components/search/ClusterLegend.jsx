@@ -12,12 +12,36 @@ import { Button } from '../ui';
 import { CONFIDENCE_COLORS, getConfidenceColor } from '../../utils/confidenceColors';
 
 const CATEGORY_COLORS = {
-  Documents: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700' },
-  Spreadsheets: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700' },
-  Images: { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700' },
-  Code: { bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-700' },
-  Audio: { bg: 'bg-cyan-50', border: 'border-cyan-200', text: 'text-cyan-700' },
-  Videos: { bg: 'bg-pink-50', border: 'border-pink-200', text: 'text-pink-700' }
+  Documents: {
+    bg: 'bg-stratosort-blue/10',
+    border: 'border-stratosort-blue/30',
+    text: 'text-stratosort-blue'
+  },
+  Spreadsheets: {
+    bg: 'bg-stratosort-success/10',
+    border: 'border-stratosort-success/30',
+    text: 'text-stratosort-success'
+  },
+  Images: {
+    bg: 'bg-stratosort-purple/10',
+    border: 'border-stratosort-purple/30',
+    text: 'text-stratosort-purple'
+  },
+  Code: {
+    bg: 'bg-stratosort-accent/10',
+    border: 'border-stratosort-accent/30',
+    text: 'text-stratosort-accent'
+  },
+  Audio: {
+    bg: 'bg-stratosort-indigo/10',
+    border: 'border-stratosort-indigo/30',
+    text: 'text-stratosort-indigo'
+  },
+  Videos: {
+    bg: 'bg-stratosort-purple/10',
+    border: 'border-stratosort-purple/30',
+    text: 'text-stratosort-purple'
+  }
 };
 
 const ClusterLegend = memo(
@@ -37,19 +61,19 @@ const ClusterLegend = memo(
     if (compact) {
       // Compact layout: single column, minimal noise
       return (
-        <div className={`flex flex-col gap-2 text-[11px] text-system-gray-600 ${className}`}>
-          <div className="flex flex-wrap gap-2 text-[10px]">
-            <span className="px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+        <div className={`flex flex-col gap-2 text-xs text-system-gray-600 ${className}`}>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="px-2 py-1 rounded-full bg-stratosort-accent/10 text-stratosort-accent border border-stratosort-accent/30">
               Cluster
             </span>
-            <span className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+            <span className="px-2 py-1 rounded-full bg-stratosort-blue/10 text-stratosort-blue border border-stratosort-blue/30">
               File
             </span>
-            <span className="px-2 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+            <span className="px-2 py-1 rounded-full bg-stratosort-indigo/10 text-stratosort-indigo border border-stratosort-indigo/30">
               Query
             </span>
           </div>
-          <div className="flex items-center gap-3 text-[10px]">
+          <div className="flex items-center gap-3 text-xs">
             <div className="flex items-center gap-1">
               <span className={`w-2 h-2 rounded-full ${CONFIDENCE_COLORS.high.dotBg}`} />
               <span>High</span>
@@ -63,13 +87,13 @@ const ClusterLegend = memo(
               <span>Low</span>
             </div>
           </div>
-          <div className="flex items-center gap-3 text-[10px]">
+          <div className="flex items-center gap-3 text-xs">
             <div className="flex items-center gap-1">
-              <span className="w-6 h-0.5 bg-blue-500 rounded-full" />
+              <span className="w-6 h-0.5 bg-stratosort-blue rounded-full" />
               <span>Shared tags</span>
             </div>
             <div className="flex items-center gap-1">
-              <span className="w-6 h-0.5 border-t border-dashed border-slate-400" />
+              <span className="w-6 h-0.5 border-t border-dashed border-system-gray-400" />
               <span>Similarity</span>
             </div>
           </div>
@@ -93,9 +117,9 @@ const ClusterLegend = memo(
         <div className="space-y-3">
           {/* Node types */}
           <div className="space-y-1">
-            <div className="text-[10px] uppercase tracking-wider text-system-gray-400 font-medium flex justify-between">
+            <div className="text-xs uppercase tracking-wider text-system-gray-400 font-medium flex justify-between">
               <span>Node Types</span>
-              <span className="text-[9px] text-system-gray-400 font-normal">Click to filter</span>
+              <span className="text-xs text-system-gray-400 font-normal">Click to filter</span>
             </div>
 
             <Button
@@ -104,20 +128,20 @@ const ClusterLegend = memo(
               aria-pressed={isTypeActive('cluster')}
               variant="ghost"
               size="sm"
-              className={`w-full justify-start text-left p-1 text-[11px] rounded-md h-auto ${
+              className={`w-full justify-start text-left p-1 text-xs rounded-md h-auto ${
                 isTypeActive('cluster')
-                  ? 'hover:bg-amber-50'
+                  ? 'hover:bg-stratosort-accent/10'
                   : 'opacity-50 grayscale hover:opacity-75'
               }`}
             >
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-300 flex items-center justify-center">
-                  <Layers className="w-2.5 h-2.5 text-amber-600" aria-hidden="true" />
+                <div className="w-4 h-4 rounded-md bg-stratosort-accent/10 border border-stratosort-accent/30 flex items-center justify-center">
+                  <Layers className="w-2.5 h-2.5 text-stratosort-accent" aria-hidden="true" />
                 </div>
                 <span className="text-system-gray-600">Cluster</span>
               </div>
               {isTypeActive('cluster') && (
-                <Check className="w-3 h-3 text-amber-600 ml-auto" aria-hidden="true" />
+                <Check className="w-3 h-3 text-stratosort-accent ml-auto" aria-hidden="true" />
               )}
             </Button>
 
@@ -127,12 +151,14 @@ const ClusterLegend = memo(
               aria-pressed={isTypeActive('file')}
               variant="ghost"
               size="sm"
-              className={`w-full justify-start text-left p-1 text-[11px] rounded-md h-auto ${
-                isTypeActive('file') ? 'hover:bg-blue-50' : 'opacity-50 grayscale hover:opacity-75'
+              className={`w-full justify-start text-left p-1 text-xs rounded-md h-auto ${
+                isTypeActive('file')
+                  ? 'hover:bg-stratosort-blue/10'
+                  : 'opacity-50 grayscale hover:opacity-75'
               }`}
             >
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-white border border-system-gray-200 flex items-center justify-center">
+                <div className="w-4 h-4 rounded-md bg-white border border-system-gray-200 flex items-center justify-center">
                   <FileText className="w-2.5 h-2.5 text-stratosort-blue" aria-hidden="true" />
                 </div>
                 <span className="text-system-gray-600">File</span>
@@ -148,44 +174,44 @@ const ClusterLegend = memo(
               aria-pressed={isTypeActive('query')}
               variant="ghost"
               size="sm"
-              className={`w-full justify-start text-left p-1 text-[11px] rounded-md h-auto ${
+              className={`w-full justify-start text-left p-1 text-xs rounded-md h-auto ${
                 isTypeActive('query')
-                  ? 'hover:bg-indigo-50'
+                  ? 'hover:bg-stratosort-indigo/10'
                   : 'opacity-50 grayscale hover:opacity-75'
               }`}
             >
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-300 flex items-center justify-center">
-                  <Search className="w-2.5 h-2.5 text-indigo-600" aria-hidden="true" />
+                <div className="w-4 h-4 rounded-md bg-stratosort-indigo/10 border border-stratosort-indigo/30 flex items-center justify-center">
+                  <Search className="w-2.5 h-2.5 text-stratosort-indigo" aria-hidden="true" />
                 </div>
                 <span className="text-system-gray-600">Query</span>
               </div>
               {isTypeActive('query') && (
-                <Check className="w-3 h-3 text-indigo-600 ml-auto" aria-hidden="true" />
+                <Check className="w-3 h-3 text-stratosort-indigo ml-auto" aria-hidden="true" />
               )}
             </Button>
           </div>
 
           {/* Connection Logic (New) */}
           <div className="space-y-1 pt-2 border-t border-system-gray-100">
-            <div className="text-[10px] uppercase tracking-wider text-system-gray-400 font-medium">
+            <div className="text-xs uppercase tracking-wider text-system-gray-400 font-medium">
               Connection Logic
             </div>
             <div className="space-y-1.5">
-              <div className="flex items-center gap-2 text-[10px]">
-                <div className="w-8 h-0.5 bg-blue-500 rounded-full" />
+              <div className="flex items-center gap-2 text-xs">
+                <div className="w-8 h-0.5 bg-stratosort-blue rounded-full" />
                 <span className="text-system-gray-600">Shared Tags</span>
               </div>
-              <div className="flex items-center gap-2 text-[10px]">
-                <div className="w-8 h-0.5 bg-violet-500 rounded-full" />
+              <div className="flex items-center gap-2 text-xs">
+                <div className="w-8 h-0.5 bg-stratosort-purple rounded-full" />
                 <span className="text-system-gray-600">Same Category</span>
               </div>
-              <div className="flex items-center gap-2 text-[10px]">
-                <div className="w-8 h-0.5 bg-emerald-500 rounded-full" />
+              <div className="flex items-center gap-2 text-xs">
+                <div className="w-8 h-0.5 bg-stratosort-success rounded-full" />
                 <span className="text-system-gray-600">Content Match</span>
               </div>
-              <div className="flex items-center gap-2 text-[10px]">
-                <div className="w-8 h-0.5 border-t border-dashed border-slate-400" />
+              <div className="flex items-center gap-2 text-xs">
+                <div className="w-8 h-0.5 border-t border-dashed border-system-gray-400" />
                 <span className="text-system-gray-600">Vector Similarity</span>
               </div>
             </div>
@@ -193,13 +219,13 @@ const ClusterLegend = memo(
 
           {/* NEW: File Categories */}
           <div className="space-y-1 pt-2 border-t border-system-gray-100">
-            <div className="text-[10px] uppercase tracking-wider text-system-gray-400 font-medium">
+            <div className="text-xs uppercase tracking-wider text-system-gray-400 font-medium">
               File Categories
             </div>
             <div className="grid grid-cols-2 gap-1.5">
               {Object.entries(CATEGORY_COLORS).map(([cat, style]) => (
-                <div key={cat} className="flex items-center gap-2 text-[10px]">
-                  <div className={`w-3 h-3 rounded border ${style.bg} ${style.border}`} />
+                <div key={cat} className="flex items-center gap-2 text-xs">
+                  <div className={`w-3 h-3 rounded-md border ${style.bg} ${style.border}`} />
                   <span className="text-system-gray-600">{cat}</span>
                 </div>
               ))}
@@ -208,7 +234,7 @@ const ClusterLegend = memo(
 
           {/* Confidence levels */}
           <div className="space-y-1 pt-2 border-t border-system-gray-100">
-            <div className="text-[10px] uppercase tracking-wider text-system-gray-400 font-medium">
+            <div className="text-xs uppercase tracking-wider text-system-gray-400 font-medium">
               Cluster Confidence
             </div>
 
@@ -218,15 +244,15 @@ const ClusterLegend = memo(
               aria-pressed={isConfidenceActive('high')}
               variant="ghost"
               size="sm"
-              className={`w-full justify-start text-left p-1 text-[11px] rounded-md h-auto ${
+              className={`w-full justify-start text-left p-1 text-xs rounded-md h-auto ${
                 isConfidenceActive('high')
-                  ? 'hover:bg-emerald-50'
+                  ? 'hover:bg-stratosort-success/10'
                   : 'opacity-50 grayscale hover:opacity-75'
               }`}
             >
               <div className="flex items-center gap-2">
                 <span
-                  className={`px-1.5 py-0.5 rounded text-[9px] border min-w-[50px] text-center ${getConfidenceColor('high')}`}
+                  className={`px-1.5 py-0.5 rounded-md text-xs border min-w-[50px] text-center ${getConfidenceColor('high')}`}
                 >
                   <span aria-hidden="true">{CONFIDENCE_COLORS.high.dot}</span>{' '}
                   {CONFIDENCE_COLORS.high.label}
@@ -234,7 +260,7 @@ const ClusterLegend = memo(
                 <span className="text-system-gray-500">{CONFIDENCE_COLORS.high.desc}</span>
               </div>
               {isConfidenceActive('high') && (
-                <Check className="w-3 h-3 text-emerald-600 ml-auto" aria-hidden="true" />
+                <Check className="w-3 h-3 text-stratosort-success ml-auto" aria-hidden="true" />
               )}
             </Button>
 
@@ -244,15 +270,15 @@ const ClusterLegend = memo(
               aria-pressed={isConfidenceActive('medium')}
               variant="ghost"
               size="sm"
-              className={`w-full justify-start text-left p-1 text-[11px] rounded-md h-auto ${
+              className={`w-full justify-start text-left p-1 text-xs rounded-md h-auto ${
                 isConfidenceActive('medium')
-                  ? 'hover:bg-blue-50'
+                  ? 'hover:bg-stratosort-blue/10'
                   : 'opacity-50 grayscale hover:opacity-75'
               }`}
             >
               <div className="flex items-center gap-2">
                 <span
-                  className={`px-1.5 py-0.5 rounded text-[9px] border min-w-[50px] text-center ${getConfidenceColor('medium')}`}
+                  className={`px-1.5 py-0.5 rounded-md text-xs border min-w-[50px] text-center ${getConfidenceColor('medium')}`}
                 >
                   <span aria-hidden="true">{CONFIDENCE_COLORS.medium.dot}</span>{' '}
                   {CONFIDENCE_COLORS.medium.label}
@@ -260,7 +286,7 @@ const ClusterLegend = memo(
                 <span className="text-system-gray-500">{CONFIDENCE_COLORS.medium.desc}</span>
               </div>
               {isConfidenceActive('medium') && (
-                <Check className="w-3 h-3 text-blue-600 ml-auto" aria-hidden="true" />
+                <Check className="w-3 h-3 text-stratosort-blue ml-auto" aria-hidden="true" />
               )}
             </Button>
 
@@ -270,7 +296,7 @@ const ClusterLegend = memo(
               aria-pressed={isConfidenceActive('low')}
               variant="ghost"
               size="sm"
-              className={`w-full justify-start text-left p-1 text-[11px] rounded-md h-auto ${
+              className={`w-full justify-start text-left p-1 text-xs rounded-md h-auto ${
                 isConfidenceActive('low')
                   ? 'hover:bg-system-gray-50'
                   : 'opacity-50 grayscale hover:opacity-75'
@@ -278,7 +304,7 @@ const ClusterLegend = memo(
             >
               <div className="flex items-center gap-2">
                 <span
-                  className={`px-1.5 py-0.5 rounded text-[9px] border min-w-[50px] text-center ${getConfidenceColor('low')}`}
+                  className={`px-1.5 py-0.5 rounded-md text-xs border min-w-[50px] text-center ${getConfidenceColor('low')}`}
                 >
                   <span aria-hidden="true">{CONFIDENCE_COLORS.low.dot}</span>{' '}
                   {CONFIDENCE_COLORS.low.label}
@@ -293,10 +319,10 @@ const ClusterLegend = memo(
 
           {/* Interactions (Static) */}
           <div className="space-y-1 pt-2 border-t border-system-gray-100">
-            <div className="text-[10px] uppercase tracking-wider text-system-gray-400 font-medium">
+            <div className="text-xs uppercase tracking-wider text-system-gray-400 font-medium">
               Interactions
             </div>
-            <div className="text-[10px] text-system-gray-500 space-y-0.5 px-1">
+            <div className="text-xs text-system-gray-500 space-y-0.5 px-1">
               <div>Double-click to expand cluster</div>
               <div>Drag to rearrange nodes</div>
               <div>Hover lines for connection info</div>

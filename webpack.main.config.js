@@ -80,7 +80,10 @@ module.exports = (env, argv) => {
         // unpdf bundles pdf.js which contains dynamic import() expressions that
         // webpack cannot statically analyze. Runs fine as a runtime require in
         // the Node.js main process.
-        unpdf: 'commonjs unpdf'
+        unpdf: 'commonjs unpdf',
+        // Chokidar v5 is ESM-only ("type": "module"). Bundling it causes
+        // ERR_REQUIRE_ESM at runtime. Keep external for runtime resolution.
+        chokidar: 'commonjs chokidar'
       },
       ({ request }, callback) => {
         if (!request) return callback();
@@ -127,30 +130,47 @@ module.exports = (env, argv) => {
       filename: '[name].js',
       clean: false
     },
-    target: 'web', // Use 'web' to force bundling of node modules like path
+    // Sandboxed preload: only require('electron') is available at runtime.
+    // Using 'web' target ensures webpack bundles Node builtins via polyfills
+    // instead of externalizing them — Electron's sandbox loader crashes on any
+    // external require('os'|'fs'|'path') before try/catch can run.
+    target: 'web',
     resolve: {
       ...common.resolve,
+      alias: {
+        ...common.resolve?.alias,
+        // Map both bare and node:-prefixed specifiers to browser polyfills
+        os: require.resolve('os-browserify/browser'),
+        'node:os': require.resolve('os-browserify/browser'),
+        path: require.resolve('path-browserify'),
+        'node:path': require.resolve('path-browserify'),
+        process: require.resolve('process/browser'),
+        'node:process': require.resolve('process/browser')
+      },
       fallback: {
         ...common.resolve?.fallback,
         path: require.resolve('path-browserify'),
-        fs: false, // Ensure fs is disabled
-        os: false
+        fs: false,
+        os: require.resolve('os-browserify/browser'),
+        process: require.resolve('process/browser'),
+        stream: false,
+        util: false,
+        buffer: require.resolve('buffer'),
+        crypto: false
       }
     },
     externals: {
-      electron: 'commonjs electron',
-      // Preload doesn't have access to these native modules anyway
-      sharp: 'commonjs sharp'
+      // Only electron is available via require() in sandbox preload
+      electron: 'commonjs electron'
     },
     plugins: [
       new webpack.DefinePlugin({
         'process.env.NODE_ENV': JSON.stringify(isProduction ? 'production' : 'development')
       }),
       new webpack.ProvidePlugin({
-        process: 'process/browser'
+        process: require.resolve('process/browser'),
+        Buffer: ['buffer', 'Buffer']
       }),
-      // FIX: Ignore Node.js specific modules in preload build to suppress warnings
-      // correlationId.js handles missing modules gracefully
       new webpack.IgnorePlugin({
         resourceRegExp: /^(async_hooks|crypto)$/
       })
