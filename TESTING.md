@@ -1,6 +1,6 @@
 # StratoSort Core Testing Guide
 
-**Version:** 2.0.2  
+**Version:** 2.0.4  
 **Date:** 2026-02-18  
 **Purpose:** Single source of truth for manual QA and automated test expectations.
 
