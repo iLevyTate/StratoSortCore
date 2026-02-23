@@ -1,10 +1,12 @@
 name: CI
 
 on:
-  push:
-    branches: [main, master, develop, RegressionFixes]
   pull_request:
     branches: [main, master, develop, RegressionFixes]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint-and-format:
@@ -27,9 +29,13 @@ jobs:
       - name: Lint
         run: npm run lint
 
-  test-windows:
+  test:
     needs: lint-and-format
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v6
@@ -47,7 +53,7 @@ jobs:
         run: npm test
 
   build:
-    needs: test-windows
+    needs: test
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
