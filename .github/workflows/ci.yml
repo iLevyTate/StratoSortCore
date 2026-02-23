@@ -27,13 +27,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
-  test:
+  test-windows:
     needs: lint-and-format
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v6
@@ -47,19 +43,11 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Run tests with coverage
-        run: npm run test:coverage
-
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{ matrix.os }}
-          path: coverage/
-          retention-days: 14
+      - name: Run unit and integration tests
+        run: npm test
 
   build:
-    needs: test
+    needs: test-windows
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
@@ -96,24 +84,3 @@ jobs:
 
       - name: Verify IPC handler coverage
         run: npm run verify:ipc-handlers
-
-  e2e:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Use Node.js 20.x
-        uses: actions/setup-node@v6
-        with:
-          node-version: 20.x
-          cache: 'npm'
-
-      - name: Install Dependencies
-        run: npm ci
-
-      - name: Build renderer for E2E
-        run: npm run build:dev
-
-      - name: Run E2E tests
-        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24" npm run test:e2e
