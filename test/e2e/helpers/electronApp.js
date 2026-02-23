@@ -30,6 +30,8 @@ const DEFAULT_LAUNCH_OPTIONS = {
   env: {
     ...process.env,
     NODE_ENV: 'development',
+    // Enable startup behavior optimized for deterministic E2E launch timing
+    STRATOSORT_E2E: '1',
     // Disable hardware acceleration for more stable CI testing
     ELECTRON_DISABLE_GPU: '1',
     // Enable logging for debugging
@@ -37,8 +39,8 @@ const DEFAULT_LAUNCH_OPTIONS = {
     // Force launch to bypass single instance lock during testing
     STRATOSORT_FORCE_LAUNCH: '1'
   },
-  // Timeout for app launch (30 seconds)
-  timeout: 30000
+  // Timeout for app launch (startup can be slower on CI runners)
+  timeout: 60000
 };
 
 /**

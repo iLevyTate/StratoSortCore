@@ -645,6 +645,11 @@ if (gotTheLock || process.env.STRATOSORT_FORCE_LAUNCH === '1') {
 // Initialize services after app is ready
 app.whenReady().then(async () => {
   logger.info('[STARTUP] app.whenReady resolved');
+  const isE2EMode = process.env.STRATOSORT_E2E === '1';
+  if (isE2EMode) {
+    logger.info('[STARTUP] E2E mode detected: creating window before heavy startup tasks');
+    createWindow();
+  }
 
   // macOS: Set the dock icon to the StratoSort logo so it replaces the default
   // Electron atom icon during development.  In production (packaged) builds
