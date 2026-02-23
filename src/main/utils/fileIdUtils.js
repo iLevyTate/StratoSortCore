@@ -149,7 +149,7 @@ function buildPathUpdatePairs(oldPath, newPath, options = {}) {
   const normalizedNew = normalizePathForIndex(newPath);
   const defaultMeta = {
     path: newPath,
-    name: path.basename(newPath),
+    name: path.win32.basename(newPath),
     ...newMeta
   };
 

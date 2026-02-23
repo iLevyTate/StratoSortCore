@@ -2,7 +2,7 @@ const { EventEmitter } = require('events');
 
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn(() => 'C:\\fake-user-data')
+    getPath: jest.fn(() => require('path').join('C:', 'fake-user-data'))
   }
 }));
 
