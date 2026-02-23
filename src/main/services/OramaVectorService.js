@@ -2227,7 +2227,10 @@ class OramaVectorService extends EventEmitter {
         const newPath =
           updateSpec?.newPath || updateSpec?.newMeta?.path || updateSpec?.newMeta?.filePath || null;
         const newName =
-          updateSpec?.newName || updateSpec?.newMeta?.name || updateSpec?.newMeta?.fileName || null;
+          updateSpec?.newName ||
+          updateSpec?.newMeta?.name ||
+          updateSpec?.newMeta?.fileName ||
+          (newPath ? require('path').win32.basename(newPath) : null);
 
         if (!oldId) continue;
 

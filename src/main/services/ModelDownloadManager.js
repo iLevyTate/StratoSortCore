@@ -276,10 +276,14 @@ class ModelDownloadManager {
         hostname: url.hostname,
         path: url.pathname + url.search,
         headers: {
-          'User-Agent': 'StratoSort/2.0',
-          ...(startByte > 0 ? { Range: `bytes=${startByte}-` } : {})
+          'User-Agent': 'StratoSort/2.0'
         }
       };
+      if (startByte > 0) {
+        requestOptions.headers.Range = `bytes=${startByte}-`;
+      } else {
+        delete requestOptions.headers.Range;
+      }
 
       const request = protocol.get(requestOptions, (response) => {
         // Handle redirects with loop protection
