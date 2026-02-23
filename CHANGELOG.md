@@ -16,10 +16,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Next release placeholder: update this section when preparing `v2.0.4` (or the next semver tag).
 
-## [2.0.3] - 2026-02-21
+## [2.0.3] - 2026-02-23
 
 ### Fixed
 
+- **E2E Stability**: Added Linux CI sandboxing bypass and resolved missing Range header clear bugs
+  in vector DB tests.
+- **Path Handling**: Updated file utilities to use `win32.basename` for consistent filename
+  retrieval across platforms.
 - **OCR fallback**: Gracefully handle missing `sharp` native module during PDF extraction.
 - **UI glitches**: Resolved phase rendering issues and model setup wizard initial loading states.
 - **Settings synchronization**: Synced config state across main/renderer boundaries; watchers now
@@ -29,6 +33,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Improved
 
+- **Verification**: Added scripts for verifying IPC handlers, native modules, packaged artifacts,
+  and updater metadata.
 - **Performance**: Cached parsed chat conversations (LRU) to avoid repeated JSON overhead.
 - **Performance**: Optimized search graph node filtering and ELK parallel edge rendering.
 - **Build**: Enhanced release preflight checks and enforced macOS/Windows code signing checks in CI.
