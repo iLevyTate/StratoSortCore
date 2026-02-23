@@ -14,7 +14,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Release Prep
 
-- Next release placeholder: update this section when preparing `v2.0.3` (or the next semver tag).
+- Next release placeholder: update this section when preparing `v2.0.4` (or the next semver tag).
+
+## [2.0.3] - 2026-02-21
+
+### Fixed
+
+- **OCR fallback**: Gracefully handle missing `sharp` native module during PDF extraction.
+- **UI glitches**: Resolved phase rendering issues and model setup wizard initial loading states.
+- **Settings synchronization**: Synced config state across main/renderer boundaries; watchers now
+  reliably observe valid settings.
+- **Storage**: Healed legacy "Uncategorized" folder paths and resolved smart folder UI bugs.
+- **Naming conventions**: Centralized naming logic and fixed casing bugs with non-ASCII characters.
+
+### Improved
+
+- **Performance**: Cached parsed chat conversations (LRU) to avoid repeated JSON overhead.
+- **Performance**: Optimized search graph node filtering and ELK parallel edge rendering.
+- **Build**: Enhanced release preflight checks and enforced macOS/Windows code signing checks in CI.
 
 ## [2.0.2] - 2026-02-15
 
@@ -302,7 +319,8 @@ notes.
 Note: `v1.x` release links intentionally point to the predecessor repository for historical
 traceability.
 
-[Unreleased]: https://github.com/iLevyTate/StratoSortCore/compare/v2.0.2...HEAD
+[Unreleased]: https://github.com/iLevyTate/StratoSortCore/compare/v2.0.3...HEAD
+[2.0.3]: https://github.com/iLevyTate/StratoSortCore/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/iLevyTate/StratoSortCore/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/iLevyTate/StratoSortCore/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/iLevyTate/StratoSortCore/compare/v1.2.2...v2.0.0
