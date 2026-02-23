@@ -1,7 +1,7 @@
 {
   "name": "stratosort-core",
   "productName": "StratoSort Core",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "StratoSort Core - Local AI Document Organizer. Privacy-focused document organization using in-process AI (node-llama-cpp + Orama). Zero external dependencies.",
   "keywords": [
     "electron",
