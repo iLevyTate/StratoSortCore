@@ -64,7 +64,7 @@ async function launchApp(options = {}) {
   // Use relative path from APP_ROOT so app.getAppPath() returns correct root
   const args = [MAIN_ENTRY_RELATIVE];
   if (!options.headed) {
-    args.push('--disable-gpu', '--headless');
+    args.push('--disable-gpu', '--headless', '--no-sandbox');
   }
 
   console.log('[E2E] Launching Electron app...');
