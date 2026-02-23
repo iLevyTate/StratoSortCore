@@ -60,11 +60,16 @@ async function launchApp(options = {}) {
     }
   };
 
-  // Add args for headless mode if not headed
+  // Add args for CI / headless mode if not headed
   // Use relative path from APP_ROOT so app.getAppPath() returns correct root
+  // On Linux CI with xvfb, omit --headless so Electron creates a real window
+  // (xvfb provides a virtual display; --headless can prevent window creation)
   const args = [MAIN_ENTRY_RELATIVE];
   if (!options.headed) {
-    args.push('--disable-gpu', '--headless', '--no-sandbox');
+    args.push('--disable-gpu', '--no-sandbox');
+    if (process.platform !== 'linux' || !process.env.CI) {
+      args.push('--headless');
+    }
   }
 
   console.log('[E2E] Launching Electron app...');

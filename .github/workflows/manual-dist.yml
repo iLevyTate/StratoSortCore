@@ -54,6 +54,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate installer assets
+        shell: pwsh
+        run: |
+          if (Test-Path assets/stratosort-logo.png) {
+            npm run generate:assets
+          } else {
+            Write-Host "::notice::Source logo not found - icons will use defaults if not pre-committed"
+          }
+
       - name: Rebuild native modules for Electron runtime
         run: npx --no electron-builder install-app-deps
 
@@ -128,6 +137,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --include=optional
+
+      - name: Generate installer assets
+        run: |
+          if [ -f assets/stratosort-logo.png ]; then
+            npm run generate:assets
+          else
+            echo "::notice::Source logo not found - icons will use defaults if not pre-committed"
+          fi
 
       - name: Rebuild native modules for Electron runtime
         run: npx --no electron-builder install-app-deps

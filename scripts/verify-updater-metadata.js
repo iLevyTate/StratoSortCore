@@ -61,9 +61,13 @@ function verifyMac(buildRoot) {
     throw new Error('No updater metadata files found (expected latest*.yml).');
   }
 
+  // electron-builder generates latest-mac.yml for Mac builds (arm64 or x64)
   const arm64Artifacts = files.filter((name) => /-arm64\.(zip|dmg)$/i.test(name));
-  if (arm64Artifacts.length > 0 && !files.includes('latest-mac-arm64.yml')) {
-    throw new Error('Missing canonical mac updater metadata file: latest-mac-arm64.yml');
+  const hasMacMetadata = files.some((n) => n === 'latest-mac.yml' || n === 'latest-mac-arm64.yml');
+  if (arm64Artifacts.length > 0 && !hasMacMetadata) {
+    throw new Error(
+      'Missing Mac updater metadata (expected latest-mac.yml or latest-mac-arm64.yml)'
+    );
   }
 
   metadataFiles.forEach((metadataName) => {
