@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/iLevyTate/StratoSortCore/releases"><img src="https://img.shields.io/badge/version-2.0.3-blue?style=flat-square" alt="Version" /></a>
+  <a href="https://github.com/iLevyTate/StratoSortCore/releases"><img src="https://img.shields.io/badge/version-2.0.4-blue?style=flat-square" alt="Version" /></a>
   <a href="https://github.com/iLevyTate/StratoSortCore/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Personal_Use_Only-blue?style=flat-square" alt="License" /></a>
   <a href="https://github.com/iLevyTate/StratoSortCore/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/iLevyTate/StratoSortCore/ci.yml?style=flat-square&label=CI" alt="CI Status" /></a>
 </p>
