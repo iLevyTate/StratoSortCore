@@ -61,13 +61,9 @@ function verifyMac(buildRoot) {
     throw new Error('No updater metadata files found (expected latest*.yml).');
   }
 
-  if (!files.includes('latest-mac.yml')) {
-    throw new Error('Missing canonical mac updater metadata file: latest-mac.yml');
-  }
-
   const arm64Artifacts = files.filter((name) => /-arm64\.(zip|dmg)$/i.test(name));
   if (arm64Artifacts.length > 0 && !files.includes('latest-mac-arm64.yml')) {
-    throw new Error('arm64 mac artifacts detected but latest-mac-arm64.yml is missing.');
+    throw new Error('Missing canonical mac updater metadata file: latest-mac-arm64.yml');
   }
 
   metadataFiles.forEach((metadataName) => {

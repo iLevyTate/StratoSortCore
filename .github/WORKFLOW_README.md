@@ -67,8 +67,8 @@ git push origin vX.Y.Z
 
 ### macOS (manual only)
 
-- **DMG**: `StratoSortCore-<version>-mac-arm64.dmg`, `StratoSortCore-<version>-mac-x64.dmg`
-- **ZIP**: `StratoSortCore-<version>-mac-arm64.zip`, `StratoSortCore-<version>-mac-x64.zip`
+- **DMG**: `StratoSortCore-<version>-mac-arm64.dmg`
+- **ZIP**: `StratoSortCore-<version>-mac-arm64.zip`
 - **Checksums**: `checksums-macos.sha256`
 
 ### Linux (manual only)

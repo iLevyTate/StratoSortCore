@@ -13,7 +13,7 @@ from source, see [GETTING_STARTED.md](GETTING_STARTED.md).
 | Requirement    | Details                                                   |
 | :------------- | :-------------------------------------------------------- |
 | **Windows**    | Windows 10 or 11 (64-bit)                                 |
-| **macOS**      | macOS 10.15 or later (Intel or Apple Silicon)             |
+| **macOS**      | macOS 10.15 or later (Apple Silicon — M1/M2/M3/M4)        |
 | **Linux**      | 64-bit distribution (Ubuntu 20.04+, Fedora 38+, etc.)     |
 | **RAM**        | 8 GB minimum, 16 GB recommended                           |
 | **Disk space** | ~500 MB for the app + ~2-5 GB for AI models               |
@@ -42,27 +42,15 @@ desktop shortcut, and keeps itself up to date in the background.
 Only use the portable version if you specifically cannot install software on your machine (e.g.
 restricted work computer). The portable version does not auto-update.
 
-### macOS — Which file do I need?
+### macOS — Apple Silicon only
 
-macOS has two versions because Apple makes two types of processors. **You need to pick the one that
-matches your Mac.**
+StratoSort Core for macOS supports **Apple Silicon** (M1, M2, M3, M4, or newer) only. Intel Macs are
+no longer supported.
 
-**How to check which Mac you have:**
+> **Download: `StratoSortCore-X.X.X-mac-arm64.dmg`**
 
-1. Click the **Apple menu** (top-left corner) and select **About This Mac**.
-2. Look for the **Chip** or **Processor** line:
-   - If it says **Apple M1, M2, M3, M4** (or any "M" chip) — you have **Apple Silicon**.
-   - If it says **Intel** — you have an **Intel Mac**.
-
-| Your Mac                                     | Download this file                       | Auto-updates? |
-| :------------------------------------------- | :--------------------------------------- | :------------ |
-| **Apple Silicon** (M1, M2, M3, M4, or newer) | **`StratoSortCore-X.X.X-mac-arm64.dmg`** | **Yes**       |
-| **Intel** (any Intel processor)              | **`StratoSortCore-X.X.X-mac-x64.dmg`**   | **Yes**       |
-
-Both are full installers with automatic updates. Just pick the one that matches your chip.
-
-> **What happens if I pick the wrong one?** The app may not open, or macOS will show an error. Just
-> delete it and download the correct version — no harm done.
+This is the full installer with automatic updates. If you have an older Intel Mac, you will need to
+use a different machine or upgrade.
 
 ### Linux
 
@@ -85,10 +73,9 @@ not auto-update.
 | :--------------------------------------- | :---------------------------------------- |
 | **Windows PC** (any 64-bit)              | `StratoSortCore-Setup-X.X.X.exe`          |
 | **Mac with Apple Silicon** (M1/M2/M3/M4) | `StratoSortCore-X.X.X-mac-arm64.dmg`      |
-| **Mac with Intel chip**                  | `StratoSortCore-X.X.X-mac-x64.dmg`        |
 | **Linux** (any 64-bit distro)            | `StratoSortCore-X.X.X-linux-x64.AppImage` |
 
-All four of these are full installers with automatic updates included.
+All three are full installers with automatic updates included.
 
 ---
 
@@ -153,8 +140,7 @@ Compare the hash output to the matching entry in the checksum file. They should 
      Anyway** next to StratoSort Core.
 
 > **Why this can happen:** During beta, macOS builds may be unsigned or unnotarized. Gatekeeper can
-> also block incomplete/corrupted downloads or wrong-architecture builds. Verify checksums and use
-> the correct Intel vs Apple Silicon artifact.
+> also block incomplete or corrupted downloads. Verify checksums to ensure the download is valid.
 
 ### Linux (AppImage)
 

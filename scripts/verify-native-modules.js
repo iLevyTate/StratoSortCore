@@ -89,7 +89,6 @@ async function run() {
       console.log(`OK: ${check.name}`);
     } catch (error) {
       failures.push({ name: check.name, error: error?.message || String(error) });
-
       console.error(`FAIL: ${check.name} -> ${error?.message || error}`);
     }
   }

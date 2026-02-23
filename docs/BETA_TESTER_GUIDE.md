@@ -40,12 +40,9 @@ test the latest build.
 | :--------------------------------------------- | :-------------------------------------------- |
 | **Windows PC** (any 64-bit)                    | **`StratoSortCore-Setup-X.X.X.exe`**          |
 | **Mac with Apple Silicon** (M1 / M2 / M3 / M4) | **`StratoSortCore-X.X.X-mac-arm64.dmg`**      |
-| **Mac with Intel chip**                        | **`StratoSortCore-X.X.X-mac-x64.dmg`**        |
 | **Linux** (any 64-bit distro)                  | **`StratoSortCore-X.X.X-linux-x64.AppImage`** |
 
-> **Not sure which Mac you have?** Click the **Apple menu** (top-left) → **About This Mac**. If it
-> says **M1, M2, M3, M4** (or any "M" chip), download the `arm64` version. If it says **Intel**,
-> download the `x64` version.
+> **macOS**: Apple Silicon only (M1/M2/M3/M4). Intel Macs are no longer supported.
 
 > **Why the installer and not the portable/deb?** The installer versions include automatic updates.
 > As a beta tester you want the latest fixes delivered automatically — no need to manually

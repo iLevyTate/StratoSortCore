@@ -1,5 +1,5 @@
 # Mac release workflow — run on tag push.
-# electron-builder is configured to emit both arm64 and x64 mac artifacts.
+# macOS builds are arm64 only (Apple Silicon). Intel Mac support dropped.
 name: Release (macOS)
 
 on:
@@ -35,17 +35,7 @@ jobs:
 
   build-macos:
     needs: quality-gates
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x64
-            runner: macos-latest
-            dist_script: dist:mac:x64
-          - arch: arm64
-            runner: macos-latest
-            dist_script: dist:mac:arm64
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-latest
 
     steps:
       - name: Checkout
@@ -86,8 +76,8 @@ jobs:
             echo "::warning::Source logo not found – skipping asset generation (icons must be pre-committed)"
           fi
 
-      - name: Rebuild native modules for Electron runtime (${{ matrix.arch }})
-        run: npx --no electron-builder install-app-deps --arch=${{ matrix.arch }}
+      - name: Rebuild native modules for Electron runtime (arm64)
+        run: npx --no electron-builder install-app-deps --arch=arm64
 
       - name: Verify native module loading
         run: npm run verify:native-modules
@@ -96,7 +86,7 @@ jobs:
         run: |
           rm -rf release/build
 
-      - name: Build Mac app and DMG (${{ matrix.arch }}) [signed]
+      - name: Build Mac app and DMG (arm64) [signed]
         if: steps.mac-release-mode.outputs.signed == 'true'
         env:
           CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
@@ -105,16 +95,16 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npm run ${{ matrix.dist_script }}
+        run: npm run dist:mac:arm64
 
-      - name: Build Mac app and DMG (${{ matrix.arch }}) [unsigned beta]
+      - name: Build Mac app and DMG (arm64) [unsigned beta]
         if: steps.mac-release-mode.outputs.signed != 'true'
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npm run ${{ matrix.dist_script }}
+        run: npm run dist:mac:arm64
 
-      - name: Verify packaged macOS artifacts (${{ matrix.arch }})
-        run: node scripts/verify-packaged-artifacts.js --platform=mac --arch=${{ matrix.arch }}
+      - name: Verify packaged macOS artifacts (arm64)
+        run: node scripts/verify-packaged-artifacts.js --platform=mac --arch=arm64
 
       - name: Verify app signature
         if: steps.mac-release-mode.outputs.signed == 'true'
@@ -133,7 +123,7 @@ jobs:
             spctl -a -t exec -vv "$app_path" || true
           done
 
-      - name: Notarize and staple artifacts (${{ matrix.arch }})
+      - name: Notarize and staple artifacts (arm64)
         if: steps.mac-release-mode.outputs.signed == 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -142,7 +132,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          artifacts=(release/build/StratoSortCore-*-${{ matrix.arch }}.dmg release/build/StratoSortCore-*-${{ matrix.arch }}.zip)
+          artifacts=(release/build/StratoSortCore-*-arm64.dmg release/build/StratoSortCore-*-arm64.zip)
           if [ ${#artifacts[@]} -eq 0 ]; then
             echo "::error::No notarizable mac artifacts found."
             ls -R release/build || true
@@ -157,7 +147,7 @@ jobs:
               --wait
           done
 
-          for dmg_path in release/build/StratoSortCore-*-${{ matrix.arch }}.dmg; do
+          for dmg_path in release/build/StratoSortCore-*-arm64.dmg; do
             [ -f "$dmg_path" ] || continue
             xcrun stapler staple "$dmg_path"
             xcrun stapler validate "$dmg_path"
@@ -166,11 +156,11 @@ jobs:
       - name: Stage artifacts
         run: |
           set -euo pipefail
-          mkdir -p "release/upload/${{ matrix.arch }}"
+          mkdir -p release/upload/arm64
 
-          for f in release/build/StratoSortCore-*-${{ matrix.arch }}.dmg release/build/StratoSortCore-*-${{ matrix.arch }}.zip; do
+          for f in release/build/StratoSortCore-*-arm64.dmg release/build/StratoSortCore-*-arm64.zip; do
             if [ -f "$f" ]; then
-              cp "$f" "release/upload/${{ matrix.arch }}/"
+              cp "$f" release/upload/arm64/
             fi
           done
 
@@ -178,18 +168,10 @@ jobs:
             if [ -f "$f" ]; then
               base="$(basename "$f")"
               target_base="$base"
-
-              # Preserve canonical updater metadata filenames for electron-updater.
-              # arm64 metadata should be latest-mac-arm64.yml, x64 metadata latest-mac.yml.
               if [ "$base" = "latest.yml" ] || [ "$base" = "latest-mac.yml" ]; then
-                if [ "${{ matrix.arch }}" = "arm64" ]; then
-                  target_base="latest-mac-arm64.yml"
-                else
-                  target_base="latest-mac.yml"
-                fi
+                target_base="latest-mac-arm64.yml"
               fi
-
-              target_path="release/upload/${{ matrix.arch }}/$target_base"
+              target_path="release/upload/arm64/$target_base"
               if [ -f "$target_path" ] && ! cmp -s "$f" "$target_path"; then
                 echo "::error::Conflicting updater metadata for $target_base"
                 exit 1
@@ -198,11 +180,11 @@ jobs:
             fi
           done
 
-      - name: Upload macOS artifacts (${{ matrix.arch }})
+      - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macos-${{ matrix.arch }}-artifacts
-          path: release/upload/${{ matrix.arch }}
+          name: macos-arm64-artifacts
+          path: release/upload/arm64
           if-no-files-found: error
 
   publish-release:
