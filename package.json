@@ -118,6 +118,7 @@
     ]
   },
   "dependencies": {
+    "adm-zip": "^0.5.16",
     "@napi-rs/canvas": "^0.1.92",
     "@orama/orama": "^3.0.0",
     "@orama/plugin-data-persistence": "^3.0.0",
@@ -182,7 +183,6 @@
     "@types/semver": "^7.7.1",
     "@types/tough-cookie": "^4.0.5",
     "@types/webpack-bundle-analyzer": "^4.7.0",
-    "adm-zip": "^0.5.16",
     "assert": "^2.1.0",
     "autoprefixer": "^10.4.24",
     "babel-jest": "^30.2.0",
