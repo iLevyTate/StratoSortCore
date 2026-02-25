@@ -59,6 +59,24 @@ macOS workflow publishes:
 - `latest*.yml` (for updater metadata)
 - `checksums-macos.sha256`
 
+## Releasing Without Code Signing Certificates
+
+If signing/notarization secrets are not configured, tag-triggered workflows still publish a normal
+GitHub release (not a prerelease) with unsigned artifacts.
+
+- Windows: installer and portable EXE are unsigned (SmartScreen warnings are expected).
+- macOS: DMG/ZIP are unsigned and not notarized (Gatekeeper warnings are expected).
+- Integrity verification still runs in CI:
+  - `verify-packaged-artifacts`
+  - `verify-updater-metadata`
+  - SHA256 checksum generation (`checksums-windows.sha256`, `checksums-macos.sha256`)
+
+Recommended operator practice when releasing unsigned artifacts:
+
+1. Ensure `checksums-*.sha256` files are uploaded with each release.
+2. Add a short note in release notes that binaries are unsigned for this release.
+3. Verify install flows manually on clean Windows/macOS test machines.
+
 ## Manual Dist Workflow
 
 Use `.github/workflows/manual-dist.yml` (`workflow_dispatch`) when you need:

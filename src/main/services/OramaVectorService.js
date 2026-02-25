@@ -31,6 +31,14 @@ const { LRUCache } = require('../../shared/LRUCache');
 
 const logger = createLogger('OramaVectorService');
 
+function getSystemAnalyticsSafe() {
+  try {
+    return require('../core/systemAnalytics');
+  } catch {
+    return null;
+  }
+}
+
 const PERSIST_COMPRESSION_ENABLED =
   String(process.env.STRATOSORT_ORAMA_COMPRESS || 'true').toLowerCase() !== 'false';
 
@@ -1985,6 +1993,9 @@ class OramaVectorService extends EventEmitter {
 
       const filtered = result.hits.filter((hit) => !this._isZeroPlaceholderHit(hit)).slice(0, topK);
       if (filtered.length > 0) {
+        getSystemAnalyticsSafe()?.recordPipelineOutcome?.('embedding', 'primary', {
+          reason: 'vector_primary_query'
+        });
         return filtered.map((hit) => ({
           id: hit.document.id,
           score: hit.score,
@@ -2014,6 +2025,9 @@ class OramaVectorService extends EventEmitter {
           '[OramaVectorService] Primary vector query unavailable after validation/repair; using fallback scorer',
           { topK, health }
         );
+        getSystemAnalyticsSafe()?.recordPipelineOutcome?.('embedding', 'fallback', {
+          reason: 'vector_primary_unhealthy'
+        });
         return await this._fallbackQuerySimilarFiles(queryEmbedding, topK);
       }
 
@@ -2026,8 +2040,14 @@ class OramaVectorService extends EventEmitter {
           health
         }
       );
+      getSystemAnalyticsSafe()?.recordPipelineOutcome?.('embedding', 'fallback', {
+        reason: 'vector_primary_empty'
+      });
       return await this._fallbackQuerySimilarFiles(queryEmbedding, topK);
     } catch (error) {
+      getSystemAnalyticsSafe()?.recordPipelineOutcome?.('embedding', 'error', {
+        reason: error?.message || 'vector_query_failed'
+      });
       throw attachErrorCode(error, ERROR_CODES.VECTOR_DB_QUERY_FAILED);
     }
   }
@@ -2668,6 +2688,9 @@ class OramaVectorService extends EventEmitter {
         .filter((hit) => !this._isZeroPlaceholderHit(hit))
         .slice(0, topK);
       if (filteredHits.length > 0) {
+        getSystemAnalyticsSafe()?.recordPipelineOutcome?.('embedding', 'primary', {
+          reason: 'folder_vector_primary_query'
+        });
         return filteredHits.map((hit) => ({
           id: hit.document.id,
           score: hit.score,
@@ -2698,6 +2721,9 @@ class OramaVectorService extends EventEmitter {
             health
           }
         );
+        getSystemAnalyticsSafe()?.recordPipelineOutcome?.('embedding', 'fallback', {
+          reason: 'folder_vector_primary_unhealthy'
+        });
         return await this._fallbackQueryFoldersByEmbedding(embedding, topK);
       }
 
@@ -2710,8 +2736,14 @@ class OramaVectorService extends EventEmitter {
           health
         }
       );
+      getSystemAnalyticsSafe()?.recordPipelineOutcome?.('embedding', 'fallback', {
+        reason: 'folder_vector_primary_empty'
+      });
       return await this._fallbackQueryFoldersByEmbedding(embedding, topK);
     } catch (error) {
+      getSystemAnalyticsSafe()?.recordPipelineOutcome?.('embedding', 'error', {
+        reason: error?.message || 'folder_vector_query_failed'
+      });
       throw attachErrorCode(error, ERROR_CODES.VECTOR_DB_QUERY_FAILED);
     }
   }

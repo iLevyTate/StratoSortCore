@@ -65,6 +65,7 @@ jest.mock('lucide-react', () => ({
   Square: () => <span data-testid="icon-square">Square</span>,
   X: () => <span data-testid="icon-x">X</span>,
   AlertCircle: () => <span data-testid="icon-alert">AlertCircle</span>,
+  AlertTriangle: () => <span data-testid="icon-alert-triangle">AlertTriangle</span>,
   Loader2: () => <span data-testid="icon-loader">Loader2</span>,
   ChevronDown: () => <span data-testid="icon-chevron-down">ChevronDown</span>,
   ChevronLeft: () => <span data-testid="icon-chevron-left">ChevronLeft</span>,
@@ -189,6 +190,7 @@ jest.mock('../../src/renderer/components/search/QueryMatchEdge', () => ({
 
 jest.mock('../../src/renderer/components/search/SearchAutocomplete', () => ({
   __esModule: true,
+  addToRecentSearches: jest.fn(),
   default: ({ value = '', onChange, onSelect, placeholder = 'Search...' }) => (
     <div data-testid="search-autocomplete">
       <input
@@ -222,6 +224,13 @@ jest.mock('../../src/renderer/components/search/EmptySearchState', () => ({
 jest.mock('../../src/renderer/components/search/ChatPanel', () => ({
   __esModule: true,
   default: () => <div data-testid="chat-panel" />
+}));
+
+jest.mock('../../src/renderer/components/search/GraphTour', () => ({
+  __esModule: true,
+  default: ({ forceShow = false }) => (
+    <div data-testid="graph-tour" data-force-show={forceShow ? 'true' : 'false'} />
+  )
 }));
 
 // Mock shared utilities
@@ -318,11 +327,13 @@ beforeAll(() => {
 
 // Import component after mocks
 import UnifiedSearchModal from '../../src/renderer/components/search/UnifiedSearchModal';
+import { embeddingsIpc } from '../../src/renderer/services/ipc/embeddingsIpc';
 
 describe('UnifiedSearchModal', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
+    embeddingsIpc.invalidateStatsCache();
 
     // Reset mock implementations
     mockElectronAPI.embeddings.search.mockResolvedValue({
@@ -402,6 +413,36 @@ describe('UnifiedSearchModal', () => {
       expect(screen.queryByText(/Relate/i)).toBeInTheDocument();
       // Since reactflow is mocked as a div with data-testid="react-flow", we can check for it if graph tab content renders
       // However, the test structure might just check if the tab button exists and is clickable
+    });
+
+    test('clears manual graph tour force-show on modal close', () => {
+      const store = configureStore({
+        reducer: {
+          system: (state = { redactPaths: false }) => state
+        }
+      });
+      const onClose = jest.fn();
+      const { rerender } = render(
+        <Provider store={store}>
+          <UnifiedSearchModal isOpen={true} onClose={onClose} initialTab="graph" />
+        </Provider>
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /Show graph tour/i }));
+      expect(screen.getByTestId('graph-tour')).toHaveAttribute('data-force-show', 'true');
+
+      rerender(
+        <Provider store={store}>
+          <UnifiedSearchModal isOpen={false} onClose={onClose} initialTab="graph" />
+        </Provider>
+      );
+      rerender(
+        <Provider store={store}>
+          <UnifiedSearchModal isOpen={true} onClose={onClose} initialTab="graph" />
+        </Provider>
+      );
+
+      expect(screen.getByTestId('graph-tour')).toHaveAttribute('data-force-show', 'false');
     });
   });
 
@@ -619,6 +660,23 @@ describe('UnifiedSearchModal', () => {
 
       expect(screen.getByTestId('modal')).toBeInTheDocument();
     });
+
+    test('shows index health warning when embedding model mismatches', async () => {
+      mockElectronAPI.embeddings.getStats.mockResolvedValue({
+        success: true,
+        files: 12,
+        folders: 3,
+        embeddingModelMismatch: true,
+        activeEmbeddingModel: 'nomic-embed-text-v2',
+        embeddingIndex: { model: 'nomic-embed-text-v1' }
+      });
+
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Embedding model mismatch detected\./i)).toBeInTheDocument();
+      });
+    });
   });
 
   describe('File Operation Events', () => {
@@ -764,6 +822,7 @@ describe('UnifiedSearchModal - Integration', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
+    embeddingsIpc.invalidateStatsCache();
 
     mockElectronAPI.embeddings.getStats.mockResolvedValue({
       success: true,
@@ -892,5 +951,39 @@ describe('UnifiedSearchModal - Integration', () => {
 
     // Modal should render without crash even with fallback metadata
     expect(screen.getByTestId('modal')).toBeInTheDocument();
+    expect(screen.getByText(/Limited search:/i)).toBeInTheDocument();
+  });
+
+  test('shows search diagnostics warnings from backend meta', async () => {
+    mockElectronAPI.embeddings.search.mockResolvedValue({
+      success: true,
+      results: [{ id: 'file1', metadata: { name: 'test.pdf', path: '/test.pdf' }, score: 0.9 }],
+      mode: 'hybrid',
+      meta: {
+        warnings: [
+          {
+            type: 'VECTOR_INDEX_GAP',
+            severity: 'high',
+            message: 'Embedding index may be stale for some analyzed files.'
+          }
+        ]
+      }
+    });
+
+    renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+
+    const searchInput = screen.getByLabelText(/search/i);
+    fireEvent.change(searchInput, { target: { value: 'test query' } });
+
+    await act(async () => {
+      jest.advanceTimersByTime(400);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Search diagnostics/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Embedding index may be stale for some analyzed files\./i)
+      ).toBeInTheDocument();
+    });
   });
 });

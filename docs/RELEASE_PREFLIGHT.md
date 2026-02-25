@@ -57,10 +57,11 @@ Do not tag until all of the following are true:
 - `/.github/workflows/mac-release.yml` (macOS release)
 - `/.github/workflows/manual-dist.yml` (manual dist builds)
 
-## Notes for unsigned beta mode
+## Notes for unsigned mode
 
 If signing/notarization secrets are not set:
 
-- Windows and mac builds still produce unsigned beta artifacts
+- Windows and mac builds still produce unsigned artifacts
+- Tag-triggered workflows still publish a normal GitHub release
 - Security prompts are expected (SmartScreen/Gatekeeper)
 - Native and packaged integrity checks still run

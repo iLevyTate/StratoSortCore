@@ -319,6 +319,7 @@ describe('QueryProcessor', () => {
       expect(result.corrections.length).toBeGreaterThan(0);
       expect(result.corrections[0]).toHaveProperty('original', 'vacaton');
       expect(result.corrections[0]).toHaveProperty('corrected', 'vacation');
+      expect(result.corrected).toBe('vacation');
     });
 
     test('handles multiple words', async () => {
@@ -329,6 +330,40 @@ describe('QueryProcessor', () => {
       });
 
       expect(result.corrections.length).toBeGreaterThanOrEqual(1);
+    });
+
+    test('corrects punctuation-attached typos', async () => {
+      const result = await processor.processQuery('vacaton?', {
+        expandSynonyms: false,
+        correctSpelling: true
+      });
+
+      expect(result.corrections).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ original: 'vacaton', corrected: 'vacation' })
+        ])
+      );
+      expect(result.corrected).toBe('vacation?');
+    });
+
+    test('preserves accented words in expanded output', async () => {
+      const result = await processor.processQuery('résumé', {
+        expandSynonyms: false,
+        correctSpelling: true
+      });
+
+      expect(result.expanded).toBe('résumé');
+      expect(result.corrected).toBe('résumé');
+    });
+
+    test('preserves CJK words in expanded output', async () => {
+      const result = await processor.processQuery('東京 契約書', {
+        expandSynonyms: false,
+        correctSpelling: true
+      });
+
+      expect(result.expanded).toBe('東京 契約書');
+      expect(result.corrected).toBe('東京 契約書');
     });
 
     test('filters short words (length <= 1)', async () => {
@@ -373,6 +408,7 @@ describe('QueryProcessor', () => {
       const result = await processor.processQuery('');
 
       expect(result.original).toBe('');
+      expect(result.corrected).toBe('');
       expect(result.expanded).toBe('');
       expect(result.corrections).toEqual([]);
     });

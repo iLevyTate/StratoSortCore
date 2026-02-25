@@ -398,6 +398,7 @@ async function handleBatchOrganize(params) {
                 destination: resolvedDestination,
                 skipped: true
               });
+              await getServiceIntegration()?.processingState?.clearReadyAnalysis?.(op.source);
 
               sendOperationProgress(getMainWindow, {
                 type: 'batch_organize',
@@ -448,6 +449,7 @@ async function handleBatchOrganize(params) {
             await getServiceIntegration()?.processingState?.markOrganizeOpDone?.(batchId, i, {
               destination: op.destination
             });
+            await getServiceIntegration()?.processingState?.clearReadyAnalysis?.(op.source);
 
             const result = {
               success: true,

@@ -118,9 +118,12 @@ describe('registerAnalysisIpc', () => {
     };
 
     const mockProcessingState = {
+      initialize: jest.fn().mockResolvedValue(undefined),
       markAnalysisStart: jest.fn().mockResolvedValue(undefined),
       markAnalysisComplete: jest.fn().mockResolvedValue(undefined),
       markAnalysisError: jest.fn().mockResolvedValue(undefined),
+      upsertReadyAnalysis: jest.fn().mockResolvedValue(undefined),
+      getReadyAnalyses: jest.fn().mockReturnValue([]),
       getState: jest.fn().mockReturnValue('in_progress'),
       clearState: jest.fn().mockResolvedValue(undefined)
     };
@@ -162,12 +165,43 @@ describe('registerAnalysisIpc', () => {
       getCustomFolders: mockGetCustomFolders
     });
 
-    expect(mockIpcMain.handle).toHaveBeenCalledTimes(5);
+    expect(mockIpcMain.handle).toHaveBeenCalledTimes(6);
     expect(handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT]).toBeDefined();
     expect(handlers[ANALYSIS_CHANNELS.ANALYZE_IMAGE]).toBeDefined();
     expect(handlers[ANALYSIS_CHANNELS.ANALYZE_BATCH]).toBeDefined();
     expect(handlers[ANALYSIS_CHANNELS.CANCEL_BATCH]).toBeDefined();
     expect(handlers[ANALYSIS_CHANNELS.EXTRACT_IMAGE_TEXT]).toBeDefined();
+    expect(handlers[ANALYSIS_CHANNELS.GET_READY_QUEUE]).toBeDefined();
+  });
+
+  describe('ready queue handler', () => {
+    beforeEach(() => {
+      registerAnalysisIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: mockLogger,
+        systemAnalytics: mockSystemAnalytics,
+        analyzeDocumentFile: mockAnalyzeDocumentFile,
+        analyzeImageFile: mockAnalyzeImageFile,
+        getServiceIntegration: mockGetServiceIntegration,
+        getCustomFolders: mockGetCustomFolders
+      });
+    });
+
+    test('returns durable ready analysis queue', async () => {
+      const serviceIntegration = mockGetServiceIntegration();
+      serviceIntegration.processingState.getReadyAnalyses.mockReturnValueOnce([
+        { path: 'C:\\docs\\a.pdf', analysis: { suggestedName: 'a.pdf' } }
+      ]);
+
+      const result = await handlers[ANALYSIS_CHANNELS.GET_READY_QUEUE]({});
+
+      expect(serviceIntegration.processingState.initialize).toHaveBeenCalled();
+      expect(result).toEqual({
+        success: true,
+        readyFiles: [{ path: 'C:\\docs\\a.pdf', analysis: { suggestedName: 'a.pdf' } }]
+      });
+    });
   });
 
   describe('batch analysis handler', () => {

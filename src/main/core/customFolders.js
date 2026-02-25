@@ -7,6 +7,7 @@ const { getLegacyUserDataPaths } = require('./userDataMigration');
 
 const logger = createLogger('CustomFolders');
 const CUSTOM_FOLDERS_FILENAME = 'custom-folders.json';
+const LEGACY_RECOVERY_MARKER_FILENAME = 'custom-folders-legacy-recovery.v2.json';
 const LEGACY_DEFAULT_FOLDER_NAMES = new Set([
   'uncategorized',
   'documents',
@@ -45,6 +46,11 @@ const buildFolderKey = (folder) =>
 function getCustomFoldersPath() {
   const userDataPath = app.getPath('userData');
   return path.join(userDataPath, CUSTOM_FOLDERS_FILENAME);
+}
+
+function getLegacyRecoveryMarkerPath() {
+  const userDataPath = app.getPath('userData');
+  return path.join(userDataPath, LEGACY_RECOVERY_MARKER_FILENAME);
 }
 
 function normalizeFolderPaths(folders) {
@@ -184,36 +190,81 @@ async function readCustomFoldersFile(filePath) {
   }
 }
 
-function hasCustomFolders(
-  folders,
+async function readLegacyRecoveryMarker() {
+  try {
+    const raw = await fs.readFile(getLegacyRecoveryMarkerPath(), 'utf-8');
+    if (!raw || typeof raw !== 'string') return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeLegacyRecoveryMarker(payload) {
+  try {
+    await fs.writeFile(
+      getLegacyRecoveryMarkerPath(),
+      JSON.stringify(
+        {
+          completed: true,
+          markerVersion: 2,
+          updatedAt: new Date().toISOString(),
+          ...payload
+        },
+        null,
+        2
+      )
+    );
+  } catch (error) {
+    logger.warn('[STORAGE] Failed to persist legacy recovery marker', { error: error.message });
+  }
+}
+
+function isRecoverableCustomFolder(
+  folder,
   defaultNameSet,
   defaultPathByName = null,
-  { allowDefaultNameCustomPath = false } = {}
+  { allowDefaultNameCustomPath = false, treatLegacyNameNonDefaultAsCustom = false } = {}
 ) {
-  return (Array.isArray(folders) ? folders : []).some((folder) => {
-    const nameKey = normalizeName(folder?.name);
-    if (!nameKey) return false;
-    if (folder?.isDefault === true) return false;
-    // Treat known default names as defaults even if legacy metadata incorrectly
-    // marked them as non-default, unless the path clearly differs from the
-    // canonical default path (which indicates a real custom folder).
-    if (defaultNameSet.has(nameKey)) {
-      const canonicalPath = defaultPathByName?.get(nameKey) || '';
-      const candidatePath = normalizeFolderPath(folder?.path);
-      if (
-        allowDefaultNameCustomPath &&
-        folder?.isDefault === false &&
-        canonicalPath &&
-        candidatePath &&
-        candidatePath !== canonicalPath
-      ) {
-        return true;
-      }
+  const nameKey = normalizeName(folder?.name);
+  if (!nameKey) return false;
+  if (folder?.isDefault === true) return false;
+
+  // Treat known default names as defaults even if legacy metadata incorrectly
+  // marked them as non-default, unless the path clearly differs from the
+  // canonical default path (which indicates a real custom folder).
+  if (defaultNameSet.has(nameKey)) {
+    const canonicalPath = defaultPathByName?.get(nameKey) || '';
+    const candidatePath = normalizeFolderPath(folder?.path);
+    // If this name maps to a known current default path and matches it,
+    // it is definitely a default entry and should never be recovered.
+    if (canonicalPath && candidatePath && candidatePath === canonicalPath) {
       return false;
     }
-    if (folder?.isDefault === false) return true;
-    return true;
-  });
+
+    // Current default names (e.g. Documents/Images) are only recoverable
+    // when explicitly allowed and their path differs from the canonical path.
+    if (
+      allowDefaultNameCustomPath &&
+      folder?.isDefault === false &&
+      canonicalPath &&
+      candidatePath &&
+      candidatePath !== canonicalPath
+    ) {
+      return true;
+    }
+
+    // Legacy-only default names (e.g. Work/Research from old bundles) can be
+    // legitimate user folders when persisted as non-default entries.
+    if (treatLegacyNameNonDefaultAsCustom && folder?.isDefault === false && !canonicalPath) {
+      return true;
+    }
+
+    return false;
+  }
+  if (folder?.isDefault === false) return true;
+  return true;
 }
 
 function shouldPruneLegacyDefaultBundle(folders, currentDefaultNameSet) {
@@ -270,36 +321,62 @@ async function recoverLegacyCustomFolders(
   defaultNameSet,
   defaultPathByName = null
 ) {
-  if (
-    hasCustomFolders(currentFolders, defaultNameSet, defaultPathByName, {
-      allowDefaultNameCustomPath: true
-    })
-  ) {
+  const recoveryMarker = await readLegacyRecoveryMarker();
+  if (recoveryMarker?.completed === true) {
     return currentFolders;
   }
 
   const legacyPaths = getLegacyUserDataPaths();
   const recoveredFolders = [];
   const sources = [];
+  const scannedSources = [];
 
   for (const legacyPath of legacyPaths) {
     const legacyFilePath = path.join(legacyPath, CUSTOM_FOLDERS_FILENAME);
     const legacyData = await readCustomFoldersFile(legacyFilePath);
-    if (!legacyData || legacyData.length === 0) continue;
+    if (!legacyData) continue;
+    scannedSources.push(legacyFilePath);
+    if (legacyData.length === 0) continue;
     const normalizedLegacy = normalizeFolderPaths(legacyData);
-    if (!hasCustomFolders(normalizedLegacy, defaultNameSet, defaultPathByName)) continue;
-    recoveredFolders.push(...normalizedLegacy);
+    const recoverableLegacy = normalizedLegacy.filter((folder) =>
+      isRecoverableCustomFolder(folder, defaultNameSet, defaultPathByName, {
+        treatLegacyNameNonDefaultAsCustom: true
+      })
+    );
+    if (recoverableLegacy.length === 0) continue;
+    recoveredFolders.push(...recoverableLegacy);
     sources.push(legacyFilePath);
   }
 
-  if (recoveredFolders.length === 0) return currentFolders;
+  if (recoveredFolders.length === 0) {
+    // Only mark recovery complete after at least one legacy source was
+    // successfully scanned. This avoids permanently disabling recovery when
+    // legacy paths are transiently unavailable during startup/migration.
+    if (scannedSources.length > 0) {
+      await writeLegacyRecoveryMarker({
+        addedCount: 0,
+        sources: scannedSources
+      });
+    }
+    return currentFolders;
+  }
 
   const merged = mergeFolders(currentFolders, recoveredFolders);
   const addedCount = merged.length - currentFolders.length;
-  if (addedCount <= 0) return currentFolders;
+  if (addedCount <= 0) {
+    await writeLegacyRecoveryMarker({
+      addedCount: 0,
+      sources
+    });
+    return currentFolders;
+  }
 
   try {
     await saveCustomFolders(merged);
+    await writeLegacyRecoveryMarker({
+      addedCount,
+      sources
+    });
     logger.warn('[STORAGE] Recovered custom smart folders from legacy data', {
       addedCount,
       sources

@@ -65,7 +65,7 @@ async function withProcessingState({ filePath, processingState, logger, logPrefi
     // Mark analysis complete on success
     if (processingState) {
       try {
-        await processingState.markAnalysisComplete?.(filePath);
+        await processingState.markAnalysisComplete?.(filePath, result);
         stateHandled = true; // Mark state as handled to prevent cleanup race
       } catch (completeError) {
         logger.debug(`${logPrefix} Failed to mark analysis complete:`, completeError.message);

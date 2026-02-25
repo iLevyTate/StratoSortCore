@@ -39,8 +39,7 @@ jobs:
       - name: Merge patch and minor updates
         if: |
           steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
-          steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
-          steps.metadata.outputs.dependency-type == 'direct:development'
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
         uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

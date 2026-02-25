@@ -1515,8 +1515,11 @@ class SearchService {
 
     logger.info('[SearchService] Search started', { query: query.substring(0, 100), mode, topK });
 
-    // BM25 will additionally expand synonyms, but vector search uses this normalized version
+    // BM25 can use synonym expansion, while vector/chunk search should use
+    // spelling-corrected text (without synonym stuffing) for cleaner embeddings.
     const normalizedQuery = query.trim().replace(/\s+/g, ' ');
+    let semanticQuery = normalizedQuery;
+    let queryExpanded = false;
 
     // Process query through QueryProcessor (spell correction + synonyms)
     // Start with normalized query, then optionally expand with synonyms
@@ -1539,12 +1542,21 @@ class SearchService {
             correctSpelling,
             maxSynonymsPerWord: 3
           });
-          // If we added a year boost, append it to the processed expansion
-          const baseExpanded = processed.expanded || query;
+          // Use corrected query for vector/chunk semantic retrieval.
+          const correctedQuery =
+            typeof processed.corrected === 'string' && processed.corrected.trim().length > 0
+              ? processed.corrected.trim().replace(/\s+/g, ' ')
+              : normalizedQuery;
+          semanticQuery = correctedQuery;
+
+          // If we added a year boost, append it to the expanded BM25 query.
+          const baseExpanded = processed.expanded || correctedQuery;
           processedQuery = filters.year ? `${baseExpanded} ${boostedYear}` : baseExpanded;
+          queryExpanded = processedQuery !== normalizedQuery || semanticQuery !== normalizedQuery;
 
           queryMeta = {
             original: processed.original,
+            corrected: correctedQuery,
             expanded: processed.expanded,
             corrections: processed.corrections,
             synonymsAdded: processed.synonymsAdded?.length || 0,
@@ -1575,7 +1587,7 @@ class SearchService {
           mode,
           chunkTopK: resolvedChunkTopK,
           chunkWeight: safeChunkWeight,
-          queryExpanded: processedQuery !== query
+          queryExpanded
         });
       } catch (statusErr) {
         logger.debug('[SearchService] Failed to gather preflight status', {
@@ -1597,7 +1609,7 @@ class SearchService {
       }
 
       if (mode === 'vector') {
-        const results = await this.vectorSearch(normalizedQuery, topK);
+        const results = await this.vectorSearch(semanticQuery, topK);
         this._enrichResults(results);
         const filtered = this._filterByScore(results, minScore);
         return { success: true, results: filtered, mode: 'vector', queryMeta };
@@ -1608,7 +1620,7 @@ class SearchService {
       let precomputedEmbedding = normalizePrecomputedEmbedding(options.precomputedEmbedding);
       if (!precomputedEmbedding) {
         try {
-          precomputedEmbedding = await this.embedding.embedText(normalizedQuery);
+          precomputedEmbedding = await this.embedding.embedText(semanticQuery);
         } catch (embedErr) {
           logger.warn('[SearchService] Failed to precompute query embedding', {
             error: embedErr?.message
@@ -1618,7 +1630,7 @@ class SearchService {
 
       const bm25Results = await this.bm25Search(processedQuery, topK * 2);
       const { results: vectorResults, timedOut } = await this._vectorSearchWithTimeout(
-        normalizedQuery,
+        semanticQuery,
         topK * 2,
         undefined,
         { precomputedEmbedding }
@@ -1629,7 +1641,7 @@ class SearchService {
           : null;
       const chunkResults =
         safeChunkWeight > 0 && resolvedChunkTopK > 0
-          ? await this.chunkSearch(normalizedQuery, topK * 2, resolvedChunkTopK, {
+          ? await this.chunkSearch(semanticQuery, topK * 2, resolvedChunkTopK, {
               chunkContext,
               chunkContextMaxNeighbors,
               chunkContextMaxFiles,
@@ -1653,7 +1665,7 @@ class SearchService {
             originalMode: 'hybrid',
             vectorTimedOut: true,
             bm25Count: bm25Results.length,
-            queryExpanded: processedQuery !== query
+            queryExpanded
           }
         };
       }

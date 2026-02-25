@@ -469,6 +469,137 @@ describe('ClusteringService', () => {
       // Should contain at least one distinctive finance-related token
       expect(graphData[0].topTerms.join(' ')).toMatch(/finance|revenue|budget|ebitda|forecast/i);
     });
+
+    test('filters stopwords out of commonTags used for graph labels', async () => {
+      service.clusters = [
+        {
+          id: 0,
+          members: [
+            {
+              id: 'file:a',
+              embedding: [1, 0],
+              metadata: {
+                name: 'alpha_notes.txt',
+                subject: 'Project Alpha',
+                summary: 'If this is ready, ship it',
+                category: 'Work',
+                tags: JSON.stringify(['if', 'it', 'alpha'])
+              }
+            },
+            {
+              id: 'file:b',
+              embedding: [1, 0.1],
+              metadata: {
+                name: 'alpha_plan.txt',
+                subject: 'Alpha plan',
+                summary: 'Plan and milestones',
+                category: 'Work',
+                tags: JSON.stringify(['it', 'alpha', 'milestones'])
+              }
+            }
+          ]
+        }
+      ];
+      service.centroids = [[1, 0]];
+      await service.generateClusterLabels({ skipLLM: true });
+
+      const graphData = service.getClustersForGraph();
+      expect(Array.isArray(graphData)).toBe(true);
+      expect(graphData).toHaveLength(1);
+      expect(Array.isArray(graphData[0].commonTags)).toBe(true);
+      expect(graphData[0].commonTags).toContain('alpha');
+      expect(graphData[0].commonTags).not.toContain('if');
+      expect(graphData[0].commonTags).not.toContain('it');
+    });
+
+    test('derives member path and folder from metadata.filePath fallback', () => {
+      service.clusters = [
+        {
+          id: 0,
+          members: [
+            {
+              id: 'file:c:/users/test/docs/finance/q4_budget.xlsx',
+              embedding: [1, 0],
+              metadata: {
+                filePath: 'C:\\Users\\Test\\Docs\\Finance\\q4_budget.xlsx',
+                fileName: 'q4_budget.xlsx',
+                tags: JSON.stringify(['finance', 'budget'])
+              }
+            },
+            {
+              id: 'file:c:/users/test/docs/finance/q4_report.xlsx',
+              embedding: [0.98, 0.02],
+              metadata: {
+                filePath: 'C:\\Users\\Test\\Docs\\Finance\\q4_report.xlsx',
+                fileName: 'q4_report.xlsx',
+                tags: JSON.stringify(['finance', 'report'])
+              }
+            }
+          ]
+        }
+      ];
+      service.centroids = [[1, 0]];
+
+      const graphData = service.getClustersForGraph();
+      expect(Array.isArray(graphData)).toBe(true);
+      expect(graphData).toHaveLength(1);
+      expect(graphData[0].dominantFolderName).toBe('Finance');
+      expect(graphData[0].dominantFileCategory).toBe('spreadsheet');
+    });
+  });
+
+  describe('getClusterMembers', () => {
+    test('filters out missing files when resolving cluster members', async () => {
+      service.clusters = [
+        {
+          id: 0,
+          members: [
+            { id: 'file:existing', metadata: { filePath: 'C:\\Docs\\existing.pdf' } },
+            { id: 'file:missing', metadata: { filePath: 'C:\\Docs\\missing.pdf' } }
+          ]
+        }
+      ];
+
+      mockVectorDb.getFile.mockImplementation(async (id) => {
+        if (id === 'file:existing') {
+          return {
+            filePath: 'C:\\Docs\\existing.pdf',
+            fileName: 'existing.pdf',
+            fileType: 'pdf',
+            extractionMethod: 'nomic'
+          };
+        }
+        if (id === 'file:missing') {
+          return {
+            filePath: 'C:\\Docs\\missing.pdf',
+            fileName: 'missing.pdf',
+            fileType: 'pdf',
+            extractionMethod: 'nomic'
+          };
+        }
+        return null;
+      });
+
+      const fs = require('fs');
+      const accessSpy = jest
+        .spyOn(fs.promises, 'access')
+        .mockImplementation(async (candidatePath) => {
+          if (String(candidatePath).toLowerCase().includes('missing')) {
+            const error = new Error('ENOENT');
+            error.code = 'ENOENT';
+            throw error;
+          }
+        });
+
+      const members = await service.getClusterMembers(0);
+      accessSpy.mockRestore();
+
+      expect(Array.isArray(members)).toBe(true);
+      expect(members).toHaveLength(1);
+      expect(members[0].id).toBe('file:existing');
+      expect(members[0].metadata.path).toBe('C:\\Docs\\existing.pdf');
+      expect(members[0].metadata.name).toBe('existing.pdf');
+    });
   });
 
   describe('duplicate detection thresholds', () => {
@@ -579,6 +710,154 @@ describe('ClusteringService', () => {
       expect(edges.length).toBeGreaterThan(0);
       expect(Array.isArray(edges[0].sharedTerms)).toBe(true);
       expect(edges[0].sharedTerms.join(' ')).toMatch(/alpha|milestones/i);
+    });
+
+    test('excludes stopword-only overlap from sharedTerms', () => {
+      service.clusters = [
+        {
+          id: 0,
+          members: [
+            { id: 'file:a', embedding: [1, 0], metadata: { tags: JSON.stringify(['if']) } }
+          ],
+          topTerms: ['if', 'alpha'],
+          commonTags: ['if', 'alpha']
+        },
+        {
+          id: 1,
+          members: [
+            { id: 'file:b', embedding: [0.9, 0.1], metadata: { tags: JSON.stringify(['it']) } }
+          ],
+          topTerms: ['it', 'alpha'],
+          commonTags: ['it', 'alpha']
+        }
+      ];
+      service.centroids = [
+        [1, 0],
+        [0.9, 0.1]
+      ];
+
+      const edges = service.findCrossClusterEdges(0.1, { includeBridgeFiles: false });
+      expect(Array.isArray(edges)).toBe(true);
+      expect(edges.length).toBeGreaterThan(0);
+      expect(edges[0].sharedTerms).toEqual(['alpha']);
+    });
+
+    test('bridge files use metadata.filePath/fileName fallback', () => {
+      service.clusters = [
+        {
+          id: 0,
+          members: [
+            {
+              id: 'file:c:/work/alpha/spec.docx',
+              embedding: [1, 0],
+              metadata: {
+                filePath: 'C:\\Work\\Alpha\\spec.docx',
+                fileName: 'spec.docx'
+              }
+            }
+          ],
+          topTerms: ['alpha'],
+          commonTags: ['alpha']
+        },
+        {
+          id: 1,
+          members: [
+            {
+              id: 'file:c:/work/beta/spec-review.docx',
+              embedding: [0.98, 0.02],
+              metadata: {
+                filePath: 'C:\\Work\\Beta\\spec-review.docx',
+                fileName: 'spec-review.docx'
+              }
+            }
+          ],
+          topTerms: ['alpha'],
+          commonTags: ['alpha']
+        }
+      ];
+      service.centroids = [
+        [1, 0],
+        [0.98, 0.02]
+      ];
+
+      const fs = require('fs');
+      const existsSyncSpy = jest.spyOn(fs, 'existsSync').mockReturnValue(true);
+      const edges = service.findCrossClusterEdges(0.1, {
+        includeBridgeFiles: true,
+        maxBridgeFilesPerCluster: 2,
+        minBridgeSimilarity: 0.1
+      });
+      existsSyncSpy.mockRestore();
+
+      expect(edges.length).toBeGreaterThan(0);
+      expect(Array.isArray(edges[0].bridgeFiles)).toBe(true);
+      expect(edges[0].bridgeFiles.length).toBeGreaterThan(0);
+      expect(edges[0].bridgeFiles[0].path).toMatch(/^C:\\/);
+      expect(edges[0].bridgeFiles[0].name).toMatch(/\.docx$/);
+    });
+
+    test('omits bridge files whose paths no longer exist', () => {
+      service.clusters = [
+        {
+          id: 0,
+          members: [
+            {
+              id: 'file:c:/work/alpha/spec.docx',
+              embedding: [1, 0],
+              metadata: {
+                filePath: 'C:\\Work\\Alpha\\spec.docx',
+                fileName: 'spec.docx'
+              }
+            },
+            {
+              id: 'file:c:/work/alpha/missing.docx',
+              embedding: [0.99, 0.01],
+              metadata: {
+                filePath: 'C:\\Work\\Alpha\\missing.docx',
+                fileName: 'missing.docx'
+              }
+            }
+          ],
+          topTerms: ['alpha'],
+          commonTags: ['alpha']
+        },
+        {
+          id: 1,
+          members: [
+            {
+              id: 'file:c:/work/beta/spec-review.docx',
+              embedding: [0.98, 0.02],
+              metadata: {
+                filePath: 'C:\\Work\\Beta\\spec-review.docx',
+                fileName: 'spec-review.docx'
+              }
+            }
+          ],
+          topTerms: ['alpha'],
+          commonTags: ['alpha']
+        }
+      ];
+      service.centroids = [
+        [1, 0],
+        [0.98, 0.02]
+      ];
+
+      const fs = require('fs');
+      const existsSyncSpy = jest.spyOn(fs, 'existsSync').mockImplementation((candidatePath) => {
+        return !String(candidatePath).toLowerCase().includes('missing.docx');
+      });
+
+      const edges = service.findCrossClusterEdges(0.1, {
+        includeBridgeFiles: true,
+        maxBridgeFilesPerCluster: 5,
+        minBridgeSimilarity: 0.1
+      });
+
+      existsSyncSpy.mockRestore();
+
+      expect(edges.length).toBeGreaterThan(0);
+      const bridgePaths = edges[0].bridgeFiles.map((file) => file.path || '');
+      expect(bridgePaths.some((candidatePath) => /missing\.docx/i.test(candidatePath))).toBe(false);
     });
   });
 });

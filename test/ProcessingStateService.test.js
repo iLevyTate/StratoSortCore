@@ -30,7 +30,7 @@ const ProcessingStateService = require('../src/main/services/ProcessingStateServ
 jest.spyOn(fs, 'readFile').mockResolvedValue(
   JSON.stringify({
     schemaVersion: '1.0.0',
-    analysis: { jobs: {}, lastUpdated: '' },
+    analysis: { jobs: {}, ready: {}, lastUpdated: '' },
     organize: { batches: {}, lastUpdated: '' }
   })
 );
@@ -64,6 +64,7 @@ describe('ProcessingStateService', () => {
     const state = service.createEmptyState();
     expect(state.schemaVersion).toBe('1.0.0');
     expect(state.analysis.jobs).toEqual({});
+    expect(state.analysis.ready).toEqual({});
     expect(state.organize.batches).toEqual({});
   });
 
@@ -145,6 +146,37 @@ describe('ProcessingStateService', () => {
     await service.markAnalysisStart('C:\\file.txt');
 
     expect(service.state.analysis.jobs['C:\\file.txt'].status).toBe('in_progress');
+    expect(saveSpy).toHaveBeenCalled();
+  });
+
+  test('markAnalysisComplete persists ready analysis snapshot', async () => {
+    service.state = service.createEmptyState();
+    service.initialized = true;
+    const saveSpy = jest.spyOn(service, 'saveState').mockResolvedValue({ success: true });
+    jest.spyOn(fs, 'stat').mockResolvedValueOnce({
+      size: 2048,
+      birthtime: new Date('2026-01-01T00:00:00.000Z'),
+      mtime: new Date('2026-01-02T00:00:00.000Z')
+    });
+
+    await service.markAnalysisComplete('C:\\docs\\file.txt', {
+      suggestedName: 'file.txt',
+      category: 'documents',
+      keywords: ['invoice']
+    });
+
+    expect(service.state.analysis.jobs['C:\\docs\\file.txt'].status).toBe('done');
+    expect(service.state.analysis.ready['C:\\docs\\file.txt']).toEqual(
+      expect.objectContaining({
+        path: 'C:\\docs\\file.txt',
+        name: 'file.txt',
+        analysis: expect.objectContaining({
+          suggestedName: 'file.txt',
+          category: 'documents',
+          keywords: ['invoice']
+        })
+      })
+    );
     expect(saveSpy).toHaveBeenCalled();
   });
 });

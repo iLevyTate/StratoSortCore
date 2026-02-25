@@ -62,6 +62,43 @@ function registerAnalysisIpc(servicesOrParams) {
       })
     : null;
   const LOG_PREFIX = '[IPC-ANALYSIS]';
+  const READY_QUEUE_HYDRATION_LIMIT = 1000;
+
+  function classifyAnalysisOutcome(result) {
+    if (!result || typeof result !== 'object') {
+      return { outcome: 'error', reason: 'empty_result' };
+    }
+    if (result.error) {
+      return { outcome: 'fallback', reason: 'analysis_error' };
+    }
+
+    const extractionMethod = String(result.extractionMethod || '').toLowerCase();
+    const fallbackReason = String(result.fallbackReason || '').trim();
+    const warning = String(result.analysisWarning || '').trim();
+    const isFallbackFlag = Boolean(result.isFallback || result._isFallback);
+    const fallbackMethod =
+      extractionMethod.includes('fallback') ||
+      extractionMethod.includes('failed') ||
+      extractionMethod.includes('filename') ||
+      extractionMethod.includes('pdf_no_text');
+
+    if (isFallbackFlag || fallbackReason || warning || fallbackMethod) {
+      return {
+        outcome: 'fallback',
+        reason:
+          fallbackReason ||
+          warning ||
+          extractionMethod ||
+          (isFallbackFlag ? 'fallback_flagged' : 'fallback')
+      };
+    }
+    return { outcome: 'primary', reason: extractionMethod || 'ai_primary' };
+  }
+
+  function recordPipelineOutcome(systemAnalytics, pipelineName, resultLike) {
+    const { outcome, reason } = classifyAnalysisOutcome(resultLike);
+    systemAnalytics?.recordPipelineOutcome?.(pipelineName, outcome, { reason });
+  }
 
   async function validateAnalysisPath(filePath) {
     const cleanPath = safeFilePath(filePath);
@@ -124,6 +161,7 @@ function registerAnalysisIpc(servicesOrParams) {
             analysisHistory: serviceIntegration?.analysisHistory,
             logger
           });
+          recordPipelineOutcome(systemAnalytics, 'document', result);
 
           return result;
         }
@@ -136,7 +174,17 @@ function registerAnalysisIpc(servicesOrParams) {
       });
       logger.error(`${LOG_PREFIX} Document analysis failed with context:`, errorContext);
       systemAnalytics.recordFailure(error);
-      return createAnalysisFallback(cleanPath, 'documents', error.message);
+      const fallback = createAnalysisFallback(cleanPath, 'documents', error.message);
+      try {
+        await serviceIntegration?.processingState?.upsertReadyAnalysis?.(cleanPath, fallback);
+      } catch (readyPersistError) {
+        logger.debug(`${LOG_PREFIX} Failed to persist fallback ready entry`, {
+          filePath: cleanPath,
+          error: readyPersistError?.message
+        });
+      }
+      recordPipelineOutcome(systemAnalytics, 'document', fallback);
+      return fallback;
     }
   }
 
@@ -190,6 +238,7 @@ function registerAnalysisIpc(servicesOrParams) {
             analysisHistory: serviceIntegration?.analysisHistory,
             logger
           });
+          recordPipelineOutcome(systemAnalytics, 'image', result);
 
           return result;
         }
@@ -202,7 +251,17 @@ function registerAnalysisIpc(servicesOrParams) {
       });
       logger.error(`${IMAGE_LOG_PREFIX} Image analysis failed with context:`, errorContext);
       systemAnalytics.recordFailure(error);
-      return createAnalysisFallback(cleanPath, 'images', error.message);
+      const fallback = createAnalysisFallback(cleanPath, 'images', error.message);
+      try {
+        await serviceIntegration?.processingState?.upsertReadyAnalysis?.(cleanPath, fallback);
+      } catch (readyPersistError) {
+        logger.debug(`${IMAGE_LOG_PREFIX} Failed to persist fallback ready entry`, {
+          filePath: cleanPath,
+          error: readyPersistError?.message
+        });
+      }
+      recordPipelineOutcome(systemAnalytics, 'image', fallback);
+      return fallback;
     }
   }
 
@@ -303,6 +362,16 @@ function registerAnalysisIpc(servicesOrParams) {
                   type: 'batch_analyze',
                   batchId,
                   ...progress
+                });
+              }
+            },
+            onFileComplete: (item) => {
+              const pipelineName = item?.type === 'image' ? 'image' : 'document';
+              if (item?.success) {
+                recordPipelineOutcome(systemAnalytics, pipelineName, item?.result);
+              } else {
+                systemAnalytics?.recordPipelineOutcome?.(pipelineName, 'error', {
+                  reason: item?.error || 'batch_item_failed'
                 });
               }
             },
@@ -407,6 +476,37 @@ function registerAnalysisIpc(servicesOrParams) {
   });
 
   safeHandle(ipcMain, IPC_CHANNELS.ANALYSIS.CANCEL_BATCH, cancelBatchHandler);
+
+  const getReadyQueueHandler = createHandler({
+    logger,
+    context: 'Analysis',
+    schema: null,
+    handler: async () => {
+      const serviceIntegration = getServiceIntegration?.();
+      const processingState = serviceIntegration?.processingState;
+      if (!processingState?.getReadyAnalyses) {
+        return { success: true, readyFiles: [] };
+      }
+      try {
+        await processingState.initialize?.();
+        return {
+          success: true,
+          readyFiles: processingState.getReadyAnalyses({ limit: READY_QUEUE_HYDRATION_LIMIT })
+        };
+      } catch (error) {
+        logger.error(`${LOG_PREFIX} Failed to load ready analysis queue`, {
+          error: error?.message
+        });
+        return {
+          success: false,
+          readyFiles: [],
+          error: error?.message || 'Failed to load ready analysis queue'
+        };
+      }
+    }
+  });
+
+  safeHandle(ipcMain, IPC_CHANNELS.ANALYSIS.GET_READY_QUEUE, getReadyQueueHandler);
 
   async function runOcr(filePath) {
     const cleanPath = await validateAnalysisPath(filePath);

@@ -10,7 +10,14 @@ const logger = createLogger('ProcessingStateService');
 // Cleanup thresholds: how long completed/failed entries are retained before eviction
 const COMPLETED_TTL_MS = 30 * 60 * 1000; // 30 minutes for done entries
 const FAILED_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours for failed entries
+const READY_ENTRY_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days for durable ready queue entries
+const MAX_READY_ENTRIES = 2000; // Hard ceiling to prevent unbounded queue growth
+const DEFAULT_READY_QUERY_LIMIT = 1000; // Cap IPC hydration payload size by default
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000; // Run sweep every 5 minutes
+const getSafeTimestamp = (value) => {
+  const timestamp = new Date(value || 0).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
 
 /**
  * ProcessingStateService
@@ -111,6 +118,7 @@ class ProcessingStateService {
       updatedAt: now,
       analysis: {
         jobs: {}, // key: filePath, value: { status: 'pending'|'in_progress'|'done'|'failed', startedAt, completedAt, error }
+        ready: {}, // key: filePath, value: { path, name, size, created, modified, analyzedAt, analysis }
         lastUpdated: now
       },
       organize: {
@@ -132,6 +140,36 @@ class ProcessingStateService {
       this.state = parsed;
       if (!this.state.schemaVersion) {
         this.state.schemaVersion = this.SCHEMA_VERSION;
+      }
+      if (!this.state.analysis || typeof this.state.analysis !== 'object') {
+        this.state.analysis = { jobs: {}, ready: {}, lastUpdated: new Date().toISOString() };
+      }
+      if (!this.state.analysis.jobs || typeof this.state.analysis.jobs !== 'object') {
+        this.state.analysis.jobs = {};
+      }
+      if (!this.state.analysis.ready || typeof this.state.analysis.ready !== 'object') {
+        this.state.analysis.ready = {};
+      }
+      if (!this.state.analysis.lastUpdated) {
+        this.state.analysis.lastUpdated = new Date().toISOString();
+      }
+      if (!this.state.organize || typeof this.state.organize !== 'object') {
+        this.state.organize = { batches: {}, lastUpdated: new Date().toISOString() };
+      }
+      if (!this.state.organize.batches || typeof this.state.organize.batches !== 'object') {
+        this.state.organize.batches = {};
+      }
+      if (!this.state.organize.lastUpdated) {
+        this.state.organize.lastUpdated = new Date().toISOString();
+      }
+
+      const readyEvicted = this._evictStaleReadyEntries(Date.now()) + this._enforceReadyQueueCap();
+      if (readyEvicted > 0) {
+        this.state.analysis.lastUpdated = new Date().toISOString();
+        await this._saveStateInternal();
+        logger.info('[ProcessingStateService] Pruned stale ready queue entries during load', {
+          evicted: readyEvicted
+        });
       }
     } catch (error) {
       if (isNotFoundError(error)) {
@@ -331,7 +369,7 @@ class ProcessingStateService {
   }
 
   /**
-   * Remove analysis jobs and organize batches that have reached a terminal
+   * Remove analysis jobs, durable ready entries, and organize batches that have reached a terminal
    * state (done / failed) and are older than their respective TTL thresholds.
    * Only persists to disk when at least one entry was evicted.
    * @private
@@ -362,6 +400,10 @@ class ProcessingStateService {
         }
       }
     }
+
+    // --- Durable ready queue ---
+    evicted += this._evictStaleReadyEntries(now);
+    evicted += this._enforceReadyQueueCap();
 
     // --- Organize batches ---
     const batches = this.state.organize.batches;
@@ -416,6 +458,147 @@ class ProcessingStateService {
   }
 
   // ===== Analysis tracking =====
+  _evictStaleReadyEntries(now = Date.now()) {
+    const readyEntries =
+      this.state?.analysis?.ready && typeof this.state.analysis.ready === 'object'
+        ? this.state.analysis.ready
+        : null;
+    if (!readyEntries) return 0;
+
+    let evicted = 0;
+    for (const filePath of Object.keys(readyEntries)) {
+      const entry = readyEntries[filePath];
+      const timestamp = getSafeTimestamp(entry?.analyzedAt || entry?.modified || entry?.created);
+      if (timestamp <= 0 || now - timestamp > READY_ENTRY_TTL_MS) {
+        delete readyEntries[filePath];
+        evicted++;
+      }
+    }
+    return evicted;
+  }
+
+  _enforceReadyQueueCap() {
+    const readyEntries =
+      this.state?.analysis?.ready && typeof this.state.analysis.ready === 'object'
+        ? this.state.analysis.ready
+        : null;
+    if (!readyEntries) return 0;
+
+    const rankedEntries = Object.entries(readyEntries).sort(([, a], [, b]) => {
+      const aTime = getSafeTimestamp(a?.analyzedAt || a?.modified || a?.created);
+      const bTime = getSafeTimestamp(b?.analyzedAt || b?.modified || b?.created);
+      return bTime - aTime;
+    });
+    if (rankedEntries.length <= MAX_READY_ENTRIES) return 0;
+
+    let evicted = 0;
+    for (let i = MAX_READY_ENTRIES; i < rankedEntries.length; i++) {
+      const [filePath] = rankedEntries[i];
+      delete readyEntries[filePath];
+      evicted++;
+    }
+    return evicted;
+  }
+
+  _toSafeText(value, { maxLength = 500 } = {}) {
+    if (value === null || value === undefined) return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    return text.length > maxLength ? text.slice(0, maxLength) : text;
+  }
+
+  _toSafeNumber(value, { min = 0, max = 1 } = {}) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    return Math.max(min, Math.min(max, num));
+  }
+
+  _toSafeStringList(values, { maxItems = 20, maxItemLength = 100 } = {}) {
+    if (!Array.isArray(values) || values.length === 0) return [];
+    const seen = new Set();
+    const list = [];
+    for (const value of values) {
+      const normalized = this._toSafeText(value, { maxLength: maxItemLength });
+      if (!normalized) continue;
+      const dedupeKey = normalized.toLowerCase();
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      list.push(normalized);
+      if (list.length >= maxItems) break;
+    }
+    return list;
+  }
+
+  _sanitizeReadyAnalysis(result) {
+    if (!result || typeof result !== 'object') return null;
+    const payload = {
+      suggestedName: this._toSafeText(result.suggestedName || result.newName, { maxLength: 255 }),
+      category: this._toSafeText(result.category, { maxLength: 100 }),
+      keywords: this._toSafeStringList(result.keywords, { maxItems: 30, maxItemLength: 80 }),
+      confidence: this._toSafeNumber(result.confidence, { min: 0, max: 100 }),
+      summary: this._toSafeText(result.summary || result.purpose || result.description, {
+        maxLength: 2000
+      }),
+      purpose: this._toSafeText(result.purpose, { maxLength: 2000 }),
+      reasoning: this._toSafeText(result.reasoning, { maxLength: 1000 }),
+      subject: this._toSafeText(result.subject, { maxLength: 255 }),
+      documentType: this._toSafeText(result.documentType || result.type, { maxLength: 100 }),
+      entity: this._toSafeText(result.entity, { maxLength: 255 }),
+      project: this._toSafeText(result.project, { maxLength: 255 }),
+      documentDate: this._toSafeText(result.documentDate || result.date, { maxLength: 60 }),
+      keyEntities: this._toSafeStringList(result.keyEntities, { maxItems: 20, maxItemLength: 100 }),
+      smartFolder: this._toSafeText(result.smartFolder, { maxLength: 255 }),
+      embeddingPolicy: this._toSafeText(result.embeddingPolicy, { maxLength: 20 }),
+      embeddingStatus: this._toSafeText(result.embeddingStatus, { maxLength: 20 }),
+      warning: this._toSafeText(result.error, { maxLength: 1000 }),
+      errorType: this._toSafeText(result.errorType, { maxLength: 100 }),
+      isRetryable: typeof result.isRetryable === 'boolean' ? result.isRetryable : null
+    };
+
+    if (!payload.suggestedName && !payload.category && payload.keywords.length === 0) {
+      return null;
+    }
+
+    const compact = {};
+    for (const [key, value] of Object.entries(payload)) {
+      if (value === null || value === undefined) continue;
+      if (Array.isArray(value) && value.length === 0) continue;
+      compact[key] = value;
+    }
+    return compact;
+  }
+
+  async _buildReadyEntry(filePath, analysisResult, analyzedAt) {
+    const sanitizedAnalysis = this._sanitizeReadyAnalysis(analysisResult);
+    if (!sanitizedAnalysis) return null;
+
+    const nameFromPath = path.win32.basename(filePath || '');
+    let stats;
+    try {
+      stats = await fs.stat(filePath);
+    } catch {
+      stats = null;
+    }
+
+    return {
+      path: filePath,
+      name: nameFromPath || sanitizedAnalysis.suggestedName || 'Unknown',
+      size: stats?.size ?? null,
+      created: stats?.birthtime ? stats.birthtime.toISOString() : null,
+      modified: stats?.mtime ? stats.mtime.toISOString() : null,
+      analyzedAt,
+      analysis: sanitizedAnalysis
+    };
+  }
+
+  async _upsertReadyEntryInMemory(filePath, analysisResult, analyzedAt) {
+    const entry = await this._buildReadyEntry(filePath, analysisResult, analyzedAt);
+    if (!entry) return false;
+    this.state.analysis.ready[filePath] = entry;
+    this._enforceReadyQueueCap();
+    return true;
+  }
+
   async markAnalysisStart(filePath) {
     await this.initialize();
     const now = new Date().toISOString();
@@ -430,7 +613,7 @@ class ProcessingStateService {
     await this.saveState();
   }
 
-  async markAnalysisComplete(filePath) {
+  async markAnalysisComplete(filePath, analysisResult = null) {
     await this.initialize();
     const now = new Date().toISOString();
     this.state.analysis.jobs[filePath] = {
@@ -439,6 +622,16 @@ class ProcessingStateService {
       completedAt: now,
       error: null
     };
+    if (analysisResult) {
+      try {
+        await this._upsertReadyEntryInMemory(filePath, analysisResult, now);
+      } catch (error) {
+        logger.debug('[ProcessingStateService] Failed to capture ready analysis entry', {
+          filePath,
+          error: error?.message
+        });
+      }
+    }
     this.state.analysis.lastUpdated = now;
     await this.saveState();
   }
@@ -484,8 +677,16 @@ class ProcessingStateService {
    */
   async clearState(filePath) {
     await this.initialize();
+    let changed = false;
     if (this.state.analysis.jobs[filePath]) {
       delete this.state.analysis.jobs[filePath];
+      changed = true;
+    }
+    if (this.state.analysis.ready[filePath]) {
+      delete this.state.analysis.ready[filePath];
+      changed = true;
+    }
+    if (changed) {
       this.state.analysis.lastUpdated = new Date().toISOString();
       await this.saveState();
     }
@@ -500,13 +701,61 @@ class ProcessingStateService {
    */
   async moveJob(oldPath, newPath) {
     await this.initialize();
+    let changed = false;
     const job = this.state.analysis.jobs[oldPath];
     if (job) {
       this.state.analysis.jobs[newPath] = { ...job, movedFrom: oldPath };
       delete this.state.analysis.jobs[oldPath];
+      changed = true;
+    }
+    const ready = this.state.analysis.ready[oldPath];
+    if (ready) {
+      this.state.analysis.ready[newPath] = {
+        ...ready,
+        path: newPath,
+        name: path.win32.basename(newPath) || ready.name
+      };
+      delete this.state.analysis.ready[oldPath];
+      changed = true;
+    }
+    if (changed) {
       this.state.analysis.lastUpdated = new Date().toISOString();
       await this.saveState();
     }
+  }
+
+  async upsertReadyAnalysis(filePath, analysisResult) {
+    await this.initialize();
+    const now = new Date().toISOString();
+    const updated = await this._upsertReadyEntryInMemory(filePath, analysisResult, now);
+    if (!updated) return false;
+    this.state.analysis.lastUpdated = now;
+    await this.saveState();
+    return true;
+  }
+
+  async clearReadyAnalysis(filePath) {
+    await this.initialize();
+    if (!this.state.analysis.ready[filePath]) return false;
+    delete this.state.analysis.ready[filePath];
+    this.state.analysis.lastUpdated = new Date().toISOString();
+    await this.saveState();
+    return true;
+  }
+
+  getReadyAnalyses({ limit = DEFAULT_READY_QUERY_LIMIT } = {}) {
+    if (!this.state?.analysis?.ready) return [];
+    const entries = Object.values(this.state.analysis.ready)
+      .filter((entry) => entry && typeof entry === 'object' && typeof entry.path === 'string')
+      .sort((a, b) => {
+        const aTime = getSafeTimestamp(a.analyzedAt || a.modified || a.created);
+        const bTime = getSafeTimestamp(b.analyzedAt || b.modified || b.created);
+        return bTime - aTime;
+      });
+    if (!Number.isFinite(limit) || limit === null || limit <= 0) {
+      return entries;
+    }
+    return entries.slice(0, limit);
   }
 
   // ===== Organize batch tracking =====

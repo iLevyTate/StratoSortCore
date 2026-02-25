@@ -56,7 +56,8 @@ const IPC_CHANNELS = {
     ANALYZE_IMAGE: 'analysis:analyze-image',
     ANALYZE_BATCH: 'analysis:analyze-batch',
     CANCEL_BATCH: 'analysis:cancel-batch',
-    EXTRACT_IMAGE_TEXT: 'analysis:extract-image-text'
+    EXTRACT_IMAGE_TEXT: 'analysis:extract-image-text',
+    GET_READY_QUEUE: 'analysis:get-ready-queue'
   },
 
   // SETTINGS
@@ -983,6 +984,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     image: (filePath) => secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS.ANALYZE_IMAGE, filePath),
     batch: (payload) => secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS.ANALYZE_BATCH, payload),
     cancelBatch: (payload) => secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS.CANCEL_BATCH, payload),
+    getReadyQueue: () => secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS.GET_READY_QUEUE),
     extractText: (filePath) =>
       secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS.EXTRACT_IMAGE_TEXT, filePath)
   },

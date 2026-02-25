@@ -19,11 +19,18 @@ if (process.env.SENTRY_DSN) {
   });
 }
 import { fetchDocumentsPath, fetchRedactPaths } from './store/slices/systemSlice';
-import { fetchSmartFolders, setOrganizedFiles } from './store/slices/filesSlice';
+import {
+  addSelectedFiles,
+  fetchSmartFolders,
+  mergeFileStates,
+  setOrganizedFiles
+} from './store/slices/filesSlice';
+import { mergeAnalysisResults } from './store/slices/analysisSlice';
 import { fetchSettings } from './store/slices/uiSlice';
 import App from './App.js';
 import { applyPlatformClass } from './utils/platform';
 import { fetchAnalysisHistoryPages } from './utils/analysisHistoryFetch';
+import { mergeReadyQueueIntoState, normalizeReadyQueuePayload } from './utils/readyQueueHydration';
 import { GlobalErrorBoundary } from './components/ErrorBoundary';
 import './styles.css';
 
@@ -38,6 +45,45 @@ store.dispatch(fetchSettings(true));
 const logger = createLogger('Renderer');
 
 const HISTORY_REPAIR_KEY = 'stratosort_history_repair_done';
+
+async function hydrateDurableReadyQueue() {
+  try {
+    const getReadyQueue = window.electronAPI?.analysis?.getReadyQueue;
+    if (typeof getReadyQueue !== 'function') return;
+
+    const response = await getReadyQueue();
+    const readyEntries = normalizeReadyQueuePayload(response);
+    if (readyEntries.length === 0) return;
+
+    const merged = mergeReadyQueueIntoState(
+      {
+        selectedFiles: store.getState().files.selectedFiles,
+        analysisResults: store.getState().analysis.results,
+        fileStates: store.getState().files.fileStates
+      },
+      readyEntries
+    );
+
+    if (merged.hydratedCount <= 0) return;
+
+    if (merged.addedSelectedFiles.length > 0) {
+      store.dispatch(addSelectedFiles(merged.addedSelectedFiles));
+    }
+    if (merged.addedAnalysisResults.length > 0) {
+      store.dispatch(mergeAnalysisResults(merged.addedAnalysisResults));
+    }
+    if (Object.keys(merged.addedFileStates).length > 0) {
+      store.dispatch(mergeFileStates(merged.addedFileStates));
+    }
+
+    logger.info('[Renderer] Hydrated durable ready-to-organize queue', {
+      hydratedCount: merged.hydratedCount,
+      queueSize: readyEntries.length
+    });
+  } catch (error) {
+    logger.warn('[Renderer] Failed to hydrate durable ready queue', { error: error?.message });
+  }
+}
 
 async function repairOrganizedHistory() {
   try {
@@ -96,6 +142,7 @@ async function repairOrganizedHistory() {
 }
 
 repairOrganizedHistory();
+hydrateDurableReadyQueue();
 
 // Add platform class to body for OS-specific styling hooks
 applyPlatformClass();

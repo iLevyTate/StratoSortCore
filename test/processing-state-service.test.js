@@ -84,4 +84,32 @@ describe('ProcessingStateService', () => {
     expect(Array.isArray(incomplete)).toBe(true);
     expect(incomplete.length === 0 || incomplete.every((b) => !!b.completedAt)).toBe(true);
   });
+
+  test('persists and reads durable ready queue entries', async () => {
+    const ProcessingStateService = require('../src/main/services/ProcessingStateService');
+    const svc = new ProcessingStateService();
+    const file = path.join(tmpDir, 'ready.txt');
+    await fs.writeFile(file, 'hello');
+
+    await svc.markAnalysisComplete(file, {
+      suggestedName: 'ready.txt',
+      category: 'documents',
+      keywords: ['note']
+    });
+
+    const ready = svc.getReadyAnalyses();
+    expect(Array.isArray(ready)).toBe(true);
+    expect(ready[0]).toEqual(
+      expect.objectContaining({
+        path: file,
+        analysis: expect.objectContaining({
+          suggestedName: 'ready.txt',
+          category: 'documents'
+        })
+      })
+    );
+
+    await svc.clearReadyAnalysis(file);
+    expect(svc.getReadyAnalyses()).toEqual([]);
+  });
 });

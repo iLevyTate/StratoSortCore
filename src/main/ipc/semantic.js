@@ -2021,7 +2021,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
           chunkTopK,
           // Query processing options
           expandSynonyms = true,
-          correctSpelling = false, // DISABLED - causes false corrections (are->api, that->tax)
+          // Enabled with strict safeguards in QueryProcessor (stop-word allowlist,
+          // minimum length checks, edit-distance constraints).
+          correctSpelling = true,
           // Re-ranking options
           rerank = true,
           rerankTopN = 10,

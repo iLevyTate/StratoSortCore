@@ -6,6 +6,11 @@ import {
 } from '../src/renderer/utils/scoreUtils';
 import { formatBytes, formatDuration } from '../src/renderer/utils/format';
 import { isFileDragEvent, extractDroppedFiles } from '../src/renderer/utils/dragAndDrop';
+import { sanitizeSemanticTerms } from '../src/renderer/utils/semanticTerms';
+import {
+  mergeReadyQueueIntoState,
+  normalizeReadyQueuePayload
+} from '../src/renderer/utils/readyQueueHydration';
 
 describe('renderer utils (score/format/drag)', () => {
   test('formatScore and clamp01 handle invalid inputs', () => {
@@ -78,5 +83,55 @@ describe('renderer utils (score/format/drag)', () => {
     } finally {
       window.electronAPI = originalElectronApi;
     }
+  });
+
+  test('sanitizeSemanticTerms removes stopwords and duplicates', () => {
+    const terms = sanitizeSemanticTerms(['if', 'it', 'alpha', 'Alpha', 'roadmap', 'the']);
+    expect(terms).toEqual(['alpha', 'roadmap']);
+  });
+
+  test('sanitizeSemanticTerms keeps meaningful short terms but removes numeric tokens', () => {
+    const terms = sanitizeSemanticTerms(['Q4', '2024', 'AI', 'it'], { minLength: 2, maxTerms: 3 });
+    expect(terms).toEqual(['q4', 'ai']);
+  });
+
+  test('normalizeReadyQueuePayload extracts array from IPC response', () => {
+    const ready = [{ path: 'C:\\\\docs\\\\a.pdf' }];
+    expect(normalizeReadyQueuePayload({ success: true, readyFiles: ready })).toEqual(ready);
+    expect(normalizeReadyQueuePayload(ready)).toEqual(ready);
+    expect(normalizeReadyQueuePayload({ success: true })).toEqual([]);
+  });
+
+  test('mergeReadyQueueIntoState appends missing ready entries without clobbering', () => {
+    const merged = mergeReadyQueueIntoState(
+      {
+        selectedFiles: [{ path: 'C:\\\\docs\\\\existing.pdf', name: 'existing.pdf', size: 10 }],
+        analysisResults: [],
+        fileStates: {}
+      },
+      [
+        {
+          path: 'C:\\\\docs\\\\new.pdf',
+          name: 'new.pdf',
+          size: 20,
+          analyzedAt: '2026-02-01T00:00:00.000Z',
+          analysis: { suggestedName: 'new.pdf', category: 'documents', keywords: ['plan'] }
+        }
+      ]
+    );
+
+    expect(merged.hydratedCount).toBe(1);
+    expect(merged.selectedFiles.map((f) => f.path)).toContain('C:\\\\docs\\\\new.pdf');
+    expect(merged.analysisResults).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'C:\\\\docs\\\\new.pdf',
+          analysis: expect.objectContaining({ suggestedName: 'new.pdf' })
+        })
+      ])
+    );
+    expect(merged.fileStates['C:\\\\docs\\\\new.pdf']).toEqual(
+      expect.objectContaining({ state: 'ready' })
+    );
   });
 });

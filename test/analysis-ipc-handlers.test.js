@@ -88,7 +88,8 @@ describe('Analysis IPC Handlers', () => {
       ANALYZE_IMAGE: 'analyze-image',
       ANALYZE_BATCH: 'analyze-batch',
       CANCEL_BATCH: 'cancel-batch',
-      EXTRACT_IMAGE_TEXT: 'extract-image-text'
+      EXTRACT_IMAGE_TEXT: 'extract-image-text',
+      GET_READY_QUEUE: 'get-ready-queue'
     }
   };
 
@@ -126,7 +127,10 @@ describe('Analysis IPC Handlers', () => {
     mockAnalyzeImageFile = jest.fn();
 
     mockGetServiceIntegration = jest.fn().mockReturnValue({
-      processingState: {},
+      processingState: {
+        initialize: jest.fn().mockResolvedValue(undefined),
+        getReadyAnalyses: jest.fn().mockReturnValue([])
+      },
       analysisHistory: {}
     });
 
@@ -307,6 +311,21 @@ describe('Analysis IPC Handlers', () => {
       expect(mockBatchAnalyzeFiles).toHaveBeenCalled();
       expect(result.success).toBe(true);
       expect(result.total).toBe(1);
+    });
+  });
+
+  describe('GET_READY_QUEUE', () => {
+    test('returns ready queue from processing state service', async () => {
+      const handler = registeredHandlers[IPC_CHANNELS.ANALYSIS.GET_READY_QUEUE];
+      expect(handler).toBeDefined();
+
+      const mockReady = [{ path: '/path/to/doc.pdf', analysis: { suggestedName: 'doc.pdf' } }];
+      const svc = mockGetServiceIntegration();
+      svc.processingState.getReadyAnalyses.mockReturnValueOnce(mockReady);
+
+      const result = await handler({}, {});
+      expect(svc.processingState.initialize).toHaveBeenCalled();
+      expect(result).toEqual({ success: true, readyFiles: mockReady });
     });
   });
 });
