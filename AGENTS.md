@@ -54,6 +54,18 @@ but functional).
 `platformUtils.test.js` has one failing test on Linux (`joinPath` produces backslashes). This is a
 pre-existing issue unrelated to environment setup.
 
+### Test files
+
+Download test files from the shared Google Drive folder for manual QA:
+
+```
+https://drive.google.com/drive/folders/1EiF1KVvxqvavgYY-WgxADyMe7jvhO_ND?usp=drive_link
+```
+
+Use `gdown --folder <URL> -O /home/ubuntu/test-documents-gdrive/` to fetch them. The folder
+contains 24 files across many types (PDF, PPTX, PNG, JPG, PSD, AI, MP4, Python, JS, SQL, CSS, HTML,
+YAML, INI, STL, OBJ, GCODE, SCAD, 3MF, EPS, BMP).
+
 ### Model downloads
 
 `npm install` triggers `postinstall` which downloads ~2-5 GB of GGUF model files to
