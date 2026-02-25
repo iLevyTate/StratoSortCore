@@ -168,7 +168,23 @@ if (!z) {
     error: zodLoadError?.message
   });
 
+  const schemaFolderMatch = z
+    ? z.object({
+        text: z.string(),
+        smartFolders: z.array(z.any()).optional() // relax for now or use schemaFolderArray
+      })
+    : createFallbackValidator('folderMatch', (data) => {
+        if (typeof data !== 'object' || data === null) {
+          return { error: 'Folder match request must be an object' };
+        }
+        if (typeof data.text !== 'string') {
+          return { error: 'text is required and must be a string' };
+        }
+        return { data };
+      });
+
   module.exports = {
+    schemaFolderMatch,
     z: null,
     schemas: {
       filePath: fallbackFilePathSchema,
@@ -994,7 +1010,13 @@ if (!z) {
     backupPath: backupPathSchema
   };
 
+  const schemaFolderMatch = z.object({
+    text: z.string(),
+    smartFolders: z.array(z.any()).optional() // relax for now or use schemaFolderArray
+  });
+
   module.exports = {
+    schemaFolderMatch,
     z,
     schemas,
     zodLoadError

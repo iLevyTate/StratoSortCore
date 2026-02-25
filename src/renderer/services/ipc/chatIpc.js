@@ -67,7 +67,9 @@ class ChatStream extends EventEmitter {
           requestId: this.payload?.requestId,
           sessionId: this.payload?.sessionId
         })
-        .catch(() => {});
+        .catch(() => {
+          // Silent catch to prevent unhandled promise rejections
+        });
     }
     this.cleanup();
     this.emit('end');

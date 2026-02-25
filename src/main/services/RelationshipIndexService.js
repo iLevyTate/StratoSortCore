@@ -43,7 +43,7 @@ class RelationshipIndexService {
   }
 
   async _saveIndex(index) {
-    const tempPath = `${this.indexPath}.tmp.${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const tempPath = `${this.indexPath}.tmp.${require('crypto').randomUUID()}`;
     try {
       await fs.writeFile(tempPath, JSON.stringify(index, null, 2), 'utf8');
       await fs.rename(tempPath, this.indexPath);

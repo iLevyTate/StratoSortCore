@@ -302,10 +302,12 @@ describe('Smart Folders IPC - extended coverage', () => {
       expect(result.success).toBe(false);
     });
 
-    test('returns error when LLM unavailable', async () => {
+    test('returns fallback description when LLM unavailable', async () => {
       const handler = getHandler(IPC_CHANNELS.SMART_FOLDERS.GENERATE_DESCRIPTION);
       const result = await handler({}, 'Finance');
-      expect(result.success).toBe(false);
+      expect(result.success).toBe(true);
+      expect(result.fallback).toBe(true);
+      expect(result.description).toContain('Finance');
     });
   });
 

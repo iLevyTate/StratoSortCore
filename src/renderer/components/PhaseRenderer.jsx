@@ -40,10 +40,10 @@ const pageVariants = (reducedMotion) => ({
     }
   },
   out: {
-    opacity: 0,
+    opacity: 1,
     transition: {
-      duration: reducedMotion ? 0.06 : 0.16,
-      ease: [0.4, 0, 0.2, 1]
+      duration: reducedMotion ? 0.01 : 0.06,
+      ease: [0.4, 0, 1, 1]
     }
   }
 });
@@ -121,7 +121,8 @@ function PhaseRenderer() {
               animate="in"
               exit="out"
               variants={pageVariants(Boolean(shouldReduceMotion))}
-              className="w-full flex-1 flex flex-col"
+              className="w-full flex-1 flex flex-col backface-hidden"
+              style={{ willChange: 'opacity' }}
             >
               {renderCurrentPhase()}
             </motion.div>

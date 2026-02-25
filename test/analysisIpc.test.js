@@ -162,10 +162,11 @@ describe('registerAnalysisIpc', () => {
       getCustomFolders: mockGetCustomFolders
     });
 
-    expect(mockIpcMain.handle).toHaveBeenCalledTimes(4);
+    expect(mockIpcMain.handle).toHaveBeenCalledTimes(5);
     expect(handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT]).toBeDefined();
     expect(handlers[ANALYSIS_CHANNELS.ANALYZE_IMAGE]).toBeDefined();
     expect(handlers[ANALYSIS_CHANNELS.ANALYZE_BATCH]).toBeDefined();
+    expect(handlers[ANALYSIS_CHANNELS.CANCEL_BATCH]).toBeDefined();
     expect(handlers[ANALYSIS_CHANNELS.EXTRACT_IMAGE_TEXT]).toBeDefined();
   });
 

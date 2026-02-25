@@ -47,7 +47,7 @@ describe('ipc services', () => {
     expect(settingsIpc.save({ theme: 'light' })).toEqual({ success: true });
   });
 
-  test('smartFoldersIpc proxies smart folder methods', () => {
+  test('smartFoldersIpc proxies smart folder methods', async () => {
     const api = {
       smartFolders: {
         get: jest.fn(() => []),
@@ -68,7 +68,34 @@ describe('ipc services', () => {
     });
     expect(smartFoldersIpc.delete('1')).toEqual({ success: true });
     expect(smartFoldersIpc.resetToDefaults()).toEqual({ success: true });
-    expect(smartFoldersIpc.generateDescription('Folder')).toBe('desc');
+    await expect(smartFoldersIpc.generateDescription('Folder')).resolves.toBe('desc');
+  });
+
+  test('smartFoldersIpc.generateDescription resolves timeout response when request hangs', async () => {
+    jest.useFakeTimers();
+    try {
+      const api = {
+        smartFolders: {
+          generateDescription: jest.fn(
+            () =>
+              new Promise(() => {
+                // Intentionally unresolved promise
+              })
+          )
+        }
+      };
+      requireElectronAPI.mockReturnValue(api);
+
+      const pending = smartFoldersIpc.generateDescription('Folder', { timeoutMs: 25 });
+      jest.advanceTimersByTime(30);
+
+      await expect(pending).resolves.toEqual({
+        success: false,
+        error: 'Description generation timed out. Please try again.'
+      });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('embeddingsIpc proxies embedding methods', () => {

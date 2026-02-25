@@ -51,6 +51,26 @@ function normalizeFolderPaths(folders) {
   try {
     return (Array.isArray(folders) ? folders : []).map((f) => {
       const normalized = { ...f };
+      const normalizedName = normalizeName(normalized?.name);
+      const normalizedPathKey = normalizeFolderPath(normalized?.path);
+
+      // Backward-compat: older custom-folders.json entries may miss an id.
+      // Heal ids during load so startup validation doesn't drop legitimate folders.
+      if (typeof normalized.id !== 'string' || !normalized.id.trim()) {
+        if (normalizedName && normalizedPathKey) {
+          const hash = crypto
+            .createHash('sha1')
+            .update(`${normalizedName}|${normalizedPathKey}`)
+            .digest('hex')
+            .slice(0, 12);
+          normalized.id = `custom-${hash}`;
+        } else {
+          normalized.id = `custom-${crypto.randomUUID().slice(0, 8)}`;
+        }
+      } else {
+        normalized.id = normalized.id.trim();
+      }
+
       if (normalized && typeof normalized.path === 'string' && normalized.path.trim()) {
         normalized.path = path.normalize(normalized.path);
       }

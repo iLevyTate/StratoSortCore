@@ -9,6 +9,7 @@ const { withAbortableTimeout, delay } = require('../../shared/promiseUtils');
 const { AI_DEFAULTS } = require('../../shared/constants');
 const { enhanceSmartFolderWithLLM } = require('../services/SmartFoldersLLMService');
 const { createHandler, safeHandle, safeSend, z } = require('./ipcWrappers');
+const { schemaFolderMatch } = require('./validationSchemas');
 const { extractAndParseJSON } = require('../utils/jsonRepair');
 const { cosineSimilarity } = require('../../shared/vectorMath');
 const { isNotFoundError } = require('../../shared/errorClassifier');
@@ -54,6 +55,12 @@ function getFolderEmbeddingId(folder, folderMatcher) {
     }
   }
   return null;
+}
+
+function getDescriptionFallback(folderName) {
+  const cleanedFolderName =
+    typeof folderName === 'string' && folderName.trim() ? folderName.trim() : 'this folder';
+  return `Contains files related to ${cleanedFolderName}. Store documents and media that belong to this category.`;
 }
 
 /**
@@ -341,7 +348,7 @@ function registerSmartFoldersIpc(servicesOrParams) {
     createHandler({
       logger,
       context,
-      schema: schemaFolder,
+      schema: schemaFolderMatch,
       handler: async (event, payload) => {
         try {
           const { text, smartFolders = [] } = payload || {};
@@ -1009,12 +1016,18 @@ Now generate a description for "${folderName}":`;
             const model = getTextModel() || AI_DEFAULTS.TEXT.MODEL;
             const llamaService = getLlamaService();
             await llamaService.initialize();
-            const result = await llamaService.generateText({
-              model,
-              prompt,
-              maxTokens: 200,
-              temperature: 0.3
-            });
+            const result = await withAbortableTimeout(
+              (abortController) =>
+                llamaService.generateText({
+                  model,
+                  prompt,
+                  maxTokens: 200,
+                  temperature: 0.3,
+                  signal: abortController.signal
+                }),
+              TIMEOUTS.AI_ANALYSIS_SHORT || 30000,
+              'Smart folder description generation'
+            );
 
             if (result?.response && result.response.trim()) {
               const description = String(result.response)
@@ -1041,8 +1054,9 @@ Now generate a description for "${folderName}":`;
           } catch (llmError) {
             logger.error('[SMART-FOLDERS] LLM description generation failed:', llmError.message);
             return {
-              success: false,
-              error: 'AI service unavailable'
+              success: true,
+              description: getDescriptionFallback(folderName),
+              fallback: true
             };
           }
         } catch (error) {

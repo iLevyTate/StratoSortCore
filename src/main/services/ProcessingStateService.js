@@ -168,7 +168,7 @@ class ProcessingStateService {
 
   async _performAtomicWrite(stateSnapshot) {
     await this.ensureParentDirectory(this.statePath);
-    const tempPath = `${this.statePath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
+    const tempPath = `${this.statePath}.tmp.${require('crypto').randomUUID()}`;
     try {
       await fs.writeFile(tempPath, JSON.stringify(stateSnapshot, null, 2));
       // Retry rename on Windows EPERM errors (file handle race condition)

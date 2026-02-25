@@ -476,7 +476,7 @@ test.describe('Smart Folders - Folder Scanning', () => {
     await closeApp(app);
   });
 
-  // TODO: Fix - Add Folder/Load Defaults selectors; Load Defaults only in empty state
+  // TRACKED-ISSUE: Add Folder/Load Defaults selectors; Load Defaults only in empty state
   // test('should have scan folder option', async () => {
   //   const actionButtons = window.locator(
   //     'button:has-text("Add Folder"), button:has-text("Load Defaults")'

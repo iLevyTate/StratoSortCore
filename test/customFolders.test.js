@@ -165,6 +165,33 @@ describe('Custom Folders', () => {
       expect(uncategorized?.path).toBeDefined();
     });
 
+    test('heals missing folder ids instead of dropping folders', async () => {
+      const savedFolders = [
+        {
+          name: 'Projects',
+          path: '/test/projects',
+          isDefault: false
+        },
+        {
+          name: 'Uncategorized',
+          path: '/test/uncategorized',
+          isDefault: true
+        }
+      ];
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(savedFolders));
+
+      const folders = await customFolders.loadCustomFolders();
+      const projects = folders.find((folder) => folder.name === 'Projects');
+      const uncategorized = folders.find((folder) => folder.name === 'Uncategorized');
+
+      expect(projects).toBeDefined();
+      expect(typeof projects.id).toBe('string');
+      expect(projects.id.length).toBeGreaterThan(0);
+      expect(uncategorized).toBeDefined();
+      expect(typeof uncategorized.id).toBe('string');
+      expect(uncategorized.id.length).toBeGreaterThan(0);
+    });
+
     test('does not re-add defaults when custom folders exist', async () => {
       const savedFolders = [
         {

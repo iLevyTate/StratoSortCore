@@ -76,7 +76,7 @@ function registerHandler(ipcMain, channel, handler) {
   }
 
   const wrappedHandler = async (event, ...args) => {
-    const operationId = `${channel}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const operationId = `${channel}-${require('crypto').randomUUID()}`;
     _inFlightOperations.add(operationId);
     if (_isShuttingDown) {
       _inFlightOperations.delete(operationId);
@@ -133,7 +133,7 @@ function registerListener(ipcMain, channel, listener) {
   }
 
   const wrappedListener = (event, ...args) => {
-    const operationId = `${channel}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const operationId = `${channel}-${require('crypto').randomUUID()}`;
     _inFlightOperations.add(operationId);
     if (_isShuttingDown) {
       _inFlightOperations.delete(operationId);

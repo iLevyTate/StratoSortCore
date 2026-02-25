@@ -87,6 +87,7 @@ describe('Analysis IPC Handlers', () => {
       ANALYZE_DOCUMENT: 'analyze-document',
       ANALYZE_IMAGE: 'analyze-image',
       ANALYZE_BATCH: 'analyze-batch',
+      CANCEL_BATCH: 'cancel-batch',
       EXTRACT_IMAGE_TEXT: 'extract-image-text'
     }
   };

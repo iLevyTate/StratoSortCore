@@ -35,7 +35,7 @@ const PERSIST_COMPRESSION_ENABLED =
   String(process.env.STRATOSORT_ORAMA_COMPRESS || 'true').toLowerCase() !== 'false';
 
 const writeFileAtomic = async (filePath, data) => {
-  const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
+  const tempPath = `${filePath}.tmp.${require('crypto').randomUUID()}`;
   try {
     await fs.writeFile(tempPath, data);
     await replaceFileWithRetry(tempPath, filePath);

@@ -23,6 +23,7 @@ import { fetchSmartFolders, setOrganizedFiles } from './store/slices/filesSlice'
 import { fetchSettings } from './store/slices/uiSlice';
 import App from './App.js';
 import { applyPlatformClass } from './utils/platform';
+import { fetchAnalysisHistoryPages } from './utils/analysisHistoryFetch';
 import { GlobalErrorBoundary } from './components/ErrorBoundary';
 import './styles.css';
 
@@ -43,7 +44,7 @@ async function repairOrganizedHistory() {
     if (localStorage.getItem(HISTORY_REPAIR_KEY)) return;
     const state = store.getState();
     if (state.files.organizedFiles.length > 0) return;
-    const history = await window.electronAPI?.analysisHistory?.get?.({ all: true });
+    const history = await fetchAnalysisHistoryPages();
     if (!Array.isArray(history) || history.length === 0) return;
 
     const normalize = (p) => (p || '').replace(/\\+/g, '/').toLowerCase();
@@ -277,6 +278,19 @@ let splashRemovalInProgress = false;
 let reactRoot = null;
 const SPLASH_FADE_OUT_MS = 220;
 const SPLASH_REMOVAL_FALLBACK_MS = SPLASH_FADE_OUT_MS + 160;
+const SPLASH_POST_RENDER_DELAY_MS = 90;
+
+function scheduleSplashRemoval() {
+  const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  const delayMs = prefersReducedMotion ? 0 : SPLASH_POST_RENDER_DELAY_MS;
+
+  // Two RAFs gives React a full paint cycle before we fade the splash.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      setTimeout(removeSplashScreen, delayMs);
+    });
+  });
+}
 
 /**
  * Safely remove the splash screen with proper guards against double removal
@@ -307,6 +321,7 @@ function removeSplashScreen() {
   const fadeDuration = prefersReducedMotion ? 1 : SPLASH_FADE_OUT_MS;
 
   // Add fade-out animation
+  initialLoading.style.willChange = 'opacity';
   initialLoading.style.transition = `opacity ${fadeDuration}ms ease-out`;
   initialLoading.style.pointerEvents = 'none';
   initialLoading.style.opacity = '0';
@@ -386,12 +401,7 @@ function initializeApp() {
       </React.StrictMode>
     );
 
-    // Using requestAnimationFrame ensures we wait for the first paint
-    requestAnimationFrame(() => {
-      // Add delay to ensure React has fully rendered
-      // This prevents flash-of-content issues on slower machines
-      setTimeout(removeSplashScreen, 150);
-    });
+    scheduleSplashRemoval();
 
     // Debug logging in development mode
     if (process.env.NODE_ENV === 'development') {

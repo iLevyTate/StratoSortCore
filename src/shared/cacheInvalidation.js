@@ -39,12 +39,9 @@ try {
   // Fallback logger for environments where logger module isn't available
   logger = {
     debug: () => {},
-    // eslint-disable-next-line no-console
-    info: console.log.bind(console, '[CacheInvalidation]'),
-    // eslint-disable-next-line no-console
-    warn: console.warn.bind(console, '[CacheInvalidation]'),
-    // eslint-disable-next-line no-console
-    error: console.error.bind(console, '[CacheInvalidation]')
+    info: () => {},
+    warn: () => {},
+    error: () => {}
   };
 }
 

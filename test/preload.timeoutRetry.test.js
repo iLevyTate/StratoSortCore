@@ -83,6 +83,13 @@ describe('preload timeout and retry behavior', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     jest.clearAllMocks();
+    mockInvoke.mockReset();
+    mockInvoke.mockImplementation(async (channel) => {
+      // Stub out the logging channel so it doesn't interfere with our tests
+      if (channel === 'system:log') return { success: true };
+      return new Promise(() => {}); // default to hanging
+    });
+
     jest.resetModules();
     global.window = {
       addEventListener: jest.fn(),
@@ -97,7 +104,7 @@ describe('preload timeout and retry behavior', () => {
   });
 
   test('safeInvoke times out and rejects when invoke never resolves', async () => {
-    mockInvoke.mockImplementation(() => new Promise(() => {}));
+    // The default mockImplementation hangs for non-log channels
     const electronAPI = getApi();
 
     const pending = electronAPI.files.select().catch((error) => error);
@@ -106,22 +113,43 @@ describe('preload timeout and retry behavior', () => {
 
     expect(error).toBeInstanceOf(Error);
     expect(error.message).toContain('IPC timeout after 50ms');
-    expect(mockInvoke).toHaveBeenCalledTimes(1);
+
+    const selectCalls = mockInvoke.mock.calls.filter((c) => c[0] === 'files:select');
+    expect(selectCalls.length).toBe(1);
   });
 
   test('safeInvoke retries transient "No handler registered" errors with backoff', async () => {
     const noHandlerError = new Error('No handler registered for channel');
-    mockInvoke
-      .mockRejectedValueOnce(noHandlerError)
-      .mockRejectedValueOnce(noHandlerError)
-      .mockResolvedValueOnce({ success: true, attempt: 3 });
+    let selectAttempt = 0;
+
+    mockInvoke.mockImplementation(async (channel) => {
+      if (channel === 'system:log') return { success: true };
+
+      if (channel === 'files:select') {
+        selectAttempt++;
+        if (selectAttempt <= 2) {
+          throw noHandlerError;
+        }
+        return { success: true, attempt: selectAttempt };
+      }
+      return new Promise(() => {});
+    });
 
     const electronAPI = getApi();
     const pending = electronAPI.files.select();
 
-    // Backoff delays: 100ms then 200ms
-    await jest.advanceTimersByTimeAsync(350);
-    await expect(pending).resolves.toEqual({ success: true, attempt: 3 });
-    expect(mockInvoke).toHaveBeenCalledTimes(3);
+    // In a test with fake timers and retries with Promises,
+    // it's safest to simply execute pending microtasks completely before advancing time.
+    await Promise.resolve();
+    await jest.advanceTimersByTimeAsync(100);
+
+    await Promise.resolve();
+    await jest.advanceTimersByTimeAsync(200);
+
+    const result = await pending;
+
+    expect(result).toEqual({ success: true, attempt: 3 });
+    const selectCalls = mockInvoke.mock.calls.filter((c) => c[0] === 'files:select');
+    expect(selectCalls.length).toBe(3);
   });
 });

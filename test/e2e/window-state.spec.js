@@ -77,7 +77,7 @@ test.describe('Window State', () => {
     }
   });
 
-  // TODO: Fix - win.minimize() in headless/CI doesn't report isMinimized correctly
+  // TRACKED-ISSUE: win.minimize() in headless/CI doesn't report isMinimized correctly
   // test('should minimize and restore', async () => {
   //   await app.evaluate(({ BrowserWindow }) => {
   //     const win = BrowserWindow.getAllWindows()[0];

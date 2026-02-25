@@ -49,7 +49,9 @@ const TIMEOUTS = {
   AI_ANALYSIS_SHORT: 30000,
   AI_ANALYSIS_MEDIUM: 60000,
   AI_ANALYSIS_LONG: 300000, // Increased to 5 minutes to handle CPU-based vision analysis
-  AI_ANALYSIS_BATCH: 300000,
+  // Batch runs can legitimately exceed per-file timeouts on CPU-bound systems.
+  // Keep this high and rely on analysis watchdogs for hang detection.
+  AI_ANALYSIS_BATCH: 30 * 60 * 1000,
   API_REQUEST: 10000,
   API_REQUEST_SLOW: 30000,
   HEALTH_CHECK: 5000,
@@ -289,7 +291,7 @@ const LIMITS = {
   MAX_IPC_REQUESTS_PER_SECOND: 200,
   RATE_LIMIT_CLEANUP_THRESHOLD: 100,
   RATE_LIMIT_STALE_MS: 60000,
-  IPC_INVOKE_TIMEOUT: 330000, // Must be >= max analysis/vision timeout (300s) + margin
+  IPC_INVOKE_TIMEOUT: 330000, // Default invoke timeout; long channels override via _getInvokeTimeout
   MAX_NUMERIC_RETRIES: 5000,
   MAX_FILENAME_LENGTH: 255, // Standard filesystem limit (NTFS, ext4, HFS+)
   MAX_SETTINGS_BACKUPS: 10,

@@ -6869,7 +6869,7 @@ export default function UnifiedSearchModal({
                     {/* Document content preview */}
                     {isLoadingDocumentDetails ? (
                       <div className="flex-1 flex items-center justify-center p-4 animate-loading-fade">
-                        <RefreshCw className="w-5 h-5 text-system-gray-300 animate-spin animate-loading-content" />
+                        <RefreshCw className="w-5 h-5 text-system-gray-300 animate-spin" />
                       </div>
                     ) : (
                       (selectedDocumentDetails?.analysis?.extractedText ||
@@ -9124,7 +9124,7 @@ export default function UnifiedSearchModal({
                           {/* Content Preview */}
                           {isLoadingDocumentDetails ? (
                             <div className="flex items-center justify-center p-4 animate-loading-fade">
-                              <RefreshCw className="w-5 h-5 text-system-gray-300 animate-spin animate-loading-content" />
+                              <RefreshCw className="w-5 h-5 text-system-gray-300 animate-spin" />
                             </div>
                           ) : (
                             (selectedDocumentDetails?.analysis?.extractedText ||

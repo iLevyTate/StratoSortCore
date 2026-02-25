@@ -110,7 +110,7 @@
     },
     "@jridgewell/gen-mapping": "^0.3.5",
     "js-yaml": "^4.1.1",
-    "tar": "^7.5.7"
+    "tar": "^7.5.9"
   },
   "jest": {
     "projects": [
@@ -118,24 +118,24 @@
     ]
   },
   "dependencies": {
-    "adm-zip": "^0.5.16",
     "@napi-rs/canvas": "^0.1.92",
     "@orama/orama": "^3.0.0",
     "@orama/plugin-data-persistence": "^3.0.0",
-    "@sentry/electron": "^7.7.1",
+    "@sentry/electron": "^7.8.0",
+    "adm-zip": "^0.5.16",
     "better-sqlite3": "^12.6.2",
     "chokidar": "^5.0.0",
     "electron-updater": "^6.7.3",
     "electron-window-state": "^5.0.3",
     "elkjs": "^0.11.0",
     "exif-reader": "^2.0.3",
-    "fast-xml-parser": "^5.3.5",
+    "fast-xml-parser": "^5.3.7",
     "fastest-levenshtein": "^1.0.16",
     "framer-motion": "^12.34.0",
     "lucide-react": "^0.563.0",
     "lz4-napi": "^2.9.0",
     "mammoth": "^1.11.0",
-    "node-llama-cpp": "^3.0.0",
+    "node-llama-cpp": "^3.16.2",
     "officeparser": "^6.0.4",
     "p-queue": "^9.1.0",
     "pdfjs-dist": "5.4.624",

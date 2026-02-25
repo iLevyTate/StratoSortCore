@@ -210,7 +210,7 @@ class LlamaService extends EventEmitter {
   }
 
   _generateOperationId(prefix) {
-    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    return `${prefix}-${require('crypto').randomUUID()}`;
   }
 
   async _withVisionBatchModeLock(fn) {
@@ -1537,7 +1537,7 @@ class LlamaService extends EventEmitter {
    * fallback behavior of the old OllamaService.
    */
   async generateEmbedding(text, _options = {}) {
-    const operationId = `embed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const operationId = `embed-${require('crypto').randomUUID()}`;
     await this._awaitModelReady('embedding');
 
     const modelName =

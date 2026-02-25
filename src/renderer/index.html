@@ -14,10 +14,15 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
+        background: #f8fafc;
+        overscroll-behavior: none;
+        scrollbar-gutter: stable both-edges;
       }
       #root {
-        min-height: 100vh;
+        height: 100%;
+        min-height: 100%;
         width: 100%;
+        overflow: hidden;
       }
       /* Splash screen must be styled immediately before CSS bundle loads */
       .splash-screen {
@@ -29,6 +34,11 @@
         justify-content: center;
         z-index: 9999;
         background: #f8fafc;
+        opacity: 1;
+        will-change: opacity;
+        contain: layout paint style;
+        backface-visibility: hidden;
+        transform: translateZ(0);
       }
       .splash-background {
         position: absolute;
@@ -54,6 +64,7 @@
         background: radial-gradient(circle, rgba(79, 139, 255, 0.3) 0%, transparent 70%);
         border-radius: 50%;
         animation: splash-pulse 2s ease-in-out infinite;
+        will-change: opacity;
       }
       .splash-logo {
         position: relative;
@@ -96,6 +107,7 @@
         background: rgba(79, 139, 255, 0.15);
         border-radius: 2px;
         overflow: hidden;
+        contain: layout paint;
       }
       .splash-loader-bar {
         width: 40%;
@@ -103,6 +115,8 @@
         background: linear-gradient(90deg, #4f8bff, #6c7ffb);
         border-radius: 2px;
         animation: splash-loading 1.5s ease-in-out infinite;
+        will-change: transform;
+        transform: translate3d(-100%, 0, 0);
       }
       .splash-status {
         margin: 0;
@@ -133,9 +147,16 @@
         50% { transform: translateY(-4px); }
       }
       @keyframes splash-loading {
-        0% { transform: translateX(-100%); }
-        50% { transform: translateX(150%); }
-        100% { transform: translateX(150%); }
+        0% { transform: translate3d(-100%, 0, 0); }
+        50% { transform: translate3d(150%, 0, 0); }
+        100% { transform: translate3d(150%, 0, 0); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .splash-logo-glow,
+        .splash-loader-bar {
+          animation-duration: 1ms !important;
+          animation-iteration-count: 1 !important;
+        }
       }
     </style>
   </head>

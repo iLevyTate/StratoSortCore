@@ -32,7 +32,7 @@ const generateUUID = () => {
     return globalThis.crypto.randomUUID();
   }
   // Simple fallback for environments without crypto
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  return require('crypto').randomUUID();
 };
 
 // Fallback storage if AsyncLocalStorage is not available
