@@ -465,6 +465,70 @@ function createSafeLogger(name) {
   }
 }
 
+/**
+ * Gracefully flush and end all pino streams/transports before process exit.
+ *
+ * Pino's `sonic-boom` registers a synchronous `process.on('exit')` hook via
+ * `on-exit-leak-free` that calls `flushSync()`. If the sonic-boom instance
+ * hasn't finished its async open yet, `flushSync` throws
+ * "sonic boom is not ready yet" — which Electron surfaces as an uncaught
+ * exception dialog on quit.
+ *
+ * Call this *before* `app.exit()` to let streams finish writing and
+ * deregister their exit hooks cleanly.
+ *
+ * @returns {Promise<void>}
+ */
+async function shutdownLogging() {
+  const FLUSH_TIMEOUT = 3000;
+
+  const flushOne = (pinoInstance) =>
+    new Promise((resolve) => {
+      if (!pinoInstance) return resolve();
+      try {
+        pinoInstance.flush?.();
+      } catch {
+        // flush may throw if stream already ended
+      }
+      const dest = pinoInstance[Symbol.for('pino.serializers')] ? undefined : pinoInstance;
+      const stream = dest?.stream ?? pinoInstance[Symbol.for('pino.stream')];
+      if (stream && typeof stream.end === 'function') {
+        stream.once('close', resolve);
+        stream.once('error', resolve);
+        stream.end();
+      } else {
+        resolve();
+      }
+    });
+
+  const tasks = [];
+  for (const ref of _activeLoggers) {
+    const instance = ref.deref();
+    if (instance?.pino) {
+      tasks.push(flushOne(instance.pino));
+    }
+  }
+
+  if (_sharedDevTransport && typeof _sharedDevTransport.end === 'function') {
+    tasks.push(
+      new Promise((resolve) => {
+        _sharedDevTransport.once('close', resolve);
+        _sharedDevTransport.once('error', resolve);
+        _sharedDevTransport.end();
+      })
+    );
+    _transportDead = true;
+    _sharedDevTransport = null;
+  }
+
+  if (tasks.length > 0) {
+    await Promise.race([
+      Promise.allSettled(tasks),
+      new Promise((resolve) => setTimeout(resolve, FLUSH_TIMEOUT))
+    ]);
+  }
+}
+
 module.exports = {
   Logger,
   logger,
@@ -473,5 +537,6 @@ module.exports = {
   createSafeLogger,
   sanitizeLogData,
   configureFileLogging,
-  configureConsoleLogging
+  configureConsoleLogging,
+  shutdownLogging
 };

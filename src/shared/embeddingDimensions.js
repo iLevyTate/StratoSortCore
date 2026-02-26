@@ -8,6 +8,9 @@
 
 const { AI_DEFAULTS } = require('./constants');
 const { getModel } = require('./modelRegistry');
+const { createLogger } = require('./logger');
+
+const logger = createLogger('EmbeddingDimensions');
 
 /**
  * Embedding dimension fallbacks for partial model name matching.
@@ -62,9 +65,8 @@ function resolveEmbeddingDimension(modelName, options = {}) {
 
   const fallback = getFallbackDimension(modelName);
   if (!fallback) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      `[embeddingDimensions] Unknown embedding model "${modelName}", falling back to default dimension ${defaultDimension}`
+    logger.warn(
+      `Unknown embedding model "${modelName}", falling back to default dimension ${defaultDimension}`
     );
   }
   return fallback || defaultDimension;

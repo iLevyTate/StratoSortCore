@@ -102,6 +102,13 @@ Before cutting the next tag, confirm these docs stay aligned:
 
 - `DEPENDABOT_PAT`: Personal Access Token for auto-approving PRs (only if branch protection requires
   reviews)
+- `WINDOWS_CSC_LINK`, `WINDOWS_CSC_KEY_PASSWORD`: Enable Authenticode signing for Windows release
+  artifacts
+- `MACOS_CSC_LINK`, `MACOS_CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`,
+  `APPLE_TEAM_ID`: Enable macOS signing + notarization
+
+When signing/notarization secrets are not configured, release workflows still publish normal GitHub
+releases with unsigned binaries. SmartScreen/Gatekeeper warnings are expected in that mode.
 
 ## Testing Locally
 

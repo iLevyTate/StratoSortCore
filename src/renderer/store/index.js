@@ -45,6 +45,34 @@ const serializeLoadedFiles = (files) => {
 };
 
 /**
+ * Normalize persisted fileStates for a fresh app bootstrap.
+ *
+ * We intentionally reset `analysis.isAnalyzing` during hydration, so any
+ * persisted per-file "analyzing" markers are stale by definition on launch.
+ */
+const normalizeHydratedFileStates = (fileStates) => {
+  if (!fileStates || typeof fileStates !== 'object' || Array.isArray(fileStates)) {
+    return {};
+  }
+
+  const normalized = {};
+  for (const [filePath, stateInfo] of Object.entries(fileStates)) {
+    if (!filePath || !stateInfo || typeof stateInfo !== 'object' || Array.isArray(stateInfo)) {
+      continue;
+    }
+
+    const nextState = { ...stateInfo };
+    const currentState = String(nextState.state || '').toLowerCase();
+    if (currentState === 'analyzing' || currentState === 'in_progress') {
+      nextState.state = 'pending';
+    }
+    normalized[filePath] = nextState;
+  }
+
+  return normalized;
+};
+
+/**
  * Lightweight type validation for loaded state.
  * Fixes corrupted values to their defaults rather than rejecting the entire state.
  * This catches cases where persisted data was mangled (e.g., an array stored as a string).
@@ -95,6 +123,9 @@ const loadState = () => {
       if (legacyState) {
         try {
           const parsedLegacy = JSON.parse(legacyState);
+          const hydratedSelectedFiles = serializeLoadedFiles(
+            parsedLegacy.phaseData?.selectedFiles || []
+          );
           return {
             ui: {
               currentPhase: parsedLegacy.currentPhase || (PHASES?.WELCOME ?? 'welcome'),
@@ -116,12 +147,12 @@ const loadState = () => {
             },
             files: {
               // Serialize dates in legacy state
-              selectedFiles: serializeLoadedFiles(parsedLegacy.phaseData?.selectedFiles || []),
+              selectedFiles: hydratedSelectedFiles,
               smartFolders: parsedLegacy.phaseData?.smartFolders || [],
               smartFoldersLoading: false,
               smartFoldersError: null,
               organizedFiles: serializeLoadedFiles(parsedLegacy.phaseData?.organizedFiles || []),
-              fileStates: parsedLegacy.phaseData?.fileStates || {},
+              fileStates: normalizeHydratedFileStates(parsedLegacy.phaseData?.fileStates || {}),
               namingConvention: parsedLegacy.phaseData?.namingConvention || {
                 convention: 'subject-date',
                 dateFormat: 'YYYY-MM-DD',
@@ -239,6 +270,8 @@ const loadState = () => {
     }
 
     // from persisted state overriding slice initial state defaults
+    const hydratedSelectedFiles = serializeLoadedFiles(parsed.files?.selectedFiles || []);
+    const hydratedFileStates = normalizeHydratedFileStates(parsed.files?.fileStates || {});
     return {
       ui: {
         currentPhase: parsed.ui?.currentPhase || (PHASES?.WELCOME ?? 'welcome'),
@@ -261,12 +294,12 @@ const loadState = () => {
       },
       files: {
         // Ensure arrays and serialize dates, with explicit defaults for all properties
-        selectedFiles: serializeLoadedFiles(parsed.files?.selectedFiles || []),
+        selectedFiles: hydratedSelectedFiles,
         organizedFiles: serializeLoadedFiles(parsed.files?.organizedFiles || []),
         smartFolders: parsed.files?.smartFolders || [],
         smartFoldersLoading: false,
         smartFoldersError: null,
-        fileStates: parsed.files?.fileStates || {},
+        fileStates: hydratedFileStates,
         namingConvention: parsed.files?.namingConvention || {
           convention: 'subject-date',
           dateFormat: 'YYYY-MM-DD',

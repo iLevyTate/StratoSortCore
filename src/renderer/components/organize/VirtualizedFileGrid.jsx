@@ -191,9 +191,11 @@ function VirtualizedFileGrid({
         const entry = entries[0];
         if (entry) {
           const { width, height } = entry.contentRect;
-          const nextWidth = width || containerWidth;
-          const nextHeight =
-            height || (typeof window !== 'undefined' ? window.innerHeight * 0.6 : 600);
+          const nextWidth = Math.max(1, Math.round(width || containerWidth));
+          const nextHeight = Math.max(
+            200,
+            Math.round(height || (typeof window !== 'undefined' ? window.innerHeight * 0.6 : 600))
+          );
           setDimensions((prev) => {
             if (Math.abs(prev.width - nextWidth) < 1 && Math.abs(prev.height - nextHeight) < 1) {
               return prev;
@@ -321,10 +323,7 @@ function VirtualizedFileGrid({
         aria-label="Loading files"
       >
         {[...Array(6)].map((_, i) => (
-          <div
-            key={i}
-            className="h-64 rounded-xl bg-system-gray-100 animate-pulse animate-loading-content"
-          />
+          <div key={i} className="h-64 rounded-xl bg-system-gray-100 animate-pulse" />
         ))}
       </div>
     );
@@ -332,7 +331,7 @@ function VirtualizedFileGrid({
 
   if (shouldVirtualize) {
     return (
-      <div ref={containerRef} className="relative w-full h-full p-8">
+      <div ref={containerRef} className="relative w-full h-full p-8 overflow-x-hidden">
         {/* Helper for measurement only */}
         <div
           style={{
@@ -395,7 +394,7 @@ function VirtualizedFileGrid({
   return (
     <div
       ref={containerRef}
-      className="grid grid-adaptive-lg gap-8 h-full overflow-y-auto modern-scrollbar p-8"
+      className="grid grid-adaptive-lg gap-8 h-full overflow-y-auto modern-scrollbar overflow-x-hidden p-8"
     >
       {safeFiles.map((file, index) => {
         const fileWithEdits = getFileWithEdits(file, index);

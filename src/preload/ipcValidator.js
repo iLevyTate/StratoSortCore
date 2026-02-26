@@ -120,6 +120,8 @@ function createIpcValidator({ log: _log } = {}) {
           return { success: false, path: null };
         case 'smart-folders:get-custom':
           return [];
+        case 'analysis-history:get':
+          return [];
         case 'undo-redo:get-history':
           return [];
         case 'undo-redo:get-state':

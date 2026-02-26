@@ -8,6 +8,32 @@ import FileIcon from '../ui/FileIcon';
 import { useFileActions } from '../../hooks/useFileActions';
 import { safeBasename } from '../../utils/pathUtils';
 
+const resolveBridgePath = (file) => {
+  if (!file || typeof file !== 'object') return '';
+  const directPath =
+    typeof file.path === 'string' && file.path.trim()
+      ? file.path.trim()
+      : typeof file.filePath === 'string' && file.filePath.trim()
+        ? file.filePath.trim()
+        : '';
+  if (directPath) return directPath;
+
+  const id = typeof file.id === 'string' ? file.id.trim() : '';
+  if (!id) return '';
+  const stripped = id.replace(/^(file|image):/i, '').trim();
+  if (!stripped) return '';
+  return /^[A-Za-z]:[\\/]/.test(stripped) || stripped.startsWith('/') || /[\\/]/.test(stripped)
+    ? stripped
+    : '';
+};
+
+const resolveBridgeName = (file, resolvedPath) =>
+  (typeof file?.name === 'string' && file.name.trim()) ||
+  (typeof file?.fileName === 'string' && file.fileName.trim()) ||
+  safeBasename(resolvedPath || '') ||
+  safeBasename(String(file?.id || '')) ||
+  'Indexed file';
+
 /**
  * BridgeAnalysisModal
  *
@@ -139,9 +165,9 @@ export default function BridgeAnalysisModal({
                   Why are they connected?
                 </Heading>
                 <Text className="text-system-gray-600">
-                  These clusters share {selectedBridge.bridgeFiles.length} document
-                  {selectedBridge.bridgeFiles.length !== 1 ? 's' : ''} in common. This suggests an
-                  overlap in topics or a relationship between{' '}
+                  {selectedBridge.bridgeFiles.length} bridge file
+                  {selectedBridge.bridgeFiles.length !== 1 ? 's' : ''} indicate
+                  {selectedBridge.bridgeFiles.length === 1 ? 's' : ''} semantic overlap between{' '}
                   <strong>{selectedBridge.sourceLabel}</strong> and{' '}
                   <strong>{selectedBridge.targetLabel}</strong>.
                 </Text>
@@ -158,36 +184,37 @@ export default function BridgeAnalysisModal({
                   Connecting Documents
                 </Heading>
                 <div className="space-y-2">
-                  {selectedBridge.bridgeFiles.map((file) => {
-                    const path = file.path || file.id;
+                  {selectedBridge.bridgeFiles.map((file, index) => {
+                    const path = resolveBridgePath(file);
+                    const name = resolveBridgeName(file, path);
+                    const key = file?.id || path || `bridge-file-${index}`;
                     return (
                       <div
-                        key={path}
+                        key={key}
                         className="flex items-center gap-3 p-3 rounded-lg border border-system-gray-200 bg-white hover:border-system-gray-300 transition-colors group"
                       >
-                        <FileIcon
-                          fileName={file.name || safeBasename(path)}
-                          className="w-8 h-8 shrink-0"
-                        />
+                        <FileIcon fileName={name} className="w-8 h-8 shrink-0" />
                         <div className="flex-1 min-w-0">
                           <Text
                             variant="small"
                             className="font-medium text-system-gray-900 truncate"
                           >
-                            {file.name || safeBasename(path)}
+                            {name}
                           </Text>
                           <Text variant="tiny" className="truncate">
-                            {path}
+                            {path || 'Indexed in knowledge base (path unavailable)'}
                           </Text>
                         </div>
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button size="xs" variant="ghost" onClick={() => openFile(path)}>
-                            Open
-                          </Button>
-                          <Button size="xs" variant="ghost" onClick={() => revealFile(path)}>
-                            Reveal
-                          </Button>
-                        </div>
+                        {path && (
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button size="xs" variant="ghost" onClick={() => openFile(path)}>
+                              Open
+                            </Button>
+                            <Button size="xs" variant="ghost" onClick={() => revealFile(path)}>
+                              Reveal
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     );
                   })}

@@ -19,7 +19,7 @@ import StatusBadge from '../ui/StatusBadge';
 import { Heading, Text, Caption } from '../ui/Typography';
 import { formatDisplayPath } from '../../utils/pathDisplay';
 import { selectRedactPaths } from '../../store/selectors';
-import { filesIpc } from '../../services/ipc';
+import { filesIpc, smartFoldersIpc } from '../../services/ipc';
 
 const SmartFolderItem = memo(function SmartFolderItem({
   folder,
@@ -41,6 +41,7 @@ const SmartFolderItem = memo(function SmartFolderItem({
 }) {
   const isEditing = editingFolder?.id === folder.id;
   const [hasMounted, setHasMounted] = useState(false);
+  const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
   // PERF: Use memoized selector instead of inline Boolean coercion
   const redactPaths = useSelector(selectRedactPaths);
   const displayPath = formatDisplayPath(folder.path || '', { redact: redactPaths, segments: 2 });
@@ -178,11 +179,13 @@ const SmartFolderItem = memo(function SmartFolderItem({
           <IconButton
             type="button"
             onClick={async () => {
+              const folderName = editingFolder?.name?.trim();
+              if (!folderName || isGeneratingDescription) return;
+
               const targetFolderId = editingFolder?.id;
+              setIsGeneratingDescription(true);
               try {
-                const result = await window.electronAPI?.smartFolders?.generateDescription?.(
-                  editingFolder.name
-                );
+                const result = await smartFoldersIpc.generateDescription(folderName);
                 if (result?.success && result.description) {
                   setEditingFolder((prev) => {
                     if (prev?.id !== targetFolderId) return prev;
@@ -197,14 +200,27 @@ const SmartFolderItem = memo(function SmartFolderItem({
                 }
               } catch {
                 addNotification?.('Failed to generate description', 'error');
+              } finally {
+                setIsGeneratingDescription(false);
               }
             }}
-            icon={<Sparkles className="w-4 h-4" />}
+            icon={
+              isGeneratingDescription ? (
+                <span className="inline-block w-4 h-4 border-2 border-system-gray-400 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4" />
+              )
+            }
             size="sm"
             variant="ghost"
             className="absolute right-2 top-2 h-7 w-7 text-system-gray-400 hover:text-stratosort-blue hover:bg-stratosort-blue/10"
-            title="Generate description with AI"
-            aria-label="Generate description with AI"
+            title={
+              isGeneratingDescription ? 'Generating description...' : 'Generate description with AI'
+            }
+            aria-label={
+              isGeneratingDescription ? 'Generating description' : 'Generate description with AI'
+            }
+            disabled={isGeneratingDescription || !editingFolder?.name?.trim()}
           />
         </div>
 

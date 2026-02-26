@@ -4,7 +4,6 @@ const path = require('path');
 const fs = require('fs').promises;
 const { createWriteStream } = require('fs');
 const https = require('https');
-const http = require('http');
 const crypto = require('crypto');
 const { createLogger } = require('../../shared/logger');
 const { MODEL_CATALOG, getModel } = require('../../shared/modelRegistry');
@@ -14,6 +13,8 @@ const { delay } = require('../../shared/promiseUtils');
 const logger = createLogger('ModelDownloadManager');
 const DEFAULT_DOWNLOAD_MAX_RETRIES = 2;
 const RETRY_BASE_DELAY_MS = 500;
+const REQUIRED_SHA256_REGEX = /^[a-f0-9]{64}$/i;
+const ALLOWED_MODEL_DOWNLOAD_HOSTS = Object.freeze(['huggingface.co', 'hf.co']);
 
 class ModelDownloadManager {
   constructor() {
@@ -143,6 +144,11 @@ class ModelDownloadManager {
     if (!modelInfo) {
       throw new Error(`Unknown model: ${filename}`);
     }
+    const expectedChecksum = modelInfo.checksum || modelInfo.sha256;
+    if (!this._isValidSha256(expectedChecksum)) {
+      throw new Error(`Model checksum missing or invalid for ${filename}`);
+    }
+    this._validateDownloadUrl(modelInfo.url, filename);
 
     // Guard: prevent concurrent downloads of the same file (corrupts .partial)
     const existing = this._downloads.get(filename);
@@ -186,13 +192,19 @@ class ModelDownloadManager {
       // No partial file, start fresh
     }
 
+    // Use redirect URL if provided (for following HTTP redirects), with a max redirect limit
+    const downloadUrl = options._redirectUrl || modelInfo.url;
+    const redirectCount = options._redirectCount || 0;
+    const MAX_REDIRECTS = 5;
+    const validatedDownloadUrl = this._validateDownloadUrl(downloadUrl, filename).toString();
+
     // Create an internal AbortController so cancelDownload() can work
     const internalAbortController = new AbortController();
 
     // Track download state
     const downloadState = {
       filename,
-      url: modelInfo.url,
+      url: validatedDownloadUrl,
       totalBytes: modelInfo.size,
       downloadedBytes: startByte,
       startByte, // Track initial byte offset for accurate speed calculation
@@ -202,14 +214,8 @@ class ModelDownloadManager {
     };
     this._downloads.set(filename, downloadState);
 
-    // Use redirect URL if provided (for following HTTP redirects), with a max redirect limit
-    const downloadUrl = options._redirectUrl || modelInfo.url;
-    const redirectCount = options._redirectCount || 0;
-    const MAX_REDIRECTS = 5;
-
     return new Promise((resolve, reject) => {
-      const url = new URL(downloadUrl);
-      const protocol = url.protocol === 'https:' ? https : http;
+      const url = new URL(validatedDownloadUrl);
       let settled = false;
 
       const finalizeSuccess = (result) => {
@@ -285,7 +291,7 @@ class ModelDownloadManager {
         delete requestOptions.headers.Range;
       }
 
-      const request = protocol.get(requestOptions, (response) => {
+      const request = https.get(requestOptions, (response) => {
         // Handle redirects with loop protection
         if (response.statusCode === 301 || response.statusCode === 302) {
           if (redirectCount >= MAX_REDIRECTS) {
@@ -299,9 +305,13 @@ class ModelDownloadManager {
             return;
           }
           const resolvedRedirectUrl = new URL(redirectLocation, url).toString();
+          const validatedRedirectUrl = this._validateDownloadUrl(
+            resolvedRedirectUrl,
+            filename
+          ).toString();
 
           downloadState.status = 'redirecting';
-          downloadState.url = resolvedRedirectUrl;
+          downloadState.url = validatedRedirectUrl;
 
           // The recursive call creates a new internalAbortController, so the
           // listener on the old one would be a leak.
@@ -311,7 +321,7 @@ class ModelDownloadManager {
           response.resume(); // Drain response to free socket
           this.downloadModel(filename, {
             ...options,
-            _redirectUrl: resolvedRedirectUrl,
+            _redirectUrl: validatedRedirectUrl,
             _redirectCount: redirectCount + 1
           })
             .then(finalizeSuccess)
@@ -372,6 +382,9 @@ class ModelDownloadManager {
         response.pipe(writeStream);
 
         writeStream.on('finish', async () => {
+          if (typeof writeStream.close === 'function') {
+            writeStream.close();
+          }
           try {
             // Verify file size against server-reported Content-Length (or catalog fallback).
             const stats = await fs.stat(partialPath);
@@ -386,18 +399,15 @@ class ModelDownloadManager {
               return;
             }
 
-            // Verify checksum if available
-            const expectedChecksum = modelInfo.checksum || modelInfo.sha256;
-            if (expectedChecksum) {
-              const isValid = await this._verifyChecksum(partialPath, expectedChecksum);
-              if (!isValid) {
-                finalizeFailure(
-                  new Error('Download corrupted - checksum mismatch'),
-                  'corrupted',
-                  true
-                );
-                return;
-              }
+            // Verify checksum (required for all remote model artifacts).
+            const isValid = await this._verifyChecksum(partialPath, expectedChecksum);
+            if (!isValid) {
+              finalizeFailure(
+                new Error('Download corrupted - checksum mismatch'),
+                'corrupted',
+                true
+              );
+              return;
             }
 
             // Rename to final filename
@@ -433,6 +443,9 @@ class ModelDownloadManager {
         });
 
         writeStream.on('error', (error) => {
+          if (typeof writeStream.close === 'function') {
+            writeStream.close();
+          }
           finalizeFailure(error);
         });
 
@@ -590,6 +603,37 @@ class ModelDownloadManager {
     this._progressCallbacks.clear();
   }
 
+  _isValidSha256(value) {
+    return typeof value === 'string' && REQUIRED_SHA256_REGEX.test(value.trim());
+  }
+
+  _isAllowedDownloadHost(hostname) {
+    if (!hostname || typeof hostname !== 'string') return false;
+    const host = hostname.toLowerCase();
+    return ALLOWED_MODEL_DOWNLOAD_HOSTS.some(
+      (allowedHost) => host === allowedHost || host.endsWith(`.${allowedHost}`)
+    );
+  }
+
+  _validateDownloadUrl(rawUrl, filename) {
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(rawUrl);
+    } catch {
+      throw new Error(`Invalid download URL for ${filename}`);
+    }
+    if (parsedUrl.protocol !== 'https:') {
+      throw new Error(`Blocked non-HTTPS model download for ${filename}`);
+    }
+    if (parsedUrl.username || parsedUrl.password) {
+      throw new Error(`Blocked credentialed download URL for ${filename}`);
+    }
+    if (!this._isAllowedDownloadHost(parsedUrl.hostname)) {
+      throw new Error(`Blocked download from untrusted host: ${parsedUrl.hostname}`);
+    }
+    return parsedUrl;
+  }
+
   async _verifyChecksum(filePath, expectedHash) {
     return new Promise((resolve, reject) => {
       const hash = crypto.createHash('sha256');
@@ -597,8 +641,11 @@ class ModelDownloadManager {
 
       stream.on('data', (chunk) => hash.update(chunk));
       stream.on('end', () => {
-        const actualHash = hash.digest('hex');
-        resolve(actualHash === expectedHash);
+        const actualHash = hash.digest('hex').toLowerCase();
+        const normalizedExpected = String(expectedHash || '')
+          .trim()
+          .toLowerCase();
+        resolve(actualHash === normalizedExpected);
       });
       stream.on('error', reject);
     });

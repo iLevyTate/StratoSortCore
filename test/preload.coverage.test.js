@@ -128,6 +128,7 @@ jest.mock('../src/shared/constants', () => ({
       ANALYZE_DOCUMENT: 'analysis:document',
       ANALYZE_IMAGE: 'analysis:image',
       ANALYZE_BATCH: 'analysis:batch',
+      CANCEL_BATCH: 'analysis:cancel-batch',
       EXTRACT_IMAGE_TEXT: 'analysis:extract-text'
     },
     SETTINGS: {

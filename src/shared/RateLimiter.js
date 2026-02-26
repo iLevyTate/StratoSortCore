@@ -11,6 +11,9 @@
  */
 
 const { TIMEOUTS } = require('./performanceConstants');
+const { createLogger } = require('./logger');
+
+const logger = createLogger('RateLimiter');
 
 /**
  * Sliding window rate limiter
@@ -237,11 +240,7 @@ class Semaphore {
     } else {
       // Already at 0 with no waiters - this is a misuse (release without acquire)
       // Log warning but don't throw to maintain backwards compatibility
-      // eslint-disable-next-line no-console
-      if (typeof console !== 'undefined' && console.warn) {
-        // eslint-disable-next-line no-console
-        console.warn('[Semaphore] release() called without matching acquire() - ignoring');
-      }
+      logger.warn('[Semaphore] release() called without matching acquire() - ignoring');
     }
   }
 

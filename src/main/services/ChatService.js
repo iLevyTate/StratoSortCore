@@ -458,9 +458,17 @@ Now respond as JSON:`;
       memory._documentScope = documentScopeItems || [];
 
       if (onEvent) {
+        const sourceCount = Array.isArray(retrieval?.sources) ? retrieval.sources.length : 0;
+        const droppedLowRelevance = Number(retrieval?.meta?.droppedLowRelevance || 0);
+        const retrievalStatus =
+          sourceCount > 0
+            ? `Found ${sourceCount} relevant source${sourceCount === 1 ? '' : 's'}...`
+            : droppedLowRelevance > 0
+              ? `No relevant sources found (${droppedLowRelevance} filtered out). Drafting best-effort answer...`
+              : 'No relevant sources found. Drafting best-effort answer...';
         onEvent({
           type: 'status',
-          text: `Found ${retrieval.sources.length} relevant sources...`
+          text: retrievalStatus
         });
       }
 

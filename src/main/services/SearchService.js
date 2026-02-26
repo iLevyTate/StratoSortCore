@@ -1365,6 +1365,75 @@ class SearchService {
   }
 
   /**
+   * Build the query embedding with timeout protection.
+   * Prevents hybrid search from appearing stuck when embedding generation is
+   * blocked behind long-running inference jobs.
+   *
+   * @param {string} query - Query text used for semantic embedding
+   * @param {number} timeout - Timeout in milliseconds
+   * @returns {Promise<{embedding: {vector:number[]}|null, timedOut: boolean, error: string|null}>}
+   */
+  async _buildQueryEmbeddingWithTimeout(query, timeout = VECTOR_SEARCH_TIMEOUT) {
+    if (!this.embedding || typeof this.embedding.embedText !== 'function') {
+      return {
+        embedding: null,
+        timedOut: false,
+        error: 'embedding service unavailable'
+      };
+    }
+
+    let timeoutId = null;
+    try {
+      const embeddingPromise = Promise.resolve()
+        .then(() => this.embedding.embedText(query))
+        .then((rawEmbedding) => {
+          if (timeoutId) clearTimeout(timeoutId);
+          const normalized = normalizePrecomputedEmbedding(rawEmbedding);
+          if (!normalized) {
+            return {
+              embedding: null,
+              timedOut: false,
+              error: 'invalid embedding response'
+            };
+          }
+          return { embedding: normalized, timedOut: false, error: null };
+        });
+
+      // Absorb rejection if timeout wins race (avoids unhandled rejection noise)
+      embeddingPromise.catch((error) => {
+        logger.debug('[SearchService] Query embedding rejected after timeout', {
+          error: error?.message || String(error)
+        });
+      });
+
+      const result = await Promise.race([
+        embeddingPromise,
+        new Promise((resolve) => {
+          timeoutId = setTimeout(
+            () =>
+              resolve({
+                embedding: null,
+                timedOut: true,
+                error: 'query embedding timeout'
+              }),
+            timeout
+          );
+        })
+      ]);
+
+      if (timeoutId && result.timedOut) clearTimeout(timeoutId);
+      return result;
+    } catch (error) {
+      if (timeoutId) clearTimeout(timeoutId);
+      return {
+        embedding: null,
+        timedOut: false,
+        error: error?.message || 'query embedding failed'
+      };
+    }
+  }
+
+  /**
    * Filter results by minimum score threshold
    *
    * @param {Array} results - Search results
@@ -1515,8 +1584,11 @@ class SearchService {
 
     logger.info('[SearchService] Search started', { query: query.substring(0, 100), mode, topK });
 
-    // BM25 will additionally expand synonyms, but vector search uses this normalized version
+    // BM25 can use synonym expansion, while vector/chunk search should use
+    // spelling-corrected text (without synonym stuffing) for cleaner embeddings.
     const normalizedQuery = query.trim().replace(/\s+/g, ' ');
+    let semanticQuery = normalizedQuery;
+    let queryExpanded = false;
 
     // Process query through QueryProcessor (spell correction + synonyms)
     // Start with normalized query, then optionally expand with synonyms
@@ -1539,12 +1611,21 @@ class SearchService {
             correctSpelling,
             maxSynonymsPerWord: 3
           });
-          // If we added a year boost, append it to the processed expansion
-          const baseExpanded = processed.expanded || query;
+          // Use corrected query for vector/chunk semantic retrieval.
+          const correctedQuery =
+            typeof processed.corrected === 'string' && processed.corrected.trim().length > 0
+              ? processed.corrected.trim().replace(/\s+/g, ' ')
+              : normalizedQuery;
+          semanticQuery = correctedQuery;
+
+          // If we added a year boost, append it to the expanded BM25 query.
+          const baseExpanded = processed.expanded || correctedQuery;
           processedQuery = filters.year ? `${baseExpanded} ${boostedYear}` : baseExpanded;
+          queryExpanded = processedQuery !== normalizedQuery || semanticQuery !== normalizedQuery;
 
           queryMeta = {
             original: processed.original,
+            corrected: correctedQuery,
             expanded: processed.expanded,
             corrections: processed.corrections,
             synonymsAdded: processed.synonymsAdded?.length || 0,
@@ -1575,7 +1656,7 @@ class SearchService {
           mode,
           chunkTopK: resolvedChunkTopK,
           chunkWeight: safeChunkWeight,
-          queryExpanded: processedQuery !== query
+          queryExpanded
         });
       } catch (statusErr) {
         logger.debug('[SearchService] Failed to gather preflight status', {
@@ -1597,7 +1678,7 @@ class SearchService {
       }
 
       if (mode === 'vector') {
-        const results = await this.vectorSearch(normalizedQuery, topK);
+        const results = await this.vectorSearch(semanticQuery, topK);
         this._enrichResults(results);
         const filtered = this._filterByScore(results, minScore);
         return { success: true, results: filtered, mode: 'vector', queryMeta };
@@ -1605,20 +1686,56 @@ class SearchService {
 
       // Hybrid mode: combine both search types with timeout protection
       // generating the same query embedding twice (saves one LLM inference call per search)
+      const bm25Promise = this.bm25Search(processedQuery, topK * 2);
       let precomputedEmbedding = normalizePrecomputedEmbedding(options.precomputedEmbedding);
+      let embeddingTimedOut = false;
+      let embeddingFailureReason = null;
       if (!precomputedEmbedding) {
-        try {
-          precomputedEmbedding = await this.embedding.embedText(normalizedQuery);
-        } catch (embedErr) {
-          logger.warn('[SearchService] Failed to precompute query embedding', {
-            error: embedErr?.message
+        const embeddingResult = await this._buildQueryEmbeddingWithTimeout(
+          semanticQuery,
+          VECTOR_SEARCH_TIMEOUT
+        );
+        precomputedEmbedding = embeddingResult.embedding;
+        embeddingTimedOut = Boolean(embeddingResult.timedOut);
+        if (!precomputedEmbedding) {
+          embeddingFailureReason = embeddingResult.error || 'query embedding unavailable';
+          logger.warn('[SearchService] Query embedding unavailable; using BM25 fallback', {
+            reason: embeddingFailureReason,
+            timedOut: embeddingTimedOut
           });
         }
       }
 
-      const bm25Results = await this.bm25Search(processedQuery, topK * 2);
+      const bm25Results = await bm25Promise;
+      if (!precomputedEmbedding) {
+        const filtered = this._filterByScore(bm25Results.slice(0, topK), minScore);
+        return {
+          success: true,
+          results: filtered,
+          mode: 'bm25-fallback',
+          queryMeta,
+          meta: {
+            fallback: true,
+            fallbackReason: embeddingFailureReason || 'query embedding unavailable',
+            originalMode: 'hybrid',
+            vectorTimedOut: embeddingTimedOut,
+            bm25Count: bm25Results.length,
+            queryExpanded,
+            warnings: [
+              {
+                type: 'QUERY_EMBEDDING_UNAVAILABLE',
+                severity: embeddingTimedOut ? 'high' : 'medium',
+                message: embeddingTimedOut
+                  ? 'Semantic query embedding timed out; using keyword fallback.'
+                  : 'Semantic query embedding unavailable; using keyword fallback.'
+              }
+            ]
+          }
+        };
+      }
+
       const { results: vectorResults, timedOut } = await this._vectorSearchWithTimeout(
-        normalizedQuery,
+        semanticQuery,
         topK * 2,
         undefined,
         { precomputedEmbedding }
@@ -1629,7 +1746,7 @@ class SearchService {
           : null;
       const chunkResults =
         safeChunkWeight > 0 && resolvedChunkTopK > 0
-          ? await this.chunkSearch(normalizedQuery, topK * 2, resolvedChunkTopK, {
+          ? await this.chunkSearch(semanticQuery, topK * 2, resolvedChunkTopK, {
               chunkContext,
               chunkContextMaxNeighbors,
               chunkContextMaxFiles,
@@ -1653,7 +1770,7 @@ class SearchService {
             originalMode: 'hybrid',
             vectorTimedOut: true,
             bm25Count: bm25Results.length,
-            queryExpanded: processedQuery !== query
+            queryExpanded
           }
         };
       }

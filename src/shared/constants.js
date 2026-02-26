@@ -45,7 +45,9 @@ const IPC_CHANNELS = {
     ANALYZE_DOCUMENT: 'analysis:analyze-document',
     ANALYZE_IMAGE: 'analysis:analyze-image',
     ANALYZE_BATCH: 'analysis:analyze-batch',
-    EXTRACT_IMAGE_TEXT: 'analysis:extract-image-text'
+    CANCEL_BATCH: 'analysis:cancel-batch',
+    EXTRACT_IMAGE_TEXT: 'analysis:extract-image-text',
+    GET_READY_QUEUE: 'analysis:get-ready-queue'
   },
   SETTINGS: {
     GET: 'settings:get',

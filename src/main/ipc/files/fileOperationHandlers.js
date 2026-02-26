@@ -295,6 +295,17 @@ async function deleteFromDatabase(filePath, log) {
   return dbDeleteWarning;
 }
 
+async function clearReadyQueueEntryBestEffort(filePath, getServiceIntegration, log) {
+  try {
+    await getServiceIntegration?.()?.processingState?.clearReadyAnalysis?.(filePath);
+  } catch (error) {
+    log.debug('[FILE-OPS] Failed to clear durable ready queue entry (non-fatal)', {
+      filePath,
+      error: error?.message
+    });
+  }
+}
+
 /**
  * Create the perform operation handler
  */
@@ -429,6 +440,7 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
             moveValidation.destination,
             log
           );
+          await clearReadyQueueEntryBestEffort(moveValidation.source, getServiceIntegration, log);
 
           // updateDatabasePath already handles this, including both file: and image: prefixes
 
@@ -623,6 +635,7 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
           traceDeleteComplete(deleteValidation.source, 'fileOperationHandlers', true);
 
           const dbDeleteWarning = await deleteFromDatabase(deleteValidation.source, log);
+          await clearReadyQueueEntryBestEffort(deleteValidation.source, getServiceIntegration, log);
 
           // NOTE: Analysis history removal is now handled by FilePathCoordinator
           // via deleteFromDatabase() above. Removed duplicate direct call to prevent
@@ -794,6 +807,7 @@ function registerFileOperationHandlers(servicesOrParams) {
           await fs.unlink(validatedPath);
 
           const dbDeleteWarning = await deleteFromDatabase(validatedPath, log);
+          await clearReadyQueueEntryBestEffort(validatedPath, getServiceIntegration, log);
 
           log.info('[FILE-OPS] Deleted file:', validatedPath, `(${fileSize} bytes)`);
 

@@ -115,8 +115,21 @@ const QueryNode = memo(({ data, selected }) => {
       <div className="flex items-start gap-2">
         <MessageSquare className="w-4 h-4 text-stratosort-indigo shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
-          <div className="text-xs uppercase tracking-wider text-stratosort-indigo font-medium">
-            Query
+          <div className="flex items-center gap-1.5">
+            <div className="text-xs uppercase tracking-wider text-stratosort-indigo font-medium">
+              Query
+            </div>
+            {data?.searchMode && (
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium leading-none ${
+                  data.fallback
+                    ? 'bg-stratosort-warning/15 text-stratosort-warning'
+                    : 'bg-stratosort-indigo/10 text-stratosort-indigo/70'
+                }`}
+              >
+                {data.searchMode}
+              </span>
+            )}
           </div>
           <div
             className="file-node-label text-xs font-medium text-[var(--color-system-gray-900)] clamp-2 break-all leading-snug"
@@ -124,6 +137,14 @@ const QueryNode = memo(({ data, selected }) => {
           >
             {queryText}
           </div>
+          {typeof data?.resultCount === 'number' && (
+            <div className="text-[10px] text-system-gray-500 mt-0.5">
+              {data.resultCount} {data.resultCount === 1 ? 'result' : 'results'}
+              {data.corrections?.length > 0 && (
+                <span className="ml-1 text-stratosort-accent">(corrected)</span>
+              )}
+            </div>
+          )}
         </div>
       </div>
       <Handle type="source" position={Position.Right} className="!bg-stratosort-indigo !w-2 !h-2" />
@@ -135,7 +156,11 @@ QueryNode.displayName = 'QueryNode';
 
 QueryNode.propTypes = {
   data: PropTypes.shape({
-    label: PropTypes.string
+    label: PropTypes.string,
+    resultCount: PropTypes.number,
+    searchMode: PropTypes.string,
+    fallback: PropTypes.bool,
+    corrections: PropTypes.array
   }),
   selected: PropTypes.bool
 };

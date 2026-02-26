@@ -41,7 +41,8 @@ jest.mock('../src/shared/modelRegistry', () => {
       displayName: 'Alpha',
       type: 'text',
       size: 2048,
-      url: 'https://example.com/models/alpha.gguf'
+      url: 'https://huggingface.co/models/alpha.gguf',
+      checksum: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
     }
   };
   return {
@@ -60,7 +61,9 @@ jest.mock('../src/shared/modelRegistry', () => {
 
 const https = require('https');
 const fsModule = require('fs');
+const { MODEL_CATALOG } = require('../src/shared/modelRegistry');
 const { ModelDownloadManager } = require('../src/main/services/ModelDownloadManager');
+const BASE_MODEL = { ...MODEL_CATALOG['alpha.gguf'] };
 
 describe('ModelDownloadManager', () => {
   beforeEach(() => {
@@ -72,6 +75,52 @@ describe('ModelDownloadManager', () => {
     mockFs.statfs.mockReset();
     https.get.mockReset();
     fsModule.createWriteStream.mockReset();
+    fsModule.createReadStream.mockReset();
+    fsModule.createReadStream.mockImplementation(() => {
+      const stream = new EventEmitter();
+      setTimeout(() => stream.emit('end'), 0);
+      return stream;
+    });
+    MODEL_CATALOG['alpha.gguf'] = { ...BASE_MODEL };
+  });
+
+  test('downloadModel rejects non-HTTPS URLs', async () => {
+    const manager = new ModelDownloadManager();
+    MODEL_CATALOG['alpha.gguf'] = {
+      ...BASE_MODEL,
+      url: 'http://huggingface.co/models/alpha.gguf'
+    };
+
+    await expect(manager.downloadModel('alpha.gguf')).rejects.toThrow(
+      'Blocked non-HTTPS model download'
+    );
+    expect(https.get).not.toHaveBeenCalled();
+  });
+
+  test('downloadModel rejects untrusted hosts', async () => {
+    const manager = new ModelDownloadManager();
+    MODEL_CATALOG['alpha.gguf'] = {
+      ...BASE_MODEL,
+      url: 'https://example.com/models/alpha.gguf'
+    };
+
+    await expect(manager.downloadModel('alpha.gguf')).rejects.toThrow(
+      'Blocked download from untrusted host'
+    );
+    expect(https.get).not.toHaveBeenCalled();
+  });
+
+  test('downloadModel rejects models without a valid checksum', async () => {
+    const manager = new ModelDownloadManager();
+    MODEL_CATALOG['alpha.gguf'] = {
+      ...BASE_MODEL,
+      checksum: ''
+    };
+
+    await expect(manager.downloadModel('alpha.gguf')).rejects.toThrow(
+      'Model checksum missing or invalid'
+    );
+    expect(https.get).not.toHaveBeenCalled();
   });
 
   test('getDownloadedModels returns empty on error', async () => {

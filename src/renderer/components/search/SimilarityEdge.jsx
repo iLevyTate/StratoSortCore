@@ -5,6 +5,7 @@ import { Zap } from 'lucide-react';
 import BaseEdgeTooltip from './BaseEdgeTooltip';
 import { useElkPath, useEdgeHover } from './useEdgeInteraction';
 import { Text } from '../ui/Typography';
+import { sanitizeSemanticTerms } from '../../utils/semanticTerms';
 
 /**
  * Custom edge component for similarity connections with hover tooltip
@@ -55,6 +56,10 @@ const SimilarityEdge = memo(
     // Source and target metadata from data
     const sourceData = data?.sourceData || {};
     const targetData = data?.targetData || {};
+    const sharedTerms = useMemo(
+      () => sanitizeSemanticTerms(data?.sharedTerms, { maxTerms: 4, minLength: 2 }),
+      [data?.sharedTerms]
+    );
 
     // Memoize derived values to prevent unnecessary re-renders
     // Use data?.sourceData?.tags directly to ensure stable dependency references
@@ -114,10 +119,13 @@ const SimilarityEdge = memo(
       badgeTitle
     } = useMemo(() => {
       if (isCrossCluster) {
+        const bridgeTerms = sharedTerms.slice(0, 2);
         const bridgeLabel =
-          data?.bridgeCount && data.bridgeCount > 0
-            ? `Bridge (${data.bridgeCount})`
-            : 'Cluster Bridge';
+          bridgeTerms.length > 0
+            ? `Shared: ${bridgeTerms.join(', ')}`
+            : data?.bridgeCount && data.bridgeCount > 0
+              ? `Bridge files: ${data.bridgeCount}`
+              : 'Cluster link';
         return {
           primaryType: 'cross',
           labelText: bridgeLabel,
@@ -177,6 +185,7 @@ const SimilarityEdge = memo(
       sourceCategory,
       similarityPercent,
       data?.bridgeCount,
+      sharedTerms,
       isCrossCluster
     ]);
 
@@ -186,12 +195,14 @@ const SimilarityEdge = memo(
 
     // Dynamic styling based on hover and relationship strength
     const baseWidth = 1 + relationshipStrength * 0.5;
+    const restingOpacity =
+      primaryType === 'cross' ? 0.45 : primaryType === 'similarity' ? 0.6 : 0.8;
     const edgeStyle = {
       ...style,
       stroke: isHovered ? strokeColor : strokeColor, // Use the semantic color
       strokeWidth: isHovered ? 2.5 : baseWidth,
       strokeDasharray: primaryType === 'similarity' || primaryType === 'cross' ? '4 4' : 'none', // Dash only purely similar edges
-      opacity: isHovered ? 1 : primaryType === 'similarity' ? 0.6 : 0.8,
+      opacity: isHovered ? 1 : restingOpacity,
       filter: isHovered ? `drop-shadow(0 0 4px ${strokeColor})` : 'none',
       transition: 'all 0.2s ease',
       strokeLinecap: 'round',
@@ -208,7 +219,8 @@ const SimilarityEdge = memo(
             : `${similarityPercent}%`;
     const showCompactBadge =
       !tooltipsEnabled &&
-      (isCrossCluster || commonTags.length > 0 || sameCategory || similarityPercent >= 65);
+      !isCrossCluster &&
+      (commonTags.length > 0 || sameCategory || similarityPercent >= 65);
     const isSurpriseEdge = data?.isSurprise === true;
 
     return (
@@ -403,9 +415,9 @@ const SimilarityEdge = memo(
                   <span className="text-system-gray-500">Bridge strength:</span>
                   <span className="font-medium text-system-gray-700">{similarityPercent}%</span>
                 </div>
-                {Array.isArray(data?.sharedTerms) && data.sharedTerms.length > 0 && (
+                {sharedTerms.length > 0 && (
                   <Text as="div" variant="tiny" className="text-system-gray-600">
-                    Shared terms: {data.sharedTerms.slice(0, 4).join(', ')}
+                    Shared terms: {sharedTerms.join(', ')}
                   </Text>
                 )}
                 {data?.bridgeCount > 0 && (

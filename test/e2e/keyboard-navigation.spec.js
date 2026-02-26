@@ -167,7 +167,7 @@ test.describe('Keyboard Navigation - Escape Key', () => {
     await closeApp(app);
   });
 
-  // TODO: Fix Escape key handling in Electron - Escape may not close Settings
+  // TRACKED-ISSUE: Escape key handling in Electron - Escape may not close Settings
   // test('should close modals with Escape', async () => {
   //   const settingsButton = window.locator('button[aria-label="Open Settings"]');
   //   await settingsButton.click();

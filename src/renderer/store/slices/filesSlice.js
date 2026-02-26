@@ -96,6 +96,13 @@ const filesSlice = createSlice({
     setFileStates: (state, action) => {
       state.fileStates = action.payload && typeof action.payload === 'object' ? action.payload : {};
     },
+    mergeFileStates: (state, action) => {
+      if (!action.payload || typeof action.payload !== 'object') return;
+      state.fileStates = {
+        ...state.fileStates,
+        ...serializeData(action.payload)
+      };
+    },
     setSmartFolders: (state, action) => {
       state.smartFolders = action.payload;
     },
@@ -231,6 +238,7 @@ export const {
   removeSelectedFiles,
   updateFileState,
   setFileStates,
+  mergeFileStates,
   setSmartFolders,
   addSmartFolder,
   setOrganizedFiles,

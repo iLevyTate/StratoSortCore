@@ -332,7 +332,7 @@ class QueryProcessor {
    * @param {boolean} options.expandSynonyms - Whether to add synonyms (default: true)
    * @param {boolean} options.correctSpelling - Whether to correct typos (default: FALSE - disabled)
    * @param {number} options.maxSynonymsPerWord - Max synonyms per word (default: 3)
-   * @returns {Promise<{original: string, expanded: string, corrections: Array, synonymsAdded: Array}>}
+   * @returns {Promise<{original: string, corrected: string, expanded: string, corrections: Array, synonymsAdded: Array}>}
    */
   async processQuery(query, options = {}) {
     const { expandSynonyms = true, correctSpelling = false, maxSynonymsPerWord = 3 } = options;
@@ -340,6 +340,7 @@ class QueryProcessor {
     if (!query || typeof query !== 'string') {
       return {
         original: '',
+        corrected: '',
         expanded: '',
         corrections: [],
         synonymsAdded: []
@@ -349,11 +350,13 @@ class QueryProcessor {
     this.stats.queriesProcessed++;
     const startTime = Date.now();
 
-    // Tokenize query into words (preserve original for comparison)
-    const words = query
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((w) => w.length > 1);
+    // Tokenize into lexical words (Unicode-aware) so punctuation-attached typos
+    // like "vacaton?" still get spell-corrected without dropping non-ASCII terms.
+    const words =
+      query
+        .toLowerCase()
+        .match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu)
+        ?.filter((w) => w.length > 1) || [];
     const processed = [];
     const corrections = [];
     const synonymsAdded = [];
@@ -389,8 +392,20 @@ class QueryProcessor {
 
     const expanded = [...new Set(processed)].join(' ');
 
+    const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    let corrected = query.trim().replace(/\s+/g, ' ');
+    if (corrections.length > 0) {
+      for (const { original, corrected: correctedWord } of corrections) {
+        if (!original || !correctedWord) continue;
+        const regex = new RegExp(`\\b${escapeRegExp(original)}\\b`, 'gi');
+        corrected = corrected.replace(regex, correctedWord);
+      }
+      corrected = corrected.trim().replace(/\s+/g, ' ');
+    }
+
     logger.debug('[QueryProcessor] Query transformation:', {
       original: query,
+      corrected,
       expanded,
       corrections,
       synonymsAdded: synonymsAdded.length,
@@ -399,6 +414,7 @@ class QueryProcessor {
 
     return {
       original: query,
+      corrected,
       expanded,
       corrections,
       synonymsAdded

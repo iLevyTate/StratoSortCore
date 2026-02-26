@@ -141,6 +141,7 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
           $version = $tag -replace '^v', ''
+          $isSigned = "${{ steps.windows-release-mode.outputs.signed }}" -eq "true"
           $changelog = Get-Content CHANGELOG.md
           $start = -1
           $end = $changelog.Length
@@ -163,12 +164,19 @@ jobs:
               "Release notes are in CHANGELOG.md."
             )
           }
+          $releaseIntegrityNote = if ($isSigned) {
+            "- Windows artifacts are Authenticode-signed."
+          } else {
+            "- ⚠️ Windows artifacts are **unsigned** (no Authenticode certificate configured)."
+          }
+
           $notes = @(
             "## Release Notes",
             "",
             "- **Vision runtime is included** — no separate download needed.",
             "- Tesseract OCR is auto-installed or uses bundled tesseract.js fallback.",
             "- Use **Download Base Models** after install to enable AI features.",
+            $releaseIntegrityNote,
             "- See the [Install Guide](https://github.com/iLevyTate/StratoSortCore/blob/main/docs/INSTALL_GUIDE.md) for Windows & Mac — one download, no CLI.",
             ""
           ) + $section

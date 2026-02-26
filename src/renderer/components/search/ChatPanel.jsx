@@ -8,11 +8,18 @@ import {
   AlertTriangle,
   RotateCcw,
   Square,
-  Settings2
+  Settings2,
+  Image,
+  FileSpreadsheet,
+  File,
+  Lightbulb,
+  Tag,
+  Users
 } from 'lucide-react';
 import { AlertBox, Button, Textarea, Switch, StateMessage, Select } from '../ui';
 import { Text } from '../ui/Typography';
 import { formatDisplayPath } from '../../utils/pathDisplay';
+import normalizeList from '../../utils/normalizeList';
 import { selectRedactPaths } from '../../store/selectors';
 import { CHAT_PERSONAS, DEFAULT_CHAT_PERSONA_ID } from '../../../shared/chatPersonas';
 import CitationRenderer from './CitationRenderer';
@@ -98,7 +105,26 @@ function ChatModeToggle({ value, onChange }) {
   );
 }
 
-function SourceList({ sources, onOpenSource }) {
+/** Pick an icon component based on the document type string. Cached by lowercase key. */
+const _iconCache = new Map();
+const ICON_CACHE_MAX_ENTRIES = 128;
+function docTypeIcon(documentType) {
+  if (!documentType) return File;
+  const lower = documentType.toLowerCase();
+  const cached = _iconCache.get(lower);
+  if (cached) return cached;
+  let icon = FileText;
+  if (lower.includes('image') || lower.includes('photo') || lower.includes('picture')) icon = Image;
+  else if (lower.includes('spreadsheet') || lower.includes('csv') || lower.includes('excel'))
+    icon = FileSpreadsheet;
+  if (_iconCache.size >= ICON_CACHE_MAX_ENTRIES) {
+    _iconCache.clear();
+  }
+  _iconCache.set(lower, icon);
+  return icon;
+}
+
+const SourceList = React.memo(function SourceList({ sources, onOpenSource }) {
   if (!sources || sources.length === 0) {
     return (
       <StateMessage
@@ -112,133 +138,181 @@ function SourceList({ sources, onOpenSource }) {
     );
   }
 
-  const normalizeList = (value) => {
-    if (Array.isArray(value)) return value.filter(Boolean);
-    if (typeof value === 'string' && value.trim().length > 0) {
-      return value
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean);
-    }
-    return [];
-  };
-
-  /** Build a concise one-liner describing what the source is about. */
-  const buildContext = (source) => {
-    const parts = [];
-    if (source.category) parts.push(source.category);
-    if (source.documentType && source.documentType !== source.category)
-      parts.push(source.documentType);
-    if (source.project) parts.push(source.project);
-    if (source.entity) parts.push(source.entity);
-    if (source.documentDate) parts.push(source.documentDate);
-    return parts.join(' · ');
-  };
-
   return (
-    <div className="mt-3 rounded-lg border border-system-gray-200 bg-white shadow-sm">
-      <div className="divide-y divide-system-gray-100">
-        {sources.map((source, index) => {
-          const tags = normalizeList(source.tags);
-          // Prefer semanticScore (raw cosine similarity) over the inflated
-          // fused score. semanticScore reflects actual embedding relevance.
-          const rawSemantic =
-            typeof source.semanticScore === 'number' ? source.semanticScore : source.score;
-          const scorePct = typeof rawSemantic === 'number' ? Math.round(rawSemantic * 100) : 0;
-          const imageSrc = normalizeImageSource(
-            source.previewImage || source.imagePath || source.thumbnail || source.image
-          );
-          const context = buildContext(source);
+    <div className="mt-3 space-y-2">
+      {sources.map((source, index) => {
+        const tags = normalizeList(source.tags).slice(0, 4);
+        const entities = normalizeList(source.entities).slice(0, 4);
+        const rawSemantic =
+          typeof source.semanticScore === 'number' ? source.semanticScore : source.score;
+        const scorePct = typeof rawSemantic === 'number' ? Math.round(rawSemantic * 100) : 0;
+        const imageSrc = normalizeImageSource(
+          source.previewImage || source.imagePath || source.thumbnail || source.image
+        );
+        const Icon = docTypeIcon(source.documentType);
 
-          return (
-            <div
-              key={
-                source.id || source.path || source.fileId || `${source.name || 'source'}-${index}`
-              }
-              className="flex items-start gap-compact px-3 py-2.5 text-sm"
-            >
-              {/* Semantic relevance indicator (raw cosine similarity) */}
-              <div className="flex flex-col items-center gap-0.5 pt-0.5 flex-shrink-0 w-8">
-                <Text
-                  as="span"
-                  variant="tiny"
-                  className={`font-semibold leading-none ${
+        // Prefer summary, then purpose, then reasoning for the description line
+        const description = source.summary || source.purpose || source.reasoning || '';
+        // Build a concise type + category badge
+        const typeParts = [];
+        if (source.documentType) typeParts.push(source.documentType);
+        if (source.category && source.category !== source.documentType)
+          typeParts.push(source.category);
+        const typeLabel = typeParts.join(' · ');
+
+        return (
+          <div
+            key={source.id || source.path || source.fileId || `${source.name || 'source'}-${index}`}
+            className="rounded-lg border border-system-gray-200 bg-white hover:border-system-gray-300 transition-colors shadow-sm"
+          >
+            {/* Header row: icon + name + score + open button */}
+            <div className="flex items-center gap-2.5 px-3 pt-2.5 pb-1.5">
+              <div
+                className={`p-1.5 rounded-md shrink-0 ${
+                  scorePct >= 70
+                    ? 'bg-stratosort-success/10'
+                    : scorePct >= 50
+                      ? 'bg-stratosort-blue/10'
+                      : 'bg-system-gray-100'
+                }`}
+              >
+                <Icon
+                  className={`w-3.5 h-3.5 ${
                     scorePct >= 70
                       ? 'text-stratosort-success'
                       : scorePct >= 50
                         ? 'text-stratosort-blue'
                         : 'text-system-gray-400'
                   }`}
-                >
-                  {scorePct}%
-                </Text>
+                />
               </div>
               <div className="flex-1 min-w-0">
-                <Text variant="small" className="font-medium text-system-gray-800 truncate">
-                  {source.name || source.fileId}
+                <Text variant="small" className="font-semibold text-system-gray-900 truncate">
+                  {source.name || source.fileId || 'Untitled document'}
                 </Text>
-                {context ? (
-                  <Text as="div" variant="tiny" className="mt-0.5 text-system-gray-500 truncate">
-                    {context}
+                {(typeLabel || source.project) && (
+                  <Text as="div" variant="tiny" className="text-system-gray-500 truncate">
+                    {[typeLabel, source.project].filter(Boolean).join(' · ')}
                   </Text>
-                ) : null}
-                {source.snippet ? (
-                  <Text
-                    as="div"
-                    variant="tiny"
-                    className="mt-1 text-system-gray-600 whitespace-pre-wrap break-words"
-                  >
-                    {source.snippet}
-                  </Text>
-                ) : null}
-                {imageSrc ? (
-                  <div className="mt-2">
-                    <img
-                      src={imageSrc}
-                      alt=""
-                      className="h-20 w-20 rounded-md object-cover border border-system-gray-200"
-                      loading="lazy"
-                    />
-                  </div>
-                ) : null}
-                {tags.length > 0 ? (
-                  <div className="mt-1.5 flex flex-wrap gap-1">
-                    {tags.map((tag) => (
-                      <Text
-                        key={tag}
-                        as="span"
-                        variant="tiny"
-                        className="inline-block px-1.5 py-0.5 font-medium bg-system-gray-100 text-system-gray-600 rounded-md"
-                      >
-                        {tag}
-                      </Text>
-                    ))}
-                  </div>
-                ) : null}
+                )}
               </div>
+              <Text
+                as="span"
+                variant="tiny"
+                className={`font-bold tabular-nums shrink-0 px-1.5 py-0.5 rounded-full ${
+                  scorePct >= 70
+                    ? 'bg-stratosort-success/10 text-stratosort-success'
+                    : scorePct >= 50
+                      ? 'bg-stratosort-blue/10 text-stratosort-blue'
+                      : 'bg-system-gray-100 text-system-gray-400'
+                }`}
+              >
+                {scorePct}%
+              </Text>
               {source.path ? (
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => onOpenSource(source)}
                   title="Open source file"
-                  className="flex-shrink-0"
+                  className="shrink-0 -mr-1"
                 >
                   <FileText className="w-4 h-4" />
                 </Button>
               ) : null}
             </div>
-          );
-        })}
-      </div>
+
+            {/* Subject line — most descriptive single field */}
+            {source.subject && (
+              <div className="px-3 pb-1">
+                <Text as="div" variant="tiny" className="font-medium text-system-gray-700">
+                  {source.subject}
+                </Text>
+              </div>
+            )}
+
+            {/* Description: summary / purpose / reasoning */}
+            {description && (
+              <div className="px-3 pb-1.5">
+                <Text
+                  as="div"
+                  variant="tiny"
+                  className="text-system-gray-600 leading-relaxed line-clamp-2"
+                >
+                  {description}
+                </Text>
+              </div>
+            )}
+
+            {/* Snippet — quoted excerpt if no description is available, or always for images */}
+            {source.snippet && (!description || source.isImage) && (
+              <div className="mx-3 mb-1.5 p-2 bg-system-gray-50 rounded-md border border-system-gray-100">
+                <Text
+                  as="div"
+                  variant="tiny"
+                  className="text-system-gray-600 italic line-clamp-2 leading-relaxed"
+                >
+                  &ldquo;{source.snippet}&rdquo;
+                </Text>
+              </div>
+            )}
+
+            {/* Image preview for image-type documents */}
+            {imageSrc && (
+              <div className="px-3 pb-1.5">
+                <img
+                  src={imageSrc}
+                  alt={source.name ? `Preview of ${source.name}` : 'Document preview'}
+                  className="h-20 w-20 rounded-md object-cover border border-system-gray-200"
+                  loading="lazy"
+                />
+              </div>
+            )}
+
+            {/* Metadata chips: entities, tags */}
+            {(entities.length > 0 || tags.length > 0) && (
+              <div className="px-3 pb-2.5 flex flex-wrap items-center gap-1">
+                {entities.map((ent, i) => (
+                  <span
+                    key={`e-${i}-${ent}`}
+                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium bg-violet-50 text-violet-700 rounded-md"
+                  >
+                    <Users className="w-2.5 h-2.5" />
+                    {ent}
+                  </span>
+                ))}
+                {tags.map((tag, i) => (
+                  <span
+                    key={`t-${i}-${tag}`}
+                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium bg-system-gray-100 text-system-gray-600 rounded-md"
+                  >
+                    <Tag className="w-2.5 h-2.5" />
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Relevance reasoning — why this doc was matched */}
+            {source.reasoning && description !== source.reasoning && (
+              <div className="mx-3 mb-2.5 flex items-start gap-1.5">
+                <Lightbulb className="w-3 h-3 text-amber-500 shrink-0 mt-0.5" />
+                <Text as="div" variant="tiny" className="text-system-gray-500 line-clamp-1">
+                  {source.reasoning}
+                </Text>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
-}
+});
 
 SourceList.propTypes = {
   sources: PropTypes.arrayOf(
     PropTypes.shape({
-      id: PropTypes.string.isRequired,
+      id: PropTypes.string,
       fileId: PropTypes.string,
       name: PropTypes.string,
       path: PropTypes.string,
@@ -248,16 +322,26 @@ SourceList.propTypes = {
   onOpenSource: PropTypes.func.isRequired
 };
 
-function AnswerBlock({ title, items, showTitle = true, sources = [], onOpenSource = null }) {
-  // PERF: Use memoized selector instead of inline Boolean coercion
+const AnswerBlock = React.memo(function AnswerBlock({
+  title,
+  items,
+  showTitle = true,
+  sources = [],
+  onOpenSource = null
+}) {
   const redactPaths = useSelector(selectRedactPaths);
+
+  const sourceById = useMemo(
+    () =>
+      new Map(
+        (sources || []).map((s) => [s.id, s]).filter((pair) => pair[0] != null && pair[0] !== '')
+      ),
+    [sources]
+  );
 
   if (!items || items.length === 0) {
     return null;
   }
-  const sourceById = new Map(
-    (sources || []).map((source) => [source.id, source]).filter((pair) => pair[0])
-  );
 
   return (
     <div className="space-y-2">
@@ -316,7 +400,7 @@ function AnswerBlock({ title, items, showTitle = true, sources = [], onOpenSourc
       </div>
     </div>
   );
-}
+});
 
 AnswerBlock.propTypes = {
   title: PropTypes.string.isRequired,
@@ -518,6 +602,7 @@ export default function ChatPanel({
 
         {messages.map((message, idx) => {
           const isUser = message.role === 'user';
+          const isLatestAssistant = !isUser && idx === messages.length - 1;
           const hasDocumentAnswer =
             Array.isArray(message.documentAnswer) && message.documentAnswer.length > 0;
           const hasSources = Array.isArray(message.sources) && message.sources.length > 0;
@@ -572,7 +657,7 @@ export default function ChatPanel({
                             (isSending ? (
                               idx === messages.length - 1 ? (
                                 <>
-                                  {statusMessage || 'Thinking...'} <ThinkingDots />
+                                  Thinking... <ThinkingDots />
                                 </>
                               ) : (
                                 'Thinking...'
@@ -602,7 +687,7 @@ export default function ChatPanel({
                     )}
                     {/* Gap analysis for gap queries */}
                     {message.meta?.gapAnalysisIntent && hasSources && (
-                      <GapAnalysisCard sources={message.sources} onSend={onSend} />
+                      <GapAnalysisCard sources={message.sources} onSend={handleQuickSend} />
                     )}
                     {/* Only show the citations detail panel when document answers
                         actually have citation links — otherwise the collapsible sections
@@ -693,7 +778,7 @@ export default function ChatPanel({
                       </div>
                     ) : null}
                     {hasSources ? (
-                      <details className="chat-details">
+                      <details className="chat-details" open={isLatestAssistant || undefined}>
                         <summary>Sources ({message.sources.length})</summary>
                         <div className="chat-details-body">
                           <SourceList sources={message.sources} onOpenSource={onOpenSource} />
@@ -715,7 +800,7 @@ export default function ChatPanel({
             </div>
             <div className="chat-bubble chat-bubble-assistant">
               <div className="chat-message-text text-system-gray-500">
-                {statusMessage || 'Assistant is thinking'} <ThinkingDots />
+                Assistant is thinking <ThinkingDots />
               </div>
             </div>
           </div>

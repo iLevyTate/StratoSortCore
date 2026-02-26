@@ -38,6 +38,38 @@ content (not just filenames), suggests where files belong, and gives you semanti
 Knowledge OS and graph tools. Your data stays local, and you can start with a normal installer - no
 CLI setup required.
 
+## Important Notice: Security Warnings
+
+Because StratoSort Core is a free open-source project, it does not currently use paid code signing
+certificates. Your operating system will show security warnings when you first run the app. **This
+is normal for unsigned open-source software.**
+
+### On Windows
+
+When you run the installer, Windows SmartScreen will show a blue "Windows protected your PC" popup
+because the publisher is "Unknown".
+
+1. Click **More info**
+2. Click **Run anyway**
+
+### On macOS
+
+When you try to open the app for the first time, Gatekeeper will block it saying "the developer
+cannot be verified".
+
+1. **Right-click** (or Control-click) the StratoSort Core app in your Applications folder
+2. Select **Open**
+3. Click **Open** again in the warning dialog
+
+If macOS says the app is "damaged and should be moved to the Trash", you need to clear the Apple
+quarantine flag. Open Terminal and run:
+
+```bash
+xattr -cr /Applications/StratoSort\ Core.app
+```
+
+---
+
 ## Download
 
 ### End Users (No CLI)

@@ -122,7 +122,7 @@ async function replaceFileWithRetry(tempPath, filePath, options = {}) {
  */
 async function atomicWriteFile(filePath, data, options = {}) {
   const { pretty = false, maxRetries = 6 } = options;
-  const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
+  const tempPath = `${filePath}.tmp.${require('crypto').randomUUID()}`;
 
   try {
     const content = pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);

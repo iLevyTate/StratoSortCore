@@ -42,6 +42,14 @@ const { delay } = require('../../shared/promiseUtils');
 
 const logger = createLogger('LlamaService');
 
+function getSystemAnalyticsSafe() {
+  try {
+    return require('../core/systemAnalytics');
+  } catch {
+    return null;
+  }
+}
+
 const isOutOfMemoryError = (error) => {
   const message = String(error?.message || error || '').toLowerCase();
   return message.includes('out of memory') || message.includes('oom');
@@ -210,7 +218,7 @@ class LlamaService extends EventEmitter {
   }
 
   _generateOperationId(prefix) {
-    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    return `${prefix}-${require('crypto').randomUUID()}`;
   }
 
   async _withVisionBatchModeLock(fn) {
@@ -1537,7 +1545,7 @@ class LlamaService extends EventEmitter {
    * fallback behavior of the old OllamaService.
    */
   async generateEmbedding(text, _options = {}) {
-    const operationId = `embed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const operationId = `embed-${require('crypto').randomUUID()}`;
     await this._awaitModelReady('embedding');
 
     const modelName =
@@ -1591,6 +1599,9 @@ class LlamaService extends EventEmitter {
             dimensions: vector.length,
             durationMs,
             gpu: this._gpuBackend !== 'cpu'
+          });
+          getSystemAnalyticsSafe()?.recordPipelineOutcome?.('embedding', 'primary', {
+            reason: this._selectedModels.embedding || 'primary_embedding_model'
           });
 
           return {
@@ -1769,6 +1780,9 @@ class LlamaService extends EventEmitter {
       errorCode !== ERROR_CODES.LLAMA_MODEL_NOT_FOUND &&
       errorCode !== ERROR_CODES.LLAMA_MODEL_LOAD_FAILED
     ) {
+      getSystemAnalyticsSafe()?.recordPipelineOutcome?.('embedding', 'error', {
+        reason: primaryError?.message || errorCode || 'embedding_inference_error'
+      });
       throw primaryError;
     }
 
@@ -1811,6 +1825,9 @@ class LlamaService extends EventEmitter {
           originalModel: primaryModel,
           fallbackModel
         });
+        getSystemAnalyticsSafe()?.recordPipelineOutcome?.('embedding', 'fallback', {
+          reason: `fallback_model:${fallbackModel}`
+        });
 
         return result;
       } catch (fallbackError) {
@@ -1824,6 +1841,9 @@ class LlamaService extends EventEmitter {
     }
 
     // All fallbacks exhausted — throw the original error
+    getSystemAnalyticsSafe()?.recordPipelineOutcome?.('embedding', 'error', {
+      reason: primaryError?.message || 'embedding_fallback_exhausted'
+    });
     throw primaryError;
   }
 

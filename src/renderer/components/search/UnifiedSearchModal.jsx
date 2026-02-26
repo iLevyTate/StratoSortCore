@@ -48,6 +48,8 @@ import { scoreToOpacity, clamp01 } from '../../utils/scoreUtils';
 import { makeQueryNodeId, defaultNodePosition } from '../../utils/graphUtils';
 import { extractFileName } from '../../utils/pathNormalization';
 import { extractDroppedFiles, isFileDragEvent } from '../../utils/dragAndDrop';
+import normalizeList from '../../utils/normalizeList';
+import { sanitizeSemanticTerms } from '../../utils/semanticTerms';
 import {
   elkLayout,
   debouncedElkLayout,
@@ -83,8 +85,10 @@ const SEARCH_RESULTS_ROW_HEIGHT =
   (UI_VIRTUALIZATION.SEARCH_RESULTS_ITEM_GAP ?? 8);
 // Maximum nodes allowed in graph to prevent memory exhaustion
 const MAX_GRAPH_NODES = 300;
-const GRAPH_LAYOUT_SPACING = 300; // Increased from 180 to reduce clutter
-const GRAPH_LAYER_SPACING = 400; // Increased from 280 to reduce clutter
+// Layout spacing is now adaptive based on node count (see elkLayout.js).
+// These constants serve as maximum values for callers that still pass them explicitly.
+const GRAPH_LAYOUT_SPACING = undefined; // Let elkLayout choose adaptively
+const GRAPH_LAYER_SPACING = undefined; // Let elkLayout choose adaptively
 const ZOOM_LABEL_HIDE_THRESHOLD = 0.6;
 const EDGE_LABEL_HIDE_THRESHOLD = 0.9;
 const SMALL_GRAPH_NODE_THRESHOLD = 18;
@@ -95,6 +99,66 @@ const DENSE_GRAPH_EDGE_RATIO_THRESHOLD = 1.35;
 const MAX_CHAT_MESSAGES = 200;
 const PARALLEL_EDGE_OFFSET_PX = 14;
 const GRAPH_SIDEBAR_CARD = 'rounded-lg border border-system-gray-200 bg-white/90 p-3 shadow-sm';
+const normalizeGraphPathKey = (filePath) => {
+  if (typeof filePath !== 'string') return '';
+  const normalized = filePath.trim().replace(/[\\/]+/g, '/');
+  if (!normalized) return '';
+  return /^[A-Za-z]:/.test(filePath) || filePath.includes('\\')
+    ? normalized.toLowerCase()
+    : normalized;
+};
+const extractPathFromSemanticId = (value) => {
+  if (typeof value !== 'string') return '';
+  const stripped = value.replace(/^(file|image):/i, '').trim();
+  if (!stripped) return '';
+  return /^[A-Za-z]:[\\/]/.test(stripped) || stripped.startsWith('/') || /[\\/]/.test(stripped)
+    ? stripped
+    : '';
+};
+const toMetadataObject = (value) => {
+  if (!value || typeof value !== 'object') return {};
+  if (value.metadata && typeof value.metadata === 'object') return value.metadata;
+  return value;
+};
+const getMetadataPath = (value, fallbackId = '') => {
+  const metadata = toMetadataObject(value);
+  const directPath =
+    typeof metadata.path === 'string' && metadata.path.trim()
+      ? metadata.path.trim()
+      : typeof metadata.filePath === 'string' && metadata.filePath.trim()
+        ? metadata.filePath.trim()
+        : '';
+  if (directPath) return directPath;
+
+  const id =
+    fallbackId ||
+    (typeof value?.id === 'string' && value.id.trim() ? value.id.trim() : '') ||
+    (typeof metadata.id === 'string' ? metadata.id.trim() : '');
+  return extractPathFromSemanticId(id);
+};
+const getMetadataName = (value, fallbackPath = '', fallbackId = '') => {
+  const metadata = toMetadataObject(value);
+  const directName =
+    typeof metadata.name === 'string' && metadata.name.trim()
+      ? metadata.name.trim()
+      : typeof metadata.fileName === 'string' && metadata.fileName.trim()
+        ? metadata.fileName.trim()
+        : '';
+  if (directName) return directName;
+
+  const resolvedPath = fallbackPath || getMetadataPath(value, fallbackId);
+  if (resolvedPath) {
+    const base = safeBasename(resolvedPath);
+    if (base) return base;
+  }
+
+  const pathFromId = extractPathFromSemanticId(fallbackId);
+  const idBase = safeBasename(pathFromId || fallbackId);
+  return idBase || fallbackId || 'Unknown';
+};
+// Dedup key for graph nodes: use file path for file nodes, id for everything else
+const nodeDeduplicationKey = (n) =>
+  n.data?.path && n.data?.kind === 'file' ? normalizeGraphPathKey(n.data.path) || n.id : n.id;
 const GRAPH_SIDEBAR_SECTION_TITLE =
   'text-xs font-semibold text-system-gray-500 uppercase tracking-wider flex items-center gap-2';
 const WHY_CONNECTIONS_DISPLAY_LIMIT = 6;
@@ -255,18 +319,33 @@ const validateSearchResponse = (response, context = 'Search') => {
     });
   }
 
-  return { valid: true, results: validResults };
-};
+  // Deduplicate by file path: multiple analysis runs can produce different
+  // vector DB IDs for the same file. Keep the highest-scoring entry.
+  const deduplicatedResults = [];
+  const seenPaths = new Map();
 
-const normalizeList = (value) => {
-  if (Array.isArray(value)) return value.filter(Boolean);
-  if (typeof value === 'string' && value.trim().length > 0) {
-    return value
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean);
+  for (const result of validResults) {
+    const dedupKey = getMetadataPath(result, result?.id) || result.id;
+
+    if (seenPaths.has(dedupKey)) {
+      const existingIndex = seenPaths.get(dedupKey);
+      if ((result.score || 0) > (deduplicatedResults[existingIndex].score || 0)) {
+        deduplicatedResults[existingIndex] = result;
+      }
+    } else {
+      seenPaths.set(dedupKey, deduplicatedResults.length);
+      deduplicatedResults.push(result);
+    }
   }
-  return [];
+
+  if (deduplicatedResults.length !== validResults.length) {
+    logger.debug('[UnifiedSearchModal] Deduplicated results by path', {
+      before: validResults.length,
+      after: deduplicatedResults.length
+    });
+  }
+
+  return { valid: true, results: deduplicatedResults };
 };
 
 const getParentFolderName = (filePath) => {
@@ -281,9 +360,10 @@ const getConnectionReason = (edge) => {
   const kind = edge?.data?.kind;
   if (kind === 'query_match') {
     const score = Math.round((edge?.data?.score || 0) * 100);
-    const terms = Array.isArray(edge?.data?.matchDetails?.matchedTerms)
-      ? edge.data.matchDetails.matchedTerms.filter(Boolean)
-      : [];
+    const terms = sanitizeSemanticTerms(edge?.data?.matchDetails?.matchedTerms, {
+      maxTerms: 3,
+      minLength: 2
+    });
     return {
       type: 'query',
       label: score > 0 ? `Query match ${score}%` : 'Query match',
@@ -294,7 +374,7 @@ const getConnectionReason = (edge) => {
     };
   }
   if (kind === 'knowledge') {
-    const concepts = Array.isArray(edge?.data?.concepts) ? edge.data.concepts.filter(Boolean) : [];
+    const concepts = sanitizeSemanticTerms(edge?.data?.concepts, { maxTerms: 3, minLength: 2 });
     return {
       type: 'knowledge',
       label: 'Knowledge link',
@@ -306,9 +386,10 @@ const getConnectionReason = (edge) => {
   }
   if (kind === 'cross_cluster') {
     const bridgeCount = edge?.data?.bridgeCount || 0;
-    const terms = Array.isArray(edge?.data?.sharedTerms)
-      ? edge.data.sharedTerms.filter(Boolean)
-      : [];
+    const terms = sanitizeSemanticTerms(edge?.data?.sharedTerms, {
+      maxTerms: 3,
+      minLength: 2
+    });
     return {
       type: 'bridge',
       label: `Cluster bridge ${Math.round((edge?.data?.similarity || 0) * 100)}%`,
@@ -323,9 +404,10 @@ const getConnectionReason = (edge) => {
 
   const similarity = edge?.data?.similarity || 0;
   const similarityPct = Math.round(similarity * 100);
-  const sharedTerms = Array.isArray(edge?.data?.sharedTerms)
-    ? edge.data.sharedTerms.filter(Boolean)
-    : [];
+  const sharedTerms = sanitizeSemanticTerms(edge?.data?.sharedTerms, {
+    maxTerms: 3,
+    minLength: 2
+  });
   if (sharedTerms.length > 0) {
     return {
       type: 'similarity',
@@ -411,8 +493,8 @@ const ResultRow = memo(function ResultRow({
   onReveal,
   onCopyPath
 }) {
-  const path = result?.metadata?.path || '';
-  const name = result?.metadata?.name || safeBasename(path) || result?.id || 'Unknown';
+  const path = getMetadataPath(result, result?.id);
+  const name = getMetadataName(result, path, result?.id) || result?.id || 'Unknown';
   const category = result?.metadata?.category || 'Uncategorized';
 
   // Format date and confidence
@@ -585,6 +667,25 @@ const ResultRow = memo(function ResultRow({
             className="h-7 w-7 hover:bg-stratosort-blue/10"
             icon={<Copy className="w-4 h-4 text-stratosort-blue" />}
           />
+          <IconButton
+            onClick={(e) => {
+              e.stopPropagation();
+              window.dispatchEvent(
+                new CustomEvent('graph:viewInGraph', {
+                  detail: {
+                    resultId: result.id,
+                    resultPath: result?.metadata?.path || null
+                  }
+                })
+              );
+            }}
+            title="View in Graph"
+            aria-label="View in Graph"
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 hover:bg-stratosort-indigo/10"
+            icon={<Network className="w-4 h-4 text-stratosort-indigo" />}
+          />
         </div>
       )}
     </div>
@@ -746,6 +847,12 @@ VirtualizedSearchResults.propTypes = {
 };
 
 function StatsDisplay({ stats, isLoadingStats, statsUnavailable, onRefresh }) {
+  const healthHint = stats?.embeddingModelMismatch
+    ? 'model mismatch'
+    : stats?.needsFileEmbeddingRebuild
+      ? 'rebuild needed'
+      : '';
+
   return (
     <div className="flex items-center gap-2">
       {stats ? (
@@ -759,6 +866,12 @@ function StatsDisplay({ stats, isLoadingStats, statsUnavailable, onRefresh }) {
             {stats.files}
           </Text>
           <span>file{stats.files !== 1 ? 's' : ''} indexed</span>
+          {healthHint && (
+            <>
+              <span className="text-system-gray-300">•</span>
+              <span className="font-medium text-stratosort-warning">{healthHint}</span>
+            </>
+          )}
         </Text>
       ) : isLoadingStats ? (
         <Text
@@ -807,6 +920,7 @@ function EmptyEmbeddingsBanner({
   isRebuildingFolders,
   isRebuildingFiles,
   embeddingConfig,
+  indexHealth,
   onOpenSettings
 }) {
   const timing = embeddingConfig?.timing || null;
@@ -814,22 +928,41 @@ function EmptyEmbeddingsBanner({
   const isManual = timing === 'manual';
   const isPolicyDisabled = policy === 'skip' || policy === 'web_only';
   const isDeferred = timing === 'after_organize';
+  const needsFileEmbeddingRebuild = Boolean(indexHealth?.needsFileEmbeddingRebuild);
+  const embeddingModelMismatch = Boolean(indexHealth?.embeddingModelMismatch);
+  const indexedEmbeddingModel =
+    typeof indexHealth?.indexedEmbeddingModel === 'string' ? indexHealth.indexedEmbeddingModel : '';
+  const activeEmbeddingModel =
+    typeof indexHealth?.activeEmbeddingModel === 'string' ? indexHealth.activeEmbeddingModel : '';
 
-  const title = isManual
-    ? 'Embeddings are set to manual'
-    : isPolicyDisabled
-      ? 'Embeddings are disabled'
-      : isDeferred
-        ? 'Embeddings are deferred until after organize'
-        : 'No embeddings yet';
+  const mismatchDetails =
+    indexedEmbeddingModel && activeEmbeddingModel
+      ? `Indexed with "${indexedEmbeddingModel}" but active model is "${activeEmbeddingModel}".`
+      : 'The active embedding model does not match the model used to build this index.';
 
-  const description = isManual
-    ? 'Knowledge OS search needs local embeddings, but your settings are set to Manual only. Turn automatic embedding back on (Settings → Embedding behavior), then rebuild to populate the index.'
-    : isPolicyDisabled
-      ? `Your default embedding policy is set to "${policy}". Knowledge OS won’t create local embeddings, so semantic search will return no results.`
-      : isDeferred
-        ? 'Your embedding timing is set to After organize/move. Files will be indexed once they are moved into Smart Folders. You can also run a rebuild now.'
-        : 'Knowledge OS requires file embeddings. If you already analyzed files in the past but this number is still zero, your search index was likely reset and needs a one-time rebuild from analysis history.';
+  const title = embeddingModelMismatch
+    ? 'Embedding model mismatch'
+    : needsFileEmbeddingRebuild
+      ? 'Search index needs rebuild'
+      : isManual
+        ? 'Embeddings are set to manual'
+        : isPolicyDisabled
+          ? 'Embeddings are disabled'
+          : isDeferred
+            ? 'Embeddings are deferred until after organize'
+            : 'No embeddings yet';
+
+  const description = embeddingModelMismatch
+    ? `${mismatchDetails} Rebuild embeddings to restore reliable semantic search.`
+    : needsFileEmbeddingRebuild
+      ? 'You already have analyzed files, but the embedding index is empty. Run a file embedding rebuild from analysis history to restore Knowledge OS search.'
+      : isManual
+        ? 'Knowledge OS search needs local embeddings, but your settings are set to Manual only. Turn automatic embedding back on (Settings → Embedding behavior), then rebuild to populate the index.'
+        : isPolicyDisabled
+          ? `Your default embedding policy is set to "${policy}". Knowledge OS won’t create local embeddings, so semantic search will return no results.`
+          : isDeferred
+            ? 'Your embedding timing is set to After organize/move. Files will be indexed once they are moved into Smart Folders. You can also run a rebuild now.'
+            : 'Knowledge OS requires file embeddings. If you already analyzed files in the past but this number is still zero, your search index was likely reset and needs a one-time rebuild from analysis history.';
 
   return (
     <StateMessage
@@ -874,9 +1007,69 @@ EmptyEmbeddingsBanner.propTypes = {
     timing: PropTypes.oneOf(['during_analysis', 'after_organize', 'manual']),
     policy: PropTypes.oneOf(['embed', 'skip', 'web_only'])
   }),
+  indexHealth: PropTypes.shape({
+    needsFileEmbeddingRebuild: PropTypes.bool,
+    embeddingModelMismatch: PropTypes.bool,
+    indexedEmbeddingModel: PropTypes.string,
+    activeEmbeddingModel: PropTypes.string
+  }),
   onOpenSettings: PropTypes.func
 };
 EmptyEmbeddingsBanner.displayName = 'EmptyEmbeddingsBanner';
+
+function IndexHealthBanner({ stats, onRebuildFiles, isRebuildingFiles, onOpenSettings }) {
+  if (!stats?.embeddingModelMismatch && !stats?.needsFileEmbeddingRebuild) return null;
+
+  const indexedEmbeddingModel =
+    typeof stats?.indexedEmbeddingModel === 'string' ? stats.indexedEmbeddingModel : '';
+  const activeEmbeddingModel =
+    typeof stats?.activeEmbeddingModel === 'string' ? stats.activeEmbeddingModel : '';
+  const details =
+    indexedEmbeddingModel && activeEmbeddingModel
+      ? `Indexed with "${indexedEmbeddingModel}" but active model is "${activeEmbeddingModel}".`
+      : 'Embedding health requires attention.';
+
+  const title = stats?.embeddingModelMismatch
+    ? 'Embedding model mismatch detected.'
+    : 'Search index may be incomplete.';
+  const description = stats?.embeddingModelMismatch
+    ? `${details} Rebuild embeddings to restore consistent semantic ranking.`
+    : 'Rebuild file embeddings to restore complete semantic search coverage.';
+
+  return (
+    <div className="glass-panel border border-stratosort-warning/30 bg-stratosort-warning/5 px-3 py-2 rounded-lg flex items-start justify-between gap-3">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="w-4 h-4 text-stratosort-warning shrink-0 mt-0.5" />
+        <Text as="span" variant="tiny" className="text-system-gray-700">
+          <strong>{title}</strong> {description}
+        </Text>
+      </div>
+      <div className="flex gap-2 shrink-0">
+        {onOpenSettings && (
+          <Button variant="secondary" size="xs" onClick={onOpenSettings}>
+            Settings
+          </Button>
+        )}
+        <Button variant="primary" size="xs" onClick={onRebuildFiles} disabled={isRebuildingFiles}>
+          {isRebuildingFiles ? 'Building...' : 'Rebuild'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+IndexHealthBanner.propTypes = {
+  stats: PropTypes.shape({
+    needsFileEmbeddingRebuild: PropTypes.bool,
+    embeddingModelMismatch: PropTypes.bool,
+    indexedEmbeddingModel: PropTypes.string,
+    activeEmbeddingModel: PropTypes.string
+  }),
+  onRebuildFiles: PropTypes.func.isRequired,
+  isRebuildingFiles: PropTypes.bool.isRequired,
+  onOpenSettings: PropTypes.func
+};
+IndexHealthBanner.displayName = 'IndexHealthBanner';
 
 /**
  * Banner shown when search falls back to keyword-only mode
@@ -902,10 +1095,83 @@ SearchModeBanner.propTypes = {
     mode: PropTypes.string,
     fallback: PropTypes.bool,
     fallbackReason: PropTypes.string,
-    originalMode: PropTypes.string
+    originalMode: PropTypes.string,
+    warnings: PropTypes.arrayOf(
+      PropTypes.shape({
+        type: PropTypes.string,
+        severity: PropTypes.string,
+        message: PropTypes.string
+      })
+    )
   })
 };
 SearchModeBanner.displayName = 'SearchModeBanner';
+
+const WARNING_SEVERITY_ORDER = Object.freeze({
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3
+});
+
+const normalizeSearchWarnings = (warnings) => {
+  if (!Array.isArray(warnings) || warnings.length === 0) return [];
+  return warnings
+    .filter((warning) => warning && typeof warning === 'object' && warning.message)
+    .map((warning) => ({
+      type: String(warning.type || 'warning'),
+      severity: String(warning.severity || 'low').toLowerCase(),
+      message: String(warning.message || '').trim()
+    }))
+    .filter((warning) => warning.message.length > 0)
+    .sort((a, b) => {
+      const aRank = WARNING_SEVERITY_ORDER[a.severity] ?? 99;
+      const bRank = WARNING_SEVERITY_ORDER[b.severity] ?? 99;
+      if (aRank !== bRank) return aRank - bRank;
+      return a.message.localeCompare(b.message);
+    });
+};
+
+function SearchDiagnosticsBanner({ meta }) {
+  const warnings = normalizeSearchWarnings(meta?.warnings).slice(0, 3);
+  if (warnings.length === 0) return null;
+
+  return (
+    <div className="glass-panel border border-stratosort-warning/30 bg-stratosort-warning/5 px-3 py-2 rounded-lg">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="w-4 h-4 text-stratosort-warning shrink-0 mt-0.5" />
+        <div className="flex flex-col gap-1">
+          <Text as="span" variant="tiny" className="text-system-gray-700 font-medium">
+            Search diagnostics
+          </Text>
+          {warnings.map((warning, index) => (
+            <Text
+              key={`${warning.type}-${index}`}
+              as="span"
+              variant="tiny"
+              className="text-system-gray-600"
+            >
+              {warning.message}
+            </Text>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+SearchDiagnosticsBanner.propTypes = {
+  meta: PropTypes.shape({
+    warnings: PropTypes.arrayOf(
+      PropTypes.shape({
+        type: PropTypes.string,
+        severity: PropTypes.string,
+        message: PropTypes.string
+      })
+    )
+  })
+};
+SearchDiagnosticsBanner.displayName = 'SearchDiagnosticsBanner';
 
 function TabButton({ active, onClick, icon: Icon, label }) {
   return (
@@ -935,6 +1201,13 @@ TabButton.displayName = 'TabButton';
  * Provides consistent toggle UI with chevron, icon, title, and optional badge.
  */
 function SidebarSection({ icon: Icon, title, isOpen, onToggle, badge, children }) {
+  // Mount-once: children stay in DOM after first open for smooth CSS transitions,
+  // but don't mount until actually needed (avoids ~150-300 unnecessary DOM nodes)
+  const [hasBeenOpened, setHasBeenOpened] = useState(isOpen);
+  useEffect(() => {
+    if (isOpen && !hasBeenOpened) setHasBeenOpened(true);
+  }, [isOpen, hasBeenOpened]);
+
   return (
     <section className="space-y-0">
       <Button
@@ -963,7 +1236,13 @@ function SidebarSection({ icon: Icon, title, isOpen, onToggle, badge, children }
           aria-hidden="true"
         />
       </Button>
-      {isOpen && <div className="pt-2 space-y-3">{children}</div>}
+      <div
+        className={`overflow-hidden transition-all [transition-duration:var(--motion-duration-standard)] [transition-timing-function:var(--motion-ease-standard)] ${
+          isOpen ? 'max-h-[2000px] opacity-100 pt-2' : 'max-h-0 opacity-0 pt-0'
+        }`}
+      >
+        {hasBeenOpened && <div className="space-y-3">{children}</div>}
+      </div>
     </section>
   );
 }
@@ -1136,6 +1415,14 @@ export default function UnifiedSearchModal({
 
   // Help tour state (for re-showing the tour via help button)
   const [showTourManually, setShowTourManually] = useState(false);
+
+  // Reset manual force-show whenever the parent modal closes.
+  // This prevents the tour from being forced on every reopen.
+  useEffect(() => {
+    if (!isOpen) {
+      setShowTourManually(false);
+    }
+  }, [isOpen]);
 
   // Persistence and Notes state
   const [graphNotes, setGraphNotes] = useState({}); // Map of nodeId -> note string
@@ -1391,7 +1678,15 @@ export default function UnifiedSearchModal({
     advanced: false
   });
   const toggleSidebarSection = useCallback((key) => {
-    setSidebarSections((prev) => ({ ...prev, [key]: !prev[key] }));
+    setSidebarSections((prev) => {
+      if (!prev[key]) {
+        // Strict accordion: close all others when opening a section
+        const next = {};
+        for (const k of Object.keys(prev)) next[k] = k === key;
+        return next;
+      }
+      return { ...prev, [key]: false };
+    });
   }, []);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -1403,6 +1698,7 @@ export default function UnifiedSearchModal({
   const reactFlowInstance = useRef(null);
   const graphFitViewTimeoutRef = useRef(null);
   const guideIntentLoadTimeoutRef = useRef(null);
+  const clusterRefreshTimeoutRef = useRef(null);
   const statsRequestCounterRef = useRef(0);
   const freshMetadataRequestCounterRef = useRef(0);
   const recommendationRequestCounterRef = useRef(0);
@@ -1427,6 +1723,9 @@ export default function UnifiedSearchModal({
 
   // Ref for expandCluster to be used in handleClusterExpand (defined before expandCluster)
   const expandClusterRef = useRef(null);
+
+  // Ref for convertSearchToGraph to be used by viewInGraph event handler
+  const convertSearchToGraphRef = useRef(null);
 
   // Ref for cluster action callbacks to rehydrate saved graphs
   const clusterActionRefs = useRef({});
@@ -1464,8 +1763,8 @@ export default function UnifiedSearchModal({
     return results
       .map((result) => {
         const metadata = result?.metadata || {};
-        const path = metadata.path || result?.id || '';
-        const name = metadata.name || safeBasename(path) || '';
+        const path = getMetadataPath(metadata, result?.id) || result?.id || '';
+        const name = getMetadataName(metadata, path, result?.id);
         if (!path) return null;
 
         return {
@@ -1846,7 +2145,7 @@ export default function UnifiedSearchModal({
           if (!searchResp?.success || !Array.isArray(searchResp.results)) continue;
           const lowerName = unresolvedName.toLowerCase();
           const exactNameMatches = searchResp.results.filter((candidate) => {
-            const candidateName = candidate?.metadata?.name || '';
+            const candidateName = candidate?.metadata?.name || candidate?.metadata?.fileName || '';
             return typeof candidateName === 'string' && candidateName.toLowerCase() === lowerName;
           });
           nameMatches.push(...exactNameMatches);
@@ -1863,8 +2162,8 @@ export default function UnifiedSearchModal({
         const newItems = combined
           .map((r) => ({
             id: r.id,
-            path: r.path || r?.metadata?.path || '',
-            name: r.name || r?.metadata?.name || '',
+            path: r.path || getMetadataPath(r, r?.id) || '',
+            name: r.name || getMetadataName(r, r.path || getMetadataPath(r, r?.id), r?.id) || '',
             type: r.type || r?.metadata?.type || 'file'
           }))
           .filter((item) => item.id && item.path);
@@ -2133,6 +2432,10 @@ export default function UnifiedSearchModal({
         clearTimeout(guideIntentLoadTimeoutRef.current);
         guideIntentLoadTimeoutRef.current = null;
       }
+      if (clusterRefreshTimeoutRef.current) {
+        clearTimeout(clusterRefreshTimeoutRef.current);
+        clusterRefreshTimeoutRef.current = null;
+      }
       return () => {};
     }
 
@@ -2187,6 +2490,10 @@ export default function UnifiedSearchModal({
         clearTimeout(guideIntentLoadTimeoutRef.current);
         guideIntentLoadTimeoutRef.current = null;
       }
+      if (clusterRefreshTimeoutRef.current) {
+        clearTimeout(clusterRefreshTimeoutRef.current);
+        clusterRefreshTimeoutRef.current = null;
+      }
       setWithinQuery('');
       setDebouncedWithinQuery('');
       setGraphStatus('');
@@ -2217,6 +2524,10 @@ export default function UnifiedSearchModal({
       if (guideIntentLoadTimeoutRef.current) {
         clearTimeout(guideIntentLoadTimeoutRef.current);
         guideIntentLoadTimeoutRef.current = null;
+      }
+      if (clusterRefreshTimeoutRef.current) {
+        clearTimeout(clusterRefreshTimeoutRef.current);
+        clusterRefreshTimeoutRef.current = null;
       }
       graphActions.reset();
     };
@@ -2363,18 +2674,21 @@ export default function UnifiedSearchModal({
       id: queryNodeId,
       type: 'queryNode',
       position: { x: 40, y: 200 },
-      data: { kind: 'query', label: debouncedQuery || 'Search Results' },
+      data: {
+        kind: 'query',
+        label: debouncedQuery || 'Search Results',
+        resultCount: searchResults.length,
+        searchMode: searchMeta?.mode || 'hybrid',
+        fallback: searchMeta?.fallback || false,
+        corrections: queryMeta?.corrections || null
+      },
       draggable: true
     };
 
-    // Create file nodes from search results
-    const fileNodes = searchResults.slice(0, 20).map((result, idx) => {
-      const filePath = result?.metadata?.path || result?.id || '';
-      const displayName =
-        result?.metadata?.name ||
-        safeBasename(filePath) ||
-        filePath.split(/[/\\]/).pop() ||
-        result?.id;
+    // Create file nodes from search results (limit to defaultTopK to match search)
+    const fileNodes = searchResults.slice(0, defaultTopK).map((result, idx) => {
+      const filePath = getMetadataPath(result, result?.id) || result?.id || '';
+      const displayName = getMetadataName(result, filePath, result?.id);
 
       return {
         id: result.id,
@@ -2425,8 +2739,9 @@ export default function UnifiedSearchModal({
       const prevWithoutClusters = prev.filter(
         (n) => n.type !== 'clusterNode' && n.data?.kind !== 'cluster'
       );
-      const existing = new Set(prevWithoutClusters.map((n) => n.id));
-      const newNodes = incoming.filter((n) => !existing.has(n.id));
+      // Deduplicate by path for file nodes (same file can have different vector DB IDs)
+      const existing = new Set(prevWithoutClusters.map(nodeDeduplicationKey));
+      const newNodes = incoming.filter((n) => !existing.has(nodeDeduplicationKey(n)));
       return [...prevWithoutClusters, ...newNodes];
     });
 
@@ -2447,8 +2762,15 @@ export default function UnifiedSearchModal({
       setShowClusters(false);
     }
 
-    // Switch to graph tab
+    // Switch to graph tab and collapse sidebar to maximize graph visibility
     setActiveTab('graph');
+    setSidebarSections({
+      insights: false,
+      addToGraph: false,
+      explore: false,
+      actions: false,
+      advanced: false
+    });
     setGraphStatus(`Converted ${fileNodes.length} results to graph`);
 
     // Apply layout
@@ -2490,6 +2812,7 @@ export default function UnifiedSearchModal({
             layerSpacing: GRAPH_LAYER_SPACING
           }
         );
+        if (!isMountedRef.current) return;
         graphActions.setNodes(layoutedNodes);
         if (layoutedEdges && layoutedEdges.length > 0) {
           graphActions.setEdges(applyEdgeUiPrefs(layoutedEdges));
@@ -2505,8 +2828,14 @@ export default function UnifiedSearchModal({
     autoLayout,
     graphActions,
     recommendationMap,
-    applyEdgeUiPrefs
+    applyEdgeUiPrefs,
+    searchMeta,
+    queryMeta,
+    defaultTopK
   ]);
+
+  // Assign ref for event handler access
+  convertSearchToGraphRef.current = convertSearchToGraph;
 
   // ============================================================================
   // Keyboard Shortcuts
@@ -2697,17 +3026,75 @@ export default function UnifiedSearchModal({
       }
     };
 
+    const handleViewInGraph = async (event) => {
+      const { resultId, resultPath } = event.detail || {};
+      const requestedPathKey = normalizeGraphPathKey(resultPath);
+      if (!resultId && !requestedPathKey) return;
+      // Convert current search results to graph and await layout completion
+      try {
+        await convertSearchToGraphRef.current?.();
+      } catch {
+        // Layout may throw AbortError on rapid re-invocation; safe to ignore
+      }
+      // Guard against unmount during the async conversion
+      if (!isMountedRef.current) return;
+      const findTargetNode = (currentNodes) => {
+        if (!Array.isArray(currentNodes) || currentNodes.length === 0) return null;
+        if (requestedPathKey) {
+          const pathMatch = currentNodes.find(
+            (node) => normalizeGraphPathKey(node?.data?.path) === requestedPathKey
+          );
+          if (pathMatch) return pathMatch;
+        }
+        if (resultId) {
+          return currentNodes.find((node) => node.id === resultId) || null;
+        }
+        return null;
+      };
+
+      const targetNode = findTargetNode(nodesRef.current || []);
+      if (!targetNode) return;
+
+      // Layout is complete — select and focus the target node
+      graphActions.selectNode(targetNode.id);
+      // Wait one frame for React to flush the new node positions
+      requestAnimationFrame(() => {
+        const currentNodes = nodesRef.current || [];
+        const node = findTargetNode(currentNodes);
+        if (node && reactFlowInstance.current) {
+          reactFlowInstance.current.setCenter(node.position.x + 100, node.position.y + 50, {
+            duration: 300,
+            zoom: 1.2
+          });
+        }
+      });
+    };
+
     window.addEventListener('graph:findSimilar', handleFindSimilar);
     window.addEventListener('graph:toggleCluster', handleToggleCluster);
     window.addEventListener('graph:searchAgain', handleSearchAgain);
     window.addEventListener('graph:focusNode', handleFocusNode);
+    window.addEventListener('graph:viewInGraph', handleViewInGraph);
     return () => {
       window.removeEventListener('graph:findSimilar', handleFindSimilar);
       window.removeEventListener('graph:toggleCluster', handleToggleCluster);
       window.removeEventListener('graph:searchAgain', handleSearchAgain);
       window.removeEventListener('graph:focusNode', handleFocusNode);
+      window.removeEventListener('graph:viewInGraph', handleViewInGraph);
     };
-  }, [isOpen]); // Removed nodes - use nodesRef instead to prevent frequent re-subscription
+  }, [isOpen, graphActions]); // Removed nodes - use nodesRef instead to prevent frequent re-subscription
+
+  // Prevent wheel events on the graph container from scrolling the parent modal.
+  // Uses a native listener because React's synthetic stopPropagation doesn't
+  // intercept ReactFlow's native wheel handler registered with { passive: false }.
+  // Re-runs when activeTab changes because the graph container div only mounts on the graph tab.
+  useEffect(() => {
+    const el = graphContainerRef.current;
+    if (!el) return;
+    const stopWheel = (e) => e.stopPropagation();
+    el.addEventListener('wheel', stopWheel, { passive: true });
+    return () => el.removeEventListener('wheel', stopWheel);
+  }, [activeTab]);
 
   // ============================================================================
   // Shared: Stats & Rebuild
@@ -2753,7 +3140,15 @@ export default function UnifiedSearchModal({
         setStats({
           files: typeof res.files === 'number' ? res.files : 0,
           folders: typeof res.folders === 'number' ? res.folders : 0,
-          initialized: Boolean(res.initialized)
+          initialized: Boolean(res.initialized),
+          needsFileEmbeddingRebuild: Boolean(res.needsFileEmbeddingRebuild),
+          embeddingModelMismatch: Boolean(res.embeddingModelMismatch),
+          activeEmbeddingModel:
+            typeof res.activeEmbeddingModel === 'string' ? res.activeEmbeddingModel : '',
+          indexedEmbeddingModel:
+            typeof res.embeddingIndex?.model === 'string' ? res.embeddingIndex.model : '',
+          analysisHistoryTotal:
+            typeof res.analysisHistory?.totalFiles === 'number' ? res.analysisHistory.totalFiles : 0
         });
         setStatsUnavailable(false);
       } else if (isMountedRef.current && statsRequestCounterRef.current === requestId) {
@@ -2799,6 +3194,7 @@ export default function UnifiedSearchModal({
         // Trigger search refresh by incrementing counter
         setSearchRefreshTrigger((prev) => prev + 1);
         // Also refresh stats
+        embeddingsIpc.invalidateStatsCache();
         refreshStats(true);
       }
     };
@@ -3184,8 +3580,13 @@ export default function UnifiedSearchModal({
         ? clusterData.memberIds.filter((id) => typeof id === 'string' && id.length > 0)
         : [];
 
-      // Ensure the user can immediately see and use the search control.
-      setSidebarSections((prev) => (prev.advanced ? prev : { ...prev, advanced: true }));
+      // Ensure the user can immediately see and use the search control (strict accordion).
+      setSidebarSections((prev) => {
+        if (prev.advanced) return prev;
+        const next = {};
+        for (const k of Object.keys(prev)) next[k] = k === 'advanced';
+        return next;
+      });
       setWithinQuery('');
       setGraphStatus(
         `Searching within "${label}". Use the filter box in Advanced to refine results.`
@@ -3667,14 +4068,17 @@ export default function UnifiedSearchModal({
         const src = clustersById.get(e.source);
         const tgt = clustersById.get(e.target);
         const sim = Number.isFinite(e?.data?.similarity) ? e.data.similarity : 0;
-        const sharedTerms = Array.isArray(e?.data?.sharedTerms) ? e.data.sharedTerms : [];
+        const sharedTerms = sanitizeSemanticTerms(e?.data?.sharedTerms, {
+          maxTerms: 3,
+          minLength: 2
+        });
         const bridgeFiles = Array.isArray(e?.data?.bridgeFiles) ? e.data.bridgeFiles : [];
         return {
           id: e.id,
           sourceId: e.source,
           targetId: e.target,
           similarity: sim,
-          sharedTerms: sharedTerms.filter(Boolean).slice(0, 3),
+          sharedTerms,
           bridgeFiles,
           sourceLabel: src?.data?.label || e.source,
           targetLabel: tgt?.data?.label || e.target
@@ -4009,6 +4413,8 @@ export default function UnifiedSearchModal({
         const response = await window.electronAPI?.embeddings?.search?.(q, {
           topK: defaultTopK,
           mode: 'hybrid',
+          correctSpelling: true,
+          expandSynonyms: true,
           rerank: true, // Enable LLM re-ranking
           rerankTopN: 10 // Re-rank top 10 results
         });
@@ -4036,7 +4442,8 @@ export default function UnifiedSearchModal({
           mode: response.mode || 'hybrid',
           fallback: response.meta?.fallback || false,
           fallbackReason: response.meta?.fallbackReason || null,
-          originalMode: response.meta?.originalMode || null
+          originalMode: response.meta?.originalMode || null,
+          warnings: normalizeSearchWarnings(response.meta?.warnings)
         });
 
         logger.info('[KnowledgeOS] Search completed', {
@@ -4158,8 +4565,8 @@ export default function UnifiedSearchModal({
       const id = result?.id;
       if (!id) return null;
       const metadata = result?.metadata || {};
-      const path = metadata.path || '';
-      const name = metadata.name || safeBasename(path) || id;
+      const path = getMetadataPath(metadata, id);
+      const name = getMetadataName(metadata, path, id);
       const score = typeof result?.score === 'number' ? result.score : undefined;
 
       // Parse tags from JSON string (vector DB stores as string) or use array directly
@@ -4307,8 +4714,8 @@ export default function UnifiedSearchModal({
           const hasFullPath = /[\\/]/.test(filePath);
           const normalizedDrop = String(filePath).toLowerCase();
           const matchingResult = searchResp.results.find((r) => {
-            const candidatePath = String(r?.metadata?.path || '').toLowerCase();
-            const candidateName = String(r?.metadata?.name || '').toLowerCase();
+            const candidatePath = String(getMetadataPath(r, r?.id) || '').toLowerCase();
+            const candidateName = String(getMetadataName(r, '', r?.id) || '').toLowerCase();
             if (hasFullPath) return candidatePath === normalizedDrop;
             return candidateName === normalizedDrop;
           });
@@ -4325,9 +4732,12 @@ export default function UnifiedSearchModal({
           // Create node using upsertFileNode
           const node = upsertFileNode(matchingResult, pos);
           if (node) {
-            // Check if node already exists
-            const existingNode = currentNodes.find((n) => n.id === node.id);
-            if (!existingNode) {
+            // Deduplicate by path (same file can have different vector DB IDs)
+            const existingKeys = new Set([
+              ...currentNodes.map(nodeDeduplicationKey),
+              ...addedNodes.map(nodeDeduplicationKey)
+            ]);
+            if (!existingKeys.has(nodeDeduplicationKey(node))) {
               addedNodes.push(node);
             }
           }
@@ -4615,13 +5025,16 @@ export default function UnifiedSearchModal({
               uniqueBridgeFiles.length > 0
                 ? uniqueBridgeFiles.length
                 : (current.count || 0) + (edge.count || 0),
-            sharedTerms: [
-              ...(current.sharedTerms || []),
-              ...(edge.commonTerms || edge.sharedTerms || edge.tags || edge.labels || []).slice(
-                0,
-                3
-              )
-            ].filter(Boolean)
+            sharedTerms: sanitizeSemanticTerms(
+              [
+                ...(current.sharedTerms || []),
+                ...(edge.commonTerms || edge.sharedTerms || edge.tags || edge.labels || []).slice(
+                  0,
+                  3
+                )
+              ],
+              { maxTerms: 6, minLength: 2 }
+            )
           });
         });
 
@@ -4635,19 +5048,44 @@ export default function UnifiedSearchModal({
         edgesByNode.get(edge.target).push(edge);
       });
 
-      const MAX_CONNECTIONS = 2;
-      const STRICT_THRESHOLD = 0.65;
+      const MAX_CONNECTIONS = 1;
+      const STRICT_THRESHOLD = 0.72;
+      const VERY_STRONG_THRESHOLD = 0.82;
+      const MIN_BRIDGE_FILES = 2;
+      const edgeQuality = (candidate) => {
+        const sim = Number(candidate?.similarity || 0);
+        const sharedTermCount = Array.isArray(candidate?.sharedTerms)
+          ? candidate.sharedTerms.length
+          : 0;
+        const bridgeFileCount = Array.isArray(candidate?.bridgeFiles)
+          ? candidate.bridgeFiles.length
+          : 0;
+        return sim + sharedTermCount * 0.04 + Math.min(bridgeFileCount, 4) * 0.025;
+      };
+      const rankByNode = new Map();
+      edgesByNode.forEach((nodeEdges, nodeId) => {
+        const rankedEdges = [...nodeEdges].sort((a, b) => edgeQuality(b) - edgeQuality(a));
+        const rankMap = new Map();
+        rankedEdges.forEach((candidate, index) => {
+          rankMap.set(candidate, index);
+        });
+        rankByNode.set(nodeId, rankMap);
+      });
       const meaningfulEdges = uniqueEdges.filter((edge) => {
-        const sim = edge.similarity || 0;
-        if (sim < STRICT_THRESHOLD) return false;
+        const sim = Number(edge?.similarity || 0);
+        const sharedTermCount = Array.isArray(edge?.sharedTerms) ? edge.sharedTerms.length : 0;
+        const bridgeFileCount = Array.isArray(edge?.bridgeFiles) ? edge.bridgeFiles.length : 0;
+        const hasSemanticEvidence =
+          sharedTermCount > 0 ||
+          bridgeFileCount >= MIN_BRIDGE_FILES ||
+          sim >= VERY_STRONG_THRESHOLD;
 
-        const sourceEdges = edgesByNode.get(edge.source) || [];
-        sourceEdges.sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
-        const isTopForSource = sourceEdges.indexOf(edge) < MAX_CONNECTIONS;
+        if (sim < STRICT_THRESHOLD || !hasSemanticEvidence) return false;
 
-        const targetEdges = edgesByNode.get(edge.target) || [];
-        targetEdges.sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
-        const isTopForTarget = targetEdges.indexOf(edge) < MAX_CONNECTIONS;
+        const sourceRank = rankByNode.get(edge.source)?.get(edge);
+        const targetRank = rankByNode.get(edge.target)?.get(edge);
+        const isTopForSource = Number.isFinite(sourceRank) && sourceRank < MAX_CONNECTIONS;
+        const isTopForTarget = Number.isFinite(targetRank) && targetRank < MAX_CONNECTIONS;
 
         return isTopForSource || isTopForTarget;
       });
@@ -4669,9 +5107,9 @@ export default function UnifiedSearchModal({
           animated: true,
           style: {
             stroke: '#9ca3af',
-            strokeWidth: Math.max(1, (edge.similarity || 0.5) * 1.5),
+            strokeWidth: Math.max(1, (edge.similarity || 0.5) * 1.25),
             strokeDasharray: '4,8',
-            opacity: 0.35
+            opacity: 0.24
           },
           className: 'cross-cluster-edge',
           data: {
@@ -4679,7 +5117,7 @@ export default function UnifiedSearchModal({
             similarity: edge.similarity || 0.5,
             bridgeCount: edge.count || 0,
             isSurprise,
-            sharedTerms: Array.from(new Set(edge.sharedTerms || [])).slice(0, 3),
+            sharedTerms: sanitizeSemanticTerms(edge.sharedTerms, { maxTerms: 3, minLength: 2 }),
             bridgeFiles: edge.bridgeFiles || [],
             showEdgeLabels: false,
             showEdgeTooltips: edgeTooltipsRef.current
@@ -4770,7 +5208,10 @@ export default function UnifiedSearchModal({
 
       // Background: After a short delay, fetch refreshed labels (LLM may have
       // finished in the background by now) and silently update the graph.
-      setTimeout(async () => {
+      if (clusterRefreshTimeoutRef.current) {
+        clearTimeout(clusterRefreshTimeoutRef.current);
+      }
+      clusterRefreshTimeoutRef.current = setTimeout(async () => {
         try {
           if (!isMountedRef.current) return;
           const refreshed = await window.electronAPI?.embeddings?.getClusters?.();
@@ -4788,6 +5229,8 @@ export default function UnifiedSearchModal({
           }
         } catch {
           // Label refresh is best-effort; failures are non-critical.
+        } finally {
+          clusterRefreshTimeoutRef.current = null;
         }
       }, 6000);
     } catch (e) {
@@ -4979,10 +5422,10 @@ export default function UnifiedSearchModal({
         // Create file nodes with proper current names from metadata
         const memberNodes = memberIds.map((id) => {
           const metadata = metadataMap.get(id) || {};
+          const memberPath = getMetadataPath(metadata, id) || id;
           // Use metadata.name first (current organized name), fallback to path extraction
           const currentName =
-            metadata.name ||
-            safeBasename(metadata.path) ||
+            getMetadataName(metadata, memberPath, id) ||
             safeBasename(id) ||
             id.split('/').pop() ||
             id.split('\\').pop() ||
@@ -4995,12 +5438,12 @@ export default function UnifiedSearchModal({
             data: {
               kind: 'file',
               label: currentName,
-              path: metadata.path || id,
+              path: memberPath,
               // Include metadata for edge tooltips
               tags: Array.isArray(metadata.tags) ? metadata.tags : [],
               entities: normalizeList(metadata.keyEntities).slice(0, 5),
               dates: normalizeList(metadata.dates).slice(0, 3),
-              suggestedFolder: recommendationMap[metadata.path] || '',
+              suggestedFolder: recommendationMap[memberPath] || '',
               category: metadata.category || '',
               subject: metadata.subject || ''
             },
@@ -5036,10 +5479,12 @@ export default function UnifiedSearchModal({
 
         const { folderNodes, edges: organizeEdges } = buildRecommendationGraph(layoutedMemberNodes);
 
-        // Add to existing graph
+        // Add to existing graph (deduplicate by path for file nodes)
         graphActions.setNodes((prev) => {
-          const existingIds = new Set(prev.map((n) => n.id));
-          const newNodes = layoutedMemberNodes.filter((n) => !existingIds.has(n.id));
+          const existingKeys = new Set(prev.map(nodeDeduplicationKey));
+          const newNodes = layoutedMemberNodes.filter(
+            (n) => !existingKeys.has(nodeDeduplicationKey(n))
+          );
 
           // Mark cluster as expanded
           const updated = prev.map((n) => {
@@ -5049,7 +5494,7 @@ export default function UnifiedSearchModal({
             return n;
           });
 
-          const withFolders = folderNodes.filter((n) => !existingIds.has(n.id));
+          const withFolders = folderNodes.filter((n) => !existingKeys.has(nodeDeduplicationKey(n)));
           return [...updated, ...newNodes, ...withFolders];
         });
 
@@ -5118,7 +5563,19 @@ export default function UnifiedSearchModal({
           throw new Error(resp?.error || 'Search failed');
         }
 
-        const results = Array.isArray(resp.results) ? resp.results : [];
+        const rawResults = Array.isArray(resp.results) ? resp.results : [];
+
+        // Deduplicate by file path before creating graph nodes
+        const dedupMap = new Map();
+        for (const r of rawResults) {
+          const key = getMetadataPath(r, r?.id) || r.id;
+          const existing = dedupMap.get(key);
+          if (!existing || (r.score || 0) > (existing.score || 0)) {
+            dedupMap.set(key, r);
+          }
+        }
+        const results = Array.from(dedupMap.values());
+
         const salt = Date.now();
         const queryNodeId = makeQueryNodeId(q, salt);
 
@@ -5129,7 +5586,14 @@ export default function UnifiedSearchModal({
           id: queryNodeId,
           type: 'queryNode', // Custom query node type
           position: { x: 40, y: 40 },
-          data: { kind: 'query', label: q },
+          data: {
+            kind: 'query',
+            label: q,
+            resultCount: results.length,
+            searchMode: resp.mode || 'hybrid',
+            fallback: resp.meta?.fallback || false,
+            corrections: resp.queryMeta?.corrections || null
+          },
           draggable: true
         };
 
@@ -5148,7 +5612,9 @@ export default function UnifiedSearchModal({
             data: {
               kind: 'query_match',
               score: r.score,
-              matchDetails: r.matchDetails || {}
+              matchDetails: r.matchDetails || {},
+              showEdgeLabels: showEdgeLabelsRef.current,
+              showEdgeTooltips: edgeTooltipsRef.current
             }
           });
         });
@@ -5199,9 +5665,12 @@ export default function UnifiedSearchModal({
           // Turn off cluster view since we're transitioning to search results
           setShowClusters(false);
 
-          const nodeMap = new Map(nodesWithoutClusters.map((n) => [n.id, n]));
+          // Deduplicate by file path (not just ID) to prevent duplicate nodes
+          // when the same file has different vector DB IDs across analysis runs
+          const nodeMap = new Map(nodesWithoutClusters.map((n) => [nodeDeduplicationKey(n), n]));
           nextNodes.forEach((n) => {
-            if (!nodeMap.has(n.id)) nodeMap.set(n.id, n);
+            const key = nodeDeduplicationKey(n);
+            if (!nodeMap.has(key)) nodeMap.set(key, n);
           });
           const merged = Array.from(nodeMap.values());
 
@@ -5511,9 +5980,11 @@ export default function UnifiedSearchModal({
         const nextEdgesWithFolders = [...nextEdges, ...organizeEdges];
 
         graphActions.setNodes((prev) => {
-          // Check if any new nodes need to be added
-          const existingIds = new Set(prev.map((n) => n.id));
-          const hasNewNodes = nextNodesWithFolders.some((n) => !existingIds.has(n.id));
+          // Check if any new nodes need to be added (deduplicate by path for file nodes)
+          const existingKeys = new Set(prev.map(nodeDeduplicationKey));
+          const hasNewNodes = nextNodesWithFolders.some(
+            (n) => !existingKeys.has(nodeDeduplicationKey(n))
+          );
 
           if (!hasNewNodes) {
             // No new nodes to add, preserve reference to prevent unnecessary updates
@@ -5521,9 +5992,10 @@ export default function UnifiedSearchModal({
           }
 
           // Merge new nodes with existing ones
-          const map = new Map(prev.map((n) => [n.id, n]));
+          const map = new Map(prev.map((n) => [nodeDeduplicationKey(n), n]));
           nextNodesWithFolders.forEach((n) => {
-            if (!map.has(n.id)) map.set(n.id, n);
+            const key = nodeDeduplicationKey(n);
+            if (!map.has(key)) map.set(key, n);
           });
           return Array.from(map.values());
         });
@@ -6298,7 +6770,7 @@ export default function UnifiedSearchModal({
       id: edge.id,
       similarity: edge.data?.similarity || 0,
       bridgeCount: edge.data?.bridgeCount || 0,
-      sharedTerms: edge.data?.sharedTerms || [],
+      sharedTerms: sanitizeSemanticTerms(edge.data?.sharedTerms, { maxTerms: 4, minLength: 2 }),
       targetId: edge.source === selectedNode.id ? edge.target : edge.source,
       targetLabel: neighborNodes.find(
         (n) => n.id === (edge.source === selectedNode.id ? edge.target : edge.source)
@@ -6385,8 +6857,12 @@ export default function UnifiedSearchModal({
           allFiles.push(
             ...result.members.map((m) => ({
               id: m.id,
-              path: m.metadata?.path || m.id,
-              name: m.metadata?.name || safeBasename(m.metadata?.path || m.id),
+              path: getMetadataPath(m?.metadata || {}, m.id) || m.id,
+              name: getMetadataName(
+                m?.metadata || {},
+                getMetadataPath(m?.metadata || {}, m.id),
+                m.id
+              ),
               size: m.metadata?.size
             }))
           );
@@ -6547,9 +7023,20 @@ export default function UnifiedSearchModal({
             isRebuildingFolders={isRebuildingFolders}
             isRebuildingFiles={isRebuildingFiles}
             embeddingConfig={embeddingConfig}
+            indexHealth={stats}
             onOpenSettings={handleOpenSettings}
           />
         )}
+        {!showEmptyBanner &&
+          stats &&
+          (stats.embeddingModelMismatch || stats.needsFileEmbeddingRebuild) && (
+            <IndexHealthBanner
+              stats={stats}
+              onRebuildFiles={rebuildFiles}
+              isRebuildingFiles={isRebuildingFiles}
+              onOpenSettings={handleOpenSettings}
+            />
+          )}
 
         {/* Error banner */}
         {error && (
@@ -6595,6 +7082,7 @@ export default function UnifiedSearchModal({
 
             {/* Search mode fallback banner */}
             <SearchModeBanner meta={searchMeta} />
+            <SearchDiagnosticsBanner meta={searchMeta} />
 
             {/* Results header with view toggle */}
             {searchResults.length > 0 && (
@@ -6869,7 +7357,7 @@ export default function UnifiedSearchModal({
                     {/* Document content preview */}
                     {isLoadingDocumentDetails ? (
                       <div className="flex-1 flex items-center justify-center p-4 animate-loading-fade">
-                        <RefreshCw className="w-5 h-5 text-system-gray-300 animate-spin animate-loading-content" />
+                        <RefreshCw className="w-5 h-5 text-system-gray-300 animate-spin" />
                       </div>
                     ) : (
                       (selectedDocumentDetails?.analysis?.extractedText ||
@@ -7062,6 +7550,15 @@ export default function UnifiedSearchModal({
                 aria-label="Graph Controls"
               >
                 <div className="px-4 py-3 border-b border-system-gray-100 bg-system-gray-50/50">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => setActiveTab('search')}
+                    className="mb-1 -ml-1 text-system-gray-500 hover:text-stratosort-blue"
+                  >
+                    <ChevronLeft className="w-3 h-3" />
+                    <span className="text-xs">Discover</span>
+                  </Button>
                   <div className="flex items-center justify-between gap-2">
                     <Text
                       as="div"
@@ -8433,8 +8930,7 @@ export default function UnifiedSearchModal({
                     fitViewOptions={rfFitViewOptions}
                     minZoom={0.2}
                     maxZoom={2}
-                    zoomOnScroll={false}
-                    // Wheel scrolling should scroll the modal page; panning is available via drag.
+                    zoomOnScroll
                     panOnScroll={false}
                     defaultViewport={rfDefaultViewport}
                     proOptions={rfProOptions}
@@ -9124,7 +9620,7 @@ export default function UnifiedSearchModal({
                           {/* Content Preview */}
                           {isLoadingDocumentDetails ? (
                             <div className="flex items-center justify-center p-4 animate-loading-fade">
-                              <RefreshCw className="w-5 h-5 text-system-gray-300 animate-spin animate-loading-content" />
+                              <RefreshCw className="w-5 h-5 text-system-gray-300 animate-spin" />
                             </div>
                           ) : (
                             (selectedDocumentDetails?.analysis?.extractedText ||
