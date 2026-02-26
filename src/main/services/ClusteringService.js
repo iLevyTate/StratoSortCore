@@ -1124,6 +1124,30 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
 
     const getMemberPath = (member) => coerceIndexedPath(member?.metadata || {}, member?.id || '');
 
+    const getParentFolderBaseName = (filePath) => {
+      const rawPath = String(filePath || '').trim();
+      if (!rawPath) return '';
+
+      // Fast path for platform-native separators.
+      const platformDir = path.dirname(rawPath);
+      const platformBase = path.basename(platformDir);
+      if (platformBase && platformBase !== '.' && platformBase !== path.sep) {
+        return platformBase;
+      }
+
+      // Cross-platform fallback: treat both slash styles as valid separators.
+      const normalized = rawPath.replace(/\\/g, '/').replace(/\/+$/g, '');
+      if (!normalized) return '';
+
+      const segments = normalized.split('/').filter(Boolean);
+      if (segments.length < 2) return '';
+
+      const parent = segments[segments.length - 2];
+      // Ignore bare drive designators ("C:") as folder labels.
+      if (/^[A-Za-z]:$/.test(parent)) return '';
+      return parent || '';
+    };
+
     const getExtensionKey = (filePath) => {
       const ext = (path.extname(String(filePath || '')) || '').toLowerCase();
       return ext.replace(/^\./, '');
@@ -1213,9 +1237,7 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
         .map((m) => {
           const p = getMemberPath(m);
           if (!p) return '';
-          const dir = path.dirname(p);
-          const base = path.basename(dir);
-          return base || '';
+          return getParentFolderBaseName(p);
         })
         .filter(Boolean);
       const dominantFolderName = getMostFrequentKey(parentFolderNames) || null;

@@ -25,7 +25,9 @@ const createService = () => {
   const analysisHistoryService = {
     analysisHistory: { metadata: { totalEntries: 0 }, entries: {} }
   };
-  const parallelEmbeddingService = {};
+  const parallelEmbeddingService = {
+    embedText: jest.fn().mockResolvedValue({ vector: [0.1, 0.2, 0.3], model: 'test-embed' })
+  };
 
   const service = new SearchService({
     vectorDbService,
@@ -189,6 +191,28 @@ describe('SearchService', () => {
       expect(result.mode).toBe('bm25-fallback');
       expect(result.meta?.fallback).toBe(true);
       expect(result.meta?.vectorTimedOut).toBe(true);
+    });
+
+    test('hybrid mode falls back when query embedding precompute times out', async () => {
+      const service = createService();
+      service.bm25Search = jest.fn().mockResolvedValue([{ id: 'doc', score: 0.9 }]);
+      service._vectorSearchWithTimeout = jest
+        .fn()
+        .mockResolvedValue({ results: [{ id: 'vec', score: 0.8 }], timedOut: false });
+      service._buildQueryEmbeddingWithTimeout = jest.fn().mockResolvedValue({
+        embedding: null,
+        timedOut: true,
+        error: 'query embedding timeout'
+      });
+
+      const result = await service.hybridSearch('test query', { mode: 'hybrid', topK: 5 });
+
+      expect(service._vectorSearchWithTimeout).not.toHaveBeenCalled();
+      expect(result.mode).toBe('bm25-fallback');
+      expect(result.meta?.fallback).toBe(true);
+      expect(result.meta?.fallbackReason).toBe('query embedding timeout');
+      expect(Array.isArray(result.meta?.warnings)).toBe(true);
+      expect(result.meta?.warnings[0]?.type).toBe('QUERY_EMBEDDING_UNAVAILABLE');
     });
 
     test('hybrid mode skips chunk search when chunkWeight is 0', async () => {
