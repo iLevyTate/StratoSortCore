@@ -49,6 +49,32 @@ NODE_ENV=development STRATOSORT_FORCE_SOFTWARE_GPU=1 \
 The app will use the CPU-only `@node-llama-cpp/linux-x64` binary and run AI inference on CPU (slow
 but functional).
 
+### SIGILL with large models in Electron on Firecracker VMs
+
+The default 1.9 GB text model (`Llama-3.2-3B-Instruct-Q4_K_M.gguf`) crashes with SIGILL inside
+Electron's runtime (Node v24) on Firecracker VMs. The prebuilt binary works in standalone Node.js
+v20 but fails during `loadModel` in Electron for models over ~500 MB.
+
+**Workaround:** Use the smaller Qwen 0.5B model (~469 MB) which loads and runs successfully:
+
+```bash
+# Download the smaller model
+curl -L -o ~/.config/stratosort-core/models/qwen2.5-0.5b-instruct-q4_k_m.gguf \
+  "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf"
+
+# Update settings to use it
+python3 -c "
+import json
+f = '$HOME/.config/StratoSort Core/settings.json'
+with open(f) as fh: s = json.load(fh)
+s['textModel'] = 'qwen2.5-0.5b-instruct-q4_k_m.gguf'
+with open(f, 'w') as fh: json.dump(s, fh, indent=2)
+"
+```
+
+With this model, the full pipeline works: file import → AI analysis (90-95% confidence, ~50s/file on
+CPU) → organization suggestions → semantic search.
+
 ### Pre-existing test note
 
 `platformUtils.test.js` has one failing test on Linux (`joinPath` produces backslashes). This is a
@@ -62,9 +88,9 @@ Download test files from the shared Google Drive folder for manual QA:
 https://drive.google.com/drive/folders/1EiF1KVvxqvavgYY-WgxADyMe7jvhO_ND?usp=drive_link
 ```
 
-Use `gdown --folder <URL> -O /home/ubuntu/test-documents-gdrive/` to fetch them. The folder
-contains 24 files across many types (PDF, PPTX, PNG, JPG, PSD, AI, MP4, Python, JS, SQL, CSS, HTML,
-YAML, INI, STL, OBJ, GCODE, SCAD, 3MF, EPS, BMP).
+Use `gdown --folder <URL> -O /home/ubuntu/test-documents-gdrive/` to fetch them. The folder contains
+24 files across many types (PDF, PPTX, PNG, JPG, PSD, AI, MP4, Python, JS, SQL, CSS, HTML, YAML,
+INI, STL, OBJ, GCODE, SCAD, 3MF, EPS, BMP).
 
 ### Model downloads
 
