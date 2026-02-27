@@ -168,6 +168,19 @@ Toast notifications confirm actions:
 - "Added N new files for analysis"
 - "Starting AI analysis of N files..."
 
+### Analysis Complete
+
+When analysis finishes, a completion banner appears:
+
+![Analysis Complete](../e2e-screenshots/33_analysis_complete_5_files.webp)
+
+- Green status dot with "Analysis complete · 5 ready"
+- Toast notification: "Analysis complete! 5 files ready"
+- Results summary: "5 successful, 0 failed"
+- **Clear Queue** button to reset
+
+The app automatically advances to the Organize phase once analysis is done.
+
 ### Naming Strategy
 
 Click **Naming Strategy** in the upper right to configure how files are renamed:
@@ -208,13 +221,36 @@ and approve where each file should be moved and what it should be renamed to.
 > Discover phase. Navigation is enforced — the tab shows a count badge and a tooltip
 > explaining why it may be disabled.
 
-![Navigation Disabled](../e2e-screenshots/18_navigation_disabled.webp)
+### File Grid with AI Suggestions
 
-### Features
+![Organize Phase](../e2e-screenshots/34_organize_phase_ai_suggestions.webp)
 
-- **File Grid** — Virtualized grid showing each analyzed file with its suggested category,
-  destination folder, and new filename
-- **Bulk Operations** — Select multiple files and apply batch changes (category, destination)
+Each file card shows:
+- **Original filename** with "Ready" badge
+- **Suggested Name** — AI-generated filename following your naming convention
+- **Category** dropdown — editable destination folder
+- **Confidence level** — color-coded percentage (green = high)
+- **Details** link — view the full AI analysis
+
+Example AI suggestions from a real analysis:
+
+| Original File | Suggested Name | Confidence |
+|:-------------|:---------------|:-----------|
+| invoice-2026-0042.txt | consulting-invoice-2026-02-27.txt | 100% |
+| meeting-notes.txt | product-plan-session-notes-2026-02-27.txt | 95% |
+| onboarding-checklist.txt | onboarding-checklist-2026-02-27.txt | 100% |
+
+### Batch Operations
+
+![Batch Actions](../e2e-screenshots/39_organize_batch_actions.webp)
+
+Click **Select All** to check all files, then use:
+- **Approve Selected** — Accept AI suggestions for all selected files
+- **Bulk Edit** — Change category or name pattern for multiple files at once
+- **Deselect All** — Clear the selection
+
+### Additional Features
+
 - **Status Overview** — Summary modal showing ready/pending/conflict counts
 - **Conflict Detection** — Highlights files with duplicate destination paths
 - **Execute Organization** — Moves and renames files according to approved suggestions
@@ -248,13 +284,41 @@ The widget provides:
 
 ### Knowledge OS Full Interface
 
-![Knowledge OS Full](../e2e-screenshots/17_knowledge_os_full.webp)
+After files are analyzed and embedded, Knowledge OS shows indexed content:
+
+![Knowledge OS Indexed](../e2e-screenshots/36_knowledge_os_indexed.webp)
+
+The status bar shows "1 folder · 5 files indexed" confirming embeddings are built. Search
+tips guide users on natural language queries.
+
+#### Searching for Files
+
+Type a keyword or natural language description in the search bar:
+
+**Keyword search — "invoice":**
+
+![Invoice Search](../e2e-screenshots/37_knowledge_os_search_invoice.webp)
+
+- Found "Consulting Invoice.txt" with 100% confidence
+- Tags extracted: consulting, invoice, business, consulting services, amount, due, March 15 2026
+- File preview shows full content and path
+- Action buttons: View in Graph, Ask AI, filter by Type
+
+**Natural language search — "meeting notes about product planning":**
+
+![Natural Language Search](../e2e-screenshots/38_knowledge_os_search_natural_language.webp)
+
+- Found "product_plan_session_notes.txt" with 95% confidence
+- Tags: product planning, meeting notes, action items, redesign homepage, update API docs
+- Full content preview with original file path
+- **Open File** button to launch the file directly
 
 #### Discover Tab (Default)
 - **Search bar** — Describe what you're looking for in natural language
-- **Results list** — Files ranked by semantic relevance
-- **File preview** — Content preview panel on the right
+- **Results list** — Files ranked by semantic relevance with confidence scores
+- **File preview** — Content preview, tags, and actions on the right
 - **Status indicators** — Folder count and indexed file count
+- **View in Graph** — Visualize relationships between search results
 
 #### Understand Tab
 - Document summaries and extracted concepts
@@ -267,7 +331,9 @@ The widget provides:
 
 ### Building the Search Index
 
-Knowledge OS requires embeddings to function. Two options:
+Knowledge OS requires embeddings to function. Embeddings are generated automatically during
+analysis when "Embedding Timing" is set to "During analysis" (the default). Two manual
+rebuild options are also available:
 - **Build Folder Embeddings** — Index files in Smart Folders
 - **Build File Embeddings** — Index all analyzed files
 
@@ -424,6 +490,7 @@ interactions:
 | `03_discover_analysis_and_model_setup.mp4` | ~3 min | Model download wizard with progress, "Continue with limited AI" bypass, file scanning |
 | `04_settings_search_and_navigation.mp4` | ~3 min | Settings panel overview (6 sections), Search widget, Knowledge OS full interface, navigation states |
 | `05_settings_deep_dive_and_scan_folder.mp4` | ~12 min | All 6 settings sections expanded with every option visible, Scan Folder feature demonstration |
+| `06_organize_and_knowledge_os_demo.mp4` | ~4 min | **Working AI analysis results**, Organize phase with suggestions, Knowledge OS semantic search with real results, batch operations |
 
 ---
 
