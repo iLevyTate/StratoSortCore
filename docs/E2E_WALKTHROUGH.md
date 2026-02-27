@@ -170,9 +170,7 @@ Toast notifications confirm actions:
 
 ### Analysis Complete
 
-When analysis finishes, a completion banner appears:
-
-![Analysis Complete](../e2e-screenshots/33_analysis_complete_5_files.webp)
+When analysis finishes, a completion banner appears with:
 
 - Green status dot with "Analysis complete · 5 ready"
 - Toast notification: "Analysis complete! 5 files ready"
@@ -241,8 +239,6 @@ Example AI suggestions from a real analysis:
 | onboarding-checklist.txt | onboarding-checklist-2026-02-27.txt | 100% |
 
 ### Batch Operations
-
-![Batch Actions](../e2e-screenshots/39_organize_batch_actions.webp)
 
 Click **Select All** to check all files, then use:
 - **Approve Selected** — Accept AI suggestions for all selected files
