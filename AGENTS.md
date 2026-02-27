@@ -58,8 +58,10 @@ v20 but fails during `loadModel` in Electron for models over ~500 MB.
 **Workaround:** Use the smaller Qwen 0.5B model (~469 MB) which loads and runs successfully:
 
 ```bash
-# Download the smaller model
-curl -L -o ~/.config/stratosort-core/models/qwen2.5-0.5b-instruct-q4_k_m.gguf \
+# Download the smaller model into the CORRECT userData models directory
+# IMPORTANT: The app's LlamaService looks in ~/.config/StratoSort Core/models/ (with space),
+# NOT ~/.config/stratosort-core/models/ (the legacy postinstall path).
+curl -L -o "$HOME/.config/StratoSort Core/models/qwen2.5-0.5b-instruct-q4_k_m.gguf" \
   "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf"
 
 # Update settings to use it
@@ -71,6 +73,13 @@ s['textModel'] = 'qwen2.5-0.5b-instruct-q4_k_m.gguf'
 with open(f, 'w') as fh: json.dump(s, fh, indent=2)
 "
 ```
+
+**Model directory note:** The `postinstall` script downloads models to
+`~/.config/stratosort-core/models/` (lowercase, no space), but the running app resolves
+models via `app.getPath('userData')` which is `~/.config/StratoSort Core/models/` (with
+space). If a model exists only in the legacy path, the LlamaService will not find it and will
+fall back to the default large model (which crashes). Always place models in the userData
+path.
 
 With this model, the full pipeline works: file import → AI analysis (90-95% confidence, ~50s/file on
 CPU) → organization suggestions → semantic search.
