@@ -316,14 +316,81 @@ Type a keyword or natural language description in the search bar:
 - **Status indicators** — Folder count and indexed file count
 - **View in Graph** — Visualize relationships between search results
 
-#### Understand Tab
-- Document summaries and extracted concepts
-- Citation previews
+#### Understand Tab — AI Conversational Chat
 
-#### Relate Tab
-- Knowledge Graph visualization
-- Document comparison
-- Gap analysis
+![Understand Tab](../e2e-screenshots/46_understand_tab_chat.webp)
+
+The Understand tab is a RAG (Retrieval-Augmented Generation) chat interface for asking
+questions about your documents in natural language.
+
+Features:
+- **New Chat** button to start a conversation
+- **Search chats** to find past conversations
+- **Chat input** — "Ask a question about your documents (e.g., 'Summarize my tax returns')..."
+- **Ctrl+Enter** to send messages
+
+When you ask a question, the AI:
+1. Searches your indexed documents for relevant sources
+2. Shows "Searching documents..." then "Found N relevant sources..."
+3. Generates a contextual answer using the matched content
+
+![AI Searching](../e2e-screenshots/47_understand_ai_searching.webp)
+![AI Found Sources](../e2e-screenshots/48_understand_ai_found_sources.webp)
+
+#### Relate Tab — Knowledge Graph Visualization
+
+![Relate Tab](../e2e-screenshots/50_relate_tab_cluster.webp)
+
+The Relate tab provides an interactive Knowledge Graph for exploring relationships between
+your documents. The interface has three panels:
+
+**Left Panel — Graph Controls:**
+- **Current graph** stats (Nodes, Links, Filters)
+- **Insights** — AI-generated organizational analysis
+- **Add to Graph** — Search and add files to the visualization
+- **Explore** / **Actions** / **Advanced** sections
+
+**Center — Graph Canvas:**
+- Interactive node-link diagram with clusters
+- **Clusters On/Off** toggle
+- Zoom (+/−) and pan controls
+- Double-click clusters to expand into individual files
+
+**Right Panel — Legend & Node Details:**
+- Node type legend: Cluster (orange), File (blue), Query (purple)
+- Connection types: Shared Tags, Same Category, Content Match, Vector Similarity
+- File category colors: Documents, Images, Audio, Spreadsheets, Code, Videos
+- Cluster confidence indicators
+
+##### Cluster Exploration
+
+![Cluster Details](../e2e-screenshots/51_relate_cluster_details.webp)
+
+Clicking a cluster shows:
+- File count and confidence level
+- **WHY THIS CLUSTER** — Common tags/themes across files
+- **WHY CONNECTED** — Per-file connection reasons (Related content, Similarity connection)
+- **Show only cluster** / **Show neighbors** buttons
+
+##### Expanded Cluster View
+
+![Cluster Expanded](../e2e-screenshots/52_relate_cluster_expanded.webp)
+
+Double-clicking a cluster expands it to show individual file nodes with relationship edges.
+The tooltip reads "4 related files. Right-click cluster to organize them."
+
+##### Graph Insights
+
+![Insights](../e2e-screenshots/53_relate_insights.webp)
+
+The Insights panel provides organizational health metrics:
+- **Topic clusters** count
+- **Bridge documents** — files connecting different topic areas
+- **Near-duplicates** — potential duplicate files detected
+- **Scattered files** — orphan files without clear grouping
+- **Organizational Health** score (A through F, with percentage)
+
+![Full Graph with Legend](../e2e-screenshots/54_relate_full_graph_legend.webp)
 
 ### Building the Search Index
 
@@ -487,6 +554,8 @@ interactions:
 | `04_settings_search_and_navigation.mp4` | ~3 min | Settings panel overview (6 sections), Search widget, Knowledge OS full interface, navigation states |
 | `05_settings_deep_dive_and_scan_folder.mp4` | ~12 min | All 6 settings sections expanded with every option visible, Scan Folder feature demonstration |
 | `06_organize_and_knowledge_os_demo.mp4` | ~4 min | **Working AI analysis results**, Organize phase with suggestions, Knowledge OS semantic search with real results, batch operations |
+| `07_prod_organize_and_knowledge_os.mp4` | ~3 min | Production AppImage: Organize phase, Search widget, Knowledge OS Discover tab searches |
+| `08_knowledge_os_all_tabs_complete.mp4` | ~8 min | **All Knowledge OS tabs**: Discover search, Understand (AI chat with RAG), Relate (Knowledge Graph with clusters, insights, legend) |
 
 ---
 
