@@ -1,20 +1,58 @@
 describe('platform utils', () => {
-  function loadPlatform(platform) {
+  let savedNavigator;
+
+  beforeEach(() => {
+    savedNavigator = global.navigator;
+  });
+
+  afterEach(() => {
+    document.body.className = '';
+    try {
+      Object.defineProperty(global, 'navigator', {
+        value: savedNavigator,
+        configurable: true,
+        writable: true
+      });
+    } catch {
+      // Restore failed; not critical for cleanup
+    }
+  });
+
+  test('joinPath and normalizePath on Linux use forward slashes', () => {
     jest.resetModules();
     document.body.className = '';
-    if (platform) {
-      Object.defineProperty(global, 'navigator', {
-        value: { userAgentData: { platform }, platform },
-        configurable: true
-      });
-    } else {
-      delete global.navigator;
-    }
-    return require('../src/renderer/utils/platform');
-  }
+    Object.defineProperty(global, 'navigator', {
+      value: { userAgentData: { platform: 'Linux' }, platform: 'Linux' },
+      configurable: true,
+      writable: true
+    });
+
+    let mod;
+    jest.isolateModules(() => {
+      mod = require('../src/renderer/utils/platform');
+    });
+    const { joinPath, normalizePath, applyPlatformClass } = mod;
+
+    expect(joinPath('/usr', 'local/bin')).toBe('/usr/local/bin');
+    expect(normalizePath('/usr//local///bin')).toBe('/usr/local/bin');
+    expect(applyPlatformClass()).toBe('platform-linux');
+    expect(document.body.classList.contains('platform-linux')).toBe(true);
+  });
 
   test('joinPath and normalizePath on Windows preserve separators', () => {
-    const { joinPath, normalizePath, applyPlatformClass } = loadPlatform('Windows');
+    jest.resetModules();
+    document.body.className = '';
+    Object.defineProperty(global, 'navigator', {
+      value: { userAgentData: { platform: 'Windows' }, platform: 'Windows' },
+      configurable: true,
+      writable: true
+    });
+
+    let mod;
+    jest.isolateModules(() => {
+      mod = require('../src/renderer/utils/platform');
+    });
+    const { joinPath, normalizePath, applyPlatformClass } = mod;
 
     expect(joinPath('C:\\\\Users', 'Alice/Docs')).toBe('C:\\Users\\Alice\\Docs');
     const normalized = normalizePath('\\\\\\\\server//share\\\\folder');
@@ -22,15 +60,6 @@ describe('platform utils', () => {
     expect(normalized.replace(/^\\\\+/, '\\\\')).toBe('\\\\server\\share\\folder');
     expect(applyPlatformClass()).toBe('platform-win32');
     expect(document.body.classList.contains('platform-win32')).toBe(true);
-  });
-
-  test('joinPath and normalizePath on Linux use forward slashes', () => {
-    const { joinPath, normalizePath, applyPlatformClass } = loadPlatform('Linux');
-
-    expect(joinPath('/usr', 'local/bin')).toBe('/usr/local/bin');
-    expect(normalizePath('/usr//local///bin')).toBe('/usr/local/bin');
-    expect(applyPlatformClass()).toBe('platform-linux');
-    expect(document.body.classList.contains('platform-linux')).toBe(true);
   });
 });
 /**
