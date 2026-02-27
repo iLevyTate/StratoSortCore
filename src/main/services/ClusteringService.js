@@ -9,6 +9,7 @@
 
 const { createLogger } = require('../../shared/logger');
 const path = require('path');
+const fs = require('fs');
 const {
   cosineSimilarity,
   squaredEuclideanDistance,
@@ -19,6 +20,8 @@ const { AI_DEFAULTS } = require('../../shared/constants');
 const { FILE_TYPE_CATEGORIES } = require('./autoOrganize/fileTypeUtils');
 
 const logger = createLogger('ClusteringService');
+const fsPromises = fs.promises;
+const SEMANTIC_ID_PREFIX_RE = /^(file|image):/i;
 // -----------------------------------------------------------------------------
 // Distinctive term extraction (for "topic" insights)
 // -----------------------------------------------------------------------------
@@ -133,6 +136,103 @@ const FILE_TYPE_STOPWORDS = (() => {
     return new Set();
   }
 })();
+
+const normalizeSemanticTerm = (value) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '');
+
+const isMeaningfulSemanticTerm = (term, { minLength = 2 } = {}) => {
+  const normalized = normalizeSemanticTerm(term);
+  if (!normalized || normalized.length < minLength) return false;
+  if (/^\d+$/.test(normalized)) return false;
+  if (STOPWORDS.has(normalized)) return false;
+  if (FILE_TYPE_STOPWORDS.has(normalized)) return false;
+  return true;
+};
+
+const toMeaningfulTermList = (terms, { maxTerms = Infinity, minLength = 2 } = {}) => {
+  if (!Array.isArray(terms) || terms.length === 0) return [];
+  const seen = new Set();
+  const result = [];
+  for (const term of terms) {
+    const normalized = normalizeSemanticTerm(term);
+    if (!isMeaningfulSemanticTerm(normalized, { minLength })) continue;
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
+    if (result.length >= maxTerms) break;
+  }
+  return result;
+};
+
+const stripSemanticIdPrefix = (value) => String(value || '').replace(SEMANTIC_ID_PREFIX_RE, '');
+
+const coerceIndexedPath = (metadata, id) => {
+  const metaPath =
+    typeof metadata?.path === 'string' && metadata.path.trim()
+      ? metadata.path.trim()
+      : typeof metadata?.filePath === 'string' && metadata.filePath.trim()
+        ? metadata.filePath.trim()
+        : '';
+  if (metaPath) return metaPath;
+
+  const fromId = stripSemanticIdPrefix(id).trim();
+  if (!fromId) return '';
+  if (/^[A-Za-z]:[\\/]/.test(fromId) || fromId.startsWith('/') || /[\\/]/.test(fromId)) {
+    return fromId;
+  }
+  return '';
+};
+
+const coerceIndexedName = (metadata, resolvedPath, id) => {
+  const metaName =
+    typeof metadata?.name === 'string' && metadata.name.trim()
+      ? metadata.name.trim()
+      : typeof metadata?.fileName === 'string' && metadata.fileName.trim()
+        ? metadata.fileName.trim()
+        : '';
+  if (metaName) return metaName;
+
+  if (resolvedPath) {
+    const base = path.basename(resolvedPath);
+    if (base && base !== '.' && base !== resolvedPath) return base;
+  }
+
+  const fromId = stripSemanticIdPrefix(id).trim();
+  if (fromId) {
+    const base = path.basename(fromId);
+    if (base && base !== '.' && base !== fromId) return base;
+  }
+
+  return String(id || '').trim() || 'Indexed file';
+};
+
+const normalizeIndexedMetadata = (metadata, id) => {
+  const normalized = metadata && typeof metadata === 'object' ? { ...metadata } : {};
+  const resolvedPath = coerceIndexedPath(normalized, id);
+  const resolvedName = coerceIndexedName(normalized, resolvedPath, id);
+  if (resolvedPath) {
+    normalized.path = resolvedPath;
+    normalized.filePath = resolvedPath;
+  }
+  if (resolvedName) {
+    normalized.name = resolvedName;
+    normalized.fileName = resolvedName;
+  }
+  return normalized;
+};
+
+const canAccessPath = async (filePath) => {
+  if (typeof filePath !== 'string' || filePath.trim().length === 0) return true;
+  try {
+    await fsPromises.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 /**
  * Default clustering options
@@ -641,7 +741,8 @@ class ClusteringService {
    * @private
    */
   _getCommonTags(members, threshold = 0.4) {
-    const tagCounts = {};
+    const tagCounts = new Map();
+    const displayByNormalized = new Map();
     members.forEach((m) => {
       // Parse tags from JSON string if needed
       let tags = m.metadata?.tags || [];
@@ -654,16 +755,22 @@ class ClusteringService {
       }
       if (Array.isArray(tags)) {
         tags.forEach((tag) => {
-          if (tag) tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+          const normalized = normalizeSemanticTerm(tag);
+          if (!isMeaningfulSemanticTerm(normalized, { minLength: 2 })) return;
+          const display = String(tag || '').trim();
+          if (!displayByNormalized.has(normalized)) {
+            displayByNormalized.set(normalized, display || normalized);
+          }
+          tagCounts.set(normalized, (tagCounts.get(normalized) || 0) + 1);
         });
       }
     });
 
     const minCount = Math.ceil(members.length * threshold);
-    return Object.entries(tagCounts)
+    return Array.from(tagCounts.entries())
       .filter(([, count]) => count >= minCount)
-      .sort((a, b) => b[1] - a[1])
-      .map(([tag]) => tag);
+      .sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : a[0].localeCompare(b[0])))
+      .map(([normalized]) => displayByNormalized.get(normalized) || normalized);
   }
 
   /**
@@ -690,10 +797,7 @@ class ClusteringService {
       const MAX_FIELD_TOKENS = 80;
       for (let i = 0; i < matches.length && i < MAX_FIELD_TOKENS; i++) {
         const raw = matches[i];
-        if (!raw || raw.length < 3) continue;
-        if (/^\d+$/.test(raw)) continue; // digits-only tokens are rarely helpful as topics
-        if (STOPWORDS.has(raw)) continue;
-        if (FILE_TYPE_STOPWORDS.has(raw)) continue;
+        if (!isMeaningfulSemanticTerm(raw, { minLength: 3 })) continue;
 
         // Normalize common underscore/camel artifacts already handled by regex; just keep.
         tokenSet.add(raw);
@@ -1018,12 +1122,30 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
       return Number.isFinite(ms) ? ms : null;
     };
 
-    const getMemberPath = (member) => {
-      const metaPath = member?.metadata?.path;
-      if (typeof metaPath === 'string' && metaPath.trim()) return metaPath;
-      const id = member?.id;
-      if (typeof id !== 'string') return '';
-      return id.replace(/^(file|image):/, '');
+    const getMemberPath = (member) => coerceIndexedPath(member?.metadata || {}, member?.id || '');
+
+    const getParentFolderBaseName = (filePath) => {
+      const rawPath = String(filePath || '').trim();
+      if (!rawPath) return '';
+
+      // Fast path for platform-native separators.
+      const platformDir = path.dirname(rawPath);
+      const platformBase = path.basename(platformDir);
+      if (platformBase && platformBase !== '.' && platformBase !== path.sep) {
+        return platformBase;
+      }
+
+      // Cross-platform fallback: treat both slash styles as valid separators.
+      const normalized = rawPath.replace(/\\/g, '/').replace(/\/+$/g, '');
+      if (!normalized) return '';
+
+      const segments = normalized.split('/').filter(Boolean);
+      if (segments.length < 2) return '';
+
+      const parent = segments[segments.length - 2];
+      // Ignore bare drive designators ("C:") as folder labels.
+      if (/^[A-Za-z]:$/.test(parent)) return '';
+      return parent || '';
     };
 
     const getExtensionKey = (filePath) => {
@@ -1115,9 +1237,7 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
         .map((m) => {
           const p = getMemberPath(m);
           if (!p) return '';
-          const dir = path.dirname(p);
-          const base = path.basename(dir);
-          return base || '';
+          return getParentFolderBaseName(p);
         })
         .filter(Boolean);
       const dominantFolderName = getMostFrequentKey(parentFolderNames) || null;
@@ -1189,6 +1309,34 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
     if (!cluster) return [];
 
     const memberIds = cluster.members.map((m) => m.id);
+    const buildMembers = (freshMetadata = null) =>
+      cluster.members.map((member) => ({
+        id: member.id,
+        metadata: normalizeIndexedMetadata(
+          (freshMetadata && freshMetadata.get(member.id)) || member.metadata || {},
+          member.id
+        )
+      }));
+
+    const filterMissingMembers = async (members) => {
+      const checks = await Promise.all(
+        members.map(async (member) => {
+          const resolvedPath = coerceIndexedPath(member?.metadata || {}, member?.id || '');
+          const exists = await canAccessPath(resolvedPath);
+          return { member, exists };
+        })
+      );
+      const existingMembers = checks.filter((item) => item.exists).map((item) => item.member);
+      const missingCount = checks.length - existingMembers.length;
+      if (missingCount > 0) {
+        logger.info('[ClusteringService] Filtered missing cluster members', {
+          clusterId,
+          removed: missingCount,
+          total: checks.length
+        });
+      }
+      return existingMembers;
+    };
 
     // Fetch fresh metadata from the vector DB to get current file paths/names
     try {
@@ -1204,6 +1352,7 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
               freshMetadata.set(id, {
                 path: doc.filePath,
                 filePath: doc.filePath,
+                name: doc.fileName,
                 fileName: doc.fileName,
                 fileType: doc.fileType,
                 model: doc.extractionMethod || 'unknown'
@@ -1217,21 +1366,15 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
 
       if (freshMetadata.size === 0) {
         logger.warn('[ClusteringService] Vector DB returned no results, using cached metadata');
-        return cluster.members.map((m) => ({ id: m.id, metadata: m.metadata }));
+        return await filterMissingMembers(buildMembers());
       }
 
       // Return members with fresh metadata (current paths and names)
-      return cluster.members.map((m) => ({
-        id: m.id,
-        metadata: freshMetadata.get(m.id) || m.metadata
-      }));
+      return await filterMissingMembers(buildMembers(freshMetadata));
     } catch (error) {
       logger.warn('[ClusteringService] Failed to fetch fresh metadata, using cached:', error);
       // Fallback to cached metadata
-      return cluster.members.map((m) => ({
-        id: m.id,
-        metadata: m.metadata
-      }));
+      return await filterMissingMembers(buildMembers());
     }
   }
 
@@ -1286,6 +1429,19 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
 
     if (!clusterA || !clusterB) return [];
     if (!Array.isArray(centroidA) || !Array.isArray(centroidB)) return [];
+    const pathExistsCache = new Map();
+    const pathExists = (candidatePath) => {
+      if (typeof candidatePath !== 'string' || candidatePath.trim().length === 0) return true;
+      if (pathExistsCache.has(candidatePath)) return pathExistsCache.get(candidatePath);
+      let exists;
+      try {
+        exists = fs.existsSync(candidatePath);
+      } catch {
+        exists = false;
+      }
+      pathExistsCache.set(candidatePath, exists);
+      return exists;
+    };
 
     const candidatesA = this._selectBridgeCandidates(
       clusterA.members,
@@ -1305,11 +1461,14 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
         if (!Array.isArray(vector) || vector.length !== otherCentroid.length) continue;
         const sim = cosineSimilarity(vector, otherCentroid);
         if (sim < minBridgeSimilarity) continue;
-        const meta = member?.metadata || {};
+        const normalizedMeta = normalizeIndexedMetadata(member?.metadata || {}, member?.id || '');
+        const resolvedPath = coerceIndexedPath(normalizedMeta, member?.id || '');
+        if (resolvedPath && !pathExists(resolvedPath)) continue;
+        const resolvedName = coerceIndexedName(normalizedMeta, resolvedPath, member?.id || '');
         scored.push({
           id: member.id,
-          name: meta.name || meta.path || member.id,
-          path: meta.path || null,
+          name: resolvedName,
+          path: resolvedPath || null,
           similarity: Math.round(sim * 100) / 100,
           clusterId: `cluster:${clusterId}`
         });
@@ -1363,7 +1522,7 @@ Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials",
                 : Array.isArray(cluster?.commonTags) && cluster.commonTags.length > 0
                   ? cluster.commonTags
                   : [];
-            return t.filter((x) => typeof x === 'string' && x.trim().length > 0);
+            return toMeaningfulTermList(t, { maxTerms: 20, minLength: 2 });
           };
 
           const termsA = pickTerms(clusterA);

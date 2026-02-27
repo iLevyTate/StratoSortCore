@@ -578,7 +578,9 @@ function NavigationBar() {
         fixed inset-x-0 top-0 z-[100]
         border-b border-border-soft/60
         backdrop-blur-xl backdrop-saturate-150
-        transition-all duration-300 ease-out
+        [transition-property:background-color,box-shadow,border-color]
+        [transition-duration:var(--motion-duration-standard)]
+        [transition-timing-function:var(--motion-ease-standard)]
         ${isScrolled ? 'bg-white/95 shadow-md' : 'bg-white/85 shadow-sm'}
       `}
       style={{

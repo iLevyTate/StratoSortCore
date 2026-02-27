@@ -108,7 +108,7 @@ function VirtualizedProcessedFiles({ files, isLoading = false }) {
         {[...Array(3)].map((_, i) => (
           <div
             key={i}
-            className="h-16 rounded-xl border border-border-soft bg-system-gray-100 animate-pulse animate-loading-content"
+            className="h-16 rounded-xl border border-border-soft bg-system-gray-100 animate-pulse"
           />
         ))}
       </div>

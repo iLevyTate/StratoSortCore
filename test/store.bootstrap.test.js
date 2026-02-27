@@ -160,4 +160,34 @@ describe('store bootstrap persistence recovery', () => {
     expect(Array.isArray(state.analysis.results)).toBe(true);
     expect(Array.isArray(state.system.notifications)).toBe(true);
   });
+
+  test('normalizes stale analyzing file states on startup', () => {
+    const persistedState = JSON.stringify({
+      _version: 2,
+      timestamp: Date.now(),
+      ui: { currentPhase: 'discover' },
+      files: {
+        selectedFiles: [{ path: 'C:/docs/a.pdf' }, { path: 'C:/docs/b.pdf' }],
+        smartFolders: [],
+        organizedFiles: [],
+        fileStates: {
+          'C:/docs/a.pdf': { state: 'analyzing' },
+          'C:/docs/b.pdf': { state: 'in_progress' },
+          'C:/docs/c.pdf': { state: 'ready' }
+        }
+      },
+      analysis: {
+        isAnalyzing: true,
+        results: []
+      }
+    });
+
+    const { store } = loadStoreWithStorage({ reduxState: persistedState });
+    const state = store.getState();
+
+    expect(state.analysis.isAnalyzing).toBe(false);
+    expect(state.files.fileStates['C:/docs/a.pdf'].state).toBe('pending');
+    expect(state.files.fileStates['C:/docs/b.pdf'].state).toBe('pending');
+    expect(state.files.fileStates['C:/docs/c.pdf'].state).toBe('ready');
+  });
 });

@@ -93,9 +93,8 @@ const NODE_SIZES = {
  */
 const DEFAULT_OPTIONS = {
   direction: 'RIGHT',
-  spacing: 250, // Increased spacing to reduce overlap
-  layerSpacing: 400, // Increased layer spacing for clarity
   algorithm: 'layered'
+  // spacing and layerSpacing are computed adaptively per-call based on node count
 };
 
 const ALGORITHM_MAP = {
@@ -125,10 +124,15 @@ export async function elkLayout(nodes, edges, options = {}) {
   // Normalize edges to empty array if null/undefined to prevent TypeError on .map()
   const safeEdges = edges || [];
 
+  // Adaptive spacing: tighter for small graphs, wider for large ones
+  const nodeCount = nodes.length;
+  const adaptiveSpacing = nodeCount <= 10 ? 120 : nodeCount <= 30 ? 180 : 250;
+  const adaptiveLayerSpacing = nodeCount <= 10 ? 200 : nodeCount <= 30 ? 300 : 400;
+
   const {
     direction = DEFAULT_OPTIONS.direction,
-    spacing = 250, // Significantly increased from 160 to reduce overlaps
-    layerSpacing = 400, // Increased from 280 to give more breathing room
+    spacing = adaptiveSpacing,
+    layerSpacing = adaptiveLayerSpacing,
     algorithm = DEFAULT_OPTIONS.algorithm
   } = options;
 

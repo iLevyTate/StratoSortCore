@@ -165,7 +165,7 @@ test.describe('Smart Folder Add - UI Flow', () => {
     console.log('[Test] Smart Folders header:', headerText);
   });
 
-  // TODO: Fix - Add Folder selector may not match current SetupPhase UI
+  // TRACKED-ISSUE: Add Folder selector may not match current SetupPhase UI
   // test('should have Add Folder button visible', async () => {
   //   await nav.goToPhase(PHASES.SETUP);
   //   await window.waitForTimeout(500);
@@ -290,7 +290,7 @@ test.describe('Smart Folder Add - Folder Creation', () => {
     await closeApp(app);
   });
 
-  // TODO: Fix - getStats may not return isDirectory; API response shape may differ
+  // TRACKED-ISSUE: getStats may not return isDirectory; API response shape may differ
   // test('should create folder via API and verify on disk', async () => {
   //   const documentsPath = await window.evaluate(async () => {
   //     const result = await window.electronAPI.files.getDocumentsPath();

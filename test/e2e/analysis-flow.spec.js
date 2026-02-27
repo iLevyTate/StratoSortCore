@@ -72,7 +72,7 @@ test.describe('Analysis Flow - Discover Phase', () => {
     await closeApp(app);
   });
 
-  // TODO: Fix Discover phase controls selectors - app may start on Welcome
+  // TRACKED-ISSUE: Discover phase controls selectors - app may start on Welcome
   // test('should show analyze or process control on Discover phase', async () => {
   //   const analyzeControl = window.locator(
   //     'button:has-text("Analyze"), button:has-text("Process"), button:has-text("Start"), button:has-text("Select Files"), button:has-text("Continue to Organize")'

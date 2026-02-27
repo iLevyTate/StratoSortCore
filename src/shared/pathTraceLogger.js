@@ -79,7 +79,7 @@ function generateEventId() {
     return crypto.randomUUID();
   }
   // Fallback for environments without crypto.randomUUID
-  return 'evt-' + Date.now().toString(36) + '-' + Math.random().toString(36).substr(2, 9);
+  return require('crypto').randomUUID();
 }
 
 /**

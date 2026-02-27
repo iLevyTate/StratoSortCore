@@ -335,6 +335,8 @@ export function useAnalysis(options = {}) {
   const analysisProgressRef = useRef(analysisProgress);
   const analysisRunIdRef = useRef(0);
   const lastProgressAtRef = useRef(0);
+  const activeBatchIdRef = useRef(null);
+  const cancelInFlightBatchIdRef = useRef(null);
 
   // Sync refs during render (avoids useEffect overhead)
   isAnalyzingRef.current = isAnalyzing;
@@ -405,6 +407,39 @@ export function useAnalysis(options = {}) {
     };
   }, []);
 
+  const requestMainBatchCancel = useCallback((reason = 'cancelled') => {
+    const batchId = activeBatchIdRef.current;
+    const cancelBatchApi = window?.electronAPI?.analysis?.cancelBatch;
+    if (!batchId || typeof cancelBatchApi !== 'function') {
+      return;
+    }
+    if (cancelInFlightBatchIdRef.current === batchId) {
+      return;
+    }
+
+    cancelInFlightBatchIdRef.current = batchId;
+    Promise.resolve(cancelBatchApi({ batchId, reason }))
+      .then((response) => {
+        logger.info('Main-process batch cancel acknowledged', {
+          batchId,
+          cancelled: Boolean(response?.cancelled),
+          notFound: Boolean(response?.notFound)
+        });
+      })
+      .catch((error) => {
+        logger.warn('Main-process batch cancel request failed', {
+          batchId,
+          reason,
+          error: error?.message
+        });
+      })
+      .finally(() => {
+        if (cancelInFlightBatchIdRef.current === batchId) {
+          cancelInFlightBatchIdRef.current = null;
+        }
+      });
+  }, []);
+
   /**
    * Reset analysis state
    */
@@ -413,6 +448,7 @@ export function useAnalysis(options = {}) {
       logger.info('Resetting analysis state', { reason });
       const activeRunId = analysisRunIdRef.current;
       captureCancelledBatchSnapshot(activeRunId);
+      requestMainBatchCancel('reset-analysis-state');
       analysisRunIdRef.current = activeRunId + 1;
       // Ensure any in-flight analysis is stopped and locks are released.
       if (abortControllerRef.current) {
@@ -445,6 +481,8 @@ export function useAnalysis(options = {}) {
       }
       pendingFilesRef.current = [];
       batchCompletedPathsRef.current.clear();
+      activeBatchIdRef.current = null;
+      cancelInFlightBatchIdRef.current = null;
       flushPendingResults(true);
       requeueInFlightFileStates();
 
@@ -467,6 +505,7 @@ export function useAnalysis(options = {}) {
       setCurrentAnalysisFile,
       setGlobalAnalysisActive,
       captureCancelledBatchSnapshot,
+      requestMainBatchCancel,
       flushPendingResults,
       requeueInFlightFileStates,
       actions
@@ -1015,15 +1054,25 @@ export function useAnalysis(options = {}) {
             updateFileState(file.path, 'analyzing', { fileName });
           }
 
-          let activeBatchId = null;
+          const clientBatchId =
+            globalThis.crypto?.randomUUID?.() ||
+            `analysis_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+          activeBatchIdRef.current = clientBatchId;
+          cancelInFlightBatchIdRef.current = null;
+          let resolvedBatchId = clientBatchId;
           const onBatchProgress = (event) => {
             if (!isActiveRun() || abortSignal.aborted) return;
             const payload = event?.detail;
             if (!payload || payload.type !== 'batch_analyze') return;
-            if (activeBatchId && payload.batchId && payload.batchId !== activeBatchId) return;
-
-            if (!activeBatchId && payload.batchId) {
-              activeBatchId = payload.batchId;
+            if (payload.batchId && payload.batchId !== resolvedBatchId) {
+              // Accept one-time server-side batch id remap for compatibility.
+              if (resolvedBatchId === clientBatchId) {
+                resolvedBatchId = payload.batchId;
+                activeBatchIdRef.current = payload.batchId;
+                cancelInFlightBatchIdRef.current = null;
+              } else {
+                return;
+              }
             }
 
             const previousCompleted = Number(completedCountRef.current) || 0;
@@ -1054,6 +1103,7 @@ export function useAnalysis(options = {}) {
 
           const abortListener = () => {
             window.removeEventListener(BATCH_ANALYSIS_PROGRESS_EVENT, onBatchProgress);
+            requestMainBatchCancel('abort-signal');
           };
           abortSignal.addEventListener('abort', abortListener);
 
@@ -1061,6 +1111,7 @@ export function useAnalysis(options = {}) {
           try {
             const batchResult = await withTimeout(
               batchApi({
+                batchId: clientBatchId,
                 filePaths: uniqueFiles.map((file) => file.path),
                 options: {
                   concurrency,
@@ -1175,6 +1226,12 @@ export function useAnalysis(options = {}) {
           } finally {
             window.removeEventListener(BATCH_ANALYSIS_PROGRESS_EVENT, onBatchProgress);
             abortSignal.removeEventListener('abort', abortListener);
+            if (
+              activeBatchIdRef.current === clientBatchId ||
+              activeBatchIdRef.current === resolvedBatchId
+            ) {
+              activeBatchIdRef.current = null;
+            }
           }
         };
 
@@ -1467,6 +1524,7 @@ export function useAnalysis(options = {}) {
       actions,
       setGlobalAnalysisActive,
       captureCancelledBatchSnapshot,
+      requestMainBatchCancel,
       flushPendingResults,
       applyAnalysisOutcome,
       requeueInFlightFileStates,
@@ -1483,6 +1541,7 @@ export function useAnalysis(options = {}) {
    * Cancel current analysis
    */
   const cancelAnalysis = useCallback(() => {
+    requestMainBatchCancel('user-stop');
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -1512,7 +1571,8 @@ export function useAnalysis(options = {}) {
       clearTimeout(pendingFilesTimeoutRef.current);
       pendingFilesTimeoutRef.current = null;
     }
-    // Cancellation is renderer-local for now; no main-process abort IPC exists.
+    activeBatchIdRef.current = null;
+    cancelInFlightBatchIdRef.current = null;
     flushPendingResults(true);
     // Clear any pending files when cancelling
     pendingFilesRef.current = [];
@@ -1541,6 +1601,7 @@ export function useAnalysis(options = {}) {
     actions,
     addNotification,
     captureCancelledBatchSnapshot,
+    requestMainBatchCancel,
     flushPendingResults,
     requeueInFlightFileStates
   ]);

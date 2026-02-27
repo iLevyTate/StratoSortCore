@@ -89,6 +89,9 @@ export default function ModelSetupWizard({ onComplete, onSkip }) {
   const isMountedRef = useRef(true);
 
   useEffect(() => {
+    // StrictMode mounts effects twice in development; re-arm the mounted flag
+    // so long-running checks and escape timers can still update state.
+    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
     };

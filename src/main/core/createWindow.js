@@ -411,6 +411,11 @@ function createMainWindow() {
   // Wait for webContents to be fully ready before loading content
   let rendererStaticServer = null;
   let isWindowClosed = false;
+  let isStartingRendererServer = false;
+  let rendererRecoveryAttempts = 0;
+  const MAX_RENDERER_RECOVERY_ATTEMPTS = 2;
+  const rendererDistPath = getRendererIndexPath();
+  let _healthCheckTimerId = null;
 
   const closeRendererStaticServer = (server = rendererStaticServer) => {
     if (!server) return;
@@ -424,63 +429,89 @@ function createMainWindow() {
     }
   };
 
-  const loadContent = () => {
-    const renderMissingBundle = (reason, attemptedPath) => {
-      logger.error('[WINDOW] Renderer bundle missing', { reason, attemptedPath });
-      const helpText = isDev
-        ? 'Run `npm run build:dev` or `npm run dev` to generate renderer assets.'
-        : 'Reinstall the app or rebuild the package.';
-      const html = `<!doctype html><html><head><meta charset="utf-8"/><title>StratoSort</title></head><body style="font-family:Segoe UI,Arial,sans-serif;padding:24px;color:#1f2937;background:#f8fafc;"><h1 style="margin:0 0 12px;">StratoSort failed to load</h1><p style="margin:0 0 12px;">${reason}</p><p style="margin:0 0 12px;">${helpText}</p><pre style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px;overflow:auto;">${attemptedPath}</pre></body></html>`;
-      win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => {});
-    };
+  const clearHealthCheckTimer = () => {
+    if (_healthCheckTimerId) {
+      clearTimeout(_healthCheckTimerId);
+      _healthCheckTimerId = null;
+    }
+  };
+  win.once('closed', clearHealthCheckTimer);
+  win.once('destroy', clearHealthCheckTimer);
 
-    const loadRendererFromLocalServer = () => {
-      const distPath = getRendererIndexPath();
-      if (!fs.existsSync(distPath)) {
-        renderMissingBundle('Renderer bundle not found.', distPath);
-        return;
-      }
+  const renderMissingBundle = (reason, attemptedPath) => {
+    logger.error('[WINDOW] Renderer bundle missing', { reason, attemptedPath });
+    const helpText = isDev
+      ? 'Run `npm run build:dev` or `npm run dev` to generate renderer assets.'
+      : 'Reinstall the app or rebuild the package.';
+    const html = `<!doctype html><html><head><meta charset="utf-8"/><title>StratoSort</title></head><body style="font-family:Segoe UI,Arial,sans-serif;padding:24px;color:#1f2937;background:#f8fafc;"><h1 style="margin:0 0 12px;">StratoSort failed to load</h1><p style="margin:0 0 12px;">${reason}</p><p style="margin:0 0 12px;">${helpText}</p><pre style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px;overflow:auto;">${attemptedPath}</pre></body></html>`;
+    win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch((e) => {
+      logger.error('[WINDOW] Failed to load error page', { error: e.message });
+    });
+  };
 
-      const rendererRoot = path.dirname(distPath);
-      startLocalRendererServer(rendererRoot)
-        .then(({ server, url }) => {
-          if (isWindowClosed || win.isDestroyed()) {
-            closeRendererStaticServer(server);
-            return;
-          }
-          if (rendererStaticServer && rendererStaticServer !== server) {
-            closeRendererStaticServer(rendererStaticServer);
-          }
-          rendererStaticServer = server;
-          win.loadURL(url).catch((error) => {
-            logger.error('Failed to load renderer over local HTTP, falling back to file://', {
-              error: error.message
-            });
-            closeRendererStaticServer(server);
-            win.loadFile(distPath).catch((fallbackError) => {
-              renderMissingBundle('Failed to load renderer bundle.', distPath);
-              logger.error('Failed to load renderer bundle:', fallbackError);
-            });
+  const loadRendererFromFileFallback = () => {
+    if (!fs.existsSync(rendererDistPath)) {
+      renderMissingBundle('Renderer bundle not found.', rendererDistPath);
+      return;
+    }
+    win.loadFile(rendererDistPath).catch((fallbackError) => {
+      renderMissingBundle('Failed to load renderer bundle.', rendererDistPath);
+      logger.error('Failed to load renderer bundle:', fallbackError);
+    });
+  };
+
+  const loadRendererFromLocalServer = ({ forceRestart = false } = {}) => {
+    if (!fs.existsSync(rendererDistPath)) {
+      renderMissingBundle('Renderer bundle not found.', rendererDistPath);
+      return;
+    }
+    if (isStartingRendererServer) {
+      logger.debug('[WINDOW] Renderer static server startup already in progress');
+      return;
+    }
+    if (forceRestart && rendererStaticServer) {
+      closeRendererStaticServer(rendererStaticServer);
+    }
+
+    isStartingRendererServer = true;
+    const rendererRoot = path.dirname(rendererDistPath);
+    startLocalRendererServer(rendererRoot)
+      .then(({ server, url }) => {
+        if (isWindowClosed || win.isDestroyed()) {
+          closeRendererStaticServer(server);
+          return;
+        }
+        if (rendererStaticServer && rendererStaticServer !== server) {
+          closeRendererStaticServer(rendererStaticServer);
+        }
+        rendererStaticServer = server;
+        win.loadURL(url).catch((error) => {
+          logger.error('Failed to load renderer over local HTTP, falling back to file://', {
+            error: error.message
           });
-        })
-        .catch((error) => {
-          logger.error('Failed to start local renderer server:', error);
-          win.loadFile(distPath).catch((fallbackError) => {
-            renderMissingBundle('Failed to load renderer bundle.', distPath);
-            logger.error('Failed to load renderer bundle:', fallbackError);
-          });
+          closeRendererStaticServer(server);
+          loadRendererFromFileFallback();
         });
-    };
+      })
+      .catch((error) => {
+        logger.error('Failed to start local renderer server:', error);
+        loadRendererFromFileFallback();
+      })
+      .finally(() => {
+        isStartingRendererServer = false;
+      });
+  };
 
+  const loadContent = () => {
     const useDevServer = isDev && getEnvBool('USE_DEV_SERVER');
     if (useDevServer) {
       win.loadURL('http://localhost:3000').catch((error) => {
         logger.info('Development server not available:', error.message);
         logger.info('Loading from local renderer HTTP server instead...');
-        loadRendererFromLocalServer();
+        loadRendererFromLocalServer({ forceRestart: true });
       });
     } else {
-      loadRendererFromLocalServer();
+      loadRendererFromLocalServer({ forceRestart: true });
     }
   };
 
@@ -599,6 +630,33 @@ function createMainWindow() {
       errorDescription,
       validatedURL
     });
+
+    const isLocalRendererRefusal =
+      errorCode === -102 &&
+      typeof validatedURL === 'string' &&
+      validatedURL.startsWith('http://127.0.0.1:');
+
+    if (!isLocalRendererRefusal || isWindowClosed || win.isDestroyed()) {
+      return;
+    }
+
+    if (rendererRecoveryAttempts >= MAX_RENDERER_RECOVERY_ATTEMPTS) {
+      logger.error('[WINDOW] Renderer recovery attempts exhausted; using file fallback', {
+        validatedURL,
+        attempts: rendererRecoveryAttempts
+      });
+      closeRendererStaticServer();
+      loadRendererFromFileFallback();
+      return;
+    }
+
+    rendererRecoveryAttempts += 1;
+    logger.warn('[WINDOW] Recovering from local renderer connection refusal', {
+      validatedURL,
+      attempt: rendererRecoveryAttempts,
+      maxAttempts: MAX_RENDERER_RECOVERY_ATTEMPTS
+    });
+    loadRendererFromLocalServer({ forceRestart: true });
   });
 
   win.webContents.on('render-process-gone', (_event, details) => {
@@ -655,10 +713,13 @@ function createMainWindow() {
       .then((status) => {
         logger.info('[WINDOW] Splash status after load: ' + status);
       })
-      .catch(() => {});
+      .catch((e) => {
+        logger.debug('[WINDOW] Failed to get splash status', { error: e.message });
+      });
 
     // Delayed health check: verify the app fully rendered after 5s
-    const _healthCheckTimerId = setTimeout(() => {
+    clearHealthCheckTimer();
+    _healthCheckTimerId = setTimeout(() => {
       if (win.isDestroyed()) return;
       win.webContents
         .executeJavaScript(
@@ -677,15 +738,10 @@ function createMainWindow() {
             logger.info('[WINDOW] Post-load check: app rendered successfully');
           }
         })
-        .catch(() => {});
+        .catch((e) => {
+          logger.error('[WINDOW] Post-load check failed', { error: e.message });
+        });
     }, 5000);
-    const clearHealthCheck = () => {
-      if (_healthCheckTimerId) {
-        clearTimeout(_healthCheckTimerId);
-      }
-    };
-    win.once('closed', clearHealthCheck);
-    win.once('destroy', clearHealthCheck);
   });
 
   // Block navigation attempts within the app (e.g., dropped links or external redirects)
@@ -737,7 +793,9 @@ function createMainWindow() {
           (host) => parsed.hostname === host || parsed.hostname.endsWith('.' + host)
         )
       ) {
-        shell.openExternal(url).catch(() => {});
+        shell.openExternal(url).catch((e) => {
+          logger.error('[WINDOW] Failed to open external URL', { url, error: e.message });
+        });
       }
     } catch {
       // Invalid URL -- deny silently

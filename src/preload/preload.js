@@ -55,7 +55,9 @@ const IPC_CHANNELS = {
     ANALYZE_DOCUMENT: 'analysis:analyze-document',
     ANALYZE_IMAGE: 'analysis:analyze-image',
     ANALYZE_BATCH: 'analysis:analyze-batch',
-    EXTRACT_IMAGE_TEXT: 'analysis:extract-image-text'
+    CANCEL_BATCH: 'analysis:cancel-batch',
+    EXTRACT_IMAGE_TEXT: 'analysis:extract-image-text',
+    GET_READY_QUEUE: 'analysis:get-ready-queue'
   },
 
   // SETTINGS
@@ -287,26 +289,20 @@ const normalizeSystemLogPayload = (level, message, data) => {
   };
 };
 
-/* eslint-disable no-console */
 const writePreloadLog = (level, message, data) => {
   if (!shouldLogPreloadLevel(level)) return;
   const payload = serializePreloadLogData(data);
-  const prefix = '[Preload]';
-  if (level === 'error') {
-    console.error(prefix, message, payload ?? '');
-    return;
+  try {
+    ipcRenderer
+      .invoke(
+        IPC_CHANNELS.SYSTEM.LOG,
+        normalizeSystemLogPayload(level, `[Preload] ${message}`, payload)
+      )
+      .catch(() => {});
+  } catch {
+    // Ignore logging errors to prevent infinite loops
   }
-  if (level === 'warn') {
-    console.warn(prefix, message, payload ?? '');
-    return;
-  }
-  if (level === 'debug') {
-    console.debug(prefix, message, payload ?? '');
-    return;
-  }
-  console.info(prefix, message, payload ?? '');
 };
-/* eslint-enable no-console */
 
 const log = {
   debug: (message, data) => writePreloadLog('debug', message, data),
@@ -414,7 +410,6 @@ class SecureIPCManager {
     if (
       channel === IPC_CHANNELS.ANALYSIS.ANALYZE_IMAGE ||
       channel === IPC_CHANNELS.ANALYSIS.ANALYZE_DOCUMENT ||
-      channel === IPC_CHANNELS.ANALYSIS.ANALYZE_BATCH ||
       channel === IPC_CHANNELS.SUGGESTIONS.GET_BATCH_SUGGESTIONS ||
       channel === IPC_CHANNELS.SUGGESTIONS.GET_FILE_SUGGESTIONS ||
       channel === IPC_CHANNELS.FILES.PERFORM_OPERATION ||
@@ -424,6 +419,10 @@ class SecureIPCManager {
       channel === IPC_CHANNELS.SMART_FOLDERS.MATCH
     ) {
       timeout = TIMEOUTS.AI_ANALYSIS_LONG || 180000;
+    }
+    // Batch analysis is a long-running operation that can exceed per-file timeouts.
+    if (channel === IPC_CHANNELS.ANALYSIS.ANALYZE_BATCH) {
+      timeout = TIMEOUTS.AI_ANALYSIS_BATCH || 300000;
     }
     // Embedding search/scoring operations involve embedding generation through the semaphore
     if (
@@ -984,6 +983,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     document: (filePath) => secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS.ANALYZE_DOCUMENT, filePath),
     image: (filePath) => secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS.ANALYZE_IMAGE, filePath),
     batch: (payload) => secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS.ANALYZE_BATCH, payload),
+    cancelBatch: (payload) => secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS.CANCEL_BATCH, payload),
+    getReadyQueue: () => secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS.GET_READY_QUEUE),
     extractText: (filePath) =>
       secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS.EXTRACT_IMAGE_TEXT, filePath)
   },

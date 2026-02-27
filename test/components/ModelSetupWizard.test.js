@@ -74,6 +74,34 @@ describe('ModelSetupWizard', () => {
     expect(screen.getByText(/Continue with limited AI/i)).toBeInTheDocument();
   });
 
+  test('times out stuck checks under StrictMode', async () => {
+    jest.useFakeTimers();
+
+    window.electronAPI = {
+      llama: {
+        getConfig: jest.fn(() => new Promise(() => {})),
+        getModels: jest.fn(() => new Promise(() => {})),
+        getDownloadStatus: jest.fn(() => new Promise(() => {}))
+      }
+    };
+
+    render(
+      <React.StrictMode>
+        <ModelSetupWizard onComplete={jest.fn()} onSkip={jest.fn()} />
+      </React.StrictMode>
+    );
+
+    expect(screen.getByText(/Preparing AI Setup/i)).toBeInTheDocument();
+
+    await act(async () => {
+      jest.advanceTimersByTime(12050);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Choose AI Models/i)).toBeInTheDocument();
+    });
+  });
+
   test('reacts to download completion/error progress events', async () => {
     const baseProfile = INSTALL_MODEL_PROFILES?.BASE_SMALL?.models || {};
     const embeddingModel = baseProfile.EMBEDDING;

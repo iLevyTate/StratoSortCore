@@ -60,7 +60,7 @@ test.describe('Drag Drop - UI Elements', () => {
     expect(dropZoneVisible || addFilesVisible).toBe(true);
   });
 
-  // TODO: Fix selector - Select Files/Choose/Browse not found in current UI
+  // TRACKED-ISSUE: selector - Select Files/Choose/Browse not found in current UI
   // test('should show file selection button', async () => {
   //   const selectButton = window.locator(
   //     'button:has-text("Select"), button:has-text("Choose"), button:has-text("Browse")'

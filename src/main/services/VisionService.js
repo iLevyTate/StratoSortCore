@@ -288,10 +288,14 @@ async function downloadFile(url, destination, _redirectCount = 0) {
       response.pipe(fileStream);
 
       fileStream.on('finish', () => {
-        fileStream.close(resolve);
+        fileStream.close((err) => {
+          if (err) reject(err);
+          else resolve();
+        });
       });
       fileStream.on('error', (error) => {
         response.destroy();
+        fileStream.close();
         fs.unlink(destination, () => reject(error));
       });
       response.on('error', (error) => {
@@ -848,7 +852,9 @@ class VisionService {
       child.on('exit', earlyExitHandler);
     });
     // Suppress unhandled rejection if health check wins the race
-    earlyExitPromise.catch(() => {});
+    earlyExitPromise.catch((e) => {
+      logger.debug('[VisionService] Early exit promise rejected', { error: e.message });
+    });
 
     // Handle spawn-level errors (e.g. ENOENT when binary doesn't exist)
     child.on('error', (err) => {

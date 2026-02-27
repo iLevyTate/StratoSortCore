@@ -83,7 +83,7 @@ test.describe('Menu Shortcuts', () => {
     await window.waitForTimeout(300);
   });
 
-  // TODO: Fix Escape key in Electron - Settings may not respond to Escape
+  // TRACKED-ISSUE: Escape key in Electron - Settings may not respond to Escape
   // test('should close settings with Escape', async () => {
   //   const settingsButton = window.locator('button[aria-label="Open Settings"]');
   //   await settingsButton.click();

@@ -27,9 +27,9 @@ function ContradictionPair({ contradiction, onOpenSource, sources }) {
           {reasonLabel}
         </Text>
         <div className="flex gap-1 ml-auto">
-          {safeSharedTopics.map((topic) => (
+          {safeSharedTopics.map((topic, i) => (
             <span
-              key={topic}
+              key={`${i}-${topic}`}
               className="inline-block px-1.5 py-0.5 text-xs font-medium bg-stratosort-warning/10 text-stratosort-warning rounded-md"
             >
               {topic}

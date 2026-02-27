@@ -165,6 +165,33 @@ describe('Custom Folders', () => {
       expect(uncategorized?.path).toBeDefined();
     });
 
+    test('heals missing folder ids instead of dropping folders', async () => {
+      const savedFolders = [
+        {
+          name: 'Projects',
+          path: '/test/projects',
+          isDefault: false
+        },
+        {
+          name: 'Uncategorized',
+          path: '/test/uncategorized',
+          isDefault: true
+        }
+      ];
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(savedFolders));
+
+      const folders = await customFolders.loadCustomFolders();
+      const projects = folders.find((folder) => folder.name === 'Projects');
+      const uncategorized = folders.find((folder) => folder.name === 'Uncategorized');
+
+      expect(projects).toBeDefined();
+      expect(typeof projects.id).toBe('string');
+      expect(projects.id.length).toBeGreaterThan(0);
+      expect(uncategorized).toBeDefined();
+      expect(typeof uncategorized.id).toBe('string');
+      expect(uncategorized.id.length).toBeGreaterThan(0);
+    });
+
     test('does not re-add defaults when custom folders exist', async () => {
       const savedFolders = [
         {
@@ -321,7 +348,7 @@ describe('Custom Folders', () => {
       expect(folders.some((folder) => folder.name === 'Images')).toBe(false);
     });
 
-    test('treats default-named folder as custom when path differs from canonical default path', async () => {
+    test('recovers missing legacy custom folders even when current set already has custom entries', async () => {
       const currentFolders = [
         {
           id: 'custom-documents',
@@ -359,7 +386,160 @@ describe('Custom Folders', () => {
       const folders = await customFolders.loadCustomFolders();
 
       expect(folders.some((folder) => folder.name === 'Documents')).toBe(true);
+      expect(folders.some((folder) => folder.name === 'Projects')).toBe(true);
+    });
+
+    test('recovers legacy-only default-name folders when they are persisted as non-default custom entries', async () => {
+      const currentFolders = [
+        {
+          id: 'default-uncategorized',
+          name: 'Uncategorized',
+          path: '/custom/uncategorized',
+          isDefault: true
+        },
+        {
+          id: 'custom-nature',
+          name: 'Nature',
+          path: '/custom/nature',
+          isDefault: false
+        }
+      ];
+      const legacyCustomFolders = [
+        {
+          id: 'legacy-work',
+          name: 'Work',
+          path: '/legacy/work',
+          isDefault: false
+        },
+        {
+          id: 'legacy-code',
+          name: 'Code',
+          path: '/legacy/code',
+          isDefault: false
+        }
+      ];
+
+      mockFs.readFile.mockImplementation((filePath) => {
+        const normalizedPath = String(filePath).replace(/\\/g, '/');
+        if (normalizedPath.endsWith('/userData/custom-folders.json')) {
+          return Promise.resolve(JSON.stringify(currentFolders));
+        }
+        if (normalizedPath.endsWith('/StratoSort/custom-folders.json')) {
+          return Promise.resolve(JSON.stringify(legacyCustomFolders));
+        }
+        return Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+      });
+
+      const folders = await customFolders.loadCustomFolders();
+
+      expect(folders.some((folder) => folder.name === 'Nature')).toBe(true);
+      expect(folders.some((folder) => folder.name === 'Work')).toBe(true);
+      expect(folders.some((folder) => folder.name === 'Code')).toBe(true);
+    });
+
+    test('skips legacy recovery after marker is written to avoid repeatedly resurrecting removed folders', async () => {
+      const currentFolders = [
+        {
+          id: 'custom-documents',
+          name: 'Documents',
+          path: '/custom/work-documents',
+          isDefault: false
+        },
+        {
+          id: 'default-uncategorized',
+          name: 'Uncategorized',
+          path: '/custom/uncategorized',
+          isDefault: true
+        }
+      ];
+      const legacyCustomFolders = [
+        {
+          id: 'legacy-projects',
+          name: 'Projects',
+          path: '/legacy/projects',
+          isDefault: false
+        }
+      ];
+      const markerPayload = {
+        completed: true,
+        markerVersion: 2,
+        updatedAt: '2026-02-24T00:00:00.000Z',
+        addedCount: 1
+      };
+
+      mockFs.readFile.mockImplementation((filePath) => {
+        const normalizedPath = String(filePath).replace(/\\/g, '/');
+        if (normalizedPath.endsWith('/userData/custom-folders.json')) {
+          return Promise.resolve(JSON.stringify(currentFolders));
+        }
+        if (normalizedPath.endsWith('/userData/custom-folders-legacy-recovery.v2.json')) {
+          return Promise.resolve(JSON.stringify(markerPayload));
+        }
+        if (normalizedPath.endsWith('/StratoSort/custom-folders.json')) {
+          return Promise.resolve(JSON.stringify(legacyCustomFolders));
+        }
+        return Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+      });
+
+      const folders = await customFolders.loadCustomFolders();
+
+      expect(folders.some((folder) => folder.name === 'Documents')).toBe(true);
       expect(folders.some((folder) => folder.name === 'Projects')).toBe(false);
+    });
+
+    test('does not mark legacy recovery complete when no legacy source could be scanned', async () => {
+      const currentFolders = [
+        {
+          id: 'custom-documents',
+          name: 'Documents',
+          path: '/custom/work-documents',
+          isDefault: false
+        },
+        {
+          id: 'default-uncategorized',
+          name: 'Uncategorized',
+          path: '/custom/uncategorized',
+          isDefault: true
+        }
+      ];
+      const legacyCustomFolders = [
+        {
+          id: 'legacy-projects',
+          name: 'Projects',
+          path: '/legacy/projects',
+          isDefault: false
+        }
+      ];
+
+      let legacyAvailable = false;
+      mockFs.readFile.mockImplementation((filePath) => {
+        const normalizedPath = String(filePath).replace(/\\/g, '/');
+        if (normalizedPath.endsWith('/userData/custom-folders.json')) {
+          return Promise.resolve(JSON.stringify(currentFolders));
+        }
+        if (normalizedPath.endsWith('/userData/custom-folders-legacy-recovery.v2.json')) {
+          return Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+        }
+        if (normalizedPath.endsWith('/StratoSort/custom-folders.json')) {
+          if (legacyAvailable) {
+            return Promise.resolve(JSON.stringify(legacyCustomFolders));
+          }
+          return Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+        }
+        return Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+      });
+
+      const firstRun = await customFolders.loadCustomFolders();
+      expect(firstRun.some((folder) => folder.name === 'Projects')).toBe(false);
+      expect(
+        mockFs.writeFile.mock.calls.filter(([target]) =>
+          String(target).includes('custom-folders-legacy-recovery.v2.json')
+        )
+      ).toHaveLength(0);
+
+      legacyAvailable = true;
+      const secondRun = await customFolders.loadCustomFolders();
+      expect(secondRun.some((folder) => folder.name === 'Projects')).toBe(true);
     });
 
     test('prunes persisted legacy default-only bundle to Uncategorized', async () => {

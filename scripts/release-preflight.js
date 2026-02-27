@@ -59,7 +59,7 @@ Options:
   --skip-native         Skip native module verification
   --skip-dist           Skip distribution build and packaged artifact checks
   --dist-script=<name>  Override dist script (example: dist:win)
-  --all-mac-arches      On macOS, run both dist:mac:x64 and dist:mac:arm64
+  --all-mac-arches      Legacy flag (mac builds are arm64-only; treated as dist:mac:arm64)
 
 Examples:
   npm run preflight:release
@@ -125,9 +125,6 @@ function inferVerificationForDistScript(scriptName) {
   if (value === 'dist:win' || value.includes(':win')) {
     return { platform: 'win', arch: null };
   }
-  if (value === 'dist:mac:x64' || value.includes(':mac:x64')) {
-    return { platform: 'mac', arch: 'x64' };
-  }
   if (value === 'dist:mac:arm64' || value.includes(':mac:arm64')) {
     return { platform: 'mac', arch: 'arm64' };
   }
@@ -152,17 +149,14 @@ function resolveDefaultDistScripts(flags, values) {
 
   if (process.platform === 'darwin') {
     if (flags.has('all-mac-arches')) {
-      return [
-        { script: 'dist:mac:x64', verify: { platform: 'mac', arch: 'x64' } },
-        { script: 'dist:mac:arm64', verify: { platform: 'mac', arch: 'arm64' } }
-      ];
+      console.log(
+        '\n--all-mac-arches is deprecated. macOS release builds are arm64-only; running dist:mac:arm64.'
+      );
     }
-
-    const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
     return [
       {
-        script: arch === 'arm64' ? 'dist:mac:arm64' : 'dist:mac:x64',
-        verify: { platform: 'mac', arch }
+        script: 'dist:mac:arm64',
+        verify: { platform: 'mac', arch: 'arm64' }
       }
     ];
   }

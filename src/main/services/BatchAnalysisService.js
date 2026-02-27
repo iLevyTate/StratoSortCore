@@ -214,8 +214,12 @@ class BatchAnalysisService {
       documentAnalyzer = null,
       imageAnalyzer = null,
       onFileComplete = null,
-      disableAdaptiveConcurrency = false
+      disableAdaptiveConcurrency = false,
+      isCancelled = null,
+      batchId = null
     } = options;
+    const cancellationRequested = () =>
+      (typeof isCancelled === 'function' && isCancelled()) || false;
 
     const requestedConcurrency = Math.max(
       1,
@@ -284,7 +288,17 @@ class BatchAnalysisService {
       }
 
       const sectionResults = [];
+      let cancelled = false;
+      let processedCount = 0;
       for (const section of orderedSections) {
+        if (cancellationRequested()) {
+          cancelled = true;
+          logger.info('[BATCH-ANALYSIS] Cancellation requested before section start', {
+            batchId,
+            section
+          });
+          break;
+        }
         const sectionFiles = partitioned[section];
         const sectionIsImage = section === 'images';
         const sectionConcurrency = Math.max(1, Math.min(concurrency, sectionFiles.length || 1));
@@ -318,6 +332,7 @@ class BatchAnalysisService {
             onFileComplete,
             progressState,
             embeddingStats,
+            isCancelled: cancellationRequested,
             analyzers: {
               document: documentAnalyzer,
               image: imageAnalyzer
@@ -325,6 +340,10 @@ class BatchAnalysisService {
           });
 
           sectionResults.push(sectionResult);
+          processedCount += Number(sectionResult.processed || 0);
+          if (sectionResult.cancelled) {
+            cancelled = true;
+          }
           sectionStats[section].durationMs = Date.now() - sectionStart;
           sectionStats[section].successful = sectionResult.successful;
           sectionStats[section].failed = sectionResult.errors.length;
@@ -333,6 +352,14 @@ class BatchAnalysisService {
             logger.warn('[BATCH-ANALYSIS] Stopping early after section error', {
               section,
               failed: sectionResult.errors.length
+            });
+            break;
+          }
+          if (cancelled || cancellationRequested()) {
+            cancelled = true;
+            logger.info('[BATCH-ANALYSIS] Stopping remaining sections due to cancellation', {
+              batchId,
+              section
             });
             break;
           }
@@ -371,6 +398,8 @@ class BatchAnalysisService {
         orderedResults,
         combinedErrors,
         successful,
+        cancelled,
+        processedCount,
         concurrency,
         requestedConcurrency,
         sectionStats
@@ -391,6 +420,7 @@ class BatchAnalysisService {
       onFileComplete,
       progressState,
       embeddingStats,
+      isCancelled,
       analyzers
     } = options;
     const isImageSection = section === 'images';
@@ -404,6 +434,9 @@ class BatchAnalysisService {
     const BACKPRESSURE_MAX_DELAY_MS = 5000;
 
     const checkBackpressure = async () => {
+      if (typeof isCancelled === 'function' && isCancelled()) {
+        return false;
+      }
       let shouldWait = false;
       await this.backpressureLock.acquire();
       try {
@@ -420,7 +453,7 @@ class BatchAnalysisService {
       }
 
       if (!shouldWait) {
-        return;
+        return true;
       }
 
       if (!this._backpressureWaitPromise) {
@@ -432,6 +465,12 @@ class BatchAnalysisService {
           let stalledChecks = 0;
 
           while (true) {
+            if (typeof isCancelled === 'function' && isCancelled()) {
+              logger.info('[BATCH-ANALYSIS] Backpressure wait exited due to cancellation', {
+                section
+              });
+              return false;
+            }
             const elapsed = Date.now() - backpressureStart;
             if (elapsed >= BACKPRESSURE_TIMEOUT_MS) {
               logger.warn('[BATCH-ANALYSIS] Backpressure timeout reached, continuing anyway', {
@@ -492,17 +531,23 @@ class BatchAnalysisService {
               break;
             }
           }
+          return true;
         })().finally(() => {
           this._backpressureWaitPromise = null;
         });
       }
 
-      await this._backpressureWaitPromise;
+      const canProceed = await this._backpressureWaitPromise;
+      return canProceed !== false;
     };
 
     const processFile = async (filePath, index) => {
+      if (typeof isCancelled === 'function' && isCancelled()) {
+        return null;
+      }
       const inFlightKey = isImageSection ? 'imageInFlight' : 'docInFlight';
       const completedKey = isImageSection ? 'imagesCompleted' : 'documentsCompleted';
+      let shouldFinalizeProgress = false;
 
       progressState[inFlightKey] += 1;
       this._emitProgressUpdate(onProgress, progressState, 'analysis', {
@@ -513,7 +558,11 @@ class BatchAnalysisService {
       });
 
       try {
-        await checkBackpressure();
+        const canProceed = await checkBackpressure();
+        if (!canProceed || (typeof isCancelled === 'function' && isCancelled())) {
+          return null;
+        }
+        shouldFinalizeProgress = true;
         const result = await analyzer(filePath, smartFolders);
         embeddingStats.embeddings += 1;
 
@@ -552,23 +601,29 @@ class BatchAnalysisService {
         return normalized;
       } finally {
         progressState[inFlightKey] = Math.max(0, progressState[inFlightKey] - 1);
-        progressState[completedKey] += 1;
-        progressState.completed += 1;
-        this._emitProgressUpdate(onProgress, progressState, 'analysis', {
-          section,
-          currentFile: filePath,
-          sectionCurrent: Math.min(progressState[completedKey], filePaths.length),
-          sectionTotal: filePaths.length
-        });
+        if (shouldFinalizeProgress) {
+          progressState[completedKey] += 1;
+          progressState.completed += 1;
+          this._emitProgressUpdate(onProgress, progressState, 'analysis', {
+            section,
+            currentFile: filePath,
+            sectionCurrent: Math.min(progressState[completedKey], filePaths.length),
+            sectionTotal: filePaths.length
+          });
+        }
       }
     };
 
     const batchResult = await this.batchProcessor.processBatch(filePaths, processFile, {
       concurrency: sectionConcurrency,
-      stopOnError
+      stopOnError,
+      shouldStop: () => (typeof isCancelled === 'function' ? isCancelled() : false)
     });
 
-    const failedResults = (batchResult.results || []).filter((result) => result?.success === false);
+    const normalizedResults = (batchResult.results || []).filter(
+      (result) => result !== null && result !== undefined
+    );
+    const failedResults = normalizedResults.filter((result) => result?.success === false);
     const normalizedErrors = [
       ...(batchResult.errors || []),
       ...failedResults.map((result) => ({
@@ -576,10 +631,17 @@ class BatchAnalysisService {
         error: result.error
       }))
     ];
-    const successful = (batchResult.results || []).filter((result) => result?.success).length;
+    const successful = normalizedResults.filter((result) => result?.success).length;
 
     return {
       ...batchResult,
+      results: normalizedResults,
+      processed: normalizedResults.length,
+      cancelled:
+        Boolean(batchResult.cancelled) ||
+        (typeof isCancelled === 'function' &&
+          isCancelled() &&
+          normalizedResults.length < filePaths.length),
       successful,
       errors: normalizedErrors
     };
@@ -653,26 +715,34 @@ class BatchAnalysisService {
     orderedResults,
     combinedErrors,
     successful,
+    cancelled = false,
+    processedCount = null,
     concurrency,
     requestedConcurrency,
     sectionStats
   }) {
     const analysisDuration = Date.now() - startTime;
+    const processed = Number.isFinite(processedCount) ? processedCount : orderedResults.length;
+    const completionCount = cancelled ? processed : filePaths.length;
+    const completionPercent =
+      filePaths.length > 0 ? Math.round((completionCount / filePaths.length) * 100) : 100;
 
     if (onProgress) {
       onProgress({
         phase: 'flushing_embeddings',
-        completed: filePaths.length,
+        completed: completionCount,
         total: filePaths.length,
-        percent: 100,
-        percentage: 100,
-        message: 'Flushing embeddings to database...'
+        percent: completionPercent,
+        percentage: completionPercent,
+        message: cancelled
+          ? 'Stopping analysis and flushing embeddings...'
+          : 'Flushing embeddings to database...'
       });
     }
 
     const flushDuration = await this._flushEmbeddings();
     const totalDuration = Date.now() - startTime;
-    const avgTime = filePaths.length > 0 ? totalDuration / filePaths.length : 0;
+    const avgTime = processed > 0 ? totalDuration / processed : 0;
     const finalQueueStats = analysisQueue.getStats();
     const embeddingServiceStats = getParallelEmbeddingService().getStats();
 
@@ -693,8 +763,10 @@ class BatchAnalysisService {
 
     logger.info('[BATCH-ANALYSIS] Batch analysis complete', {
       total: filePaths.length,
+      processed,
       successful,
       failed: combinedErrors.length,
+      cancelled,
       requestedConcurrency,
       effectiveConcurrency: concurrency,
       analysisDuration: `${analysisDuration}ms`,
@@ -703,7 +775,7 @@ class BatchAnalysisService {
       avgPerFile: `${Math.round(avgTime)}ms`,
       throughput:
         totalDuration > 0
-          ? `${(filePaths.length / (totalDuration / 1000)).toFixed(2)} files/sec`
+          ? `${(processed / (totalDuration / 1000)).toFixed(2)} files/sec`
           : 'instant',
       sectionStats,
       embeddingStats: {
@@ -714,10 +786,12 @@ class BatchAnalysisService {
     });
 
     return {
-      success: combinedErrors.length === 0,
+      success: !cancelled && combinedErrors.length === 0,
+      cancelled,
       results: orderedResults,
       errors: combinedErrors,
       total: filePaths.length,
+      processed,
       successful,
       hasErrors: combinedErrors.length > 0,
       errorSummary: errorDetails,
@@ -728,7 +802,7 @@ class BatchAnalysisService {
         analysisDuration,
         flushDuration,
         avgPerFile: avgTime,
-        filesPerSecond: totalDuration > 0 ? filePaths.length / (totalDuration / 1000) : Infinity,
+        filesPerSecond: totalDuration > 0 ? processed / (totalDuration / 1000) : Infinity,
         modalities: sectionStats,
         embedding: {
           queueSize: finalQueueStats.queueLength,

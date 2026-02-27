@@ -182,14 +182,23 @@ class BatchProcessor {
    * @returns {Promise<Array>} Results array
    */
   async processBatch(items, processFn, options = {}) {
-    const { concurrency = this.concurrencyLimit, onProgress = null, stopOnError = false } = options;
+    const {
+      concurrency = this.concurrencyLimit,
+      onProgress = null,
+      stopOnError = false,
+      shouldStop = null
+    } = options;
+    const isStopRequested = () => (typeof shouldStop === 'function' ? shouldStop() : false);
 
     if (!Array.isArray(items) || items.length === 0) {
       return {
         results: [],
         errors: [],
         successful: 0,
-        total: 0
+        total: 0,
+        stoppedEarly: false,
+        cancelled: false,
+        processed: 0
       };
     }
 
@@ -204,6 +213,9 @@ class BatchProcessor {
 
     // Process items with concurrency control
     const processItem = async (index) => {
+      if (isStopRequested()) {
+        return;
+      }
       try {
         this.activeCount++;
         const item = items[index];
@@ -255,7 +267,13 @@ class BatchProcessor {
 
     // Process batches sequentially, items within batch in parallel
     let stoppedEarly = false;
+    let cancelled = false;
     for (const batchIndices of batches) {
+      if (isStopRequested()) {
+        stoppedEarly = true;
+        cancelled = true;
+        break;
+      }
       if (stopOnError) {
         // Use Promise.all so thrown errors propagate and stop processing
         try {
@@ -268,20 +286,35 @@ class BatchProcessor {
         // Use Promise.allSettled to handle individual failures gracefully
         await Promise.allSettled(batchIndices.map((index) => processItem(index)));
       }
+      if (isStopRequested()) {
+        stoppedEarly = true;
+        cancelled = true;
+        break;
+      }
     }
+
+    const processedResults = results.filter((result) => result !== undefined && result !== null);
+    const successfulCount = processedResults.filter(
+      (result) => result?.success !== false && !result?.error
+    ).length;
 
     logger.info('[BATCH-PROCESSOR] Batch processing complete', {
       total: items.length,
-      successful: items.length - errors.length,
+      processed: completedCount,
+      successful: successfulCount,
       failed: errors.length,
-      stoppedEarly
+      stoppedEarly,
+      cancelled
     });
 
     return {
       results,
       errors,
-      successful: items.length - errors.length,
-      total: items.length
+      successful: successfulCount,
+      total: items.length,
+      stoppedEarly,
+      cancelled,
+      processed: completedCount
     };
   }
 

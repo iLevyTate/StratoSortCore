@@ -38,7 +38,7 @@ test.describe('Naming Strategy - Configuration Modal', () => {
     await closeApp(app);
   });
 
-  // TODO: Fix - Naming Strategy button not found when app starts on Welcome
+  // TRACKED-ISSUE: Naming Strategy button not found when app starts on Welcome
   // test('should have Naming Strategy button in Discover phase', async () => {
   //   const namingButton = window.locator('button:has-text("Naming Strategy")');
   //   const isVisible = await namingButton.isVisible().catch(() => false);
@@ -119,7 +119,7 @@ test.describe('Naming Strategy - Form Controls', () => {
     expect(isVisible).toBe(true);
   });
 
-  // TODO: Fix - convention option values may differ from expected
+  // TRACKED-ISSUE: convention option values may differ from expected
   // test('should have all convention options', async () => {
   //   const conventionSelect = window.locator('#naming-convention');
   //   if (await conventionSelect.isVisible().catch(() => false)) {

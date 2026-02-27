@@ -303,6 +303,17 @@ async function handleBeforeQuit(event) {
     logger.warn('[SHUTDOWN-VERIFY] Verification failed:', verifyError.message);
   }
 
+  // Flush and end all pino/sonic-boom streams before exiting.
+  // This prevents the "sonic boom is not ready yet" uncaught exception
+  // that occurs when process.exit fires while sonic-boom is still initializing.
+  try {
+    const { shutdownLogging } = require('../../shared/logger');
+    await shutdownLogging();
+  } catch (logShutdownError) {
+    // Best-effort; don't let logging teardown prevent app exit
+    void logShutdownError;
+  }
+
   // Cleanup complete — now exit the app (bypasses before-quit to avoid re-entrance)
   app.exit(0);
 }

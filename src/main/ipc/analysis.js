@@ -16,6 +16,7 @@ const BatchAnalysisService = require('../services/BatchAnalysisService');
 const { sendOperationProgress } = require('./files/batchProgressReporter');
 
 let batchAnalysisService = null;
+const activeBatchRuns = new Map();
 
 function getBatchAnalysisService() {
   if (!batchAnalysisService) {
@@ -41,6 +42,7 @@ function registerAnalysisIpc(servicesOrParams) {
   const stringSchema = z ? z.string().min(1) : null;
   const analyzeBatchSchema = z
     ? z.object({
+        batchId: z.string().min(1).max(160).optional(),
         filePaths: z.array(z.string().min(1)).min(1),
         smartFolders: z.array(z.any()).optional(),
         options: z
@@ -53,7 +55,50 @@ function registerAnalysisIpc(servicesOrParams) {
           .optional()
       })
     : null;
+  const cancelBatchSchema = z
+    ? z.object({
+        batchId: z.string().min(1).max(160),
+        reason: z.string().min(1).max(200).optional()
+      })
+    : null;
   const LOG_PREFIX = '[IPC-ANALYSIS]';
+  const READY_QUEUE_HYDRATION_LIMIT = 1000;
+
+  function classifyAnalysisOutcome(result) {
+    if (!result || typeof result !== 'object') {
+      return { outcome: 'error', reason: 'empty_result' };
+    }
+    if (result.error) {
+      return { outcome: 'fallback', reason: 'analysis_error' };
+    }
+
+    const extractionMethod = String(result.extractionMethod || '').toLowerCase();
+    const fallbackReason = String(result.fallbackReason || '').trim();
+    const warning = String(result.analysisWarning || '').trim();
+    const isFallbackFlag = Boolean(result.isFallback || result._isFallback);
+    const fallbackMethod =
+      extractionMethod.includes('fallback') ||
+      extractionMethod.includes('failed') ||
+      extractionMethod.includes('filename') ||
+      extractionMethod.includes('pdf_no_text');
+
+    if (isFallbackFlag || fallbackReason || warning || fallbackMethod) {
+      return {
+        outcome: 'fallback',
+        reason:
+          fallbackReason ||
+          warning ||
+          extractionMethod ||
+          (isFallbackFlag ? 'fallback_flagged' : 'fallback')
+      };
+    }
+    return { outcome: 'primary', reason: extractionMethod || 'ai_primary' };
+  }
+
+  function recordPipelineOutcome(systemAnalytics, pipelineName, resultLike) {
+    const { outcome, reason } = classifyAnalysisOutcome(resultLike);
+    systemAnalytics?.recordPipelineOutcome?.(pipelineName, outcome, { reason });
+  }
 
   async function validateAnalysisPath(filePath) {
     const cleanPath = safeFilePath(filePath);
@@ -116,6 +161,7 @@ function registerAnalysisIpc(servicesOrParams) {
             analysisHistory: serviceIntegration?.analysisHistory,
             logger
           });
+          recordPipelineOutcome(systemAnalytics, 'document', result);
 
           return result;
         }
@@ -128,7 +174,17 @@ function registerAnalysisIpc(servicesOrParams) {
       });
       logger.error(`${LOG_PREFIX} Document analysis failed with context:`, errorContext);
       systemAnalytics.recordFailure(error);
-      return createAnalysisFallback(cleanPath, 'documents', error.message);
+      const fallback = createAnalysisFallback(cleanPath, 'documents', error.message);
+      try {
+        await serviceIntegration?.processingState?.upsertReadyAnalysis?.(cleanPath, fallback);
+      } catch (readyPersistError) {
+        logger.debug(`${LOG_PREFIX} Failed to persist fallback ready entry`, {
+          filePath: cleanPath,
+          error: readyPersistError?.message
+        });
+      }
+      recordPipelineOutcome(systemAnalytics, 'document', fallback);
+      return fallback;
     }
   }
 
@@ -182,6 +238,7 @@ function registerAnalysisIpc(servicesOrParams) {
             analysisHistory: serviceIntegration?.analysisHistory,
             logger
           });
+          recordPipelineOutcome(systemAnalytics, 'image', result);
 
           return result;
         }
@@ -194,7 +251,17 @@ function registerAnalysisIpc(servicesOrParams) {
       });
       logger.error(`${IMAGE_LOG_PREFIX} Image analysis failed with context:`, errorContext);
       systemAnalytics.recordFailure(error);
-      return createAnalysisFallback(cleanPath, 'images', error.message);
+      const fallback = createAnalysisFallback(cleanPath, 'images', error.message);
+      try {
+        await serviceIntegration?.processingState?.upsertReadyAnalysis?.(cleanPath, fallback);
+      } catch (readyPersistError) {
+        logger.debug(`${IMAGE_LOG_PREFIX} Failed to persist fallback ready entry`, {
+          filePath: cleanPath,
+          error: readyPersistError?.message
+        });
+      }
+      recordPipelineOutcome(systemAnalytics, 'image', fallback);
+      return fallback;
     }
   }
 
@@ -220,14 +287,26 @@ function registerAnalysisIpc(servicesOrParams) {
         ? normalizedPayload.filePaths
         : [];
       const options = normalizedPayload.options || {};
-      const batchId = `analysis_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+      const requestedBatchId =
+        typeof normalizedPayload.batchId === 'string' ? normalizedPayload.batchId.trim() : '';
+      const batchId = requestedBatchId || `analysis_${require('crypto').randomUUID()}`;
 
       if (rawPaths.length === 0) {
         return {
           success: true,
           results: [],
           errors: [],
-          total: 0
+          total: 0,
+          batchId
+        };
+      }
+
+      if (activeBatchRuns.has(batchId)) {
+        logger.warn(`${LOG_PREFIX} Duplicate active batch id rejected`, { batchId });
+        return {
+          success: false,
+          error: `Batch already active: ${batchId}`,
+          batchId
         };
       }
 
@@ -252,93 +331,182 @@ function registerAnalysisIpc(servicesOrParams) {
       }
 
       logger.info(`${LOG_PREFIX} Starting batch analysis`, {
+        batchId,
         totalFiles: validatedPaths.length,
         folders: folderCategories.length,
         sectionOrder: options.sectionOrder || 'documents-first'
       });
 
-      const batchResult = await getBatchAnalysisService().analyzeFiles(
-        validatedPaths,
-        folderCategories,
-        {
-          concurrency: options.concurrency,
-          stopOnError: options.stopOnError,
-          sectionOrder: options.sectionOrder,
-          enableVisionBatchMode: options.enableVisionBatchMode,
-          onProgress: (progress) => {
-            if (typeof getMainWindow === 'function') {
-              sendOperationProgress(getMainWindow, {
-                type: 'batch_analyze',
-                batchId,
-                ...progress
+      const runState = {
+        batchId,
+        cancelled: false,
+        reason: null,
+        requestedAt: null
+      };
+      activeBatchRuns.set(batchId, runState);
+
+      try {
+        const batchResult = await getBatchAnalysisService().analyzeFiles(
+          validatedPaths,
+          folderCategories,
+          {
+            batchId,
+            isCancelled: () => runState.cancelled,
+            concurrency: options.concurrency,
+            stopOnError: options.stopOnError,
+            sectionOrder: options.sectionOrder,
+            enableVisionBatchMode: options.enableVisionBatchMode,
+            onProgress: (progress) => {
+              if (typeof getMainWindow === 'function') {
+                sendOperationProgress(getMainWindow, {
+                  type: 'batch_analyze',
+                  batchId,
+                  ...progress
+                });
+              }
+            },
+            onFileComplete: (item) => {
+              const pipelineName = item?.type === 'image' ? 'image' : 'document';
+              if (item?.success) {
+                recordPipelineOutcome(systemAnalytics, pipelineName, item?.result);
+              } else {
+                systemAnalytics?.recordPipelineOutcome?.(pipelineName, 'error', {
+                  reason: item?.error || 'batch_item_failed'
+                });
+              }
+            },
+            documentAnalyzer: async (filePath, smartFolders) => {
+              return withProcessingState({
+                filePath,
+                processingState: serviceIntegration?.processingState,
+                logger,
+                logPrefix: LOG_PREFIX,
+                fn: async () => {
+                  const started = performance.now();
+                  const result = await analyzeDocumentFile(filePath, smartFolders);
+                  const processingTime = performance.now() - started;
+                  await recordAnalysisResult({
+                    filePath,
+                    result,
+                    processingTime,
+                    modelType: 'llm',
+                    analysisHistory: serviceIntegration?.analysisHistory,
+                    logger
+                  });
+                  return result;
+                }
+              });
+            },
+            imageAnalyzer: async (filePath, smartFolders) => {
+              return withProcessingState({
+                filePath,
+                processingState: serviceIntegration?.processingState,
+                logger,
+                logPrefix: '[IPC-IMAGE-ANALYSIS]',
+                fn: async () => {
+                  const started = performance.now();
+                  const result = await analyzeImageFile(filePath, smartFolders);
+                  const processingTime = performance.now() - started;
+                  await recordAnalysisResult({
+                    filePath,
+                    result,
+                    processingTime,
+                    modelType: 'vision',
+                    analysisHistory: serviceIntegration?.analysisHistory,
+                    logger
+                  });
+                  return result;
+                }
               });
             }
-          },
-          documentAnalyzer: async (filePath, smartFolders) => {
-            return withProcessingState({
-              filePath,
-              processingState: serviceIntegration?.processingState,
-              logger,
-              logPrefix: LOG_PREFIX,
-              fn: async () => {
-                const started = performance.now();
-                const result = await analyzeDocumentFile(filePath, smartFolders);
-                const processingTime = performance.now() - started;
-                await recordAnalysisResult({
-                  filePath,
-                  result,
-                  processingTime,
-                  modelType: 'llm',
-                  analysisHistory: serviceIntegration?.analysisHistory,
-                  logger
-                });
-                return result;
-              }
-            });
-          },
-          imageAnalyzer: async (filePath, smartFolders) => {
-            return withProcessingState({
-              filePath,
-              processingState: serviceIntegration?.processingState,
-              logger,
-              logPrefix: '[IPC-IMAGE-ANALYSIS]',
-              fn: async () => {
-                const started = performance.now();
-                const result = await analyzeImageFile(filePath, smartFolders);
-                const processingTime = performance.now() - started;
-                await recordAnalysisResult({
-                  filePath,
-                  result,
-                  processingTime,
-                  modelType: 'vision',
-                  analysisHistory: serviceIntegration?.analysisHistory,
-                  logger
-                });
-                return result;
-              }
-            });
           }
-        }
-      );
+        );
 
-      const duration = performance.now() - startedAt;
-      systemAnalytics.recordProcessingTime(duration);
+        const duration = performance.now() - startedAt;
+        systemAnalytics.recordProcessingTime(duration);
 
-      logger.info(`${LOG_PREFIX} Batch analysis complete`, {
-        totalFiles: batchResult.total,
-        successful: batchResult.successful,
-        failed: batchResult.errors?.length || 0,
-        durationMs: Math.round(duration)
-      });
+        logger.info(`${LOG_PREFIX} Batch analysis complete`, {
+          batchId,
+          cancelled: Boolean(batchResult?.cancelled),
+          totalFiles: batchResult.total,
+          successful: batchResult.successful,
+          failed: batchResult.errors?.length || 0,
+          durationMs: Math.round(duration)
+        });
 
-      return {
-        ...batchResult,
-        batchId
-      };
+        return {
+          ...batchResult,
+          batchId
+        };
+      } finally {
+        activeBatchRuns.delete(batchId);
+      }
     }
   });
 
   safeHandle(ipcMain, IPC_CHANNELS.ANALYSIS.ANALYZE_BATCH, analyzeBatchHandler);
+
+  const cancelBatchHandler = createHandler({
+    logger,
+    context: 'Analysis',
+    schema: cancelBatchSchema,
+    handler: async (event, payload) => {
+      const batchId = String(payload?.batchId || '').trim();
+      const reason =
+        typeof payload?.reason === 'string' && payload.reason.trim().length > 0
+          ? payload.reason.trim()
+          : 'Cancelled by renderer';
+      const runState = activeBatchRuns.get(batchId);
+      if (!runState) {
+        logger.warn(`${LOG_PREFIX} Cancel request received for unknown batch`, { batchId });
+        return { success: true, batchId, cancelled: false, notFound: true };
+      }
+      const wasCancelled = runState.cancelled;
+      runState.cancelled = true;
+      runState.reason = reason;
+      runState.requestedAt = Date.now();
+      logger.info(`${LOG_PREFIX} Cancel request acknowledged`, { batchId, reason, wasCancelled });
+      return {
+        success: true,
+        batchId,
+        cancelled: true,
+        alreadyCancelled: wasCancelled
+      };
+    }
+  });
+
+  safeHandle(ipcMain, IPC_CHANNELS.ANALYSIS.CANCEL_BATCH, cancelBatchHandler);
+
+  const getReadyQueueHandler = createHandler({
+    logger,
+    context: 'Analysis',
+    schema: null,
+    handler: async () => {
+      const serviceIntegration = getServiceIntegration?.();
+      const processingState = serviceIntegration?.processingState;
+      if (!processingState?.getReadyAnalyses) {
+        return { success: true, readyFiles: [] };
+      }
+      try {
+        await processingState.initialize?.();
+        return {
+          success: true,
+          readyFiles: processingState.getReadyAnalyses({ limit: READY_QUEUE_HYDRATION_LIMIT })
+        };
+      } catch (error) {
+        logger.error(`${LOG_PREFIX} Failed to load ready analysis queue`, {
+          error: error?.message
+        });
+        return {
+          success: false,
+          readyFiles: [],
+          error: error?.message || 'Failed to load ready analysis queue'
+        };
+      }
+    }
+  });
+
+  safeHandle(ipcMain, IPC_CHANNELS.ANALYSIS.GET_READY_QUEUE, getReadyQueueHandler);
 
   async function runOcr(filePath) {
     const cleanPath = await validateAnalysisPath(filePath);

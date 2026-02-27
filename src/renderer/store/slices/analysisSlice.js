@@ -128,6 +128,33 @@ const analysisSlice = createSlice({
       state.results = action.payload;
       enforceResultsLimit(state.results);
     },
+    mergeAnalysisResults: (state, action) => {
+      const incoming = Array.isArray(action.payload) ? action.payload : [];
+      if (incoming.length === 0) return;
+
+      const indexByPath = new Map();
+      state.results.forEach((result, index) => {
+        const resultPath = result?.path;
+        if (typeof resultPath === 'string' && resultPath.length > 0) {
+          indexByPath.set(resultPath, index);
+        }
+      });
+
+      incoming.forEach((result) => {
+        const resultPath = result?.path;
+        if (typeof resultPath !== 'string' || resultPath.length === 0) return;
+
+        const existingIndex = indexByPath.get(resultPath);
+        if (existingIndex === undefined) {
+          state.results.push(result);
+          indexByPath.set(resultPath, state.results.length - 1);
+          return;
+        }
+        state.results[existingIndex] = result;
+      });
+
+      enforceResultsLimit(state.results);
+    },
     updateAnalysisResult: (state, action) => {
       const { path, changes } = action.payload;
       const index = state.results.findIndex((r) => r.path === path);
@@ -222,6 +249,7 @@ export const {
   analysisFailure,
   stopAnalysis,
   setAnalysisResults,
+  mergeAnalysisResults,
   updateAnalysisResult,
   updateEmbeddingState,
   resetAnalysisState,

@@ -10,6 +10,7 @@ import { Heading, Text } from './ui/Typography';
 import { StatusBadge, StateMessage } from './ui';
 import { Inline, Stack } from './layout';
 import { nextRequestId, isCurrentRequest } from '../utils/requestGuard';
+import { fetchAnalysisHistoryPages } from '../utils/analysisHistoryFetch';
 
 const logger = createLogger('AnalysisHistoryModal');
 function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
@@ -64,20 +65,12 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
       markLoaded();
     }
 
-    const historyPromise = window.electronAPI?.analysisHistory?.get?.({ all: true });
+    const historyPromise = fetchAnalysisHistoryPages();
     if (historyPromise && typeof historyPromise.then === 'function') {
       historyPromise
         .then((history) => {
           if (!isMountedRef.current || !isCurrentRequest(loadRequestIdRef, requestId)) return;
-          if (Array.isArray(history)) {
-            setHistoryData(history);
-          } else {
-            logger.warn('History data is not an array, falling back to empty array', {
-              historyType: typeof history,
-              history
-            });
-            setHistoryData([]);
-          }
+          setHistoryData(Array.isArray(history) ? history : []);
         })
         .catch((error) => {
           if (isMountedRef.current && isCurrentRequest(loadRequestIdRef, requestId)) {
