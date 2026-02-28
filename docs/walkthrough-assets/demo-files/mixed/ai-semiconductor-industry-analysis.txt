@@ -1,0 +1,85 @@
+AI Semiconductor Industry Analysis — Market Outlook 2025–2030
+
+Morgan Stanley Equity Research | Sector: Technology Hardware
+Lead Analyst: Jennifer Park, CFA
+Date: September 2025
+
+INVESTMENT THESIS
+The AI accelerator market is entering a sustained growth phase driven by
+enterprise AI adoption, sovereign AI infrastructure investment, and the
+scaling requirements of frontier model training. We project the total
+addressable market to grow from $68B (2024) to $320B by 2030, a 29% CAGR.
+
+MARKET SEGMENTATION (2024 → 2030E)
+
+Segment              | 2024 Revenue | 2030E Revenue | CAGR
+---------------------|-------------|---------------|------
+Data Center GPU      |   $47.5B    |   $185B       |  25%
+Custom ASIC (TPU etc)|    $8.2B    |    $62B       |  40%
+Edge AI Chips        |    $6.8B    |    $38B       |  33%
+HBM Memory           |    $5.5B    |    $35B       |  36%
+
+COMPETITIVE LANDSCAPE
+
+NVIDIA (NVDA) — Dominant Incumbent
+  Market share (DC GPU): 88% (2024)
+  Key product: Blackwell B200 ($30–40K ASP)
+  Moat: CUDA ecosystem (4M+ developers), networking (Spectrum-X)
+  Risk: Customer ASIC development (Google TPU, Amazon Trainium)
+  Rating: Overweight | PT: $185
+
+AMD (AMD) — Credible Challenger
+  Market share (DC GPU): 9% (2024)
+  Key product: MI350X (launching Q1 2026)
+  Opportunity: ROCm 7 closing software gap; hyperscaler design wins
+  Rating: Equal Weight | PT: $175
+
+Intel (INTC) — Restructuring
+  Market share (DC GPU): <2%
+  Key product: Gaudi 3 (competitive TCO but limited adoption)
+  Challenge: Foundry losses, management transition
+  Rating: Underweight | PT: $22
+
+Broadcom (AVGO) — Custom ASIC Leader
+  Revenue: $4.2B from AI ASIC (Google, Meta, ByteDance)
+  Opportunity: 3 additional hyperscaler engagements expected by 2026
+  Rating: Overweight | PT: $230
+
+SUPPLY CHAIN ANALYSIS
+
+TSMC remains the critical bottleneck:
+  - CoWoS advanced packaging capacity: ~35K wafers/month (2025)
+  - Expanding to ~80K wafers/month by end of 2026
+  - N3E (3nm) allocation for AI: 60% of total wafer starts
+
+HBM (High Bandwidth Memory) suppliers:
+  SK Hynix: 53% market share (HBM3E), sole supplier for NVIDIA B200
+  Samsung: 38% market share, qualified for AMD MI350X
+  Micron: 9% share, ramping HBM3E yield improvements
+
+SOVEREIGN AI INVESTMENT WAVE
+
+Country/Region    | Announced Investment | Timeline | Key Projects
+------------------|---------------------|----------|---------------
+Saudi Arabia      |     $100B           | 2025–30  | NEOM AI campus
+UAE               |      $30B           | 2025–28  | G42 data centers
+France            |      $25B           | 2025–30  | "AI France" plan
+Japan             |      $13B           | 2025–27  | NVIDIA Blackwell cluster
+India             |      $10B           | 2025–28  | IndiaAI Mission
+
+RISKS TO THESIS
+1. Export controls: Further US restrictions on China could reduce NVIDIA TAM
+   by ~$15B annually (already reflected in our base case).
+2. Model scaling plateau: If scaling laws diminish, training CAPEX could
+   decelerate faster than inference growth compensates.
+3. Power constraints: 1 GW+ data centers require utility-scale power; permitting
+   delays could push installations out 12–18 months.
+
+VALUATION SUMMARY
+  NVDA: 35× FY2027E EPS = $185 PT (20% upside)
+  AMD:  30× FY2027E EPS = $175 PT (8% upside)
+  AVGO: 28× FY2027E EPS = $230 PT (15% upside)
+  INTC: 18× FY2027E EPS = $22 PT (12% downside)
+
+DISCLAIMER: This analysis is for informational purposes only and does not
+constitute investment advice. Past performance is not indicative of future results.

@@ -1,0 +1,91 @@
+SERIES B PREFERRED STOCK TERM SHEET
+
+Company:          NovaBridge AI, Inc. (Delaware C-Corp)
+Investors:        Horizon Ventures (Lead), Catalyst Capital, Redwood Partners
+Round Size:       $35,000,000
+Pre-Money Valuation: $140,000,000
+Post-Money Valuation: $175,000,000
+Date:             August 20, 2025
+Status:           Non-Binding (except Confidentiality, Exclusivity, Expenses)
+
+SECURITIES AND PRICING
+
+  Security: Series B Preferred Stock
+  Price per share: $8.75 (based on 16,000,000 Series B shares)
+  Authorized shares post-round: 20,000,000 Series B Preferred
+
+INVESTMENT AMOUNTS
+
+  Horizon Ventures:    $20,000,000  (2,285,714 shares)
+  Catalyst Capital:    $10,000,000  (1,142,857 shares)
+  Redwood Partners:     $5,000,000  (  571,429 shares)
+
+CAPITALIZATION (Post-Closing)
+
+  Founders & Common:     10,000,000 shares  (50.0%)
+  Series A Preferred:     4,000,000 shares  (20.0%)
+  Series B Preferred:     4,000,000 shares  (20.0%)
+  ESOP (unallocated):     2,000,000 shares  (10.0%)
+  Total Fully Diluted:   20,000,000 shares
+
+LIQUIDATION PREFERENCE
+  1× non-participating preferred. Series B has senior liquidation preference
+  over Series A and Common. Upon a Deemed Liquidation Event, Series B holders
+  receive the greater of (i) 1× their Original Purchase Price plus declared
+  but unpaid dividends, or (ii) their pro-rata share on an as-converted basis.
+
+ANTI-DILUTION
+  Broad-based weighted average anti-dilution protection.
+
+DIVIDENDS
+  Non-cumulative, 6% per annum when and if declared by the Board.
+  Participation pari passu with Common on an as-converted basis.
+
+CONVERSION
+  Automatic conversion to Common upon (a) IPO with gross proceeds ≥ $75M and
+  per-share price ≥ 3× Series B price, or (b) written consent of 60% of
+  Series B holders. Optional conversion at any time at holder's election.
+
+VOTING RIGHTS
+  One vote per share on an as-converted basis. Series B votes as a separate
+  class on: (i) amendments to Series B terms, (ii) issuance of senior or
+  pari passu securities, (iii) dividends or redemptions, (iv) changes to
+  Board size.
+
+BOARD COMPOSITION
+  5 directors:
+    2 — Common holders (Founders)
+    2 — Series B (1 Horizon, 1 Catalyst)
+    1 — Independent (mutually agreed)
+
+PROTECTIVE PROVISIONS (Series B Consent Required)
+  - Any liquidation, merger, or sale of substantially all assets
+  - Debt exceeding $2,000,000
+  - Related-party transactions > $250,000
+  - Changes to authorized share count
+  - Annual budget approval (if not adopted by Dec 31)
+
+RIGHT OF FIRST REFUSAL & CO-SALE
+  Pro-rata right of first refusal on new issuances. Co-sale right on
+  founder transfers exceeding 5% of holdings per 12-month period.
+
+DRAG-ALONG
+  If holders of 60% of Preferred and a majority of Common approve a sale,
+  all stockholders must participate on the same terms.
+
+INFORMATION RIGHTS
+  Monthly financial statements (within 30 days), annual audited financials
+  (within 90 days), annual budget. Inspection rights with 5 business days notice.
+
+VESTING
+  Founder shares: 4-year vesting, 1-year cliff, monthly thereafter.
+  Acceleration: 50% single-trigger on Change of Control; 100% double-trigger.
+
+EXCLUSIVITY
+  45 days from execution of this term sheet.
+
+EXPENSES
+  Company to reimburse lead investor legal fees up to $75,000.
+
+GOVERNING LAW
+  State of Delaware.

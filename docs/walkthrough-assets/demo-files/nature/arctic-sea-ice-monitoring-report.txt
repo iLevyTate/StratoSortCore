@@ -1,0 +1,70 @@
+Arctic Sea Ice Monitoring Report — September 2025 Minimum
+
+National Snow and Ice Data Center (NSIDC)
+Authors: Dr. Mark Serreze, Dr. Julienne Stroeve
+Release Date: October 1, 2025
+
+ANNUAL MINIMUM EXTENT
+The 2025 Arctic sea ice minimum extent was recorded on September 14 at
+4.08 million km², ranking as the 4th lowest in the 46-year satellite record
+(1979–2025).
+
+RANKING OF LOWEST SEPTEMBER MINIMUMS
+  1. 2012:  3.39 million km²
+  2. 2020:  3.74 million km²
+  3. 2019:  4.01 million km²
+  4. 2025:  4.08 million km²  ← This year
+  5. 2023:  4.12 million km²
+
+The 1981–2010 median September minimum was 6.30 million km². The 2025 value
+represents a 35% departure from this climatological baseline.
+
+ICE THICKNESS AND VOLUME
+CryoSat-2 and ICESat-2 altimetry indicate mean ice thickness of 1.24 m across
+the Arctic basin (September average), continuing the long-term thinning trend
+of -0.13 m/decade. Estimated total ice volume: 4,150 km³ (PIOMAS model),
+compared to ~12,000 km³ in the early 1980s.
+
+REGIONAL BREAKDOWN
+
+Region              | Sep 2025 Extent | Anomaly vs. Median | Trend
+--------------------|-----------------|--------------------|---------
+Beaufort Sea        |   310,000 km²   |    -42%            | -14%/dec
+Chukchi Sea         |   195,000 km²   |    -51%            | -18%/dec
+East Siberian Sea   |   280,000 km²   |    -38%            | -12%/dec
+Laptev Sea          |   125,000 km²   |    -55%            | -20%/dec
+Kara Sea            |   165,000 km²   |    -33%            | -11%/dec
+Barents Sea         |    48,000 km²   |    -61%            | -22%/dec
+Central Arctic      | 2,960,000 km²   |    -22%            |  -8%/dec
+
+CONTRIBUTING FACTORS
+
+1. Atmospheric Circulation: A persistent Arctic dipole pattern (high pressure
+   over Beaufort, low over Eurasia) promoted ice transport out of the Transpolar
+   Drift Stream through Fram Strait.
+
+2. Ocean Heat: Atlantic Water inflow through the Barents Sea Opening was 15%
+   above the 2000–2020 mean, contributing to early melt onset in the Barents
+   and Kara Seas (May 8 vs. median May 22).
+
+3. Albedo Feedback: Early melt pond formation (detected May 15 via MODIS)
+   reduced surface albedo from 0.82 to 0.45, amplifying solar absorption
+   during the 24-hour daylight period.
+
+IMPLICATIONS FOR WILDLIFE
+  - Polar bear (Ursus maritimus): Extended ice-free season in western Hudson
+    Bay reached 168 days (record; mean 135 days), increasing nutritional stress.
+  - Walrus (Odobenus rosmarus): Haul-out events on Alaskan coast began August 2
+    (2 weeks earlier than 2010–2020 mean).
+  - Arctic cod (Boreogadus saida): Under-ice habitat area reduced ~30%;
+    northward range shift of 200 km observed in acoustic surveys.
+
+SHIPPING AND GEOPOLITICAL NOTES
+The Northern Sea Route was ice-free for transit without icebreaker support from
+July 28 to October 12 (77 days), the second-longest open window recorded. Total
+transits in 2025: 127 vessels (up from 92 in 2024).
+
+FORECAST
+NSIDC seasonal forecast models project a 30–40% probability that September
+minimum extent will fall below 3.5 million km² within the next 5 years, and a
+>50% probability of an effectively ice-free Arctic (<1 million km²) by 2040.

@@ -1,0 +1,76 @@
+Annual Budget Forecast — Fiscal Year 2026
+
+Company: Greenleaf Technologies, Inc.
+Prepared by: Finance Department | CFO: Sarah Nakamura
+Board Presentation Date: November 12, 2025
+
+REVENUE PROJECTIONS
+
+Revenue Stream         | FY2025 Actual | FY2026 Forecast | YoY Growth
+-----------------------|---------------|-----------------|----------
+SaaS Subscriptions     |  $18,400,000  |   $24,200,000   |  +31.5%
+Enterprise Licenses    |   $6,800,000  |    $7,900,000   |  +16.2%
+Professional Services  |   $3,200,000  |    $4,100,000   |  +28.1%
+Maintenance & Support  |   $2,600,000  |    $2,900,000   |  +11.5%
+-----------------------|---------------|-----------------|----------
+Total Revenue          |  $31,000,000  |   $39,100,000   |  +26.1%
+
+COST STRUCTURE
+
+Category                   | FY2025 Actual | FY2026 Budget | % Revenue
+---------------------------|---------------|---------------|----------
+Cost of Goods Sold         |   $7,130,000  |   $8,600,000  |  22.0%
+  Cloud Infrastructure     |   $3,800,000  |   $4,500,000  |  11.5%
+  Third-Party Licenses     |   $1,200,000  |   $1,400,000  |   3.6%
+  Customer Success Team    |   $2,130,000  |   $2,700,000  |   6.9%
+                           |               |               |
+Gross Profit               |  $23,870,000  |  $30,500,000  |  78.0%
+Gross Margin               |       77.0%   |       78.0%   |
+                           |               |               |
+Operating Expenses         |               |               |
+  R&D (Engineering)        |   $9,300,000  |  $11,700,000  |  29.9%
+  Sales & Marketing        |   $7,400,000  |   $9,400,000  |  24.0%
+  General & Administrative |   $3,100,000  |   $3,500,000  |   9.0%
+Total OpEx                 |  $19,800,000  |  $24,600,000  |  62.9%
+                           |               |               |
+EBITDA                     |   $4,070,000  |   $5,900,000  |  15.1%
+EBITDA Margin              |       13.1%   |       15.1%   |
+
+HEADCOUNT PLAN
+
+Department     | Current FTEs | FY2026 Target | Net Adds
+---------------|-------------|---------------|--------
+Engineering    |     62      |      78       |   +16
+Product        |     11      |      14       |    +3
+Sales          |     24      |      32       |    +8
+Marketing      |     15      |      18       |    +3
+Customer Succ. |     18      |      23       |    +5
+G&A (HR/Fin)   |     14      |      16       |    +2
+Executive      |      6      |       6       |     0
+---------------|-------------|---------------|--------
+Total          |    150      |     187       |   +37
+
+CAPITAL EXPENDITURE
+
+Item                        | Amount      | Timeline
+----------------------------|-------------|----------
+Office expansion (Floor 3)  | $1,200,000  | Q1 2026
+Data center GPU cluster     |   $800,000  | Q2 2026
+Security infrastructure     |   $350,000  | Q1 2026
+Dev tooling & licenses      |   $280,000  | Ongoing
+Total CapEx                 | $2,630,000  |
+
+KEY ASSUMPTIONS
+1. Net revenue retention rate holds at 118% (current: 121%).
+2. Average selling price increases 8% due to product tier migration.
+3. Cloud costs grow sub-linearly due to reserved instance optimization.
+4. No acquisitions included in base forecast.
+5. USD/EUR exchange rate: 1.08 (hedged for H1 2026).
+
+RISKS & SENSITIVITIES
+  - 5% revenue shortfall → EBITDA drops to $3,950,000 (10.6% margin)
+  - 10% engineering cost overrun → EBITDA drops to $4,730,000 (12.1% margin)
+  - Delayed Floor 3 buildout → pushes 12 hires to Q3, saves $600K in H1
+
+APPROVAL SIGNATURES
+  CEO: _______________  CFO: _______________  Board Chair: _______________

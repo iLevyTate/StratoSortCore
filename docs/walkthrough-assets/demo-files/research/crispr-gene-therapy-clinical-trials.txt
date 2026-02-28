@@ -1,0 +1,115 @@
+CRISPR-Based Gene Therapy: Clinical Trial Landscape and Regulatory Pathways
+
+Authors: Dr. Maya Okonkwo, Dr. Liam Foster, Dr. Kenji Tanaka
+Affiliation: Center for Genomic Medicine, Massachusetts General Hospital
+Published: Annual Review of Genomics and Human Genetics, Vol. 26, 2025
+
+ABSTRACT
+CRISPR-Cas9 and its next-generation variants (base editors, prime editors) have
+advanced from laboratory tools to clinical therapeutics at unprecedented speed.
+As of mid-2025, 87 clinical trials involving CRISPR-based interventions are
+registered globally, spanning oncology, hematology, ophthalmology, and rare
+genetic disorders. This review catalogs the current trial landscape, analyzes
+safety and efficacy data from completed Phase I/II studies, and examines the
+evolving regulatory frameworks in the US, EU, and China.
+
+1. APPROVED THERAPIES
+
+Casgevy (exagamglogene autotemcel) — Vertex/CRISPR Therapeutics
+  Indication: Sickle cell disease (SCD) and transfusion-dependent β-thalassemia
+  Mechanism: Ex vivo editing of BCL11A enhancer in autologous HSCs
+  Approval: FDA (Dec 2023), EMA (Feb 2024), MHRA (Nov 2023)
+  Outcomes (36-month follow-up):
+    SCD: 97% of patients (29/30) free of vaso-occlusive crises
+    β-thal: 93% of patients (28/30) transfusion-independent
+  Safety: Myeloablative conditioning (busulfan) remains primary risk factor
+
+2. PHASE III TRIALS (Selected)
+
+Trial ID     | Sponsor       | Indication         | Editor    | Status
+-------------|---------------|--------------------|-----------|---------
+NCT06128252  | Editas Med    | LCA10 (blindness)  | Cas9      | Enrolling
+NCT05951205  | Intellia      | ATTR amyloidosis   | Cas9      | Phase III
+NCT06234100  | Beam Ther.    | SCD (base edit)    | ABE8e     | Phase II/III
+NCT06301920  | Prime Med.    | Wilson disease      | PE2       | Phase II
+NCT06445500  | Caribou Bio   | r/r B-cell NHL     | Cas12a    | Phase II
+
+3. IN VIVO vs. EX VIVO APPROACHES
+
+                    | Ex Vivo                  | In Vivo
+--------------------|--------------------------|---------------------------
+Delivery            | Electroporation of cells | LNP or AAV to target organ
+Editing efficiency  | >90% (controlled)        | 30–70% (tissue-dependent)
+Off-target control  | High (screened pre-infusion)| Lower (limited monitoring)
+Cost per patient    | $1.5–2.5M                | Est. $500K–1M
+Scalability         | Limited (autologous)     | Higher (off-the-shelf)
+
+Intellia's NTLA-2001 (in vivo liver CRISPR for transthyretin amyloidosis)
+demonstrated 93% reduction in serum TTR protein at 2 years—the strongest
+in vivo editing result to date. This has catalyzed a wave of liver-targeted
+programs using lipid nanoparticle (LNP) delivery.
+
+4. SAFETY LANDSCAPE
+
+4.1 Off-Target Editing
+  GUIDE-seq and CIRCLE-seq nominated <5 off-target sites per therapeutic
+  gRNA. No clinical adverse events attributable to off-target editing have
+  been reported through 2025.
+
+4.2 Genotoxicity
+  Large deletions at on-target sites (>1 kb) detected at 1–5% frequency
+  in preclinical studies. Clinical significance unclear; long-term follow-up
+  (15 years per FDA mandate) ongoing.
+
+4.3 Immune Response
+  Anti-Cas9 antibodies detected in 58% of patients (pre-existing immunity
+  from S. pyogenes exposure). Clinical impact: negligible for ex vivo
+  approaches; potential concern for repeat in vivo dosing.
+
+4.4 Reported Serious Adverse Events (all CRISPR trials, 2019–2025)
+  - Myeloablative conditioning toxicity: 12 events (expected)
+  - Cytokine release syndrome (CAR-T + CRISPR): 8 events (Grade 3+)
+  - Editing-related SAEs: 0 confirmed
+
+5. NEXT-GENERATION EDITORS IN THE CLINIC
+
+Base Editors (BE4max, ABE8e)
+  Single nucleotide changes without double-strand breaks
+  Beam Therapeutics BEAM-101 for SCD: 80% HbF induction (Phase I, n=6)
+
+Prime Editors (PE2, PEmax)
+  Search-and-replace editing (insertions, deletions, all 12 substitutions)
+  Prime Medicine PM359 for chronic granulomatous disease: IND filed Q2 2025
+
+Epigenome Editors (CRISPRoff/CRISPRon)
+  Heritable gene silencing/activation without DNA sequence changes
+  Chroma Medicine: preclinical for PCSK9 silencing (hypercholesterolemia)
+
+6. REGULATORY FRAMEWORKS
+
+FDA (United States)
+  - Regenerative Medicine Advanced Therapy (RMAT) designation available
+  - 15-year follow-up required for all gene-modified cell products
+  - Expedited review pathways utilized for SCD and β-thalassemia
+
+EMA (European Union)
+  - ATMP classification; centralized approval via CAT committee
+  - Conditional Marketing Authorization used for Casgevy
+  - Post-authorization safety study (PASS) required for 10 years
+
+NMPA (China)
+  - 67 CRISPR trials registered (largest national portfolio)
+  - Expedited pathway for rare diseases (< 50,000 patients in China)
+  - Data sharing agreements with WHO for global harmonization
+
+7. COST AND ACCESS
+
+Casgevy list price: $2.2M (US). Budget impact models suggest cost-effectiveness
+at WTP thresholds of $150K/QALY for SCD (given lifetime hospitalization costs
+of $1.6M). Outcomes-based contracts with payers are active in 6 US health systems.
+
+8. CONCLUSIONS
+CRISPR therapeutics have established a strong safety record across >500 treated
+patients. The next frontier is in vivo editing for common diseases (cardiovascular,
+metabolic). Success will depend on: improved delivery vehicles, reduced immunogenicity,
+and equitable access models for high-cost therapies.

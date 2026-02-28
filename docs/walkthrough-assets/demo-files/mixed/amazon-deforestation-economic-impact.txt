@@ -1,0 +1,43 @@
+Amazon Deforestation and Its Economic Impact on Global Carbon Markets
+
+World Resources Institute | Policy Brief No. 42, July 2025
+
+SUMMARY
+Between 2001 and 2024, the Brazilian Amazon lost approximately 230,000 km² of
+primary forest—an area larger than the United Kingdom. This policy brief
+quantifies the economic externalities of continued deforestation through the
+lens of carbon credit markets, agricultural commodity supply chains, and
+ecosystem service valuation.
+
+CARBON ECONOMICS
+  Carbon stored in Amazon biomass: ~150 billion tonnes CO₂e
+  Annual emissions from deforestation (2020–2024 avg): 1.1 Gt CO₂e
+  Social Cost of Carbon (US EPA, 2025): $230/tonne CO₂e
+  Implied annual externality: $253 billion
+
+The voluntary carbon market valued Amazonian REDD+ credits at $8–15/tonne in
+2024, a fraction of the social cost. The EU Carbon Border Adjustment Mechanism
+(CBAM), effective 2026, will increase the effective price of embedded
+deforestation carbon in agricultural exports to the EU to ~€90/tonne.
+
+AGRICULTURAL TRADE IMPACTS
+Brazil exported $47B in soybeans and $12B in beef in 2024. The EU Deforestation
+Regulation (EUDR) requires supply-chain traceability to plot-level coordinates
+by January 2026. Compliance costs are estimated at $1.2B for the Brazilian
+agricultural sector, but non-compliance risks $6.8B in annual EU market access.
+
+ECOSYSTEM SERVICE VALUATION
+  Service                  | Value ($/ha/year) | Total Amazon Value
+  -------------------------|-------------------|-------------------
+  Carbon sequestration     |     $1,800        |  $630 billion
+  Water cycling            |       $720        |  $252 billion
+  Biodiversity (existence) |       $340        |  $119 billion
+  Pollination services     |       $180        |   $63 billion
+  Flood regulation         |       $150        |   $53 billion
+
+RECOMMENDATIONS
+1. Align carbon credit pricing with social cost of carbon through compliance
+   market integration.
+2. Support Brazil's PPCDAm enforcement with $500M multilateral funding.
+3. Accelerate EUDR implementation with technical assistance for smallholders.
+4. Invest in high-resolution satellite monitoring (Planet, NICFI partnership).
