@@ -16,59 +16,79 @@ const os = require('os');
 const DEFAULT_OUTPUT_DIR = path.join(os.homedir(), 'stratosort-demo', 'inbox');
 
 const FIXTURES = {
-  'wildlife-migration-patterns.txt': `Title: Wildlife Migration Patterns
+  'wildlife-migration-patterns.txt': `Category Hint: Nature
+Title: Wildlife Migration Patterns
 
-This field brief summarizes migration corridors for caribou and monarch butterflies.
-Key sections include seasonal movement, habitat pressure, and conservation zones.
-Use this document for ecology and wildlife planning research.`,
+This nature report summarizes wildlife migration corridors for caribou and monarch butterflies.
+Key sections include habitat pressure, biodiversity conservation zones, and ecosystem protection.
+Primary domain: nature, ecology, wildlife, conservation.
+Expected smart folder: Nature.`,
 
-  'rainforest-biodiversity-study.txt': `Title: Rainforest Biodiversity Study
+  'rainforest-biodiversity-study.txt': `Category Hint: Nature
+Title: Rainforest Biodiversity Study
 
-This study reviews canopy species diversity, pollinator density, and restoration outcomes.
-It compares sample plots in tropical forest regions and includes conservation recommendations.
-Use this document for nature and biodiversity classification.`,
+This nature study reviews rainforest biodiversity, canopy species diversity, and ecosystem restoration.
+It compares tropical habitat samples and conservation outcomes for wildlife protection.
+Primary domain: nature, biodiversity, rainforest, ecology.
+Expected smart folder: Nature.`,
 
-  'coral-reef-conservation.txt': `Title: Coral Reef Conservation
+  'coral-reef-conservation.txt': `Category Hint: Nature
+Title: Coral Reef Conservation
 
-This report covers reef bleaching, marine habitat resilience, and coral recovery programs.
-It includes reef monitoring metrics and ocean ecosystem protection notes.
-Use this document for nature and conservation routing.`,
+This nature report covers coral reef conservation, marine ecosystem resilience, and habitat restoration.
+It includes reef biodiversity monitoring and ocean wildlife protection strategies.
+Primary domain: nature, marine ecology, conservation.
+Expected smart folder: Nature.`,
 
-  'quarterly-profit-loss-statement.txt': `Title: Quarterly Profit and Loss Statement
+  'quarterly-profit-loss-statement.txt': `Category Hint: Finances
+Title: Quarterly Profit and Loss Statement
 
-Revenue, operating expenses, and net income are summarized for Q1.
-The document includes gross margin tables, variance notes, and accounting commentary.
-Use this file for finance and business statement categorization.`,
+This is a FINANCIAL document and accounting statement.
+It summarizes quarterly revenue, operating expenses, gross margin, cash flow, liabilities, and net income.
+The report contains accounting ledger references, finance controls, tax liabilities, and audit notes.
+Primary domain: finance, accounting, profit and loss, financial reporting.
+Expected smart folder: Finances.
+Not related to nature, wildlife, rainforest, coral reef, or ecology.`,
 
-  'investment-portfolio-analysis.txt': `Title: Investment Portfolio Analysis
+  'investment-portfolio-analysis.txt': `Category Hint: Finances
+Title: Investment Portfolio Analysis
 
-This analysis reviews asset allocation, risk exposure, and expected return profiles.
-The report includes equity, bond, and cash position summaries for investor review.
-Use this file for finance and investment routing.`,
+This finance report reviews investment portfolio allocation across equities, bonds, and cash.
+It includes risk-adjusted return metrics, portfolio performance, and financial planning notes.
+Primary domain: finance, investment, portfolio management.
+Expected smart folder: Finances.`,
 
-  'tax-deduction-worksheet.txt': `Title: Tax Deduction Worksheet
+  'tax-deduction-worksheet.txt': `Category Hint: Finances
+Title: Tax Deduction Worksheet
 
-Contains deductible expense categories, annual tax notes, and filing references.
-Includes line-item calculations for business deductions and compliance reminders.
-Use this file for finance and tax documentation.`,
+This finance worksheet contains deductible expense categories, annual tax filing totals, and compliance notes.
+It includes accounting line items for tax deductions and financial documentation.
+Primary domain: finance, tax, accounting.
+Expected smart folder: Finances.`,
 
-  'climate-change-data-analysis.txt': `Title: Climate Change Data Analysis
+  'climate-change-data-analysis.txt': `Category Hint: Research
+Title: Climate Change Data Analysis
 
-This research memo analyzes long-term temperature trends and emissions data.
-It includes statistical methods, data tables, and interpretation notes for climate science.
-Use this document for scientific research categorization.`,
+This scientific research memo analyzes climate change datasets, emissions trends, and statistical models.
+It includes methodology, experimental assumptions, and data interpretation for research conclusions.
+Primary domain: research, scientific analysis, data science.
+Expected smart folder: Research.`,
 
-  'machine-learning-neural-networks.txt': `Title: Machine Learning Neural Networks
+  'machine-learning-neural-networks.txt': `Category Hint: Research
+Title: Machine Learning Neural Networks
 
-Technical notes on neural network architectures, model training, and evaluation metrics.
-Includes backpropagation summaries and experiment tracking observations.
-Use this document for technical research and model-development topics.`,
+This technical research note describes neural network architectures, model training experiments, and evaluation metrics.
+It includes hypothesis testing, reproducibility details, and research findings.
+Primary domain: research, machine learning, experimentation.
+Expected smart folder: Research.`,
 
-  'pharmaceutical-drug-trial-results.txt': `Title: Pharmaceutical Drug Trial Results
+  'pharmaceutical-drug-trial-results.txt': `Category Hint: Research
+Title: Pharmaceutical Drug Trial Results
 
-Clinical trial outcomes, efficacy comparisons, and adverse event summaries are included.
-The report contains study protocol references and statistical confidence ranges.
-Use this document for medical research and scientific analysis routing.`
+This medical research report summarizes clinical trial efficacy, adverse event data, and study methodology.
+It includes statistical significance, protocol references, and peer-review research context.
+Primary domain: research, pharmaceutical science, clinical studies.
+Expected smart folder: Research.`
 };
 
 function parseArgs(argv) {
