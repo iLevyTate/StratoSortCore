@@ -19,13 +19,15 @@ Linux AppImage (v2.0.4). Each section maps to one phase of the app workflow.
 7. [Search & Knowledge OS](#7-search--knowledge-os)
 8. [Settings — Full Reference](#8-settings--full-reference)
 9. [Videos](#9-videos)
+10. [Video Transcripts (VoiceOver)](#video-transcripts-voiceover)
 
 ---
 
 ## 1. First Launch & Model Setup
 
-On first launch, StratoSort checks for AI models in `~/.config/stratosort-core/models/`. If
-required models are missing, a setup wizard guides you through downloading them.
+On first launch, StratoSort checks for AI models in `~/.config/StratoSort Core/models/` (via
+`app.getPath('userData')`). If required models are missing, a setup wizard guides you through
+downloading them.
 
 ### Model Selection
 
@@ -557,6 +559,21 @@ interactions:
 | `07_prod_organize_and_knowledge_os.mp4` | ~3 min | Production AppImage: Organize phase, Search widget, Knowledge OS Discover tab searches |
 | `08_knowledge_os_all_tabs_complete.mp4` | ~8 min | **All Knowledge OS tabs**: Discover search, Understand (AI chat with RAG), Relate (Knowledge Graph with clusters, insights, legend) |
 
+### Video Transcripts (VoiceOver)
+
+Transcripts for accessibility and audio VoiceOver are in `docs/e2e-transcripts/`. Each transcript
+describes the on-screen content in narrative form for recording:
+
+| Transcript | Video |
+|:-----------|:------|
+| `01_welcome_and_setup_walkthrough.md` | Welcome, How it works modal, Setup, Add Folder, Discover |
+| `02_discover_phase_walkthrough.md` | Naming Strategy, Knowledge OS, file selection, analysis start |
+| `03_discover_analysis_and_model_setup.md` | Model download wizard, progress bars, Scan Folder |
+| `04_settings_search_and_navigation.md` | Search widget, Settings panel, Knowledge OS |
+| `05_settings_deep_dive_and_scan_folder.md` | All 6 Settings sections, Scan Folder demo |
+| `06_organize_and_knowledge_os_demo.md` | Organize phase, AI suggestions, Knowledge OS search |
+| `08_knowledge_os_all_tabs_complete.md` | Discover, Understand, Relate tabs |
+
 ---
 
 ## Linux-Specific Notes
@@ -573,8 +590,10 @@ chmod +x StratoSortCore-2.0.4-linux-x86_64.AppImage
 
 ### Models Directory
 
-Models are stored in `~/.config/stratosort-core/models/`. The app creates this directory
-automatically and downloads models on first launch.
+Models are stored in `~/.config/StratoSort Core/models/` (the `userData` path). The app creates
+this directory automatically and downloads models on first launch. Note: The legacy path
+`~/.config/stratosort-core/models/` is used by the postinstall script; the running app uses
+the `StratoSort Core` path.
 
 ### Settings Location
 
