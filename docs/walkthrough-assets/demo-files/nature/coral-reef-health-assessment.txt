@@ -1,0 +1,55 @@
+Coral Reef Health Assessment — Indo-Pacific Survey 2025
+
+Marine Biological Laboratory | Woods Hole Oceanographic Institution
+Lead: Dr. Anika Chowdhury, Reef Systems Group
+Survey Period: March 15 – June 30, 2025
+
+EXECUTIVE SUMMARY
+We conducted 312 belt-transect surveys across 14 reef sites in the Coral Triangle
+region (Indonesia, Philippines, Papua New Guinea). Overall live coral cover averaged
+38.2% (±6.7), a modest recovery from the 2023 bleaching event low of 31.4%.
+
+SITE HIGHLIGHTS
+
+Raja Ampat, Indonesia
+  Live coral cover: 52.1%  |  Bleaching prevalence: 4.2%
+  Dominant genera: Acropora, Porites, Montipora
+  Fish biomass: 184 kg/ha (above regional mean)
+  Notes: Marine Protected Area enforcement strong; illegal blast fishing
+  incidents down 60% year-over-year
+
+Tubbataha Reefs, Philippines
+  Live coral cover: 41.8%  |  Bleaching prevalence: 8.1%
+  Dominant genera: Pocillopora, Porites
+  Fish biomass: 127 kg/ha
+  Notes: Crown-of-thorns starfish (COTS) outbreak contained via diver removal
+  program; 2,300 COTS removed Q2 2025
+
+Kimbe Bay, Papua New Guinea
+  Live coral cover: 29.4%  |  Bleaching prevalence: 12.6%
+  Dominant genera: Porites, Pavona
+  Fish biomass: 89 kg/ha (below threshold)
+  Notes: Sedimentation from upstream logging remains primary stressor
+
+METHODOLOGY
+  Transect protocol: 50 m × 2 m belt, point-intercept at 50 cm intervals
+  Depth range: 3–15 m
+  Photo quadrats: 0.5 m² per station, 4 stations per transect
+  Water quality: YSI EXO2 sonde (temperature, salinity, turbidity, DO, pH)
+
+THERMAL STRESS INDEX
+  Degree Heating Weeks (DHW) peaked at 6.2 in southern Philippines (April 2025),
+  triggering Alert Level 1. Raja Ampat remained below 3.0 DHW throughout the survey.
+
+RECOMMENDATIONS
+1. Expand COTS early-detection buoys to 6 additional Philippines sites.
+2. Establish sediment traps in Kimbe Bay watershed; coordinate with forestry ministry.
+3. Deploy autonomous reef-monitoring cameras (ARMS units) at all 14 sites for
+   year-round benthic cover tracking.
+4. Prioritize genetic sampling of heat-tolerant Acropora colonies for assisted gene
+   flow pilot program.
+
+APPENDIX
+  Full transect data: reef_survey_2025_transects.xlsx
+  Photo archive: /reef_photos/2025_IndoPacific/
+  Water quality time series: wq_timeseries_mar_jun2025.csv

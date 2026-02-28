@@ -1,0 +1,72 @@
+Quarterly Portfolio Performance Report — Q3 2025
+
+Prepared for: Meridian Capital Partners, LP
+Investment Manager: Crestline Wealth Advisors
+Date: October 15, 2025
+
+PORTFOLIO SUMMARY
+
+Total AUM (as of Sep 30, 2025):  $48,720,000
+Net Return (Q3):                 +4.82%
+Benchmark (S&P 500 TR):         +3.61%
+Alpha Generated:                 +1.21%
+Sharpe Ratio (trailing 12-mo):  1.34
+
+ASSET ALLOCATION
+
+Asset Class             | Allocation | Q3 Return | Benchmark
+------------------------|------------|-----------|----------
+US Large-Cap Equity     |    35.0%   |   +5.12%  |  +4.20%
+US Mid/Small-Cap Equity |    12.0%   |   +6.84%  |  +5.30%
+International Developed |    15.0%   |   +3.45%  |  +2.90%
+Emerging Markets        |     8.0%   |   +2.18%  |  +1.60%
+Investment-Grade Bonds  |    15.0%   |   +1.92%  |  +1.75%
+High-Yield Bonds        |     5.0%   |   +3.28%  |  +2.90%
+Real Assets (REITs)     |     5.0%   |   +7.62%  |  +6.40%
+Alternatives (PE/HF)    |     3.0%   |   +4.10%  |    N/A
+Cash & Equivalents      |     2.0%   |   +1.32%  |  +1.30%
+
+TOP EQUITY HOLDINGS
+
+Symbol  | Name                  | Weight | Q3 Return | Contribution
+--------|-----------------------|--------|-----------|-------------
+NVDA    | NVIDIA Corporation    |  4.2%  |  +18.3%   |   +0.77%
+MSFT    | Microsoft Corp        |  3.8%  |   +7.1%   |   +0.27%
+AAPL    | Apple Inc             |  3.5%  |   +4.6%   |   +0.16%
+AMZN    | Amazon.com Inc        |  3.1%  |   +9.2%   |   +0.29%
+LLY     | Eli Lilly & Co        |  2.7%  |  +12.4%   |   +0.33%
+UNH     | UnitedHealth Group    |  2.3%  |   +5.8%   |   +0.13%
+JPM     | JPMorgan Chase        |  2.1%  |   +8.9%   |   +0.19%
+V       | Visa Inc              |  1.9%  |   +6.3%   |   +0.12%
+AVGO    | Broadcom Inc          |  1.8%  |  +14.7%   |   +0.26%
+XOM     | Exxon Mobil Corp      |  1.6%  |   -2.1%   |   -0.03%
+
+RISK METRICS
+
+  Portfolio Beta:                0.92
+  Max Drawdown (Q3):           -3.14% (Aug 5 market selloff)
+  VaR (95%, 1-day):            $243,600
+  Tracking Error (annualized):  2.18%
+  Information Ratio:            0.55
+
+COMMENTARY
+The portfolio outperformed the benchmark by 121 basis points in Q3, driven
+primarily by our overweight in semiconductor and healthcare names. The August
+volatility event (triggered by Bank of Japan rate concerns) was managed through
+our systematic rebalancing discipline—we added to equities on the drawdown,
+which contributed approximately 40 bps of alpha recovery.
+
+Our alternatives sleeve delivered steady returns from the Sequoia Growth Fund IV
+(vintage 2022), which marked up several portfolio companies after strong Q2
+earnings. The real assets allocation benefited from falling interest rate
+expectations, with REITs posting the strongest quarterly return across our sleeve.
+
+OUTLOOK & RECOMMENDED ACTIONS
+1. Reduce US Large-Cap Equity by 2% (take profits on semiconductor gains).
+2. Increase International Developed by 2% (European value opportunity).
+3. Maintain fixed-income duration at 5.2 years (anticipating Fed rate cuts).
+4. Review high-yield exposure for credit quality deterioration signals.
+
+DISCLOSURES
+Past performance does not guarantee future results. This report is confidential
+and intended solely for the named recipient.

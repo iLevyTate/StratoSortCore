@@ -1,0 +1,49 @@
+Monarch Butterfly Migration Patterns — Field Report 2025
+
+Principal Investigator: Dr. Elena Vasquez, Department of Entomology
+Location: Pacific Grove Monarch Sanctuary, California
+Season: October 2025 — February 2026
+
+ABSTRACT
+This report documents the annual overwintering aggregation of Danaus plexippus
+(monarch butterfly) at the Pacific Grove sanctuary. Our team recorded an estimated
+24,600 individuals—a 14% increase over the 2024 season—clustered primarily in
+Monterey pine and eucalyptus groves within a 2.3-hectare core area.
+
+KEY OBSERVATIONS
+
+Temperature & Microclimate
+  Average canopy temperature: 12.4 °C (±1.1)
+  Average humidity: 78% RH
+  Wind speed at cluster height: < 2 m/s
+
+Population Dynamics
+  Peak arrival: November 8–14
+  Peak departure: February 18–22
+  Mortality events: 2 frost events (Jan 3, Jan 17) caused ~3% attrition
+
+Tagging Results
+  Tags deployed: 1,200 (wing-adhesive alphanumeric)
+  Re-sights from northern sites: 47 individuals traced to Oregon/Washington
+  Longest confirmed flight: 2,840 km (Ashland, OR → Pacific Grove, CA)
+
+HABITAT NOTES
+The primary roosting trees—Monterey pines aged 60–80 years—showed signs of pitch
+canker (Fusarium circinatum). Three mature trees were removed after the 2024 season,
+reducing canopy cover by ~8%. Supplemental eucalyptus plantings (2022 cohort) have
+reached 6 m height and are beginning to provide viable alternative roost sites.
+
+Milkweed (Asclepias fascicularis) restoration plots along the coastal corridor showed
+a 22% increase in stem density, which correlates with higher early-season oviposition
+rates observed in the central valley waypoints.
+
+CONSERVATION RECOMMENDATIONS
+1. Continue annual Fusarium monitoring and selective pruning.
+2. Expand native milkweed plantings at highway median strips (Hwy 1 corridor).
+3. Install additional weather stations at 5 m and 15 m canopy heights.
+4. Partner with citizen-science platform iNaturalist for broader re-sight data.
+
+DATA FILES
+  Raw tag data: monarch_tags_2025.csv
+  Weather logs: pacific_grove_wx_oct25_feb26.json
+  Photo transects: /transects/PG_2025_T01–T48/

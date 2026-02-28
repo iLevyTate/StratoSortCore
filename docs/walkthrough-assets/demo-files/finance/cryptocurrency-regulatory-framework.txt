@@ -1,0 +1,97 @@
+Global Cryptocurrency Regulatory Framework — Comparative Analysis 2025
+
+Prepared by: Brookings Institution, Digital Assets Policy Program
+Authors: Dr. Timothy Massad, Esme Hawkins, J.D.
+Published: August 2025
+
+EXECUTIVE SUMMARY
+The global regulatory landscape for digital assets has matured significantly
+since the EU's Markets in Crypto-Assets (MiCA) regulation took full effect in
+December 2024. This paper provides a comparative analysis of cryptocurrency
+regulatory frameworks across 12 major jurisdictions, evaluating their
+approaches to consumer protection, anti-money laundering, stablecoin oversight,
+and DeFi governance.
+
+JURISDICTION COMPARISON MATRIX
+
+Jurisdiction    | Framework Status  | Stablecoin Rules | DeFi Rules | Exchange Licensing
+----------------|-------------------|------------------|------------|-------------------
+United States   | Fragmented*       | Partial (OCC)    | Pending    | State-by-state
+European Union  | Comprehensive     | Full (MiCA)      | Under study| Mandatory (CASP)
+United Kingdom  | Phased rollout    | Proposed          | Sandbox    | FCA registration
+Japan           | Comprehensive     | Full (PSA)       | Guidelines | Mandatory (FSA)
+Singapore       | Comprehensive     | Full (PS Act)    | Risk-based | Mandatory (MAS)
+Switzerland     | Comprehensive     | Integrated       | Principles | Mandatory (FINMA)
+UAE             | Comprehensive     | Full (VARA)      | Permitted  | Mandatory (VARA)
+Hong Kong       | Phased rollout    | Proposed          | Pending    | Mandatory (SFC)
+South Korea     | Implementation    | Proposed          | Pending    | Mandatory
+India           | Tax framework     | Banned            | Banned     | Under consideration
+China           | Prohibition       | CBDC only         | Banned     | Banned
+Brazil          | Framework law     | Under development | Pending    | Mandatory (BCB)
+
+* US: SEC, CFTC, OCC, FinCEN, state regulators all have overlapping jurisdiction.
+  FIT21 (Financial Innovation and Technology for the 21st Century Act) passed
+  House in 2024; Senate debate ongoing as of Aug 2025.
+
+STABLECOIN REGULATION DEEP DIVE
+
+Global stablecoin market cap: $178 billion (Aug 2025)
+  - USDT (Tether): $95B (53%)
+  - USDC (Circle): $52B (29%)
+  - DAI (MakerDAO): $8.2B (5%)
+  - Others: $22.8B (13%)
+
+MiCA Requirements (EU):
+  - 1:1 reserve backing in high-quality liquid assets (cash, government bonds)
+  - Reserves held at EU credit institutions (30% minimum in cash)
+  - Quarterly reserve attestations by independent auditors
+  - €200M daily transaction cap for non-euro stablecoins (significant asset-
+    referenced tokens)
+  - Tether (USDT): Non-compliant as of June 2025; delisted from EU exchanges
+
+US Approach:
+  - OCC interpretive letter (Jan 2025): National banks may issue stablecoins
+  - Lummis-Gillibrand Payment Stablecoin Act: Requires 100% reserves, monthly
+    attestations, $10B issuer threshold for Fed oversight
+  - Status: Committee markup completed; floor vote expected Q4 2025
+
+DECENTRALIZED FINANCE (DeFi) CHALLENGES
+
+Total Value Locked (DeFi): $148 billion (Aug 2025)
+Top protocols: Lido ($38B), Aave ($22B), MakerDAO ($18B), Uniswap ($11B)
+
+Regulatory questions unresolved:
+1. Who is the "issuer" or "operator" of a decentralized protocol?
+2. Can smart contract code constitute a "prospectus" or "white paper"?
+3. How do KYC/AML requirements apply to non-custodial protocols?
+4. Jurisdiction over DAOs with globally distributed token holders?
+
+EU approach: European Commission study (due Dec 2025) evaluating whether MiCA
+requires amendment for DeFi. Likely outcome: "same activity, same risk, same
+regulation" with implementation guidance for protocol operators.
+
+ENFORCEMENT STATISTICS (2023–2025)
+
+Agency    | Actions Filed | Penalties Assessed | Key Cases
+----------|---------------|--------------------|-----------
+SEC (US)  |      78       |     $4.2B          | Coinbase, Binance
+CFTC (US) |      34       |     $1.8B          | FTX settlement
+DOJ (US)  |      22       |     $3.1B          | Binance (CZ plea)
+FCA (UK)  |      15       |     £180M          | Unregistered exchanges
+MAS (SG)  |       8       |     S$45M          | 3AC-related entities
+
+CONSUMER PROTECTION METRICS
+
+Estimated crypto fraud losses (global, 2024): $14.8 billion
+  - Pig-butchering scams: $4.2B (28%)
+  - Rug pulls / exit scams: $3.1B (21%)
+  - Phishing / social engineering: $2.8B (19%)
+  - Ponzi / yield schemes: $2.4B (16%)
+  - Exchange hacks: $2.3B (16%)
+
+POLICY RECOMMENDATIONS
+1. Establish international stablecoin standards through FSB/IOSCO coordination.
+2. Adopt activity-based (not entity-based) regulation for DeFi protocols.
+3. Create regulatory sandboxes for tokenized real-world assets (RWA).
+4. Mandate on-chain analytics for AML compliance (Chainalysis, Elliptic).
+5. Harmonize tax reporting (OECD Crypto-Asset Reporting Framework by 2027).
