@@ -120,6 +120,23 @@ function EmbeddingRebuildSection({ addNotification }) {
     };
   }, [refreshStats]);
 
+  useEffect(() => {
+    const handleOperationProgress = (event) => {
+      const payload = event?.detail;
+      if (!payload || payload.type !== 'batch_analyze') return;
+
+      const completed = Number(payload.completed);
+      const total = Number(payload.total);
+      if (Number.isFinite(completed) && Number.isFinite(total) && total > 0 && completed >= total) {
+        embeddingsIpc.invalidateStatsCache();
+        refreshStats({ force: true });
+      }
+    };
+
+    window.addEventListener('operation-progress', handleOperationProgress);
+    return () => window.removeEventListener('operation-progress', handleOperationProgress);
+  }, [refreshStats]);
+
   const statsLabel = useMemo(() => {
     if (isLoadingStats && !stats) return 'Loading embeddings status\u2026';
     if (!stats) return 'Embeddings status unavailable - check AI engine status';

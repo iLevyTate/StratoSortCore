@@ -146,6 +146,41 @@ function GraphRetrievalSection({ settings, setSettings }) {
     refreshStats();
   }, [refreshStats]);
 
+  useEffect(() => {
+    let inFlight = false;
+    const refreshIfIdle = (force = false) => {
+      if (inFlight) return;
+      inFlight = true;
+      Promise.resolve(refreshStats({ force })).finally(() => {
+        inFlight = false;
+      });
+    };
+
+    const intervalId = setInterval(() => {
+      if (document.hidden) return;
+      refreshIfIdle(false);
+    }, 8000);
+
+    const handleOperationProgress = (event) => {
+      const payload = event?.detail;
+      if (!payload || payload.type !== 'batch_analyze') return;
+      refreshIfIdle(false);
+
+      const completed = Number(payload.completed);
+      const total = Number(payload.total);
+      if (Number.isFinite(completed) && Number.isFinite(total) && total > 0 && completed >= total) {
+        embeddingsIpc.invalidateStatsCache();
+        refreshIfIdle(true);
+      }
+    };
+
+    window.addEventListener('operation-progress', handleOperationProgress);
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('operation-progress', handleOperationProgress);
+    };
+  }, [refreshStats]);
+
   return (
     <SettingsCard
       title="Graph retrieval"

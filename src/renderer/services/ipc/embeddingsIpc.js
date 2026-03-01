@@ -1,6 +1,6 @@
 import { requireElectronAPI } from './electronApi';
 
-const EMBEDDINGS_STATS_CACHE_MS = 15000;
+const EMBEDDINGS_STATS_CACHE_MS = 5000;
 let cachedStats = null;
 let cacheExpiresAt = 0;
 let inFlightStatsPromise = null;

@@ -12,6 +12,7 @@ import { useStore } from 'react-redux';
 import { PHASES, FILE_STATES } from '../../../shared/constants';
 import { TIMEOUTS, CONCURRENCY, RETRY } from '../../../shared/performanceConstants';
 import { createLogger } from '../../../shared/logger';
+import { embeddingsIpc } from '../../services/ipc';
 import {
   validateProgressState,
   generatePreviewName as generatePreviewNameUtil,
@@ -338,6 +339,14 @@ export function useAnalysis(options = {}) {
   const activeBatchIdRef = useRef(null);
   const cancelInFlightBatchIdRef = useRef(null);
 
+  const invalidateEmbeddingStatsCache = useCallback(() => {
+    try {
+      embeddingsIpc.invalidateStatsCache();
+    } catch {
+      // Non-fatal: stale stats are preferable to interrupting analysis flow.
+    }
+  }, []);
+
   // Sync refs during render (avoids useEffect overhead)
   isAnalyzingRef.current = isAnalyzing;
   globalAnalysisActiveRef.current = globalAnalysisActive;
@@ -446,6 +455,7 @@ export function useAnalysis(options = {}) {
   const resetAnalysisState = useCallback(
     (reason) => {
       logger.info('Resetting analysis state', { reason });
+      invalidateEmbeddingStatsCache();
       const activeRunId = analysisRunIdRef.current;
       captureCancelledBatchSnapshot(activeRunId);
       requestMainBatchCancel('reset-analysis-state');
@@ -500,6 +510,7 @@ export function useAnalysis(options = {}) {
       }
     },
     [
+      invalidateEmbeddingStatsCache,
       setIsAnalyzing,
       setAnalysisProgress,
       setCurrentAnalysisFile,
@@ -1432,6 +1443,7 @@ export function useAnalysis(options = {}) {
       } finally {
         const shouldCleanup = isActiveRun();
         if (shouldCleanup) {
+          invalidateEmbeddingStatsCache();
           flushPendingResults(true);
           if (heartbeatIntervalRef.current) {
             clearInterval(heartbeatIntervalRef.current);
@@ -1514,6 +1526,7 @@ export function useAnalysis(options = {}) {
       }
     },
     [
+      invalidateEmbeddingStatsCache,
       setIsAnalyzing,
       setCurrentAnalysisFile,
       setAnalysisProgress,
@@ -1541,6 +1554,7 @@ export function useAnalysis(options = {}) {
    * Cancel current analysis
    */
   const cancelAnalysis = useCallback(() => {
+    invalidateEmbeddingStatsCache();
     requestMainBatchCancel('user-stop');
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -1595,6 +1609,7 @@ export function useAnalysis(options = {}) {
 
     addNotification('Analysis stopped', 'info', 2000);
   }, [
+    invalidateEmbeddingStatsCache,
     setIsAnalyzing,
     setCurrentAnalysisFile,
     setAnalysisProgress,

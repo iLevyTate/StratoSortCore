@@ -9,6 +9,7 @@ import { removeSelectedFile } from '../slices/filesSlice';
 import { removeAnalysisResult } from '../slices/analysisSlice';
 import { atomicRemoveFilesWithCleanup } from '../slices/atomicActions';
 import { updateEmbeddingState } from '../slices/analysisSlice';
+import { embeddingsIpc } from '../../services/ipc';
 
 /**
  * Atomically remove a single file from both filesSlice and analysisSlice.
@@ -62,6 +63,7 @@ export const setEmbeddingPolicyForFile = (filePath, policy) => async (dispatch, 
 
   const result = await api.setEmbeddingPolicy(filePath, policy);
   if (result?.success) {
+    embeddingsIpc.invalidateStatsCache();
     const state = typeof getState === 'function' ? getState() : null;
     const existing = state?.analysis?.results?.find?.((r) => r?.path === filePath) || null;
     const prevStatus = existing?.embeddingStatus || existing?.analysis?.embeddingStatus || null;

@@ -3205,6 +3205,54 @@ export default function UnifiedSearchModal({
     };
   }, [isOpen, refreshStats]);
 
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    let timerId = null;
+    let lastRefreshAt = 0;
+    const MIN_REFRESH_INTERVAL_MS = 1500;
+
+    const scheduleRefresh = (force = false) => {
+      const now = Date.now();
+      const elapsed = now - lastRefreshAt;
+      const invoke = () => {
+        lastRefreshAt = Date.now();
+        refreshStats({ force });
+      };
+
+      if (force || elapsed >= MIN_REFRESH_INTERVAL_MS) {
+        invoke();
+        return;
+      }
+
+      if (timerId) return;
+      timerId = setTimeout(() => {
+        timerId = null;
+        invoke();
+      }, MIN_REFRESH_INTERVAL_MS - elapsed);
+    };
+
+    const handleOperationProgress = (event) => {
+      const payload = event?.detail;
+      if (!payload || payload.type !== 'batch_analyze') return;
+
+      scheduleRefresh(false);
+
+      const completed = Number(payload.completed);
+      const total = Number(payload.total);
+      if (Number.isFinite(completed) && Number.isFinite(total) && total > 0 && completed >= total) {
+        embeddingsIpc.invalidateStatsCache();
+        scheduleRefresh(true);
+      }
+    };
+
+    window.addEventListener('operation-progress', handleOperationProgress);
+    return () => {
+      if (timerId) clearTimeout(timerId);
+      window.removeEventListener('operation-progress', handleOperationProgress);
+    };
+  }, [isOpen, refreshStats]);
+
   const rebuildFolders = useCallback(async () => {
     const rebuild = window?.electronAPI?.embeddings?.rebuildFolders;
     if (typeof rebuild !== 'function') return;
