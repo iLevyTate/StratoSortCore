@@ -1,0 +1,38 @@
+# docs/_config.yml
+title: 'StratoSort Core'
+description: 'Intelligent File Organization with Privacy-First Local AI'
+url: 'https://iLevyTate.github.io'
+baseurl: '/StratoSortCore'
+
+# Use Minimal Mistakes as a remote theme
+remote_theme: 'mmistakes/minimal-mistakes'
+
+# Required plugin for Minimal Mistakes
+plugins:
+  - jekyll-include-cache
+
+# Minimal Mistakes Specific Configuration
+minimal_mistakes_skin: 'dark' # We use dark mode to match the app's aesthetic
+search: true
+
+# Sidebar and main navigation configuration
+navigation:
+  main:
+    - title: 'Home'
+      url: /
+    - title: 'Docs'
+      url: /INSTALL_GUIDE.html
+    - title: 'GitHub'
+      url: 'https://github.com/iLevyTate/StratoSortCore'
+
+# Defaults for all markdown files in this repo to automatically get the single layout
+# and the sidebar navigation
+defaults:
+  - scope:
+      path: '' # an empty string here means all files in the project
+      type: 'pages'
+    values:
+      layout: 'single'
+      author_profile: false
+      sidebar:
+        nav: 'docs'

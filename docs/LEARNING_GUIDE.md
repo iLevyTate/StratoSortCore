@@ -1,3 +1,5 @@
+-- layout: single title: "LEARNING GUIDE" sidebar: nav: "docs" --
+
 # StratoSort Core Codebase Learning Guide
 
 Welcome to the StratoSort Core codebase! This guide is designed to serve as a comprehensive map for

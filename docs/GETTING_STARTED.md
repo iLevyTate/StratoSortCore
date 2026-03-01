@@ -1,3 +1,5 @@
+-- layout: single title: "GETTING STARTED" sidebar: nav: "docs" --
+
 # Getting Started with StratoSort Core
 
 <p align="center">

@@ -1,3 +1,5 @@
+-- layout: single title: "README" sidebar: nav: "docs" --
+
 # StratoSort Core Documentation Index
 
 This directory contains comprehensive documentation for the StratoSort codebase. Use this guide to

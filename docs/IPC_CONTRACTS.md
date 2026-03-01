@@ -1,3 +1,5 @@
+-- layout: single title: "IPC CONTRACTS" sidebar: nav: "docs" --
+
 # IPC Contracts
 
 This document describes the IPC payload contracts used between the renderer and main processes.

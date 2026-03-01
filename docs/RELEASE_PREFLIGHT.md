@@ -1,3 +1,5 @@
+-- layout: single title: "RELEASE PREFLIGHT" sidebar: nav: "docs" --
+
 # StratoSort Release Preflight
 
 Run this before creating a beta/release tag.

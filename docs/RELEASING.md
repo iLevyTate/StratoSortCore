@@ -1,3 +1,5 @@
+-- layout: single title: "RELEASING" sidebar: nav: "docs" --
+
 # Releasing StratoSort Core
 
 This guide covers release packaging for both Windows and macOS, plus how GitHub Actions publishes

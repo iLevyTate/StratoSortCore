@@ -1,3 +1,5 @@
+-- layout: single title: "INSTALL GUIDE" sidebar: nav: "docs" --
+
 # StratoSort Core — Install Guide
 
 **One download. No command line. No extra software.**

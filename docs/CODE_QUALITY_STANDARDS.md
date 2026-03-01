@@ -1,3 +1,5 @@
+-- layout: single title: "CODE QUALITY STANDARDS" sidebar: nav: "docs" --
+
 # Code Quality Standards and Style Guide
 
 ## Overview

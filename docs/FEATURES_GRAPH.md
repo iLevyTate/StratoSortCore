@@ -1,3 +1,5 @@
+-- layout: single title: "FEATURES GRAPH" sidebar: nav: "docs" --
+
 # Knowledge Graph Features
 
 ## Overview

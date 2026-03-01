@@ -1,3 +1,5 @@
+-- layout: single title: "BETA TESTER GUIDE" sidebar: nav: "docs" --
+
 # StratoSort Core Beta Tester Guide
 
 This guide is for people who want to help test StratoSort Core without using the command line.

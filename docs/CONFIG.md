@@ -1,3 +1,5 @@
+-- layout: single title: "CONFIG" sidebar: nav: "docs" --
+
 # Configuration Reference
 
 This document lists all environment variables and configuration options available in StratoSort

@@ -1,3 +1,5 @@
+-- layout: single title: "ARCHITECTURE" sidebar: nav: "docs" --
+
 - ### Graph UX notes
   - **Bridge files**: Cross-cluster edges include a small sample of "bridge files" picked by
     similarity to opposing cluster centroids. This is best-effort and not an exhaustive list.

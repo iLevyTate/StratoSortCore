@@ -1,3 +1,5 @@
+-- layout: single title: "MOTION SYSTEM" sidebar: nav: "docs" --
+
 # Motion System
 
 This project uses a restrained motion language designed to feel premium, clear, and calm.

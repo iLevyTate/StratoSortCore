@@ -1,3 +1,5 @@
+-- layout: single title: "DEPENDENCY BOUNDARIES" sidebar: nav: "docs" --
+
 # Dependency Boundaries
 
 This document defines main/renderer/shared boundaries to prevent cross-layer coupling.

@@ -1,3 +1,5 @@
+-- layout: single title: "DI PATTERNS" sidebar: nav: "docs" --
+
 # Dependency Injection Patterns
 
 This document describes the dependency injection (DI) patterns used in the StratoSort Core codebase.

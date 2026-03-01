@@ -1,0 +1,48 @@
+# docs/_data/navigation.yml
+docs:
+  - title: Getting Started
+    children:
+      - title: 'Home / Overview'
+        url: /
+      - title: 'Installation Guide'
+        url: /INSTALL_GUIDE.html
+      - title: 'User Guide'
+        url: /USER_GUIDE.html
+      - title: 'E2E Walkthrough'
+        url: /E2E_WALKTHROUGH.html
+  - title: Architecture & Features
+    children:
+      - title: 'Architecture'
+        url: /ARCHITECTURE.html
+      - title: 'Graph Features'
+        url: /FEATURES_GRAPH.html
+      - title: 'IPC Contracts'
+        url: /IPC_CONTRACTS.html
+  - title: Configuration
+    children:
+      - title: 'Config Guide'
+        url: /CONFIG.html
+      - title: 'Dependency Boundaries'
+        url: /DEPENDENCY_BOUNDARIES.html
+      - title: 'DI Patterns'
+        url: /DI_PATTERNS.html
+      - title: 'Motion System'
+        url: /MOTION_SYSTEM.html
+  - title: Contributing
+    children:
+      - title: 'Getting Started Dev'
+        url: /GETTING_STARTED.html
+      - title: 'Beta Tester Guide'
+        url: /BETA_TESTER_GUIDE.html
+      - title: 'Code Quality Standards'
+        url: /CODE_QUALITY_STANDARDS.html
+      - title: 'Error Handling Guide'
+        url: /ERROR_HANDLING_GUIDE.html
+      - title: 'Learning Guide'
+        url: /LEARNING_GUIDE.html
+  - title: Releasing
+    children:
+      - title: 'Release Guide'
+        url: /RELEASING.html
+      - title: 'Release Preflight'
+        url: /RELEASE_PREFLIGHT.html

@@ -1,3 +1,5 @@
+-- layout: single title: "USER GUIDE" sidebar: nav: "docs" --
+
 # StratoSort Core User Guide
 
 This guide explains how to use StratoSort Core day-to-day, including Smart Folders, Knowledge OS,

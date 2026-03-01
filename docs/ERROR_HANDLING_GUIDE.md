@@ -1,3 +1,5 @@
+-- layout: single title: "ERROR HANDLING GUIDE" sidebar: nav: "docs" --
+
 # Error Handling Guide
 
 ## Overview
