@@ -69,17 +69,19 @@ describe('EmbeddingQueueCore Fixes', () => {
     expect(queue.queue.length).toBe(0);
   });
 
-  test('should sanitize invalid vector values', async () => {
-    const itemWithNaN = {
-      id: 'file:nan.txt',
-      vector: [0.1, NaN, 0.3]
-    };
-
-    const result = await queue.enqueue(itemWithNaN);
-
+  test('should sanitize minor NaN corruption and reject major corruption', async () => {
+    // Minor corruption: 1 NaN in 384 dims (~0.26%) — sanitized to 0
+    const minorCorrupt = new Array(384).fill(0.5);
+    minorCorrupt[50] = NaN;
+    const result = await queue.enqueue({ id: 'file:minor.txt', vector: minorCorrupt });
     expect(result.success).toBe(true);
     expect(result.warnings).toContain('vector_sanitized');
-    expect(queue.queue[0].vector[1]).toBe(0); // NaN replaced with 0
+    expect(queue.queue[0].vector[50]).toBe(0);
+
+    // Major corruption: 1 NaN in 3 dims (33%) — rejected
+    const majorResult = await queue.enqueue({ id: 'file:major.txt', vector: [0.1, NaN, 0.3] });
+    expect(majorResult.success).toBe(false);
+    expect(majorResult.reason).toBe('invalid_vector_values');
   });
 
   test('should handle offline database gracefully', async () => {

@@ -740,14 +740,14 @@ Body content only.`;
       expect(result).toBe('DOC content');
     });
 
-    test('should return empty string on parser error', async () => {
+    test('should throw FileProcessingError on parser error', async () => {
       const officeParser = require('officeparser');
       officeParser.parseOfficeAsync.mockRejectedValue(new Error('Parse error'));
       await mockFileSignature(OLE_SIGNATURE);
 
-      const result = await extractTextFromDoc(mockFilePath);
-
-      expect(result).toBe('');
+      await expect(extractTextFromDoc(mockFilePath)).rejects.toMatchObject({
+        code: 'DOC_EXTRACTION_FAILURE'
+      });
     });
   });
 

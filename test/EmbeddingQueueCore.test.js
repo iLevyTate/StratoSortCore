@@ -124,14 +124,22 @@ describe('EmbeddingQueueCore', () => {
     });
   });
 
-  test('enqueue sanitizes partial NaN vector values (replaces with 0)', async () => {
+  test('enqueue sanitizes minor NaN corruption (<=5%) but rejects major corruption (>5%)', async () => {
     const EmbeddingQueue = require('../src/main/analysis/embeddingQueue/EmbeddingQueueCore');
     const q = new EmbeddingQueue({ flushDelayMs: 0 });
     q.initialized = true;
 
-    const res = await q.enqueue({ id: 'file:a', vector: [1, Number.NaN, 2] });
-    // Partial NaN vectors are sanitized (NaN replaced with 0), not rejected
+    // Minor corruption: 1 NaN in 384 dims (0.26%) — should be sanitized to 0
+    const minorCorrupt = new Array(384).fill(1);
+    minorCorrupt[100] = Number.NaN;
+    const res = await q.enqueue({ id: 'file:minor', vector: minorCorrupt });
     expect(res).toEqual({ success: true, warnings: ['vector_sanitized'] });
+    expect(q.queue[0].vector[100]).toBe(0);
+
+    // Major corruption: 1 NaN in 3 dims (33%) — should be rejected
+    const res2 = await q.enqueue({ id: 'file:major', vector: [1, Number.NaN, 2] });
+    expect(res2.success).toBe(false);
+    expect(res2.reason).toBe('invalid_vector_values');
   });
 
   test('enqueue applies backpressure when queue is full (diverts to failed queue)', async () => {

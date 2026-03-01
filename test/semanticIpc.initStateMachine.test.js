@@ -82,6 +82,11 @@ jest.mock('../src/main/services/LlamaService', () => ({
   }))
 }));
 
+jest.mock('../src/main/services/vectorDb/embeddingIndexMetadata', () => ({
+  readEmbeddingIndexMetadata: jest.fn().mockResolvedValue(null),
+  writeEmbeddingIndexMetadata: jest.fn().mockResolvedValue()
+}));
+
 jest.mock('../src/shared/normalization', () => ({
   normalizeText: jest.fn((text) => (typeof text === 'string' ? text.trim() : ''))
 }));
@@ -267,7 +272,6 @@ describe('Semantic IPC – init state machine & handler edge cases', () => {
     const handler = getHandler(IPC_CHANNELS.EMBEDDINGS.FULL_REBUILD);
 
     const result = await handler({}, { modelOverride: 'nomic-embed-text-v1.5-Q8_0.gguf' });
-
     expect(result.success).toBe(true);
     expect(result.model).toBe('nomic-embed-text-v1.5-Q8_0.gguf');
   });
