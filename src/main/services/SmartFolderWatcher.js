@@ -1506,7 +1506,7 @@ class SmartFolderWatcher {
           });
           try {
             await this.analysisHistoryService?.updateEmbeddingStateByPath?.(filePath, {
-              status: 'done',
+              status: 'pending',
               model: model || null
             });
           } catch {
@@ -1928,17 +1928,28 @@ class SmartFolderWatcher {
       candidate.timeoutId.unref();
     }
 
-    // Bound the move candidates map to prevent unbounded growth during mass deletions
-    const MAX_PENDING_MOVES = 200;
+    // Bound the move candidates map to prevent unbounded growth during mass deletions.
+    // 500 accommodates bulk operations (large folder reorganization) while still
+    // capping memory. Evict by oldest createdAt rather than insertion order.
+    const MAX_PENDING_MOVES = 500;
     if (this._pendingMoveCandidates.size >= MAX_PENDING_MOVES) {
-      // Evict the oldest candidate
-      const oldestKey = this._pendingMoveCandidates.keys().next().value;
-      const oldest = this._pendingMoveCandidates.get(oldestKey);
-      if (oldest?.timeoutId) clearTimeout(oldest.timeoutId);
-      this._pendingMoveCandidates.delete(oldestKey);
-      logger.debug('[SMART-FOLDER-WATCHER] Evicted oldest pending move candidate due to limit', {
-        evicted: path.basename(oldestKey)
-      });
+      let oldestKey = null;
+      let oldestTime = Infinity;
+      for (const [key, val] of this._pendingMoveCandidates) {
+        const createdAt = val?.createdAt || 0;
+        if (createdAt < oldestTime) {
+          oldestTime = createdAt;
+          oldestKey = key;
+        }
+      }
+      if (oldestKey) {
+        const oldest = this._pendingMoveCandidates.get(oldestKey);
+        if (oldest?.timeoutId) clearTimeout(oldest.timeoutId);
+        this._pendingMoveCandidates.delete(oldestKey);
+        logger.debug('[SMART-FOLDER-WATCHER] Evicted oldest pending move candidate due to limit', {
+          evicted: path.basename(oldestKey)
+        });
+      }
     }
 
     this._pendingMoveCandidates.set(filePath, candidate);

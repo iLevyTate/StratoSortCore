@@ -362,6 +362,7 @@ function registerFileSelectionHandlers(servicesOrParams) {
           log.info(`[FILE-SELECTION] Selected ${result.filePaths.length} items`);
 
           const allFiles = [];
+          const skippedFiles = [];
 
           for (const rawSelectedPath of result.filePaths) {
             const selectedPath = normalizeInputPath(rawSelectedPath);
@@ -371,6 +372,7 @@ function registerFileSelectionHandlers(servicesOrParams) {
             const ext = path.extname(selectedPath).toLowerCase();
             if (!ext) {
               log.warn('[FILE-SELECTION] Skipping path without extension', selectedPath);
+              skippedFiles.push({ path: rawSelectedPath, reason: 'no_extension' });
               continue;
             }
             if (supportedExts.includes(ext)) {
@@ -378,17 +380,24 @@ function registerFileSelectionHandlers(servicesOrParams) {
                 const stats = await fs.stat(selectedPath);
                 if (stats.isFile()) {
                   allFiles.push(selectedPath);
+                } else {
+                  skippedFiles.push({ path: selectedPath, reason: 'not_a_file' });
                 }
               } catch (statError) {
                 log.warn('[FILE-SELECTION] Skipping path with stat error', {
                   path: selectedPath,
                   error: statError.message
                 });
+                skippedFiles.push({ path: selectedPath, reason: statError.code || 'stat_error' });
               }
+            } else {
+              skippedFiles.push({ path: selectedPath, reason: 'unsupported_extension' });
             }
           }
 
-          log.info(`[FILE-SELECTION] Total files after expansion: ${allFiles.length}`);
+          log.info(`[FILE-SELECTION] Total files after expansion: ${allFiles.length}`, {
+            skippedCount: skippedFiles.length
+          });
 
           // Save the selected path for future dialogs (use first selected path)
           if (result.filePaths.length > 0) {
@@ -401,7 +410,9 @@ function registerFileSelectionHandlers(servicesOrParams) {
               path: filePath,
               name: path.basename(filePath)
             })),
-            count: allFiles.length
+            count: allFiles.length,
+            skippedFiles: skippedFiles.length > 0 ? skippedFiles : undefined,
+            skippedCount: skippedFiles.length
           };
         } catch (error) {
           log.error('[FILE-SELECTION] Error in file selection:', error);

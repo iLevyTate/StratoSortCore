@@ -375,6 +375,18 @@ async function syncEmbeddingForMove({
     });
   }
 
+  // For moves/renames, remove stale embeddings for the OLD path BEFORE
+  // enqueuing the new one. This prevents a race where a queue flush between
+  // enqueue and removal would persist the old-path embedding to the vector DB.
+  // For copies, the source should remain indexed.
+  if (operation !== 'copy' && sourcePath && sourcePath !== destPath) {
+    try {
+      await removeEmbeddingsForPath(sourcePath, services, log);
+    } catch {
+      // Non-fatal
+    }
+  }
+
   await organizeQueue.enqueue({
     id: destId,
     vector: embedding.vector,
@@ -393,16 +405,6 @@ async function syncEmbeddingForMove({
     }
   } catch {
     // Non-fatal
-  }
-
-  // For moves/renames, ensure we don't leave behind stale embeddings for the old path.
-  // For copies, the source should remain indexed.
-  if (operation !== 'copy' && sourcePath && sourcePath !== destPath) {
-    try {
-      await removeEmbeddingsForPath(sourcePath, services, log);
-    } catch {
-      // Non-fatal
-    }
   }
 
   return { action: 'enqueued', smartFolder: smartFolder.name };

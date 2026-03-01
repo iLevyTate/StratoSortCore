@@ -1327,20 +1327,38 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
           logger.info('[EMBEDDINGS] Starting full rebuild with model:', modelCheck.model);
 
-          // Record which model/dimensions were used for the index (for UI mismatch warnings)
-          // Use a single probe embedding so we don't need to inspect downstream payloads.
+          // Probe the embedding model to verify it can actually generate vectors
+          // and record which dimensions will be used for the index.
+          // This MUST succeed before we wipe the DB — otherwise the user is left
+          // with zero embeddings and a model that can't rebuild.
           try {
             const probe = await embeddingService.embedText('embedding index dimension probe');
             const dims = Array.isArray(probe?.vector) ? probe.vector.length : null;
-            if (Number.isFinite(dims) && dims > 0) {
-              await writeEmbeddingIndexMetadata({
-                model: probe?.model || modelCheck.model,
-                dims,
-                source: 'full-rebuild'
-              });
+            if (!Number.isFinite(dims) || dims <= 0) {
+              return {
+                success: false,
+                error:
+                  'Embedding model returned an invalid vector during probe. Rebuild aborted to protect existing data.',
+                errorCode: 'PROBE_INVALID_VECTOR'
+              };
             }
-          } catch {
-            // Non-fatal
+            await writeEmbeddingIndexMetadata({
+              model: probe?.model || modelCheck.model,
+              dims,
+              source: 'full-rebuild'
+            });
+          } catch (probeError) {
+            logger.error(
+              '[EMBEDDINGS] Probe embedding failed — aborting rebuild to protect existing data',
+              {
+                error: probeError?.message
+              }
+            );
+            return {
+              success: false,
+              error: `Embedding model failed to generate a test vector: ${probeError?.message}. Rebuild aborted to protect existing data.`,
+              errorCode: 'PROBE_EMBEDDING_FAILED'
+            };
           }
 
           // Step 2: Clear all vector DB collections

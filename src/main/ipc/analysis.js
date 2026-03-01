@@ -153,7 +153,7 @@ function registerAnalysisIpc(servicesOrParams) {
           const duration = performance.now() - startTime;
           systemAnalytics.recordProcessingTime(duration);
 
-          await recordAnalysisResult({
+          const persistResult = await recordAnalysisResult({
             filePath: cleanPath,
             result,
             processingTime: duration,
@@ -161,6 +161,9 @@ function registerAnalysisIpc(servicesOrParams) {
             analysisHistory: serviceIntegration?.analysisHistory,
             logger
           });
+          if (persistResult && !persistResult.persisted) {
+            result._persistenceWarning = persistResult.reason || 'unknown';
+          }
           recordPipelineOutcome(systemAnalytics, 'document', result);
 
           return result;
@@ -230,7 +233,7 @@ function registerAnalysisIpc(servicesOrParams) {
           const duration = performance.now() - startTime;
           systemAnalytics.recordProcessingTime(duration);
 
-          await recordAnalysisResult({
+          const persistResult = await recordAnalysisResult({
             filePath: cleanPath,
             result,
             processingTime: duration,
@@ -238,6 +241,9 @@ function registerAnalysisIpc(servicesOrParams) {
             analysisHistory: serviceIntegration?.analysisHistory,
             logger
           });
+          if (persistResult && !persistResult.persisted) {
+            result._persistenceWarning = persistResult.reason || 'unknown';
+          }
           recordPipelineOutcome(systemAnalytics, 'image', result);
 
           return result;
@@ -302,12 +308,25 @@ function registerAnalysisIpc(servicesOrParams) {
       }
 
       if (activeBatchRuns.has(batchId)) {
-        logger.warn(`${LOG_PREFIX} Duplicate active batch id rejected`, { batchId });
-        return {
-          success: false,
-          error: `Batch already active: ${batchId}`,
-          batchId
-        };
+        const existing = activeBatchRuns.get(batchId);
+        const STALE_BATCH_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+        const isStale =
+          existing?.startedAt && Date.now() - existing.startedAt > STALE_BATCH_TIMEOUT_MS;
+        if (isStale) {
+          logger.warn(`${LOG_PREFIX} Evicting stale batch entry`, {
+            batchId,
+            startedAt: existing.startedAt,
+            ageMs: Date.now() - existing.startedAt
+          });
+          activeBatchRuns.delete(batchId);
+        } else {
+          logger.warn(`${LOG_PREFIX} Duplicate active batch id rejected`, { batchId });
+          return {
+            success: false,
+            error: `Batch already active: ${batchId}`,
+            batchId
+          };
+        }
       }
 
       const validatedPaths = await Promise.all(
@@ -341,7 +360,8 @@ function registerAnalysisIpc(servicesOrParams) {
         batchId,
         cancelled: false,
         reason: null,
-        requestedAt: null
+        requestedAt: null,
+        startedAt: Date.now()
       };
       activeBatchRuns.set(batchId, runState);
 

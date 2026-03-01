@@ -211,7 +211,7 @@ async function recordAnalysisResult({
   analysisHistory,
   logger
 }) {
-  if (!analysisHistory) return;
+  if (!analysisHistory) return { persisted: false, reason: 'no_history_service' };
 
   try {
     const stats = await fs.stat(filePath);
@@ -271,8 +271,10 @@ async function recordAnalysisResult({
     };
 
     await analysisHistory.recordAnalysis(fileInfo, normalized);
+    return { persisted: true };
   } catch (historyError) {
     logger.warn('[ANALYSIS-HISTORY] Failed to record analysis:', historyError.message);
+    return { persisted: false, reason: historyError.message };
   }
 }
 
