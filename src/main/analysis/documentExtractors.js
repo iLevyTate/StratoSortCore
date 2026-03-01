@@ -712,10 +712,11 @@ async function extractTextFromDoc(filePath) {
     const result = await parseOfficeFile(officeParser, filePath);
     return result || '';
   } catch (error) {
-    logger.warn('[DOC] Office parser failed, returning empty result', {
-      error: error.message
+    logger.warn('[DOC] Office parser failed', { error: error.message });
+    throw new FileProcessingError('DOC_EXTRACTION_FAILURE', filePath, {
+      suggestion: 'DOC file may be corrupted or in an unsupported format',
+      originalError: error.message
     });
-    return '';
   }
 }
 
@@ -1357,7 +1358,10 @@ async function extractTextFromOdfZip(filePath) {
     return extractPlainTextFromHtml(xml);
   } catch (error) {
     logger.error('Failed to extract ODF content:', { filePath, error: error.message });
-    return '';
+    throw new FileProcessingError('ODF_EXTRACTION_FAILURE', filePath, {
+      suggestion: 'ODF file may be corrupted or in an unsupported format',
+      originalError: error.message
+    });
   }
 }
 

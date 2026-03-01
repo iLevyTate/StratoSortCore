@@ -772,14 +772,19 @@ async function tryExtractArchiveMetadata(filePath) {
     try {
       const AdmZip = require('adm-zip');
       const zip = new AdmZip(filePath);
-      const entries = zip.getEntries().slice(0, 50);
-      const names = entries.map((e) => e.entryName);
+      const allEntries = zip.getEntries();
+      const totalEntries = allEntries.length;
+      const sampledEntries = allEntries.slice(0, 50);
+      const names = sampledEntries.map((e) => e.entryName);
       info.keywords = deriveKeywordsFromFilenames(names);
-      info.summary = `ZIP archive with ${zip.getEntries().length} entries`;
+      info.totalEntries = totalEntries;
+      info.processedEntries = sampledEntries.length;
+      info.summary = `ZIP archive with ${totalEntries} entries`;
       return info;
-    } catch {
+    } catch (zipError) {
       info.summary = 'ZIP archive (content listing unavailable)';
       info.keywords = [];
+      info.extractionError = zipError?.message || 'unknown';
       return info;
     }
   }

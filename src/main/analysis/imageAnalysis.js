@@ -1476,6 +1476,12 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
       // even if they don't have OCR text (using keywords/description instead)
       const { matcher } = getServices();
       const gate = await shouldEmbed({ stage: 'analysis', isInSmartFolder });
+      // Include effective embedding behavior in returned analysis so renderer
+      // can show whether this file is expected to be searchable locally.
+      if (analysis && typeof analysis === 'object') {
+        analysis.embeddingPolicy = gate.policy;
+        analysis.embeddingStatus = gate.shouldEmbed ? 'pending' : 'skipped';
+      }
       if (matcher && analysis && gate.shouldEmbed) {
         const persistedEmbedding = analysis?._embeddingForPersistence;
         let usedPrecomputedEmbedding = false;

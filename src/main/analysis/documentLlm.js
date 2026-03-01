@@ -84,6 +84,7 @@ async function summarizeChunks(text, llamaService, options = {}) {
   // 12+ simultaneous inference requests for large documents.
   const CHUNK_BATCH_SIZE = 3;
   const summaries = [];
+  let failedChunks = 0;
   for (let i = 0; i < chunks.length; i += CHUNK_BATCH_SIZE) {
     const batch = chunks.slice(i, i + CHUNK_BATCH_SIZE);
     const batchResults = await Promise.all(
@@ -93,6 +94,7 @@ async function summarizeChunks(text, llamaService, options = {}) {
           .generateText({ prompt: MAP_PROMPT + chunk, maxTokens, temperature, signal })
           .then((r) => r.response?.trim() || '')
           .catch((err) => {
+            failedChunks += 1;
             logger.warn('[documentLlm] Map-reduce: chunk summary failed', {
               chunkIndex: idx,
               error: err.message
@@ -103,12 +105,26 @@ async function summarizeChunks(text, llamaService, options = {}) {
     );
     summaries.push(...batchResults);
   }
-  const combined = summaries.filter(Boolean).join('\n\n');
+  const successfulSummaries = summaries.filter(Boolean);
+  const combined = successfulSummaries.join('\n\n');
+  const totalChunks = chunks.length;
 
   logger.info('[documentLlm] Map-reduce: summarization complete', {
-    chunksProcessed: summaries.filter(Boolean).length,
+    chunksProcessed: successfulSummaries.length,
+    failedChunks,
+    totalChunks,
     combinedLength: combined.length
   });
+
+  // If a majority of chunks failed, the combined summary is unreliable —
+  // return empty so the caller falls back to smart text selection.
+  if (failedChunks > 0 && failedChunks >= totalChunks * 0.5) {
+    logger.warn('[documentLlm] Map-reduce: majority of chunks failed, discarding partial results', {
+      failedChunks,
+      totalChunks
+    });
+    return '';
+  }
 
   return combined;
 }

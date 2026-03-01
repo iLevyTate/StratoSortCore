@@ -447,6 +447,10 @@ async function applySemanticFolderMatching(params) {
         stage: 'analysis',
         isInSmartFolder: !!resolvedSmartFolder
       });
+      // Surface effective embedding behavior in analysis payload so renderer/UI
+      // can explain search readiness per file.
+      analysis.embeddingPolicy = gate.policy;
+      analysis.embeddingStatus = gate.shouldEmbed ? 'pending' : 'skipped';
       if (gate.shouldEmbed) {
         const queueCapacity =
           typeof embeddingQueueManager.waitForAnalysisQueueCapacity === 'function'

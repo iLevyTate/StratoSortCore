@@ -41,7 +41,8 @@ class EmbeddingQueue {
     this._persistenceKeys = {
       queue: `${baseName}:queue`,
       failedItems: `${baseName}:failedItems`,
-      deadLetter: `${baseName}:deadLetter`
+      deadLetter: `${baseName}:deadLetter`,
+      pendingRemovals: `${baseName}:pendingRemovals`
     };
 
     // Configuration from unified config
@@ -218,6 +219,8 @@ class EmbeddingQueue {
             err.message
           )
         );
+      // Clear persisted pending removals now that they've been applied
+      this._persistPendingRemovals();
     }
     await this.persistQueue();
   }
@@ -306,6 +309,25 @@ class EmbeddingQueue {
         { key: this._persistenceKeys.deadLetter }
       );
 
+      // Load pending removals that survived a crash.
+      // These are IDs that were queued for removal during a flush but the
+      // flush never completed (app crashed). Apply them now before any flush.
+      await loadPersistedData(
+        this.persistencePath,
+        (data) => {
+          if (Array.isArray(data) && data.length > 0) {
+            for (const id of data) {
+              if (typeof id === 'string') this._pendingRemovals.add(id);
+            }
+            logger.info(
+              `[EmbeddingQueue] Restored ${this._pendingRemovals.size} pending removals from crash recovery`
+            );
+          }
+        },
+        'pending removals',
+        { key: this._persistenceKeys.pendingRemovals }
+      );
+
       this.initialized = true;
 
       if (this.queue.length > 0 || this._failedItemHandler.failedItems.size > 0) {
@@ -359,17 +381,22 @@ class EmbeddingQueue {
       }
     }
     if (vectorSanitized) {
-      if (invalidCount === vectorLength) {
-        logger.warn('[EmbeddingQueue] Invalid vector - all values non-numeric', {
+      // Reject vectors where more than 5% of dimensions are invalid — partially-
+      // corrupted vectors with many zeroed values will distort similarity search.
+      // Allow trivial corruption (1-2 values in a 384-dim vector) to be zeroed.
+      const corruptionRatio = invalidCount / vectorLength;
+      if (invalidCount === vectorLength || corruptionRatio > 0.05) {
+        logger.warn('[EmbeddingQueue] Rejecting vector with excessive invalid values', {
           id: item.id,
           invalidCount,
-          vectorLength
+          vectorLength,
+          corruptionPercent: Math.round(corruptionRatio * 100)
         });
         this._failedItemHandler.trackFailedItem(item, 'invalid_vector_values');
         return { success: false, reason: 'invalid_vector_values' };
       }
       item.vector = sanitizedVector;
-      logger.warn('[EmbeddingQueue] Sanitized vector with invalid values', {
+      logger.warn('[EmbeddingQueue] Sanitized vector with minor invalid values', {
         id: item.id,
         invalidCount,
         vectorLength
@@ -497,6 +524,22 @@ class EmbeddingQueue {
    */
   async persistQueue() {
     await persistQueueData(this.persistencePath, this.queue, { key: this._persistenceKeys.queue });
+  }
+
+  /**
+   * Persist pending removals to disk so they survive crashes during flush.
+   * Fire-and-forget — persistence errors are logged but don't break callers.
+   * @private
+   */
+  _persistPendingRemovals() {
+    const data = Array.from(this._pendingRemovals);
+    persistQueueData(this.persistencePath, data, {
+      key: this._persistenceKeys.pendingRemovals
+    }).catch((err) => {
+      logger.warn('[EmbeddingQueue] Failed to persist pending removals', {
+        error: err?.message
+      });
+    });
   }
 
   /**
@@ -629,6 +672,8 @@ class EmbeddingQueue {
               removedCount: pendingRemoved
             });
           }
+          // Clear persisted pending removals now that they've been applied
+          this._persistPendingRemovals();
         }
 
         // Clear failed-item records for items that succeeded in this batch
@@ -773,6 +818,8 @@ class EmbeddingQueue {
       for (const id of fileIds) {
         this._pendingRemovals.add(id);
       }
+      // Persist pending removals so they survive a crash during flush
+      this._persistPendingRemovals();
       if (removedCount > 0) {
         logger.debug('[EmbeddingQueue] Queued removals for deleted file (flush in progress)', {
           filePath,
