@@ -8,6 +8,7 @@ find the right documentation for your needs.
 | Document                                                 | Description                                           | Audience       |
 | -------------------------------------------------------- | ----------------------------------------------------- | -------------- |
 | [CONFIG.md](./CONFIG.md)                                 | Installation, dependencies & configuration            | All users      |
+| [E2E_WALKTHROUGH.md](./E2E_WALKTHROUGH.md)               | End-to-end app walkthrough (screenshots + videos)     | All users      |
 | [ARCHITECTURE.md](./ARCHITECTURE.md)                     | High-level system design and data flow                | All developers |
 | [LEARNING_GUIDE.md](./LEARNING_GUIDE.md)                 | Codebase learning guide with glossary & code examples | New developers |
 | [CODE_QUALITY_STANDARDS.md](./CODE_QUALITY_STANDARDS.md) | Coding standards and style guide                      | All developers |
@@ -73,6 +74,7 @@ docs/
 ├── CODE_QUALITY_STANDARDS.md            # Style guide
 ├── CONFIG.md                            # Environment variables
 ├── DI_PATTERNS.md                       # Dependency injection
+├── E2E_WALKTHROUGH.md                   # End-to-end UI walkthrough (screenshots + videos)
 ├── ERROR_HANDLING_GUIDE.md              # Error patterns
 ├── FEATURES_GRAPH.md                    # Knowledge Graph features
 ├── LEARNING_GUIDE.md                    # Developer onboarding (glossary + examples)

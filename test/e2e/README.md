@@ -15,6 +15,7 @@ This test suite covers full user flows through the application UI, including:
 ## Prerequisites
 
 1. **Node.js 18+** - Required for Playwright and Electron
+   - Recommended: `20.11.0` (see `.nvmrc`)
 2. **Build the renderer** - Run `npm run build:dev` before testing
 3. **Models downloaded (optional)** - Required for AI analysis tests, but tests handle missing
    models gracefully
