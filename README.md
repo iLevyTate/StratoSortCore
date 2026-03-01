@@ -17,7 +17,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?style=flat-square" alt="Platform" />
   <img src="https://img.shields.io/badge/electron-40+-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron" />
-  <img src="https://img.shields.io/badge/node-18+-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js" />
+  <img src="https://img.shields.io/badge/node-20.11.0-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js" />
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square" alt="PRs Welcome" />
 </p>
 
@@ -159,9 +159,12 @@ for step-by-step instructions on both platforms and how to handle unsigned-app p
 
 ### Developers — Build from Source
 
+Recommended Node version is `20.11.0` (see `.nvmrc`).
+
 ```bash
 git clone https://github.com/iLevyTate/StratoSortCore.git
 cd StratoSortCore
+nvm use
 npm ci
 npm run dev
 ```
@@ -210,6 +213,7 @@ See **[SECURITY.md](SECURITY.md)** for the complete security policy.
 | **[Install Guide](docs/INSTALL_GUIDE.md)**         | End-user install (Windows & Mac, no CLI) |
 | **[User Guide](docs/USER_GUIDE.md)**               | Feature walkthrough for everyday use     |
 | **[Beta Tester Guide](docs/BETA_TESTER_GUIDE.md)** | Testing + bug reporting for contributors |
+| **[E2E Walkthrough](docs/E2E_WALKTHROUGH.md)**     | Visual end-to-end walkthrough (UI/media) |
 | **[Getting Started](docs/GETTING_STARTED.md)**     | Developer setup and build guide          |
 | **[Architecture](docs/ARCHITECTURE.md)**           | System design and data flow              |
 | **[Graph Features](docs/FEATURES_GRAPH.md)**       | Knowledge Graph capabilities             |
