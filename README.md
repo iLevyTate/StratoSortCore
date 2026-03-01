@@ -135,6 +135,18 @@ original repository.
 | **Semantic Search**       | Find files by meaning using Orama Vector Search and AI Re-Ranking                   |
 | **Safe Operations**       | Full Undo/Redo capability for all file moves and renames                            |
 
+## Supported File Types
+
+StratoSort Core currently processes the following file types in the Discover/analysis pipeline:
+
+- **Documents & office:** `.pdf`, `.doc`, `.docx`, `.xls`, `.xlsx`, `.ppt`, `.pptx`, `.odt`, `.ods`,
+  `.odp`, `.epub`, `.eml`, `.msg`, `.kml`, `.kmz`
+- **Text, code, and structured data:** `.txt`, `.md`, `.rtf`, `.csv`, `.json`, `.xml`, `.yml`,
+  `.yaml`, `.html`, `.css`, `.js`, `.ts`, `.sql`, `.py`, `.java`, `.c`, `.cpp`, `.h`, `.rb`, `.go`,
+  `.rs`, `.php`, `.sh`, `.bat`, `.ps1`, `.ini`, `.log`
+- **Images:** `.jpg`, `.jpeg`, `.png`, `.gif`, `.bmp`, `.webp`, `.svg`, `.tiff`, `.ico`, `.heic`
+- **Archives:** `.zip`, `.rar`, `.7z`, `.tar`, `.gz`, `.bz2`
+
 ## Quick Start
 
 ### End Users — One Download, No CLI
